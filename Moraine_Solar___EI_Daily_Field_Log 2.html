@@ -1,0 +1,1080 @@
+<!DOCTYPE html>
+<!-- saved from url=(0058)file:///C:/Users/timnj/Downloads/Moraine_EI_Field_Log.html -->
+<html lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Moraine Solar — EI Daily Field Log</title>
+<link rel="preconnect" href="https://fonts.googleapis.com/">
+<link href="./Moraine Solar — EI Daily Field Log_files/css2" rel="stylesheet">
+<style>
+:root {
+  --bg:#0d1018;--s1:#131720;--s2:#191e2d;--s3:#1f2438;
+  --border:#242b3e;--border2:#2e3650;
+  --amber:#e8a020;--amber2:#f0c060;--amber-bg:rgba(232,160,32,0.08);
+  --text:#dde3f0;--muted:#50607c;--muted2:#7a8fb0;
+  --green:#27ae60;--red:#e74c3c;
+  --personal-border:#3a3560;--personal-bg:rgba(58,53,96,0.18);--personal-accent:#8878cc;--personal-accent2:#a898e8;
+  --mono:'IBM Plex Mono',monospace;--cond:'Barlow Condensed',sans-serif;--body:'Barlow',sans-serif;
+  --r:7px;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:var(--body);font-size:14.5px;line-height:1.5;min-height:100vh;padding-bottom:80px}
+
+/* APP BAR */
+.app-bar{position:sticky;top:0;z-index:300;background:var(--s1);border-bottom:2px solid var(--amber);padding:0 20px;height:52px;display:flex;align-items:center;gap:12px}
+.app-title{font-family:var(--cond);font-weight:800;font-size:18px;letter-spacing:.09em;text-transform:uppercase;color:var(--amber)}
+.app-sub{font-family:var(--mono);font-size:10px;color:var(--muted);letter-spacing:.04em}
+.bar-spacer{flex:1}
+.tab-btn{font-family:var(--cond);font-weight:700;font-size:12px;letter-spacing:.1em;text-transform:uppercase;background:transparent;border:none;cursor:pointer;color:var(--muted2);padding:6px 12px;border-radius:5px;transition:all .15s}
+.tab-btn.active{background:var(--amber-bg);color:var(--amber);border:1px solid rgba(232,160,32,.25)}
+.tab-btn:hover:not(.active){color:var(--text)}
+.icon-btn{background:transparent;border:1px solid var(--border2);color:var(--muted2);font-size:13px;padding:5px 10px;border-radius:5px;cursor:pointer;transition:all .15s}
+.icon-btn:hover{border-color:var(--amber);color:var(--amber)}
+
+/* PAGES */
+.page{display:none}.page.active{display:block}
+.wrap{max-width:880px;margin:0 auto;padding:22px 16px}
+
+/* CARD */
+.card{background:var(--s1);border:1px solid var(--border);border-radius:var(--r);margin-bottom:16px;overflow:hidden}
+.card-head{background:var(--s2);border-bottom:1px solid var(--border);padding:10px 17px;display:flex;align-items:center;gap:10px}
+.card-num{font-family:var(--mono);font-size:10px;color:var(--muted);padding:2px 7px;border:1px solid var(--border2);border-radius:4px}
+.card-title{font-family:var(--cond);font-weight:700;font-size:13px;letter-spacing:.12em;text-transform:uppercase;color:var(--amber2)}
+.card-badge{margin-left:auto;font-family:var(--mono);font-size:10px;color:var(--muted)}
+.card-body{padding:17px}
+
+/* PERSONAL CARD */
+.card-personal{background:var(--personal-bg);border:1px solid var(--personal-border);border-radius:var(--r);margin-bottom:16px;overflow:hidden}
+.card-personal-head{background:rgba(58,53,96,0.35);border-bottom:1px solid var(--personal-border);padding:10px 17px;display:flex;align-items:center;gap:10px}
+.personal-icon{font-size:13px}
+.personal-title{font-family:var(--cond);font-weight:700;font-size:13px;letter-spacing:.12em;text-transform:uppercase;color:var(--personal-accent2)}
+.personal-badge{margin-left:auto;font-family:var(--mono);font-size:9.5px;color:var(--personal-accent);background:rgba(136,120,204,0.12);border:1px solid rgba(136,120,204,0.3);padding:2px 9px;border-radius:20px;letter-spacing:.06em}
+.card-personal .card-body{padding:17px}
+.card-personal input[type=text],.card-personal input[type=number],.card-personal input[type=time],.card-personal textarea{border-color:var(--personal-border)}
+.card-personal input:focus,.card-personal textarea:focus{border-color:var(--personal-accent)!important;outline:none}
+.miles-auto{font-family:var(--mono);font-size:13px;color:var(--personal-accent2);background:rgba(58,53,96,0.4);border:1px solid var(--personal-border);border-radius:5px;padding:8px 11px;text-align:center}
+.personal-note{font-family:var(--mono);font-size:10px;color:var(--personal-accent);letter-spacing:.05em;margin-top:10px;display:block;text-align:center}
+
+/* GRID */
+.g{display:grid;gap:12px}.g2{grid-template-columns:1fr 1fr}.g3{grid-template-columns:1fr 1fr 1fr}.g4{grid-template-columns:1fr 1fr 1fr 1fr}
+.full{grid-column:1/-1}.span2{grid-column:span 2}.span3{grid-column:span 3}
+@media(max-width:600px){.g2,.g3,.g4{grid-template-columns:1fr}.span2,.span3,.full{grid-column:auto}}
+
+/* FIELDS */
+.field{display:flex;flex-direction:column;gap:4px}
+label{font-family:var(--mono);font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted2)}
+.card-personal label{color:var(--personal-accent)}
+input[type=text],input[type=date],input[type=number],input[type=time],select,textarea{background:var(--bg);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--body);font-size:14px;padding:8px 11px;width:100%;transition:border-color .15s;-webkit-appearance:none}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--amber)}
+input[readonly]{color:var(--muted2);cursor:default}
+textarea{resize:vertical;min-height:88px;line-height:1.6}
+textarea.short{min-height:56px}textarea.tall{min-height:120px}
+select{cursor:pointer}
+
+/* PRESET CHIPS */
+.preset-strip{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:7px}
+.preset-chip{font-family:var(--body);font-size:12px;font-weight:500;background:var(--s3);border:1px solid var(--border2);color:var(--muted2);border-radius:20px;padding:3px 11px;cursor:pointer;transition:all .12s;white-space:nowrap}
+.preset-chip:hover{border-color:var(--amber);color:var(--amber);background:var(--amber-bg)}
+
+/* BUTTONS */
+.btn{font-family:var(--cond);font-weight:700;font-size:12.5px;letter-spacing:.1em;text-transform:uppercase;border:none;border-radius:5px;padding:8px 16px;cursor:pointer;transition:all .15s;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.btn-amber{background:var(--amber);color:#0d1018}.btn-amber:hover{background:var(--amber2)}
+.btn-outline{background:transparent;border:1px solid var(--border2);color:var(--text)}.btn-outline:hover{border-color:var(--amber);color:var(--amber)}
+.btn-ghost{background:transparent;border:1px solid var(--border);color:var(--muted2);font-size:11px;padding:5px 10px}.btn-ghost:hover{border-color:var(--red);color:var(--red)}
+.btn-add{background:transparent;border:1px dashed var(--border2);color:var(--muted2);width:100%;justify-content:center;padding:9px;margin-top:10px;border-radius:var(--r)}.btn-add:hover{border-color:var(--amber);color:var(--amber)}
+.btn-export{background:linear-gradient(135deg,#1c2a50,#131d3a);border:1px solid #2e4080;color:#7a9fe0;padding:12px 20px;font-size:13.5px;width:100%;justify-content:center;border-radius:var(--r)}.btn-export:hover{border-color:#5070c0;color:#a0c0ff}
+.btn-download{background:linear-gradient(135deg,#1e1a38,#141025);border:1px solid var(--personal-border);color:var(--personal-accent2);padding:10px 20px;font-size:13px;width:100%;justify-content:center;border-radius:var(--r)}.btn-download:hover{border-color:var(--personal-accent);color:#c0b0ff}
+
+/* ACTION ROW */
+.action-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px}
+@media(max-width:600px){.action-row{grid-template-columns:1fr}}
+
+/* SKY PILLS */
+.sky-opts{display:flex;flex-wrap:wrap;gap:7px}.sky-opts input[type=radio]{display:none}
+.sky-opts label{background:var(--bg);border:1px solid var(--border);border-radius:5px;padding:6px 12px;cursor:pointer;font-family:var(--body);font-size:13px;font-weight:500;color:var(--muted2);text-transform:none;letter-spacing:0;transition:all .12s;display:flex;align-items:center;gap:5px}
+.sky-opts input:checked+label{border-color:var(--amber);background:var(--amber-bg);color:var(--amber)}
+
+/* CREW BLOCK */
+.crew-block{background:var(--bg);border:1px solid var(--border);border-radius:var(--r);margin-bottom:12px;overflow:hidden}
+.crew-block-head{background:var(--s2);padding:8px 14px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border)}
+.crew-lbl{font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--amber2)}
+.crew-body{padding:14px}
+
+/* CHECKLIST */
+.check-item{padding:10px 0;border-bottom:1px solid rgba(36,43,62,.6)}.check-item:last-child{border-bottom:none}
+.check-row{display:flex;align-items:flex-start;gap:11px}
+.check-row input[type=checkbox]{width:17px;height:17px;accent-color:var(--amber);cursor:pointer;flex-shrink:0;margin-top:2px}
+.check-text{flex:1;font-size:13.5px;color:var(--text);line-height:1.45}
+.check-tag{font-family:var(--mono);font-size:9.5px;padding:2px 7px;border-radius:20px;border:1px solid;flex-shrink:0}
+.tag-ew{border-color:#558855;color:#558855}.tag-lod{border-color:#5577aa;color:#5577aa}
+.tag-safety{border-color:#aa5544;color:#aa5544}.tag-env{border-color:#7755aa;color:#7755aa}.tag-ops{border-color:#557777;color:#557777}
+.check-note-wrap{margin-top:7px;margin-left:28px;display:none}.check-note-wrap.vis{display:block}
+.check-note{width:100%;background:var(--s2);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:var(--body);font-size:13px;padding:6px 10px;resize:vertical;min-height:48px;line-height:1.5;transition:border-color .15s}
+.check-note:focus{outline:none;border-color:var(--amber)}
+
+/* FLAGS */
+.flag-row{display:flex;align-items:center;gap:12px;padding:9px 0;border-bottom:1px solid rgba(36,43,62,.5)}.flag-row:last-child{border-bottom:none}
+.flag-row input[type=checkbox]{width:17px;height:17px;accent-color:var(--red);cursor:pointer;flex-shrink:0}
+.flag-text{flex:1;font-size:13.5px}
+
+/* EXPORT PANEL */
+.export-panel{background:var(--s1);border:1px solid var(--border);border-radius:var(--r);padding:18px;margin-bottom:16px}
+.export-title{font-family:var(--cond);font-weight:700;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted2);margin-bottom:12px}
+.copy-status{font-family:var(--mono);font-size:11px;color:var(--green);text-align:center;min-height:18px;margin-top:8px;opacity:0;transition:opacity .3s}.copy-status.show{opacity:1}
+.dl-status{font-family:var(--mono);font-size:11px;color:var(--personal-accent2);text-align:center;min-height:18px;margin-top:8px;opacity:0;transition:opacity .3s}.dl-status.show{opacity:1}
+.export-hint{font-family:var(--mono);font-size:10.5px;color:var(--muted);text-align:center;margin-top:8px;line-height:1.7}
+.divider-export{height:1px;background:var(--border);margin:14px 0}
+
+/* CONFIG PAGE */
+.config-section{background:var(--s1);border:1px solid var(--border);border-radius:var(--r);margin-bottom:16px;overflow:hidden}
+.config-head{background:var(--s2);border-bottom:1px solid var(--border);padding:10px 17px;display:flex;align-items:center;gap:10px}
+.config-title{font-family:var(--cond);font-weight:700;font-size:13px;letter-spacing:.1em;text-transform:uppercase;color:var(--amber2)}
+.config-sub{font-family:var(--mono);font-size:10px;color:var(--muted);margin-left:auto}
+.config-body{padding:16px}
+.config-hint{font-family:var(--mono);font-size:10.5px;color:var(--muted);margin-bottom:12px;line-height:1.6}
+.preset-list{list-style:none;margin-bottom:10px}
+.preset-list li{display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid rgba(36,43,62,.5)}.preset-list li:last-child{border-bottom:none}
+.p-text{flex:1;font-size:13.5px}
+.p-phase{font-family:var(--mono);font-size:9.5px;padding:1px 6px;border-radius:20px;border:1px solid var(--border2);color:var(--muted2);white-space:nowrap}
+.del-p{background:transparent;border:none;color:var(--muted);font-size:15px;cursor:pointer;padding:2px 5px;border-radius:3px;transition:color .12s;line-height:1}.del-p:hover{color:var(--red)}
+.add-preset-row{display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap}
+.add-preset-row input[type=text]{flex:1;min-width:180px;background:var(--bg);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--body);font-size:13.5px;padding:7px 11px;transition:border-color .15s}
+.add-preset-row input:focus{outline:none;border-color:var(--amber)}
+.add-preset-row select{background:var(--bg);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--mono);font-size:11px;padding:7px 9px;-webkit-appearance:none;cursor:pointer;min-width:140px;transition:border-color .15s}
+.add-preset-row select:focus{outline:none;border-color:var(--amber)}
+.btn-add-p{font-family:var(--cond);font-weight:700;font-size:12px;letter-spacing:.08em;text-transform:uppercase;background:var(--amber-bg);border:1px solid rgba(232,160,32,.3);color:var(--amber);padding:7px 14px;border-radius:5px;cursor:pointer;transition:all .15s;white-space:nowrap}.btn-add-p:hover{background:var(--amber);color:#0d1018}
+.phase-badge{display:inline-block;font-family:var(--mono);font-size:9.5px;padding:2px 8px;border-radius:20px;border:1px solid rgba(232,160,32,.3);color:var(--amber);background:var(--amber-bg);margin-left:6px}
+.mt6{margin-top:6px}
+
+@media print{
+  body{background:white;color:black;font-size:12px}
+  .app-bar,.export-panel,.action-row,.no-print{display:none!important}
+  .card-personal{display:none!important}
+  .card{border:1px solid #ccc;break-inside:avoid;background:white}
+  .card-head{background:#f0f0f0}
+  input,select,textarea{border:none;background:transparent;color:black}
+}
+</style>
+</head>
+<body>
+
+<!-- APP BAR -->
+<div class="app-bar">
+  <div>
+    <div class="app-title">EI Field Log</div>
+    <div class="app-sub">Moraine Solar Energy Center</div>
+  </div>
+  <div class="bar-spacer"></div>
+  <button class="tab-btn active" id="tab-log" onclick="showPage(&#39;log&#39;)">📋 Daily Log</button>
+  <button class="tab-btn" id="tab-config" onclick="showPage(&#39;config&#39;)">⚙ Config</button>
+  <button class="icon-btn" title="Print" onclick="window.print()">⎙</button>
+  <button class="icon-btn" title="Reset form" onclick="resetForm()">↺</button>
+</div>
+
+<!-- ══════════════════════════════════
+     DAILY LOG PAGE
+══════════════════════════════════ -->
+<div class="page active" id="page-log"><div class="wrap">
+
+  <!-- 01 PROJECT INFO -->
+  <div class="card">
+    <div class="card-head">
+      <span class="card-num">01</span>
+      <span class="card-title">Project &amp; Report Info</span>
+    </div>
+    <div class="card-body">
+      <div class="g g3">
+        <div class="field full"><label>Project Name</label><input type="text" id="projectName" value="Moraine Solar Energy Center" readonly=""></div>
+        <div class="field"><label>Report Date</label><input type="date" id="reportDate"></div>
+        <div class="field"><label>Prepared By</label><input type="text" id="preparedBy" value="Tim Shortz"></div>
+        <div class="field"><label>Organization</label><input type="text" id="org" value="London Environmental LLC"></div>
+        <div class="field span2"><label>Active Phase</label><input type="text" id="activePhase" value="Phase 1 — Tree Felling"></div>
+        <div class="field"><label>Active Contractor</label><input type="text" id="contractor" value="Supreme Industries"></div>
+        <div class="field span2"><label>Town / County</label><input type="text" id="location" value="Town of Burns, Allegany County, NY" readonly=""></div>
+        <div class="field"><label>Reviewed By</label><input type="text" id="reviewedBy" value="Robert Forest Rung"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PERSONAL RECORD — UNNUMBERED, NOT EXPORTED -->
+  <div class="card-personal">
+    <div class="card-personal-head">
+      <span class="personal-icon">🔒</span>
+      <span class="personal-title">Personal Daily Record</span>
+      <span class="personal-badge">NOT INCLUDED IN REPORTS</span>
+    </div>
+    <div class="card-body">
+      <div class="g g4" style="margin-bottom:12px">
+        <div class="field">
+          <label>Time In</label>
+          <input type="time" id="p-timeIn">
+        </div>
+        <div class="field">
+          <label>Time Out</label>
+          <input type="time" id="p-timeOut">
+        </div>
+        <div class="field">
+          <label>Odometer Start</label>
+          <input type="number" id="p-odoStart" placeholder="miles" oninput="calcMiles()">
+        </div>
+        <div class="field">
+          <label>Odometer End</label>
+          <input type="number" id="p-odoEnd" placeholder="miles" oninput="calcMiles()">
+        </div>
+      </div>
+      <div class="g g2" style="margin-bottom:12px">
+        <div class="field">
+          <label>Total Miles Driven</label>
+          <div class="miles-auto" id="p-miles">— mi</div>
+        </div>
+        <div class="field">
+          <label>Total Hours on Site</label>
+          <div class="miles-auto" id="p-hours">— hrs</div>
+        </div>
+      </div>
+      <div class="field">
+        <label>Personal Notes</label>
+        <textarea class="short" id="p-notes" placeholder="Personal observations, reminders, follow-ups — this field is never exported to Claude or included in any report…"></textarea>
+      </div>
+      <span class="personal-note">⚠ This section is saved to your local HTML file only — it is never copied to clipboard or included in any report export.</span>
+    </div>
+  </div>
+
+  <!-- 02 WEATHER -->
+  <div class="card">
+    <div class="card-head">
+      <span class="card-num">02</span>
+      <span class="card-title">Weather Conditions</span>
+    </div>
+    <div class="card-body">
+      <div class="g g4" style="margin-bottom:15px">
+        <div class="field"><label>AM Temp (°F)</label><input type="number" id="tempAM" placeholder="°F"></div>
+        <div class="field"><label>PM Temp (°F)</label><input type="number" id="tempPM" placeholder="°F"></div>
+        <div class="field"><label>Wind (mph)</label><input type="number" id="wind" placeholder="mph"></div>
+        <div class="field"><label>Precip (in.)</label><input type="number" id="precip" step="0.01" placeholder="0.00"></div>
+        <div class="field span2">
+          <label>Soil Conditions</label>
+          <select id="soilCond">
+            <option value="">— Select —</option>
+            <option>Dry</option><option>Moist</option><option>Saturated</option>
+            <option>Frozen</option><option>Frost / Partially Frozen</option><option>Snow Cover</option>
+          </select>
+        </div>
+        <div class="field span2"><label>Forecast / Upcoming Weather</label><input type="text" id="upcomingWeather" placeholder="e.g. Clear through the week, temps rising into the 40s"></div>
+      </div>
+      <div class="field">
+        <label>Sky Conditions</label>
+        <div class="sky-opts mt6">
+          <input type="radio" name="sky" id="sky-clear" value="Clear"><label for="sky-clear">☀️ Clear</label>
+          <input type="radio" name="sky" id="sky-partly" value="Partly Cloudy"><label for="sky-partly">⛅ Partly Cloudy</label>
+          <input type="radio" name="sky" id="sky-overcast" value="Overcast"><label for="sky-overcast">☁️ Overcast</label>
+          <input type="radio" name="sky" id="sky-rain" value="Rain"><label for="sky-rain">🌧️ Rain</label>
+          <input type="radio" name="sky" id="sky-snow" value="Snow"><label for="sky-snow">❄️ Snow</label>
+          <input type="radio" name="sky" id="sky-fog" value="Fog"><label for="sky-fog">🌫️ Fog</label>
+          <input type="radio" name="sky" id="sky-mix" value="Rain / Snow Mix"><label for="sky-mix">🌨️ Mix</label>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 03 INSPECTION SUMMARY -->
+  <div class="card">
+    <div class="card-head"><span class="card-num">03</span><span class="card-title">Inspection Summary</span></div>
+    <div class="card-body">
+      <div class="g">
+        <div class="field">
+          <label>Field Observations / Inspection Notes</label>
+          <div class="preset-strip" id="chips-inspSummary"><button class="preset-chip" type="button" title="EI attended the morning safety meeting/tailgate at 6:30 AM">EI attended the morning safety meeting/tailgate at 6:30 AM</button><button class="preset-chip" type="button" title="EI conducted walkthrough inspection of all active felling areas">EI conducted walkthrough inspection of all active fellin…</button><button class="preset-chip" type="button" title="Directional felling observed — trees felled away from wetland buffers and LOD boundaries">Directional felling observed — trees felled away from we…</button><button class="preset-chip" type="button" title="Stump heights observed at or below 6 inches above grade">Stump heights observed at or below 6 inches above grade</button><button class="preset-chip" type="button" title="Slash and felled material managed within LOD">Slash and felled material managed within LOD</button><button class="preset-chip" type="button" title="All work observed within staked Limits of Disturbance (LOD)">All work observed within staked Limits of Disturbance (L…</button><button class="preset-chip" type="button" title="Wetland and stream buffer boundaries remained intact and undisturbed">Wetland and stream buffer boundaries remained intact and…</button><button class="preset-chip" type="button" title="Access routes and staging areas within approved footprint">Access routes and staging areas within approved footprint</button><button class="preset-chip" type="button" title="No turbid discharge or sediment-laden runoff observed at site perimeter">No turbid discharge or sediment-laden runoff observed at…</button></div>
+          <textarea class="tall" id="inspSummary" placeholder="Describe areas inspected, notable observations, work conducted, and relevant field conditions…"></textarea>
+        </div>
+        <div class="g g3">
+          <div class="field"><label>Agency Inspection</label><input type="text" id="agencyInsp" placeholder="Agency, name, notes — or leave blank"></div>
+          <div class="field"><label>Landowner Contact</label><input type="text" id="landowner" placeholder="Name, topic — or leave blank"></div>
+          <div class="field"><label>RTE Species Observation</label><input type="text" id="rte" placeholder="Species, location, action — or leave blank"></div>
+        </div>
+        <div class="field"><label>Non-Compliance Note (include Level 1–4 if applicable)</label><textarea class="short" id="nonCompliance" placeholder="Describe any observed non-compliance. Leave blank if none."></textarea></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 04 CREW BLOCKS -->
+  <div class="card">
+    <div class="card-head">
+      <span class="card-num">04</span>
+      <span class="card-title">Contractor Crew Observations</span>
+      <span class="card-badge" id="crewBadge">0 blocks</span>
+    </div>
+    <div class="card-body">
+      <div id="crewContainer"></div>
+      <button class="btn btn-add" onclick="addCrew()">+ Add Crew Block</button>
+    </div>
+  </div>
+
+  <!-- 05 PHASE 1 COMPLIANCE -->
+  <div class="card">
+    <div class="card-head"><span class="card-num">05</span><span class="card-title">Phase 1 — Tree Felling Compliance Checklist</span></div>
+    <div class="card-body" id="checklistBody"><div class="check-item"><div class="check-row">
+      <input type="checkbox" id="c1" onchange="toggleNote(&#39;c1&#39;)">
+      <span class="check-text">Morning safety meeting / tailgate conducted at 6:30 AM prior to work start</span>
+      <span class="check-tag tag-ops">OPS</span>
+    </div>
+    <div class="check-note-wrap" id="c1-nw">
+      <textarea class="check-note" id="c1-note" placeholder="Note or deficiency detail…"></textarea>
+    </div></div><div class="check-item"><div class="check-row">
+      <input type="checkbox" id="c2" onchange="toggleNote(&#39;c2&#39;)">
+      <span class="check-text">All active work areas within staked Limits of Disturbance (LOD)</span>
+      <span class="check-tag tag-lod">LOD</span>
+    </div>
+    <div class="check-note-wrap" id="c2-nw">
+      <textarea class="check-note" id="c2-note" placeholder="Note or deficiency detail…"></textarea>
+    </div></div><div class="check-item"><div class="check-row">
+      <input type="checkbox" id="c3" onchange="toggleNote(&#39;c3&#39;)">
+      <span class="check-text">Directional felling — trees felled away from wetland and stream buffers and LOD boundaries</span>
+      <span class="check-tag tag-ops">OPS</span>
+    </div>
+    <div class="check-note-wrap" id="c3-nw">
+      <textarea class="check-note" id="c3-note" placeholder="Note or deficiency detail…"></textarea>
+    </div></div><div class="check-item"><div class="check-row">
+      <input type="checkbox" id="c4" onchange="toggleNote(&#39;c4&#39;)">
+      <span class="check-text">Stump heights at or below 6 inches above ground level</span>
+      <span class="check-tag tag-ops">OPS</span>
+    </div>
+    <div class="check-note-wrap" id="c4-nw">
+      <textarea class="check-note" id="c4-note" placeholder="Note or deficiency detail…"></textarea>
+    </div></div><div class="check-item"><div class="check-row">
+      <input type="checkbox" id="c5" onchange="toggleNote(&#39;c5&#39;)">
+      <span class="check-text">Slash and felled material managed within LOD — no encroachment beyond staked limits</span>
+      <span class="check-tag tag-lod">LOD</span>
+    </div>
+    <div class="check-note-wrap" id="c5-nw">
+      <textarea class="check-note" id="c5-note" placeholder="Note or deficiency detail…"></textarea>
+    </div></div><div class="check-item"><div class="check-row">
+      <input type="checkbox" id="c6" onchange="toggleNote(&#39;c6&#39;)">
+      <span class="check-text">No tree felling within wetland buffer or stream riparian corridor</span>
+      <span class="check-tag tag-ew">WETLAND</span>
+    </div>
+    <div class="check-note-wrap" id="c6-nw">
+      <textarea class="check-note" id="c6-note" placeholder="Note or deficiency detail…"></textarea>
+    </div></div><div class="check-item"><div class="check-row">
+      <input type="checkbox" id="c7" onchange="toggleNote(&#39;c7&#39;)">
+      <span class="check-text">Wetland and stream buffer markers intact, visible, and undisturbed</span>
+      <span class="check-tag tag-ew">WETLAND</span>
+    </div>
+    <div class="check-note-wrap" id="c7-nw">
+      <textarea class="check-note" id="c7-note" placeholder="Note or deficiency detail…"></textarea>
+    </div></div><div class="check-item"><div class="check-row">
+      <input type="checkbox" id="c8" onchange="toggleNote(&#39;c8&#39;)">
+      <span class="check-text">Access routes and staging areas within approved footprint</span>
+      <span class="check-tag tag-lod">LOD</span>
+    </div>
+    <div class="check-note-wrap" id="c8-nw">
+      <textarea class="check-note" id="c8-note" placeholder="Note or deficiency detail…"></textarea>
+    </div></div><div class="check-item"><div class="check-row">
+      <input type="checkbox" id="c9" onchange="toggleNote(&#39;c9&#39;)">
+      <span class="check-text">Equipment fueling and storage &gt;100 ft from water resources — secondary containment in place</span>
+      <span class="check-tag tag-env">SPDES</span>
+    </div>
+    <div class="check-note-wrap" id="c9-nw">
+      <textarea class="check-note" id="c9-note" placeholder="Note or deficiency detail…"></textarea>
+    </div></div><div class="check-item"><div class="check-row">
+      <input type="checkbox" id="c10" onchange="toggleNote(&#39;c10&#39;)">
+      <span class="check-text">No turbid discharge or sediment-laden runoff observed at site perimeter or water resources</span>
+      <span class="check-tag tag-env">SPDES</span>
+    </div>
+    <div class="check-note-wrap" id="c10-nw">
+      <textarea class="check-note" id="c10-note" placeholder="Note or deficiency detail…"></textarea>
+    </div></div><div class="check-item"><div class="check-row">
+      <input type="checkbox" id="c11" onchange="toggleNote(&#39;c11&#39;)">
+      <span class="check-text">No unanticipated cultural, archaeological, or hazardous material discoveries</span>
+      <span class="check-tag tag-env">SHPO</span>
+    </div>
+    <div class="check-note-wrap" id="c11-nw">
+      <textarea class="check-note" id="c11-note" placeholder="Note or deficiency detail…"></textarea>
+    </div></div><div class="check-item"><div class="check-row">
+      <input type="checkbox" id="c12" onchange="toggleNote(&#39;c12&#39;)">
+      <span class="check-text">No RTE / State-listed species or habitat disturbance observed during operations</span>
+      <span class="check-tag tag-env">RTE</span>
+    </div>
+    <div class="check-note-wrap" id="c12-nw">
+      <textarea class="check-note" id="c12-note" placeholder="Note or deficiency detail…"></textarea>
+    </div></div><div class="check-item"><div class="check-row">
+      <input type="checkbox" id="c13" onchange="toggleNote(&#39;c13&#39;)">
+      <span class="check-text">Tree protection, invasive species controls, and buffer demarcation in place at designated limits</span>
+      <span class="check-tag tag-env">ENV</span>
+    </div>
+    <div class="check-note-wrap" id="c13-nw">
+      <textarea class="check-note" id="c13-note" placeholder="Note or deficiency detail…"></textarea>
+    </div></div></div>
+  </div>
+
+  <!-- 06 REGULATORY FLAGS -->
+  <div class="card">
+    <div class="card-head"><span class="card-num">06</span><span class="card-title">Regulatory &amp; Incident Flags</span></div>
+    <div class="card-body">
+      <div class="flag-row"><input type="checkbox" id="flag-spdes"><span class="flag-text">Turbid discharge observed — potential SPDES exceedance</span><span class="check-tag tag-env">SPDES</span></div>
+      <div class="flag-row"><input type="checkbox" id="flag-storm"><span class="flag-text">Precipitation event &gt;0.5 in. — post-storm inspection required</span><span class="check-tag tag-env">SPDES</span></div>
+      <div class="flag-row"><input type="checkbox" id="flag-buffer"><span class="flag-text">Work within 100 ft of regulated waterbody or wetland</span><span class="check-tag tag-ew">DEC</span></div>
+      <div class="flag-row"><input type="checkbox" id="flag-riparian"><span class="flag-text">Tree felling within riparian corridor or buffer zone</span><span class="check-tag tag-ew">DEC</span></div>
+      <div class="flag-row"><input type="checkbox" id="flag-discovery"><span class="flag-text">Unanticipated discovery — archaeological, cultural, or hazmat</span><span class="check-tag tag-env">SHPO</span></div>
+      <div class="flag-row"><input type="checkbox" id="flag-spill"><span class="flag-text">Fuel or hydraulic fluid spill observed</span><span class="check-tag tag-safety">SAFETY</span></div>
+      <div class="flag-row"><input type="checkbox" id="flag-nci"><span class="flag-text">Non-compliance notice issued (NCI)</span><span class="check-tag tag-lod">NCI</span></div>
+      <div class="flag-row"><input type="checkbox" id="flag-stop"><span class="flag-text">Stop-work condition observed</span><span class="check-tag tag-safety">SAFETY</span></div>
+    </div>
+  </div>
+
+  <!-- 07 GENERAL COMMS -->
+  <div class="card">
+    <div class="card-head"><span class="card-num">07</span><span class="card-title">General Communication to Contractors</span></div>
+    <div class="card-body">
+      <div class="field">
+        <label>Directives, communications, and coordination notes</label>
+        <div class="preset-strip" id="chips-genComms"><button class="preset-chip" type="button" title="Reminded crew of LOD limits and buffer no-entry zones prior to start of operations">Reminded crew of LOD limits and buffer no-entry zones pr…</button><button class="preset-chip" type="button" title="Directed contractor to verify LOD flagging before expanding into new areas">Directed contractor to verify LOD flagging before expand…</button><button class="preset-chip" type="button" title="Discussed stump height requirements with crew foreman">Discussed stump height requirements with crew foreman</button><button class="preset-chip" type="button" title="Coordinator notified of anticipated change in work area for tomorrow">Coordinator notified of anticipated change in work area …</button><button class="preset-chip" type="button" title="Confirmed post-storm inspection required prior to resuming work">Confirmed post-storm inspection required prior to resumi…</button><button class="preset-chip" type="button" title="Environmental management notified of access route condition concern">Environmental management notified of access route condit…</button></div>
+        <textarea class="tall" id="genComms" placeholder="Document directives issued, field coordination, supervisor communications, or items discussed that don&#39;t rise to a formal compliance level…"></textarea>
+      </div>
+    </div>
+  </div>
+
+  <!-- 08 24-HR LOOK AHEAD -->
+  <div class="card">
+    <div class="card-head"><span class="card-num">08</span><span class="card-title">24-Hour Look Ahead</span></div>
+    <div class="card-body">
+      <div class="field">
+        <label>Anticipated work items for tomorrow — one item per line</label>
+        <div class="preset-strip" id="chips-lookahead"><button class="preset-chip" type="button" title="Continue tree felling operations in active areas">Continue tree felling operations in active areas</button><button class="preset-chip" type="button" title="Expand felling into adjacent area per approved plan">Expand felling into adjacent area per approved plan</button><button class="preset-chip" type="button" title="EI to conduct LOD walk prior to start of operations">EI to conduct LOD walk prior to start of operations</button><button class="preset-chip" type="button" title="Equipment delivery / crew mobilization expected on site">Equipment delivery / crew mobilization expected on site</button><button class="preset-chip" type="button" title="Anticipated weather event — monitor forecast, standby for stop-work directive">Anticipated weather event — monitor forecast, standby fo…</button><button class="preset-chip" type="button" title="Post-storm inspection required prior to resuming work">Post-storm inspection required prior to resuming work</button><button class="preset-chip" type="button" title="No work anticipated — weather or crew constraint">No work anticipated — weather or crew constraint</button></div>
+        <textarea class="tall" id="lookahead" placeholder="Continue tree felling operations in Area 4
+Equipment delivery — additional chainsaw crews expected
+EI to conduct LOD walk prior to start of operations"></textarea>
+      </div>
+    </div>
+  </div>
+
+  <!-- EXPORT & SAVE -->
+  <div class="export-panel">
+    <div class="export-title">Export &amp; Save</div>
+    <div class="action-row">
+      <div>
+        <button class="btn btn-export" onclick="copyJSON()">⬆ Copy Log — Paste into Claude to Build Report</button>
+        <div class="copy-status" id="copyStatus">✓ Copied — paste into the Moraine Solar Claude project.</div>
+        <div class="export-hint">Exports report-relevant data only. Personal section never included.</div>
+      </div>
+      <div>
+        <button class="btn btn-download" onclick="downloadLog()">⬇ Download Filled Log — Save Daily Archive</button>
+        <div class="dl-status" id="dlStatus">✓ Saved — check your Downloads folder.</div>
+        <div class="export-hint" style="color:var(--personal-accent);opacity:.7">Saves complete log including personal records.<br>Re-open anytime — all entries preserved.</div>
+      </div>
+    </div>
+  </div>
+
+</div></div><!-- /page-log -->
+
+
+<!-- ══════════════════════════════════
+     CONFIG PAGE
+══════════════════════════════════ -->
+<div class="page" id="page-config"><div class="wrap">
+
+  <div class="card" style="border-color:rgba(232,160,32,.2)">
+    <div class="card-body" style="padding:13px 17px">
+      <div style="font-family:var(--mono);font-size:11px;color:var(--muted2);line-height:1.75">
+        <span style="color:var(--amber);font-weight:500">Config &amp; Presets</span> — Manage quick-insert chips that appear above text fields in the daily log.<br>
+        Tag each preset to a phase. Only <strong style="color:var(--text)">active phase</strong> presets (plus "All Phases") appear as chips. All edits save to this browser automatically.
+      </div>
+    </div>
+  </div>
+
+  <div class="config-section">
+    <div class="config-head"><span class="config-title">Active Phase</span></div>
+    <div class="config-body">
+      <p class="config-hint">Controls which preset chips appear in the daily log. Keep in sync with your current project phase.</p>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <input type="text" id="activePhaseInput" style="max-width:320px;background:var(--bg);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--body);font-size:14px;padding:8px 11px" placeholder="Active phase label">
+        <button class="btn btn-amber" style="font-size:11px;padding:7px 14px" onclick="savePhaseLabel()">Save &amp; Apply</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="config-section">
+    <div class="config-head"><span class="config-title">Field Observation Presets</span><span class="config-sub">→ Inspection Summary</span></div>
+    <div class="config-body">
+      <p class="config-hint">Quick-insert observation bullets for the Inspection Summary field.</p>
+      <ul class="preset-list" id="list-obs"></ul>
+      <div class="add-preset-row">
+        <input type="text" id="new-obs-text" placeholder="New observation…">
+        <select id="new-obs-phase"></select>
+        <button class="btn-add-p" onclick="addPreset(&#39;obs&#39;)">+ Add</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="config-section">
+    <div class="config-head"><span class="config-title">Contractor Activity Presets</span><span class="config-sub">→ Crew Block: Activities</span></div>
+    <div class="config-body">
+      <p class="config-hint">Quick-insert activities for crew block "Activities Observed" fields.</p>
+      <ul class="preset-list" id="list-act"></ul>
+      <div class="add-preset-row">
+        <input type="text" id="new-act-text" placeholder="New activity…">
+        <select id="new-act-phase"></select>
+        <button class="btn-add-p" onclick="addPreset(&#39;act&#39;)">+ Add</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="config-section">
+    <div class="config-head"><span class="config-title">Env. Compliance Observation Presets</span><span class="config-sub">→ Crew Block: Env. Compliance</span></div>
+    <div class="config-body">
+      <p class="config-hint">Quick-insert compliance observations for crew block "Env. Compliance" fields.</p>
+      <ul class="preset-list" id="list-env"></ul>
+      <div class="add-preset-row">
+        <input type="text" id="new-env-text" placeholder="New compliance observation…">
+        <select id="new-env-phase"></select>
+        <button class="btn-add-p" onclick="addPreset(&#39;env&#39;)">+ Add</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="config-section">
+    <div class="config-head"><span class="config-title">General Comms Templates</span><span class="config-sub">→ General Communication</span></div>
+    <div class="config-body">
+      <p class="config-hint">Standard directives, reminders, and communication templates.</p>
+      <ul class="preset-list" id="list-comms"></ul>
+      <div class="add-preset-row">
+        <input type="text" id="new-comms-text" placeholder="New communication template…">
+        <select id="new-comms-phase"></select>
+        <button class="btn-add-p" onclick="addPreset(&#39;comms&#39;)">+ Add</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="config-section">
+    <div class="config-head"><span class="config-title">Look Ahead Presets</span><span class="config-sub">→ 24-Hour Look Ahead</span></div>
+    <div class="config-body">
+      <p class="config-hint">Common next-day anticipated work items.</p>
+      <ul class="preset-list" id="list-look"></ul>
+      <div class="add-preset-row">
+        <input type="text" id="new-look-text" placeholder="New look ahead item…">
+        <select id="new-look-phase"></select>
+        <button class="btn-add-p" onclick="addPreset(&#39;look&#39;)">+ Add</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="config-section">
+    <div class="config-head"><span class="config-title">Phase Labels</span><span class="config-sub">Manage available phase tags</span></div>
+    <div class="config-body">
+      <p class="config-hint">Add phase tags here as the project progresses. Each preset is tagged to one phase.</p>
+      <ul class="preset-list" id="list-phases"></ul>
+      <div class="add-preset-row">
+        <input type="text" id="new-phase-text" placeholder="e.g. Phase 2 — Grading &amp; Earthwork">
+        <button class="btn-add-p" onclick="addPhase()">+ Add Phase</button>
+      </div>
+    </div>
+  </div>
+
+</div></div><!-- /page-config -->
+
+
+<script>
+// ═══════════════════════════════════════════
+// SAVED DATA RESTORE POINT
+// (replaced by downloadLog() when saving)
+// ═══════════════════════════════════════════
+const SAVED_DATA = null;
+
+// ═══════════════════════════════════════════
+// DEFAULTS & STATE
+// ═══════════════════════════════════════════
+const DEFAULT_PHASES = ['Phase 1 — Tree Felling','Phase 2 — Grading & Earthwork','Phase 3 — Construction','All Phases'];
+const DEFAULT_PRESETS = {
+  obs:[
+    {text:'EI attended the morning safety meeting/tailgate at 6:30 AM',phase:'Phase 1 — Tree Felling'},
+    {text:'EI conducted walkthrough inspection of all active felling areas',phase:'Phase 1 — Tree Felling'},
+    {text:'Directional felling observed — trees felled away from wetland buffers and LOD boundaries',phase:'Phase 1 — Tree Felling'},
+    {text:'Stump heights observed at or below 6 inches above grade',phase:'Phase 1 — Tree Felling'},
+    {text:'Slash and felled material managed within LOD',phase:'Phase 1 — Tree Felling'},
+    {text:'All work observed within staked Limits of Disturbance (LOD)',phase:'Phase 1 — Tree Felling'},
+    {text:'Wetland and stream buffer boundaries remained intact and undisturbed',phase:'Phase 1 — Tree Felling'},
+    {text:'Access routes and staging areas within approved footprint',phase:'Phase 1 — Tree Felling'},
+    {text:'No turbid discharge or sediment-laden runoff observed at site perimeter',phase:'All Phases'},
+  ],
+  act:[
+    {text:'Tree felling with chainsaw crews',phase:'Phase 1 — Tree Felling'},
+    {text:'Directional felling of trees ≥3" DBH',phase:'Phase 1 — Tree Felling'},
+    {text:'Slash/brush management and pile staging',phase:'Phase 1 — Tree Felling'},
+    {text:'Limbing and bucking of felled material',phase:'Phase 1 — Tree Felling'},
+    {text:'Equipment staging and access route maintenance',phase:'Phase 1 — Tree Felling'},
+    {text:'LOD flagging and boundary verification',phase:'Phase 1 — Tree Felling'},
+    {text:'Morning safety tailgate / crew briefing',phase:'All Phases'},
+    {text:'General site mobilization and setup',phase:'All Phases'},
+  ],
+  env:[
+    {text:'Work conducted within LOD — no encroachment observed',phase:'Phase 1 — Tree Felling'},
+    {text:'Wetland buffer markers intact and undisturbed',phase:'Phase 1 — Tree Felling'},
+    {text:'Stream buffer maintained — no felling within riparian corridor',phase:'Phase 1 — Tree Felling'},
+    {text:'No turbid discharge or runoff observed',phase:'All Phases'},
+    {text:'Equipment staged >100 ft from water resources',phase:'All Phases'},
+    {text:'No fuel or hydraulic spills observed',phase:'All Phases'},
+    {text:'No RTE species or habitat disturbance observed',phase:'All Phases'},
+    {text:'Environmental controls in satisfactory condition',phase:'All Phases'},
+  ],
+  comms:[
+    {text:'Reminded crew of LOD limits and buffer no-entry zones prior to start of operations',phase:'Phase 1 — Tree Felling'},
+    {text:'Directed contractor to verify LOD flagging before expanding into new areas',phase:'Phase 1 — Tree Felling'},
+    {text:'Discussed stump height requirements with crew foreman',phase:'Phase 1 — Tree Felling'},
+    {text:'Coordinator notified of anticipated change in work area for tomorrow',phase:'All Phases'},
+    {text:'Confirmed post-storm inspection required prior to resuming work',phase:'All Phases'},
+    {text:'Environmental management notified of access route condition concern',phase:'All Phases'},
+  ],
+  look:[
+    {text:'Continue tree felling operations in active areas',phase:'Phase 1 — Tree Felling'},
+    {text:'Expand felling into adjacent area per approved plan',phase:'Phase 1 — Tree Felling'},
+    {text:'EI to conduct LOD walk prior to start of operations',phase:'Phase 1 — Tree Felling'},
+    {text:'Equipment delivery / crew mobilization expected on site',phase:'All Phases'},
+    {text:'Anticipated weather event — monitor forecast, standby for stop-work directive',phase:'All Phases'},
+    {text:'Post-storm inspection required prior to resuming work',phase:'All Phases'},
+    {text:'No work anticipated — weather or crew constraint',phase:'All Phases'},
+  ],
+};
+
+function ls(k,d){try{const v=localStorage.getItem(k);return v?JSON.parse(v):d}catch{return d}}
+function ss(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch{}}
+
+let phases           = ls('msf_phases',  DEFAULT_PHASES);
+let presets          = ls('msf_presets', DEFAULT_PRESETS);
+let activePhaseLabel = ls('msf_activephase','Phase 1 — Tree Felling');
+let crewSeq=0, crewIds=[];
+
+// ═══════════════════════════════════════════
+// PAGE SWITCHING
+// ═══════════════════════════════════════════
+function showPage(name){
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+  document.getElementById('page-'+name).classList.add('active');
+  document.getElementById('tab-'+name).classList.add('active');
+  if(name==='config') renderConfig();
+}
+
+// ═══════════════════════════════════════════
+// PERSONAL CALCS
+// ═══════════════════════════════════════════
+function calcMiles(){
+  const s=parseFloat(document.getElementById('p-odoStart').value)||0;
+  const e=parseFloat(document.getElementById('p-odoEnd').value)||0;
+  document.getElementById('p-miles').textContent = (s&&e&&e>s) ? `${(e-s).toFixed(1)} mi` : '— mi';
+}
+
+function calcHours(){
+  const inn=document.getElementById('p-timeIn').value;
+  const out=document.getElementById('p-timeOut').value;
+  if(!inn||!out){document.getElementById('p-hours').textContent='— hrs';return}
+  const [ih,im]=inn.split(':').map(Number);
+  const [oh,om]=out.split(':').map(Number);
+  const mins=(oh*60+om)-(ih*60+im);
+  if(mins<=0){document.getElementById('p-hours').textContent='— hrs';return}
+  const h=Math.floor(mins/60),m=mins%60;
+  document.getElementById('p-hours').textContent=`${h}h ${m}m`;
+}
+document.getElementById('p-timeIn').addEventListener('change',calcHours);
+document.getElementById('p-timeOut').addEventListener('change',calcHours);
+
+// ═══════════════════════════════════════════
+// CHECKLIST
+// ═══════════════════════════════════════════
+const CHECKS=[
+  {id:'c1', text:'Morning safety meeting / tailgate conducted at 6:30 AM prior to work start',tag:'ops',tl:'OPS'},
+  {id:'c2', text:'All active work areas within staked Limits of Disturbance (LOD)',tag:'lod',tl:'LOD'},
+  {id:'c3', text:'Directional felling — trees felled away from wetland and stream buffers and LOD boundaries',tag:'ops',tl:'OPS'},
+  {id:'c4', text:'Stump heights at or below 6 inches above ground level',tag:'ops',tl:'OPS'},
+  {id:'c5', text:'Slash and felled material managed within LOD — no encroachment beyond staked limits',tag:'lod',tl:'LOD'},
+  {id:'c6', text:'No tree felling within wetland buffer or stream riparian corridor',tag:'ew',tl:'WETLAND'},
+  {id:'c7', text:'Wetland and stream buffer markers intact, visible, and undisturbed',tag:'ew',tl:'WETLAND'},
+  {id:'c8', text:'Access routes and staging areas within approved footprint',tag:'lod',tl:'LOD'},
+  {id:'c9', text:'Equipment fueling and storage >100 ft from water resources — secondary containment in place',tag:'env',tl:'SPDES'},
+  {id:'c10',text:'No turbid discharge or sediment-laden runoff observed at site perimeter or water resources',tag:'env',tl:'SPDES'},
+  {id:'c11',text:'No unanticipated cultural, archaeological, or hazardous material discoveries',tag:'env',tl:'SHPO'},
+  {id:'c12',text:'No RTE / State-listed species or habitat disturbance observed during operations',tag:'env',tl:'RTE'},
+  {id:'c13',text:'Tree protection, invasive species controls, and buffer demarcation in place at designated limits',tag:'env',tl:'ENV'},
+];
+
+function buildChecklist(){
+  const c=document.getElementById('checklistBody');c.innerHTML='';
+  CHECKS.forEach(ch=>{
+    const d=document.createElement('div');d.className='check-item';
+    d.innerHTML=`<div class="check-row">
+      <input type="checkbox" id="${ch.id}" onchange="toggleNote('${ch.id}')">
+      <span class="check-text">${ch.text}</span>
+      <span class="check-tag tag-${ch.tag}">${ch.tl}</span>
+    </div>
+    <div class="check-note-wrap" id="${ch.id}-nw">
+      <textarea class="check-note" id="${ch.id}-note" placeholder="Note or deficiency detail…"></textarea>
+    </div>`;
+    c.appendChild(d);
+  });
+}
+function toggleNote(id){document.getElementById(id+'-nw').classList.toggle('vis',document.getElementById(id).checked)}
+
+// ═══════════════════════════════════════════
+// CREW BLOCKS
+// ═══════════════════════════════════════════
+function addCrew(){
+  crewSeq++;const id=crewSeq;crewIds.push(id);updateCrewBadge();
+  const d=document.createElement('div');d.className='crew-block';d.id=`crew-${id}`;
+  d.innerHTML=`
+    <div class="crew-block-head">
+      <span class="crew-lbl">Crew Block ${crewIds.length}</span>
+      <button class="btn btn-ghost" onclick="removeCrew(${id})">✕ Remove</button>
+    </div>
+    <div class="crew-body">
+      <div class="g g3" style="margin-bottom:11px">
+        <div class="field span2"><label>Crew Member / Foreman Name</label><input type="text" id="crew-${id}-name" placeholder="Full name"></div>
+        <div class="field"><label>Hours on Site</label><input type="text" id="crew-${id}-time" placeholder="e.g. 6:30 AM – 4:30 PM"></div>
+        <div class="field full"><label>Work Location / Area</label><input type="text" id="crew-${id}-loc" placeholder="e.g. Area 3 — north hillside, adjacent to wetland buffer"></div>
+      </div>
+      <div class="field" style="margin-bottom:10px">
+        <label>Activities Observed</label>
+        <div class="preset-strip" id="chips-crew-${id}-acts"></div>
+        <textarea class="short" id="crew-${id}-acts" placeholder="Describe contractor activities observed…"></textarea>
+      </div>
+      <div class="field" style="margin-bottom:10px">
+        <label>Env. Compliance Observations</label>
+        <div class="preset-strip" id="chips-crew-${id}-envcomp"></div>
+        <textarea class="short" id="crew-${id}-envcomp" placeholder="Note compliance or any deficiency observed for this crew…"></textarea>
+      </div>
+      <div class="g g2">
+        <div class="field"><label>Issues / Non-Compliance (Level 1–4 if known)</label><textarea class="short" id="crew-${id}-issues" placeholder="e.g. Level 2 — slash material observed 3 ft beyond LOD at north boundary…"></textarea></div>
+        <div class="field"><label>Additional Notes</label><textarea class="short" id="crew-${id}-notes" placeholder="Any other notes for this crew member or area…"></textarea></div>
+      </div>
+    </div>`;
+  document.getElementById('crewContainer').appendChild(d);
+  renderChips(`crew-${id}-acts`,'act');
+  renderChips(`crew-${id}-envcomp`,'env');
+}
+function removeCrew(id){
+  const el=document.getElementById(`crew-${id}`);if(el)el.remove();
+  crewIds=crewIds.filter(x=>x!==id);updateCrewBadge();renumberCrew();
+}
+function updateCrewBadge(){document.getElementById('crewBadge').textContent=`${crewIds.length} block${crewIds.length!==1?'s':''}`}
+function renumberCrew(){crewIds.forEach((id,i)=>{const l=document.querySelector(`#crew-${id} .crew-lbl`);if(l)l.textContent=`Crew Block ${i+1}`})}
+
+// ═══════════════════════════════════════════
+// PRESET CHIPS
+// ═══════════════════════════════════════════
+function renderChips(stripId, key){
+  const strip=document.getElementById('chips-'+stripId);if(!strip)return;
+  strip.innerHTML='';
+  const items=(presets[key]||[]).filter(p=>p.phase===activePhaseLabel||p.phase==='All Phases');
+  items.forEach(item=>{
+    const btn=document.createElement('button');btn.className='preset-chip';btn.type='button';btn.title=item.text;
+    btn.textContent=item.text.length>58?item.text.slice(0,56)+'…':item.text;
+    btn.onclick=()=>appendField(stripId,item.text);
+    strip.appendChild(btn);
+  });
+}
+function appendField(fieldId,text){
+  const el=document.getElementById(fieldId);if(!el)return;
+  const cur=el.value.trim();el.value=cur?cur+'\n'+text:text;
+  el.focus();el.scrollTop=el.scrollHeight;
+}
+function renderAllChips(){
+  renderChips('inspSummary','obs');renderChips('genComms','comms');renderChips('lookahead','look');
+  crewIds.forEach(id=>{renderChips(`crew-${id}-acts`,'act');renderChips(`crew-${id}-envcomp`,'env')});
+}
+
+// ═══════════════════════════════════════════
+// CONFIG
+// ═══════════════════════════════════════════
+function renderConfig(){
+  document.getElementById('activePhaseInput').value=activePhaseLabel;
+  renderPhaseList();populateSelects();
+  ['obs','act','env','comms','look'].forEach(k=>renderPresetList(k));
+}
+function renderPhaseList(){
+  const ul=document.getElementById('list-phases');ul.innerHTML='';
+  phases.forEach((ph,i)=>{
+    const li=document.createElement('li');
+    li.innerHTML=`<span class="p-text">${ph}</span>${ph===activePhaseLabel?'<span class="phase-badge">active</span>':''}<button class="del-p" onclick="removePhase(${i})">✕</button>`;
+    ul.appendChild(li);
+  });
+}
+function renderPresetList(key){
+  const ids={obs:'list-obs',act:'list-act',env:'list-env',comms:'list-comms',look:'list-look'};
+  const ul=document.getElementById(ids[key]);ul.innerHTML='';
+  (presets[key]||[]).forEach((item,i)=>{
+    const li=document.createElement('li');
+    li.innerHTML=`<span class="p-text">${item.text}</span><span class="p-phase">${item.phase}</span><button class="del-p" onclick="removePreset('${key}',${i})">✕</button>`;
+    ul.appendChild(li);
+  });
+}
+function populateSelects(){
+  ['obs','act','env','comms','look'].forEach(k=>{
+    const sel=document.getElementById(`new-${k}-phase`);if(!sel)return;
+    sel.innerHTML=phases.map(p=>`<option value="${p}">${p}</option>`).join('');
+    sel.value=activePhaseLabel;
+  });
+}
+function addPreset(key){
+  const t=document.getElementById(`new-${key}-text`),ph=document.getElementById(`new-${key}-phase`);
+  if(!t.value.trim())return;
+  if(!presets[key])presets[key]=[];
+  presets[key].push({text:t.value.trim(),phase:ph.value});
+  ss('msf_presets',presets);t.value='';renderPresetList(key);renderAllChips();
+}
+function removePreset(key,idx){
+  presets[key].splice(idx,1);ss('msf_presets',presets);renderPresetList(key);renderAllChips();
+}
+function addPhase(){
+  const inp=document.getElementById('new-phase-text');const val=inp.value.trim();
+  if(!val||phases.includes(val))return;
+  phases.push(val);ss('msf_phases',phases);inp.value='';renderPhaseList();populateSelects();
+}
+function removePhase(idx){
+  if(phases[idx]===activePhaseLabel){alert('Cannot remove the currently active phase.');return}
+  phases.splice(idx,1);ss('msf_phases',phases);renderPhaseList();populateSelects();
+}
+function savePhaseLabel(){
+  const val=document.getElementById('activePhaseInput').value.trim();if(!val)return;
+  activePhaseLabel=val;ss('msf_activephase',activePhaseLabel);
+  document.getElementById('activePhase').value=val;
+  renderPhaseList();renderAllChips();
+}
+
+// ═══════════════════════════════════════════
+// COLLECT ALL FORM STATE (for download)
+// ═══════════════════════════════════════════
+function collectFormState(){
+  // Simple fields
+  const fields=['projectName','reportDate','preparedBy','org','activePhase','contractor','reviewedBy',
+    'tempAM','tempPM','wind','precip','soilCond','upcomingWeather',
+    'inspSummary','agencyInsp','landowner','rte','nonCompliance',
+    'genComms','lookahead',
+    'p-timeIn','p-timeOut','p-odoStart','p-odoEnd','p-notes'];
+  const state={fields:{},sky:'',checkboxes:{},checklist:{},crew:[],crewSeq,crewIds:[...crewIds]};
+  fields.forEach(id=>{const el=document.getElementById(id);if(el)state.fields[id]=el.value});
+  state.sky=document.querySelector('input[name="sky"]:checked')?.value||'';
+  // Flags
+  ['spdes','storm','buffer','riparian','discovery','spill','nci','stop'].forEach(f=>{
+    state.checkboxes['flag-'+f]=document.getElementById('flag-'+f)?.checked||false;
+  });
+  // Checklist
+  CHECKS.forEach(c=>{
+    state.checklist[c.id]={checked:document.getElementById(c.id)?.checked||false,note:document.getElementById(c.id+'-note')?.value||''};
+  });
+  // Crew blocks
+  crewIds.forEach(id=>{
+    const block={id};
+    ['name','time','loc','acts','envcomp','issues','notes'].forEach(f=>{
+      block[f]=document.getElementById(`crew-${id}-${f}`)?.value||'';
+    });
+    state.crew.push(block);
+  });
+  return state;
+}
+
+// ═══════════════════════════════════════════
+// RESTORE FORM STATE (on re-open)
+// ═══════════════════════════════════════════
+function restoreFormState(state){
+  if(!state)return;
+  // Fields
+  Object.entries(state.fields||{}).forEach(([id,val])=>{const el=document.getElementById(id);if(el)el.value=val});
+  // Sky
+  if(state.sky){const r=document.querySelector(`input[name="sky"][value="${state.sky}"]`);if(r)r.checked=true}
+  // Checkboxes
+  Object.entries(state.checkboxes||{}).forEach(([id,val])=>{const el=document.getElementById(id);if(el)el.checked=val});
+  // Checklist
+  Object.entries(state.checklist||{}).forEach(([id,{checked,note}])=>{
+    const cb=document.getElementById(id);if(cb){cb.checked=checked;if(checked){const nw=document.getElementById(id+'-nw');if(nw)nw.classList.add('vis')}}
+    const nt=document.getElementById(id+'-note');if(nt)nt.value=note;
+  });
+  // Crew — restore sequence
+  crewSeq=state.crewSeq||0;
+  (state.crew||[]).forEach(block=>{
+    crewIds.push(block.id);
+    const d=document.createElement('div');d.className='crew-block';d.id=`crew-${block.id}`;
+    const idx=crewIds.indexOf(block.id);
+    d.innerHTML=buildCrewHTML(block.id, idx+1);
+    document.getElementById('crewContainer').appendChild(d);
+    ['acts','envcomp'].forEach(f=>renderChips(`crew-${block.id}-${f}`,f==='acts'?'act':'env'));
+    ['name','time','loc','acts','envcomp','issues','notes'].forEach(f=>{
+      const el=document.getElementById(`crew-${block.id}-${f}`);if(el)el.value=block[f]||'';
+    });
+  });
+  updateCrewBadge();
+  calcMiles();calcHours();
+}
+
+function buildCrewHTML(id, num){
+  return `<div class="crew-block-head">
+      <span class="crew-lbl">Crew Block ${num}</span>
+      <button class="btn btn-ghost" onclick="removeCrew(${id})">✕ Remove</button>
+    </div>
+    <div class="crew-body">
+      <div class="g g3" style="margin-bottom:11px">
+        <div class="field span2"><label>Crew Member / Foreman Name</label><input type="text" id="crew-${id}-name" placeholder="Full name"></div>
+        <div class="field"><label>Hours on Site</label><input type="text" id="crew-${id}-time" placeholder="e.g. 6:30 AM – 4:30 PM"></div>
+        <div class="field full"><label>Work Location / Area</label><input type="text" id="crew-${id}-loc" placeholder="e.g. Area 3 — north hillside, adjacent to wetland buffer"></div>
+      </div>
+      <div class="field" style="margin-bottom:10px">
+        <label>Activities Observed</label>
+        <div class="preset-strip" id="chips-crew-${id}-acts"></div>
+        <textarea class="short" id="crew-${id}-acts" placeholder="Describe contractor activities observed…"></textarea>
+      </div>
+      <div class="field" style="margin-bottom:10px">
+        <label>Env. Compliance Observations</label>
+        <div class="preset-strip" id="chips-crew-${id}-envcomp"></div>
+        <textarea class="short" id="crew-${id}-envcomp" placeholder="Note compliance or any deficiency observed for this crew…"></textarea>
+      </div>
+      <div class="g g2">
+        <div class="field"><label>Issues / Non-Compliance (Level 1–4 if known)</label><textarea class="short" id="crew-${id}-issues" placeholder="e.g. Level 2 — slash material observed 3 ft beyond LOD…"></textarea></div>
+        <div class="field"><label>Additional Notes</label><textarea class="short" id="crew-${id}-notes" placeholder="Any other notes…"></textarea></div>
+      </div>
+    </div>`;
+}
+
+// ═══════════════════════════════════════════
+// AUTO-SAVE (localStorage — survives refresh)
+// ═══════════════════════════════════════════
+function autoSave(){
+  try{ localStorage.setItem('msf_autosave', JSON.stringify(collectFormState())); }catch{}
+}
+
+// Debounce so rapid typing doesn't hammer storage
+let _asTimer=null;
+function debouncedAutoSave(){ clearTimeout(_asTimer); _asTimer=setTimeout(autoSave,600); }
+
+// Event delegation — catches all inputs including dynamically added crew blocks
+document.addEventListener('input',  debouncedAutoSave);
+document.addEventListener('change', debouncedAutoSave);
+
+// ═══════════════════════════════════════════
+// COPY JSON EXPORT (report fields only)
+// ═══════════════════════════════════════════
+function copyJSON(){
+  const sky=document.querySelector('input[name="sky"]:checked')?.value||'';
+  const checklist=CHECKS.map(c=>({item:c.text,checked:!!document.getElementById(c.id)?.checked,note:document.getElementById(c.id+'-note')?.value.trim()||''}));
+  const flagIds=['spdes','storm','buffer','riparian','discovery','spill','nci','stop'];
+  const flags=flagIds.filter(f=>document.getElementById('flag-'+f)?.checked).map(f=>document.getElementById('flag-'+f).closest('.flag-row').querySelector('.flag-text').textContent.trim());
+  const crew=crewIds.map(id=>({
+    name:    document.getElementById(`crew-${id}-name`)?.value.trim()||'',
+    time:    document.getElementById(`crew-${id}-time`)?.value.trim()||'',
+    location:document.getElementById(`crew-${id}-loc`)?.value.trim()||'',
+    activities:   document.getElementById(`crew-${id}-acts`)?.value.trim()||'',
+    envCompliance:document.getElementById(`crew-${id}-envcomp`)?.value.trim()||'',
+    issues:  document.getElementById(`crew-${id}-issues`)?.value.trim()||'',
+    notes:   document.getElementById(`crew-${id}-notes`)?.value.trim()||'',
+  }));
+  const data={
+    _source:'Moraine Solar EI Field Log',
+    project:    document.getElementById('projectName').value,
+    reportDate: document.getElementById('reportDate').value,
+    preparedBy: document.getElementById('preparedBy').value,
+    org:        document.getElementById('org').value,
+    activePhase:document.getElementById('activePhase').value,
+    contractor: document.getElementById('contractor').value,
+    location:   document.getElementById('location').value,
+    reviewedBy: document.getElementById('reviewedBy').value,
+    weather:{sky,tempAM:document.getElementById('tempAM').value,tempPM:document.getElementById('tempPM').value,wind:document.getElementById('wind').value,precip:document.getElementById('precip').value,soilConditions:document.getElementById('soilCond').value,upcomingForecast:document.getElementById('upcomingWeather').value},
+    inspectionSummary:document.getElementById('inspSummary').value.trim(),
+    agencyInspection: document.getElementById('agencyInsp').value.trim(),
+    landownerContact: document.getElementById('landowner').value.trim(),
+    rteObservation:   document.getElementById('rte').value.trim(),
+    nonCompliance:    document.getElementById('nonCompliance').value.trim(),
+    crewBlocks:crew,
+    complianceChecklist:checklist,
+    regulatoryFlags:flags,
+    generalComms:document.getElementById('genComms').value.trim(),
+    lookahead:   document.getElementById('lookahead').value.trim(),
+  };
+  const out=`EI FIELD LOG — MORAINE SOLAR ENERGY CENTER\nBuild today's report.\n\n\`\`\`json\n${JSON.stringify(data,null,2)}\n\`\`\``;
+  const fn=()=>{const s=document.getElementById('copyStatus');s.classList.add('show');setTimeout(()=>s.classList.remove('show'),3500)};
+  if(navigator.clipboard){navigator.clipboard.writeText(out).then(fn).catch(()=>fbCopy(out,fn))}else{fbCopy(out,fn)}
+}
+function fbCopy(text,cb){const ta=document.createElement('textarea');ta.value=text;document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);cb()}
+
+// ═══════════════════════════════════════════
+// DOWNLOAD FILLED LOG
+// ═══════════════════════════════════════════
+function downloadLog(){
+  const state=collectFormState();
+  const stateJSON=JSON.stringify(state);
+  let src=document.documentElement.outerHTML;
+  src=src.replace('const SAVED_DATA = null;',`const SAVED_DATA = ${stateJSON};`);
+  const raw=document.getElementById('reportDate').value||new Date().toISOString().split('T')[0];
+  const [y,m,d]=raw.split('-');
+  const filename=`${m}-${d}-${y}_Moraine_Solar-Daily_Inspection_Report.html`;
+  const blob=new Blob([src],{type:'text/html;charset=utf-8'});
+  const showStatus=()=>{const s=document.getElementById('dlStatus');s.classList.add('show');setTimeout(()=>s.classList.remove('show'),3500);};
+  // iOS Safari: use Web Share API with File — triggers native share sheet with "Save to Files"
+  if(navigator.canShare && navigator.share){
+    const file=new File([blob],filename,{type:'text/html'});
+    if(navigator.canShare({files:[file]})){
+      navigator.share({files:[file],title:filename})
+        .then(showStatus)
+        .catch(err=>{if(err.name!=='AbortError'){fallbackDownload(blob,filename);}});
+      return;
+    }
+  }
+  fallbackDownload(blob,filename);
+  showStatus();
+}
+function fallbackDownload(blob,filename){
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url;a.download=filename;a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ═══════════════════════════════════════════
+// RESET
+// ═══════════════════════════════════════════
+function resetForm(){
+  if(!confirm('Reset the daily log? All entries will be cleared. Config and presets are preserved.'))return;
+  document.querySelectorAll('#page-log input[type=text]:not([readonly]),#page-log input[type=number],#page-log input[type=time],#page-log textarea').forEach(el=>el.value='');
+  document.querySelectorAll('#page-log input[type=date]').forEach(el=>el.value='');
+  document.querySelectorAll('#page-log input[type=checkbox],#page-log input[type=radio]').forEach(el=>el.checked=false);
+  document.querySelectorAll('.check-note-wrap').forEach(el=>el.classList.remove('vis'));
+  document.getElementById('crewContainer').innerHTML='';crewIds=[];crewSeq=0;updateCrewBadge();
+  document.getElementById('p-miles').textContent='— mi';
+  document.getElementById('p-hours').textContent='— hrs';
+  document.getElementById('reportDate').value=new Date().toISOString().split('T')[0];
+  document.getElementById('projectName').value='Moraine Solar Energy Center';
+  document.getElementById('preparedBy').value='Tim Shortz';
+  document.getElementById('org').value='London Environmental LLC';
+  document.getElementById('activePhase').value=activePhaseLabel;
+  document.getElementById('contractor').value='Supreme Industries';
+  document.getElementById('reviewedBy').value='Robert Forest Rung';
+  try{ localStorage.removeItem('msf_autosave'); }catch{}
+}
+
+// ═══════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════
+document.getElementById('reportDate').value=new Date().toISOString().split('T')[0];
+document.getElementById('activePhase').value=activePhaseLabel;
+buildChecklist();
+renderAllChips();
+
+// Restore saved data if this is a re-opened archived file
+if(SAVED_DATA){
+  restoreFormState(SAVED_DATA);
+} else {
+  // Restore from auto-save if browser was refreshed / phone locked
+  try{
+    const autoSaved = localStorage.getItem('msf_autosave');
+    if(autoSaved){
+      const state = JSON.parse(autoSaved);
+      restoreFormState(state);
+      // Show recovery banner
+      const banner = document.createElement('div');
+      banner.id = 'autosave-banner';
+      banner.style.cssText='position:fixed;top:56px;left:0;right:0;z-index:999;background:#1a2e1a;border-bottom:1px solid #2e6e2e;color:#6ecf6e;font-family:monospace;font-size:12px;padding:8px 18px;display:flex;justify-content:space-between;align-items:center;';
+      banner.innerHTML='<span>⟳ Auto-saved session restored — your entries are back.</span><button onclick="document.getElementById(\'autosave-banner\').remove()" style="background:none;border:none;color:#6ecf6e;cursor:pointer;font-size:16px;line-height:1;">✕</button>';
+      document.body.prepend(banner);
+      setTimeout(()=>{ const b=document.getElementById('autosave-banner'); if(b)b.remove(); }, 6000);
+    }
+  }catch{}
+}
+</script>
+
+
+</body></html>
