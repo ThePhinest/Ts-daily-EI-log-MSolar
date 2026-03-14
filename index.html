@@ -3,17 +3,24 @@
 <html lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Moraine Solar — EI Daily Field Log</title>
+<meta name="theme-color" content="#004C54">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Phinest EI">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="manifest" href="manifest.json">
+<title>Phinest EI — Field Log</title>
 <link rel="preconnect" href="https://fonts.googleapis.com/">
-<link href="./Moraine Solar — EI Daily Field Log_files/css2" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
 :root {
-  --bg:#0d1018;--s1:#131720;--s2:#191e2d;--s3:#1f2438;
-  --border:#242b3e;--border2:#2e3650;
-  --amber:#e8a020;--amber2:#f0c060;--amber-bg:rgba(232,160,32,0.08);
-  --text:#dde3f0;--muted:#50607c;--muted2:#7a8fb0;
+  /* Eagles color scheme */
+  --bg:#000000;--s1:#001a1c;--s2:#002b2e;--s3:#004C54;
+  --border:#005a64;--border2:#006A75;
+  --amber:#A5ACAF;--amber2:#C8CDD0;--amber-bg:rgba(165,172,175,0.1);
+  --text:#FFFFFF;--muted:#5a8a8e;--muted2:#7ab5b8;
   --green:#27ae60;--red:#e74c3c;
-  --personal-border:#3a3560;--personal-bg:rgba(58,53,96,0.18);--personal-accent:#8878cc;--personal-accent2:#a898e8;
+  --personal-border:#006A75;--personal-bg:rgba(0,76,84,0.25);--personal-accent:#7ab5b8;--personal-accent2:#A5ACAF;
   --mono:'IBM Plex Mono',monospace;--cond:'Barlow Condensed',sans-serif;--body:'Barlow',sans-serif;
   --r:7px;
 }
@@ -82,8 +89,8 @@ select{cursor:pointer}
 .btn-outline{background:transparent;border:1px solid var(--border2);color:var(--text)}.btn-outline:hover{border-color:var(--amber);color:var(--amber)}
 .btn-ghost{background:transparent;border:1px solid var(--border);color:var(--muted2);font-size:11px;padding:5px 10px}.btn-ghost:hover{border-color:var(--red);color:var(--red)}
 .btn-add{background:transparent;border:1px dashed var(--border2);color:var(--muted2);width:100%;justify-content:center;padding:9px;margin-top:10px;border-radius:var(--r)}.btn-add:hover{border-color:var(--amber);color:var(--amber)}
-.btn-export{background:linear-gradient(135deg,#1c2a50,#131d3a);border:1px solid #2e4080;color:#7a9fe0;padding:12px 20px;font-size:13.5px;width:100%;justify-content:center;border-radius:var(--r)}.btn-export:hover{border-color:#5070c0;color:#a0c0ff}
-.btn-download{background:linear-gradient(135deg,#1e1a38,#141025);border:1px solid var(--personal-border);color:var(--personal-accent2);padding:10px 20px;font-size:13px;width:100%;justify-content:center;border-radius:var(--r)}.btn-download:hover{border-color:var(--personal-accent);color:#c0b0ff}
+.btn-export{background:linear-gradient(135deg,#002b2e,#001a1c);border:1px solid #006A75;color:#7ab5b8;padding:12px 20px;font-size:13.5px;width:100%;justify-content:center;border-radius:var(--r)}.btn-export:hover{border-color:#A5ACAF;color:#C8CDD0}
+.btn-download{background:linear-gradient(135deg,#001a1c,#000000);border:1px solid var(--personal-border);color:var(--personal-accent2);padding:10px 20px;font-size:13px;width:100%;justify-content:center;border-radius:var(--r)}.btn-download:hover{border-color:var(--personal-accent);color:#ffffff}
 
 /* ACTION ROW */
 .action-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px}
@@ -161,7 +168,7 @@ select{cursor:pointer}
 <!-- APP BAR -->
 <div class="app-bar">
   <div>
-    <div class="app-title">EI Field Log</div>
+    <div class="app-title">Phinest EI</div>
     <div class="app-sub">Moraine Solar Energy Center</div>
   </div>
   <div class="bar-spacer"></div>
@@ -1067,7 +1074,7 @@ if(SAVED_DATA){
       // Show recovery banner
       const banner = document.createElement('div');
       banner.id = 'autosave-banner';
-      banner.style.cssText='position:fixed;top:56px;left:0;right:0;z-index:999;background:#1a2e1a;border-bottom:1px solid #2e6e2e;color:#6ecf6e;font-family:monospace;font-size:12px;padding:8px 18px;display:flex;justify-content:space-between;align-items:center;';
+      banner.style.cssText='position:fixed;top:56px;left:0;right:0;z-index:999;background:#001a1c;border-bottom:1px solid #006A75;color:#7ab5b8;font-family:monospace;font-size:12px;padding:8px 18px;display:flex;justify-content:space-between;align-items:center;';
       banner.innerHTML='<span>⟳ Auto-saved session restored — your entries are back.</span><button onclick="document.getElementById(\'autosave-banner\').remove()" style="background:none;border:none;color:#6ecf6e;cursor:pointer;font-size:16px;line-height:1;">✕</button>';
       document.body.prepend(banner);
       setTimeout(()=>{ const b=document.getElementById('autosave-banner'); if(b)b.remove(); }, 6000);
@@ -1076,5 +1083,17 @@ if(SAVED_DATA){
 }
 </script>
 
+<script>
+// ═══════════════════════════════════════════
+// PWA SERVICE WORKER REGISTRATION
+// ═══════════════════════════════════════════
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/Ts-daily-EI-log-MSolar/sw.js')
+      .then(reg => console.log('Phinest EI: Service Worker registered', reg.scope))
+      .catch(err => console.warn('Phinest EI: SW registration failed', err));
+  });
+}
+</script>
 
 </body></html>

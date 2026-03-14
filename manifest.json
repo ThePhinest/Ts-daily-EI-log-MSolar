@@ -1,0 +1,25 @@
+{
+  "name": "Phinest EI",
+  "short_name": "Phinest EI",
+  "description": "Moraine Solar Energy Center — EI Daily Field Log",
+  "start_url": "/Ts-daily-EI-log-MSolar/",
+  "scope": "/Ts-daily-EI-log-MSolar/",
+  "display": "standalone",
+  "background_color": "#000000",
+  "theme_color": "#004C54",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
