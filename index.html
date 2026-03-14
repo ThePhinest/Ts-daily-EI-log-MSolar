@@ -97,7 +97,7 @@ select{cursor:pointer}
 @media(max-width:600px){.action-row{grid-template-columns:1fr}}
 
 /* SKY PILLS */
-.sky-opts{display:flex;flex-wrap:wrap;gap:7px}.sky-opts input[type=radio]{display:none}
+.sky-opts{display:flex;flex-wrap:wrap;gap:7px}.sky-opts input[type=checkbox]{display:none}
 .sky-opts label{background:var(--bg);border:1px solid var(--border);border-radius:5px;padding:6px 12px;cursor:pointer;font-family:var(--body);font-size:13px;font-weight:500;color:var(--muted2);text-transform:none;letter-spacing:0;transition:all .12s;display:flex;align-items:center;gap:5px}
 .sky-opts input:checked+label{border-color:var(--amber);background:var(--amber-bg);color:var(--amber)}
 
@@ -120,9 +120,13 @@ select{cursor:pointer}
 .check-note:focus{outline:none;border-color:var(--amber)}
 
 /* FLAGS */
-.flag-row{display:flex;align-items:center;gap:12px;padding:9px 0;border-bottom:1px solid rgba(36,43,62,.5)}.flag-row:last-child{border-bottom:none}
+.flag-row{padding:9px 0;border-bottom:1px solid rgba(36,43,62,.5)}.flag-row:last-child{border-bottom:none}
+.flag-main{display:flex;align-items:center;gap:12px}
 .flag-row input[type=checkbox]{width:17px;height:17px;accent-color:var(--red);cursor:pointer;flex-shrink:0}
 .flag-text{flex:1;font-size:13.5px}
+.flag-note-wrap{margin-top:7px;margin-left:29px;display:none}.flag-note-wrap.vis{display:block}
+.flag-note{width:100%;background:var(--s2);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:var(--body);font-size:13px;padding:6px 10px;resize:vertical;min-height:48px;line-height:1.5;transition:border-color .15s}
+.flag-note:focus{outline:none;border-color:var(--red)}
 
 /* EXPORT PANEL */
 .export-panel{background:var(--s1);border:1px solid var(--border);border-radius:var(--r);padding:18px;margin-bottom:16px}
@@ -257,7 +261,7 @@ select{cursor:pointer}
       <div class="g g4" style="margin-bottom:15px">
         <div class="field"><label>AM Temp (°F)</label><input type="number" id="tempAM" placeholder="°F"></div>
         <div class="field"><label>PM Temp (°F)</label><input type="number" id="tempPM" placeholder="°F"></div>
-        <div class="field"><label>Wind (mph)</label><input type="number" id="wind" placeholder="mph"></div>
+        <div class="field"><label>Wind (mph)</label><input type="text" id="wind" placeholder="e.g. 10–15 mph"></div>
         <div class="field"><label>Precip (in.)</label><input type="number" id="precip" step="0.01" placeholder="0.00"></div>
         <div class="field span2">
           <label>Soil Conditions</label>
@@ -270,15 +274,15 @@ select{cursor:pointer}
         <div class="field span2"><label>Forecast / Upcoming Weather</label><input type="text" id="upcomingWeather" placeholder="e.g. Clear through the week, temps rising into the 40s"></div>
       </div>
       <div class="field">
-        <label>Sky Conditions</label>
+        <label>Sky Conditions <span style="color:var(--muted);font-size:9.5px;text-transform:none;letter-spacing:0">(select all that apply)</span></label>
         <div class="sky-opts mt6">
-          <input type="radio" name="sky" id="sky-clear" value="Clear"><label for="sky-clear">☀️ Clear</label>
-          <input type="radio" name="sky" id="sky-partly" value="Partly Cloudy"><label for="sky-partly">⛅ Partly Cloudy</label>
-          <input type="radio" name="sky" id="sky-overcast" value="Overcast"><label for="sky-overcast">☁️ Overcast</label>
-          <input type="radio" name="sky" id="sky-rain" value="Rain"><label for="sky-rain">🌧️ Rain</label>
-          <input type="radio" name="sky" id="sky-snow" value="Snow"><label for="sky-snow">❄️ Snow</label>
-          <input type="radio" name="sky" id="sky-fog" value="Fog"><label for="sky-fog">🌫️ Fog</label>
-          <input type="radio" name="sky" id="sky-mix" value="Rain / Snow Mix"><label for="sky-mix">🌨️ Mix</label>
+          <input type="checkbox" name="sky" id="sky-clear" value="Clear"><label for="sky-clear">☀️ Clear</label>
+          <input type="checkbox" name="sky" id="sky-partly" value="Partly Cloudy"><label for="sky-partly">⛅ Partly Cloudy</label>
+          <input type="checkbox" name="sky" id="sky-overcast" value="Overcast"><label for="sky-overcast">☁️ Overcast</label>
+          <input type="checkbox" name="sky" id="sky-rain" value="Rain"><label for="sky-rain">🌧️ Rain</label>
+          <input type="checkbox" name="sky" id="sky-snow" value="Snow"><label for="sky-snow">❄️ Snow</label>
+          <input type="checkbox" name="sky" id="sky-fog" value="Fog"><label for="sky-fog">🌫️ Fog</label>
+          <input type="checkbox" name="sky" id="sky-mix" value="Rain / Snow Mix"><label for="sky-mix">🌨️ Mix</label>
         </div>
       </div>
     </div>
@@ -418,14 +422,14 @@ select{cursor:pointer}
   <div class="card">
     <div class="card-head"><span class="card-num">06</span><span class="card-title">Regulatory &amp; Incident Flags</span></div>
     <div class="card-body">
-      <div class="flag-row"><input type="checkbox" id="flag-spdes"><span class="flag-text">Turbid discharge observed — potential SPDES exceedance</span><span class="check-tag tag-env">SPDES</span></div>
-      <div class="flag-row"><input type="checkbox" id="flag-storm"><span class="flag-text">Precipitation event &gt;0.5 in. — post-storm inspection required</span><span class="check-tag tag-env">SPDES</span></div>
-      <div class="flag-row"><input type="checkbox" id="flag-buffer"><span class="flag-text">Work within 100 ft of regulated waterbody or wetland</span><span class="check-tag tag-ew">DEC</span></div>
-      <div class="flag-row"><input type="checkbox" id="flag-riparian"><span class="flag-text">Tree felling within riparian corridor or buffer zone</span><span class="check-tag tag-ew">DEC</span></div>
-      <div class="flag-row"><input type="checkbox" id="flag-discovery"><span class="flag-text">Unanticipated discovery — archaeological, cultural, or hazmat</span><span class="check-tag tag-env">SHPO</span></div>
-      <div class="flag-row"><input type="checkbox" id="flag-spill"><span class="flag-text">Fuel or hydraulic fluid spill observed</span><span class="check-tag tag-safety">SAFETY</span></div>
-      <div class="flag-row"><input type="checkbox" id="flag-nci"><span class="flag-text">Non-compliance notice issued (NCI)</span><span class="check-tag tag-lod">NCI</span></div>
-      <div class="flag-row"><input type="checkbox" id="flag-stop"><span class="flag-text">Stop-work condition observed</span><span class="check-tag tag-safety">SAFETY</span></div>
+      <div class="flag-row"><div class="flag-main"><input type="checkbox" id="flag-spdes" onchange="toggleFlagNote('spdes')"><span class="flag-text">Turbid discharge observed — potential SPDES exceedance</span><span class="check-tag tag-env">SPDES</span></div><div class="flag-note-wrap" id="flag-spdes-nw"><textarea class="flag-note" id="flag-spdes-note" placeholder="Note or deficiency detail…"></textarea></div></div>
+      <div class="flag-row"><div class="flag-main"><input type="checkbox" id="flag-storm" onchange="toggleFlagNote('storm')"><span class="flag-text">Precipitation event &gt;0.5 in. — post-storm inspection required</span><span class="check-tag tag-env">SPDES</span></div><div class="flag-note-wrap" id="flag-storm-nw"><textarea class="flag-note" id="flag-storm-note" placeholder="Note or deficiency detail…"></textarea></div></div>
+      <div class="flag-row"><div class="flag-main"><input type="checkbox" id="flag-buffer" onchange="toggleFlagNote('buffer')"><span class="flag-text">Work within 100 ft of regulated waterbody or wetland</span><span class="check-tag tag-ew">DEC</span></div><div class="flag-note-wrap" id="flag-buffer-nw"><textarea class="flag-note" id="flag-buffer-note" placeholder="Note or deficiency detail…"></textarea></div></div>
+      <div class="flag-row"><div class="flag-main"><input type="checkbox" id="flag-riparian" onchange="toggleFlagNote('riparian')"><span class="flag-text">Tree felling within riparian corridor or buffer zone</span><span class="check-tag tag-ew">DEC</span></div><div class="flag-note-wrap" id="flag-riparian-nw"><textarea class="flag-note" id="flag-riparian-note" placeholder="Note or deficiency detail…"></textarea></div></div>
+      <div class="flag-row"><div class="flag-main"><input type="checkbox" id="flag-discovery" onchange="toggleFlagNote('discovery')"><span class="flag-text">Unanticipated discovery — archaeological, cultural, or hazmat</span><span class="check-tag tag-env">SHPO</span></div><div class="flag-note-wrap" id="flag-discovery-nw"><textarea class="flag-note" id="flag-discovery-note" placeholder="Note or deficiency detail…"></textarea></div></div>
+      <div class="flag-row"><div class="flag-main"><input type="checkbox" id="flag-spill" onchange="toggleFlagNote('spill')"><span class="flag-text">Fuel or hydraulic fluid spill observed</span><span class="check-tag tag-safety">SAFETY</span></div><div class="flag-note-wrap" id="flag-spill-nw"><textarea class="flag-note" id="flag-spill-note" placeholder="Note or deficiency detail…"></textarea></div></div>
+      <div class="flag-row"><div class="flag-main"><input type="checkbox" id="flag-nci" onchange="toggleFlagNote('nci')"><span class="flag-text">Non-compliance notice issued (NCI)</span><span class="check-tag tag-lod">NCI</span></div><div class="flag-note-wrap" id="flag-nci-nw"><textarea class="flag-note" id="flag-nci-note" placeholder="Note or deficiency detail…"></textarea></div></div>
+      <div class="flag-row"><div class="flag-main"><input type="checkbox" id="flag-stop" onchange="toggleFlagNote('stop')"><span class="flag-text">Stop-work condition observed</span><span class="check-tag tag-safety">SAFETY</span></div><div class="flag-note-wrap" id="flag-stop-nw"><textarea class="flag-note" id="flag-stop-note" placeholder="Note or deficiency detail…"></textarea></div></div>
     </div>
   </div>
 
@@ -445,6 +449,10 @@ select{cursor:pointer}
   <div class="card">
     <div class="card-head"><span class="card-num">08</span><span class="card-title">24-Hour Look Ahead</span></div>
     <div class="card-body">
+      <div class="field" style="margin-bottom:12px">
+        <label>Expected Weather Conditions</label>
+        <input type="text" id="lookaheadWeather" placeholder="e.g. Partly cloudy, temps 35–50°F, winds 5–10 mph, no precipitation expected">
+      </div>
       <div class="field">
         <label>Anticipated work items for tomorrow — one item per line</label>
         <div class="preset-strip" id="chips-lookahead"><button class="preset-chip" type="button" title="Continue tree felling operations in active areas">Continue tree felling operations in active areas</button><button class="preset-chip" type="button" title="Expand felling into adjacent area per approved plan">Expand felling into adjacent area per approved plan</button><button class="preset-chip" type="button" title="EI to conduct LOD walk prior to start of operations">EI to conduct LOD walk prior to start of operations</button><button class="preset-chip" type="button" title="Equipment delivery / crew mobilization expected on site">Equipment delivery / crew mobilization expected on site</button><button class="preset-chip" type="button" title="Anticipated weather event — monitor forecast, standby for stop-work directive">Anticipated weather event — monitor forecast, standby fo…</button><button class="preset-chip" type="button" title="Post-storm inspection required prior to resuming work">Post-storm inspection required prior to resuming work</button><button class="preset-chip" type="button" title="No work anticipated — weather or crew constraint">No work anticipated — weather or crew constraint</button></div>
@@ -719,6 +727,7 @@ function buildChecklist(){
   });
 }
 function toggleNote(id){document.getElementById(id+'-nw').classList.toggle('vis',document.getElementById(id).checked)}
+function toggleFlagNote(id){document.getElementById('flag-'+id+'-nw').classList.toggle('vis',document.getElementById('flag-'+id).checked)}
 
 // ═══════════════════════════════════════════
 // CREW BLOCKS
@@ -733,7 +742,7 @@ function addCrew(){
     </div>
     <div class="crew-body">
       <div class="g g3" style="margin-bottom:11px">
-        <div class="field span2"><label>Crew Member / Foreman Name</label><input type="text" id="crew-${id}-name" placeholder="Full name"></div>
+        <div class="field span2"><label>Contractor / Foreman Name</label><input type="text" id="crew-${id}-name" placeholder="Full name"></div>
         <div class="field"><label>Hours on Site</label><input type="text" id="crew-${id}-time" placeholder="e.g. 6:30 AM – 4:30 PM"></div>
         <div class="field full"><label>Work Location / Area</label><input type="text" id="crew-${id}-loc" placeholder="e.g. Area 3 — north hillside, adjacent to wetland buffer"></div>
       </div>
@@ -853,14 +862,16 @@ function collectFormState(){
   const fields=['projectName','reportDate','preparedBy','org','activePhase','contractor','reviewedBy',
     'tempAM','tempPM','wind','precip','soilCond','upcomingWeather',
     'inspSummary','agencyInsp','landowner','rte','nonCompliance',
-    'genComms','lookahead',
+    'genComms','lookahead','lookaheadWeather',
     'p-timeIn','p-timeOut','p-odoStart','p-odoEnd','p-notes'];
-  const state={fields:{},sky:'',checkboxes:{},checklist:{},crew:[],crewSeq,crewIds:[...crewIds]};
+  const state={fields:{},sky:[],checkboxes:{},flagNotes:{},checklist:{},crew:[],crewSeq,crewIds:[...crewIds]};
   fields.forEach(id=>{const el=document.getElementById(id);if(el)state.fields[id]=el.value});
-  state.sky=document.querySelector('input[name="sky"]:checked')?.value||'';
-  // Flags
+  // Sky — collect all checked
+  state.sky=[...document.querySelectorAll('input[name="sky"]:checked')].map(el=>el.value);
+  // Flags + flag notes
   ['spdes','storm','buffer','riparian','discovery','spill','nci','stop'].forEach(f=>{
     state.checkboxes['flag-'+f]=document.getElementById('flag-'+f)?.checked||false;
+    state.flagNotes[f]=document.getElementById('flag-'+f+'-note')?.value||'';
   });
   // Checklist
   CHECKS.forEach(c=>{
@@ -884,10 +895,15 @@ function restoreFormState(state){
   if(!state)return;
   // Fields
   Object.entries(state.fields||{}).forEach(([id,val])=>{const el=document.getElementById(id);if(el)el.value=val});
-  // Sky
-  if(state.sky){const r=document.querySelector(`input[name="sky"][value="${state.sky}"]`);if(r)r.checked=true}
-  // Checkboxes
+  // Sky — support both old string and new array format
+  const skyVals=Array.isArray(state.sky)?state.sky:(state.sky?[state.sky]:[]);
+  skyVals.forEach(v=>{const r=document.querySelector(`input[name="sky"][value="${v}"]`);if(r)r.checked=true});
+  // Checkboxes + flag notes
   Object.entries(state.checkboxes||{}).forEach(([id,val])=>{const el=document.getElementById(id);if(el)el.checked=val});
+  Object.entries(state.flagNotes||{}).forEach(([f,val])=>{
+    const el=document.getElementById('flag-'+f+'-note');if(el)el.value=val;
+    if(val&&document.getElementById('flag-'+f)?.checked){const nw=document.getElementById('flag-'+f+'-nw');if(nw)nw.classList.add('vis');}
+  });
   // Checklist
   Object.entries(state.checklist||{}).forEach(([id,{checked,note}])=>{
     const cb=document.getElementById(id);if(cb){cb.checked=checked;if(checked){const nw=document.getElementById(id+'-nw');if(nw)nw.classList.add('vis')}}
@@ -917,7 +933,7 @@ function buildCrewHTML(id, num){
     </div>
     <div class="crew-body">
       <div class="g g3" style="margin-bottom:11px">
-        <div class="field span2"><label>Crew Member / Foreman Name</label><input type="text" id="crew-${id}-name" placeholder="Full name"></div>
+        <div class="field span2"><label>Contractor / Foreman Name</label><input type="text" id="crew-${id}-name" placeholder="Full name"></div>
         <div class="field"><label>Hours on Site</label><input type="text" id="crew-${id}-time" placeholder="e.g. 6:30 AM – 4:30 PM"></div>
         <div class="field full"><label>Work Location / Area</label><input type="text" id="crew-${id}-loc" placeholder="e.g. Area 3 — north hillside, adjacent to wetland buffer"></div>
       </div>
@@ -957,10 +973,14 @@ document.addEventListener('change', debouncedAutoSave);
 // COPY JSON EXPORT (report fields only)
 // ═══════════════════════════════════════════
 function copyJSON(){
-  const sky=document.querySelector('input[name="sky"]:checked')?.value||'';
+  const sky=[...document.querySelectorAll('input[name="sky"]:checked')].map(el=>el.value).join(', ')||'';
   const checklist=CHECKS.map(c=>({item:c.text,checked:!!document.getElementById(c.id)?.checked,note:document.getElementById(c.id+'-note')?.value.trim()||''}));
   const flagIds=['spdes','storm','buffer','riparian','discovery','spill','nci','stop'];
-  const flags=flagIds.filter(f=>document.getElementById('flag-'+f)?.checked).map(f=>document.getElementById('flag-'+f).closest('.flag-row').querySelector('.flag-text').textContent.trim());
+  const flags=flagIds.filter(f=>document.getElementById('flag-'+f)?.checked).map(f=>{
+    const text=document.getElementById('flag-'+f).closest('.flag-row').querySelector('.flag-text').textContent.trim();
+    const note=document.getElementById('flag-'+f+'-note')?.value.trim()||'';
+    return note ? `${text} — ${note}` : text;
+  });
   const crew=crewIds.map(id=>({
     name:    document.getElementById(`crew-${id}-name`)?.value.trim()||'',
     time:    document.getElementById(`crew-${id}-time`)?.value.trim()||'',
@@ -970,6 +990,9 @@ function copyJSON(){
     issues:  document.getElementById(`crew-${id}-issues`)?.value.trim()||'',
     notes:   document.getElementById(`crew-${id}-notes`)?.value.trim()||'',
   }));
+  const lookaheadWx=document.getElementById('lookaheadWeather').value.trim();
+  const lookaheadText=document.getElementById('lookahead').value.trim();
+  const lookahead=lookaheadWx ? `Expected Weather: ${lookaheadWx}${lookaheadText?'\n'+lookaheadText:''}` : lookaheadText;
   const data={
     _source:'Moraine Solar EI Field Log',
     project:    document.getElementById('projectName').value,
@@ -990,7 +1013,7 @@ function copyJSON(){
     complianceChecklist:checklist,
     regulatoryFlags:flags,
     generalComms:document.getElementById('genComms').value.trim(),
-    lookahead:   document.getElementById('lookahead').value.trim(),
+    lookahead,
   };
   const out=`EI FIELD LOG — MORAINE SOLAR ENERGY CENTER\nBuild today's report.\n\n\`\`\`json\n${JSON.stringify(data,null,2)}\n\`\`\``;
   const fn=()=>{const s=document.getElementById('copyStatus');s.classList.add('show');setTimeout(()=>s.classList.remove('show'),3500)};
@@ -1039,7 +1062,7 @@ function resetForm(){
   document.querySelectorAll('#page-log input[type=text]:not([readonly]),#page-log input[type=number],#page-log input[type=time],#page-log textarea').forEach(el=>el.value='');
   document.querySelectorAll('#page-log input[type=date]').forEach(el=>el.value='');
   document.querySelectorAll('#page-log input[type=checkbox],#page-log input[type=radio]').forEach(el=>el.checked=false);
-  document.querySelectorAll('.check-note-wrap').forEach(el=>el.classList.remove('vis'));
+  document.querySelectorAll('.check-note-wrap,.flag-note-wrap').forEach(el=>el.classList.remove('vis'));
   document.getElementById('crewContainer').innerHTML='';crewIds=[];crewSeq=0;updateCrewBadge();
   document.getElementById('p-miles').textContent='— mi';
   document.getElementById('p-hours').textContent='— hrs';
