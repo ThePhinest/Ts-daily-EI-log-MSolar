@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- saved from url=(0046)file:///C:/Users/timnj/Downloads/index_15.html -->
+<!-- saved from url=(0046)file:///C:/Users/timnj/Downloads/index_17.html -->
 <html lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -192,7 +192,7 @@ select{cursor:pointer}
   <button class="tab-btn" id="tab-config" onclick="showPage(&#39;config&#39;)">⚙ Config</button>
   <button class="icon-btn" title="Print" onclick="window.print()">⎙</button>
   <button class="icon-btn" title="Reset form" onclick="resetForm()">↺</button>
-<span id="sync-dot" title="" style="font-family: var(--mono); font-size: 10px; letter-spacing: 0.05em; transition: color 0.3s; white-space: nowrap; margin-left: 2px; color: var(--green);">✓ synced</span></div>
+<span id="sync-dot" title="" style="font-family: var(--mono); font-size: 10px; letter-spacing: 0.05em; transition: color 0.3s; white-space: nowrap; margin-left: 2px; color: var(--green);"></span></div>
 
 <!-- ══════════════════════════════════
      DAILY LOG PAGE
@@ -1136,36 +1136,21 @@ const _fbConfig = {
   messagingSenderId: "242008020472",
   appId: "1:242008020472:web:33d7ca5b291382b200320d"
 };
-// ── On-screen debug panel (remove after Firebase confirmed working) ──
-function _showDebug(msg, color) {
-  var el = document.getElementById('_fb_debug');
-  if (!el) {
-    el = document.createElement('div');
-    el.id = '_fb_debug';
-    el.style.cssText = 'position:fixed;bottom:80px;left:12px;right:12px;z-index:9999;background:#0a0a0a;border:1px solid #333;border-radius:6px;padding:10px 14px;font-family:monospace;font-size:11px;line-height:1.7;max-height:180px;overflow-y:auto;';
-    el.innerHTML = '<div style="color:#666;margin-bottom:4px;font-size:10px;letter-spacing:.08em;">FIREBASE DEBUG &nbsp;<button onclick="document.getElementById(&quot;_fb_debug&quot;).remove()" style="background:none;border:none;color:#555;cursor:pointer;float:right;font-size:13px;">✕</button></div>';
-    document.body.appendChild(el);
-  }
-  var line = document.createElement('div');
-  line.style.color = color || '#7ab5b8';
-  line.textContent = new Date().toLocaleTimeString() + ' — ' + msg;
-  el.appendChild(line);
-  console.log('Phinest EI Debug:', msg);
-}
+// Firebase debug panel removed
 
 // Firebase init — check for existing app to avoid duplicate init error on reload
 var db = null;
+var _fbReady = false;
 if (typeof firebase !== 'undefined') {
-  _showDebug('firebase global found ✓', '#7ab5b8');
   try {
     const _fbApp = firebase.apps.length ? firebase.apps[0] : firebase.initializeApp(_fbConfig);
     db = _fbApp.firestore();
-    _showDebug('Firebase initialized OK ✓ (apps: ' + firebase.apps.length + ')', '#27ae60');
+    console.log('Phinest EI: Firebase initialized OK');
   } catch(e) {
-    _showDebug('initializeApp FAILED: ' + e.message, '#e74c3c');
+    console.error('Phinest EI: Firebase init failed —', e.message);
   }
 } else {
-  _showDebug('firebase global NOT defined — SDK scripts did not load', '#e74c3c');
+  console.error('Phinest EI: firebase global not defined');
 }
 
 // ── Inject sync status indicator into app bar ──
@@ -1189,8 +1174,7 @@ function setSyncStatus(s) {
     el.textContent = '✗ offline — tap to retry'; el.style.color = 'var(--red)'; el.style.cursor = 'pointer';
     el.title = 'Click to retry Firebase connection';
     el.onclick = function() {
-      _showDebug('Manual retry triggered…', '#A5ACAF');
-      _reconnectFirebase();
+            _reconnectFirebase();
     };
   } else {
     el.textContent = ''; el.onclick = null;
@@ -1199,52 +1183,43 @@ function setSyncStatus(s) {
 
 function _reconnectFirebase() {
   if (!db) {
-    _showDebug('_reconnect: db is null — reinitialising Firebase…', '#e74c3c');
-    try {
+        try {
       const _fbApp = firebase.apps.length ? firebase.apps[0] : firebase.initializeApp(_fbConfig);
       db = _fbApp.firestore();
-      _showDebug('_reconnect: Firebase reinit OK ✓', '#27ae60');
-      cloudSave();
+            cloudSave();
     } catch(e) {
-      _showDebug('_reconnect: reinit FAILED — ' + e.message, '#e74c3c');
-    }
+          }
     return;
   }
   db.enableNetwork().then(function() {
-    _showDebug('_reconnect: network re-enabled ✓', '#27ae60');
-    setSyncStatus('syncing');
+        setSyncStatus('syncing');
     cloudSave();
   }).catch(function(e) {
-    _showDebug('_reconnect: enableNetwork failed — ' + e.message, '#e74c3c');
-  });
+      });
 }
 
 // ── Browser online/offline events ──
 window.addEventListener('online', function() {
-  _showDebug('Browser back online — reconnecting…', '#A5ACAF');
-  _reconnectFirebase();
+    _reconnectFirebase();
 });
 window.addEventListener('offline', function() {
-  _showDebug('Browser went offline', '#e74c3c');
-  setSyncStatus('offline');
+    setSyncStatus('offline');
 });
 
 // ── Cloud save (called with debounce from autoSave) ──
 var _cloudTimer = null;
 async function cloudSave() {
-  if (!db) { setSyncStatus('offline'); _showDebug('cloudSave: db is null — Firebase not ready', '#e74c3c'); return; }
+  if (!db || !_fbReady) { return; } // not ready — skip silently, don't show offline
   try {
     setSyncStatus('syncing');
-    _showDebug('cloudSave: writing to Firestore…', '#A5ACAF');
     const state = collectFormState();
     state._ts = Date.now();
     await db.collection('sessions').doc('active').set(state);
     try { localStorage.setItem('msf_autosave', JSON.stringify(state)); } catch {}
     setSyncStatus('synced');
-    _showDebug('cloudSave: write SUCCESS ✓', '#27ae60');
   } catch(e) {
     setSyncStatus('offline');
-    _showDebug('cloudSave FAILED: ' + e.message, '#e74c3c');
+    console.warn('Phinest EI: cloudSave failed —', e.message);
   }
 }
 
@@ -1253,8 +1228,7 @@ function debouncedAutoSave() {
   clearTimeout(_asTimer);
   _asTimer = setTimeout(function() {
     _autoSaveLocal();
-    _showDebug('debouncedAutoSave fired — queuing cloud save in 2.5s…', '#A5ACAF');
-    clearTimeout(_cloudTimer);
+        clearTimeout(_cloudTimer);
     _cloudTimer = setTimeout(cloudSave, 2500);
   }, 600);
 }
@@ -1290,19 +1264,16 @@ function _confirmModal(msg, onConfirm) {
 // ── resetForm: clears cloud + form ──
 function resetForm() {
   _confirmModal('Reset the daily log? All entries will be cleared. Config and presets are preserved.', function() {
-    _showDebug('resetForm: clearing form and cloud…', '#A5ACAF');
-    if (db) db.collection('sessions').doc('active').delete().catch(function(e){ _showDebug('cloud delete failed: ' + e.message, '#e74c3c'); });
+        if (db) db.collection('sessions').doc('active').delete().catch(function(e){  });
     _resetFormCore();
     setSyncStatus('idle');
-    _showDebug('resetForm: complete ✓', '#27ae60');
-  });
+      });
 }
 
 // ── Firebase init load — runs async after page restores from localStorage ──
 (async function initFirebaseLoad() {
-  if (!db) { setSyncStatus('offline'); _showDebug('initFirebaseLoad: db null — skipping cloud restore', '#e74c3c'); return; }
-  _showDebug('initFirebaseLoad: checking cloud for saved session…', '#A5ACAF');
-
+  if (!db) { setSyncStatus('offline');  return; }
+  
   // If this is an archived file being re-opened, push its state to cloud and exit
   if (typeof SAVED_DATA !== 'undefined' && SAVED_DATA !== null) {
     cloudSave();
@@ -1323,13 +1294,12 @@ function resetForm() {
 
       if (localTs > 0) {
         // Had local data but cloud is gone — reset happened on another device
-        _showDebug('Cloud doc missing — reset detected from another device, clearing local…', '#A5ACAF');
-        _resetFormCore();
+                _resetFormCore();
         showCloudBanner('↺ Log was reset on another device — starting fresh.');
       } else {
         // Genuine first use — nothing to restore
-        _showDebug('No cloud data yet — first use or fresh start ✓', '#27ae60');
-      }
+              }
+      _fbReady = true;
       setSyncStatus('synced');
       return;
     }
@@ -1344,18 +1314,18 @@ function resetForm() {
     } catch {}
 
     if (cloudTs > localTs) {
-      _showDebug('Cloud is newer — restoring from cloud ✓', '#27ae60');
-      document.getElementById('crewContainer').innerHTML = '';
+            document.getElementById('crewContainer').innerHTML = '';
       crewIds = []; crewSeq = 0;
       restoreFormState(cloudState);
       try { localStorage.setItem('msf_autosave', JSON.stringify(cloudState)); } catch {}
       showCloudBanner('☁ Session restored from cloud — picked up where you left off.');
+      _fbReady = true;
       setSyncStatus('synced');
     } else if (localTs > cloudTs) {
-      _showDebug('Local is newer — pushing to cloud…', '#A5ACAF');
+      _fbReady = true;
       cloudSave();
     } else {
-      _showDebug('Local and cloud in sync ✓', '#27ae60');
+      _fbReady = true;
       setSyncStatus('synced');
     }
 
@@ -1363,7 +1333,8 @@ function resetForm() {
     setSyncStatus('offline');
     console.warn('Phinest EI: Firebase init load failed —', e.message);
   }
+  _fbReady = true; // allow cloudSave from this point forward
 })();
-</script><div id="_fb_debug" style="position: fixed; bottom: 80px; left: 12px; right: 12px; z-index: 9999; background: rgb(10, 10, 10); border: 1px solid rgb(51, 51, 51); border-radius: 6px; padding: 10px 14px; font-family: monospace; font-size: 11px; line-height: 1.7; max-height: 180px; overflow-y: auto;"><div style="color:#666;margin-bottom:4px;font-size:10px;letter-spacing:.08em;">FIREBASE DEBUG &nbsp;<button onclick="document.getElementById(&quot;_fb_debug&quot;).remove()" style="background:none;border:none;color:#555;cursor:pointer;float:right;font-size:13px;">✕</button></div><div style="color: rgb(122, 181, 184);">4:08:55 PM — firebase global found ✓</div><div style="color: rgb(39, 174, 96);">4:08:55 PM — Firebase initialized OK ✓ (apps: 1)</div><div style="color: rgb(165, 172, 175);">4:08:55 PM — initFirebaseLoad: checking cloud for saved session…</div><div style="color: rgb(39, 174, 96);">4:08:55 PM — No cloud data yet — first use or fresh start ✓</div></div>
+</script>
 
 </body></html>
