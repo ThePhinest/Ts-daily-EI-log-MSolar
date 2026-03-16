@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- saved from url=(0045)file:///C:/Users/timnj/Downloads/index_6.html -->
+<!-- saved from url=(0045)file:///C:/Users/timnj/Downloads/index_8.html -->
 <html lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -192,7 +192,7 @@ select{cursor:pointer}
   <button class="tab-btn" id="tab-config" onclick="showPage(&#39;config&#39;)">⚙ Config</button>
   <button class="icon-btn" title="Print" onclick="window.print()">⎙</button>
   <button class="icon-btn" title="Reset form" onclick="resetForm()">↺</button>
-<span id="sync-dot" style="font-family: var(--mono); font-size: 10px; letter-spacing: 0.05em; transition: color 0.3s; white-space: nowrap; margin-left: 2px; color: var(--green);"></span></div>
+<span id="sync-dot" style="font-family: var(--mono); font-size: 10px; letter-spacing: 0.05em; transition: color 0.3s; white-space: nowrap; margin-left: 2px; color: var(--green);">✓ synced</span></div>
 
 <!-- ══════════════════════════════════
      DAILY LOG PAGE
@@ -977,9 +977,10 @@ function _autoSaveLocal(){
 let _asTimer=null;
 function debouncedAutoSave(){ clearTimeout(_asTimer); _asTimer=setTimeout(_autoSaveLocal,600); }
 
-// Event delegation — catches all inputs including dynamically added crew blocks
-document.addEventListener('input',  debouncedAutoSave);
-document.addEventListener('change', debouncedAutoSave);
+// Event delegation — uses stable wrapper so Firebase can override debouncedAutoSave
+function _onInputEvent(){ debouncedAutoSave(); }
+document.addEventListener('input',  _onInputEvent);
+document.addEventListener('change', _onInputEvent);
 
 // ═══════════════════════════════════════════
 // COPY JSON EXPORT (report fields only)
@@ -1313,6 +1314,6 @@ function resetForm() {
     console.warn('Phinest EI: Firebase init load failed —', e.message);
   }
 })();
-</script><div id="_fb_debug" style="position: fixed; bottom: 80px; left: 12px; right: 12px; z-index: 9999; background: rgb(10, 10, 10); border: 1px solid rgb(51, 51, 51); border-radius: 6px; padding: 10px 14px; font-family: monospace; font-size: 11px; line-height: 1.7; max-height: 180px; overflow-y: auto;"><div style="color:#666;margin-bottom:4px;font-size:10px;letter-spacing:.08em;">FIREBASE DEBUG &nbsp;<button onclick="document.getElementById(&quot;_fb_debug&quot;).remove()" style="background:none;border:none;color:#555;cursor:pointer;float:right;font-size:13px;">✕</button></div><div style="color: rgb(122, 181, 184);">12:29:53 PM — firebase global found ✓</div><div style="color: rgb(39, 174, 96);">12:29:53 PM — Firebase initialized OK ✓</div><div style="color: rgb(165, 172, 175);">12:29:53 PM — initFirebaseLoad: checking cloud for saved session…</div><div style="color: rgb(165, 172, 175);">12:31:18 PM — resetForm: clearing form and cloud…</div><div style="color: rgb(39, 174, 96);">12:31:18 PM — resetForm: complete ✓</div></div>
+</script><div id="_fb_debug" style="position: fixed; bottom: 80px; left: 12px; right: 12px; z-index: 9999; background: rgb(10, 10, 10); border: 1px solid rgb(51, 51, 51); border-radius: 6px; padding: 10px 14px; font-family: monospace; font-size: 11px; line-height: 1.7; max-height: 180px; overflow-y: auto;"><div style="color:#666;margin-bottom:4px;font-size:10px;letter-spacing:.08em;">FIREBASE DEBUG &nbsp;<button onclick="document.getElementById(&quot;_fb_debug&quot;).remove()" style="background:none;border:none;color:#555;cursor:pointer;float:right;font-size:13px;">✕</button></div><div style="color: rgb(122, 181, 184);">12:45:18 PM — firebase global found ✓</div><div style="color: rgb(39, 174, 96);">12:45:18 PM — Firebase initialized OK ✓</div><div style="color: rgb(165, 172, 175);">12:45:18 PM — initFirebaseLoad: checking cloud for saved session…</div></div>
 
 </body></html>
