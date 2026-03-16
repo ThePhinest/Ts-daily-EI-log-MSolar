@@ -1140,7 +1140,7 @@ function _showDebug(msg, color) {
     el = document.createElement('div');
     el.id = '_fb_debug';
     el.style.cssText = 'position:fixed;bottom:80px;left:12px;right:12px;z-index:9999;background:#0a0a0a;border:1px solid #333;border-radius:6px;padding:10px 14px;font-family:monospace;font-size:11px;line-height:1.7;max-height:180px;overflow-y:auto;';
-    el.innerHTML = '<div style="color:#666;margin-bottom:4px;font-size:10px;letter-spacing:.08em;">FIREBASE DEBUG — remove after confirmed ✕ <button onclick="document.getElementById('_fb_debug').remove()" style="background:none;border:none;color:#555;cursor:pointer;float:right;font-size:13px;">✕</button></div>';
+    el.innerHTML = '<div style="color:#666;margin-bottom:4px;font-size:10px;letter-spacing:.08em;">FIREBASE DEBUG &nbsp;<button onclick="document.getElementById(&quot;_fb_debug&quot;).remove()" style="background:none;border:none;color:#555;cursor:pointer;float:right;font-size:13px;">✕</button></div>';
     document.body.appendChild(el);
   }
   var line = document.createElement('div');
