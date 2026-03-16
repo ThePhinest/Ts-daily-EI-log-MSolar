@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- saved from url=(0045)file:///C:/Users/timnj/Downloads/index_3.html -->
+<!-- saved from url=(0058)file:///C:/Users/timnj/Downloads/Moraine_EI_Field_Log.html -->
 <html lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -7,14 +7,14 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Phinest EI">
-<link rel="apple-touch-icon" href="file:///C:/Users/timnj/Downloads/icon-192.png">
-<link rel="manifest" href="file:///C:/Users/timnj/Downloads/manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="manifest" href="manifest.json">
 <title>Phinest EI — Field Log</title>
 <!-- Firebase SDKs — must load before any inline Firebase code -->
-<script src="./index_files/firebase-app-compat.js.download"></script>
-<script src="./index_files/firebase-firestore-compat.js.download"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com/">
-<link href="./index_files/css2" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
 :root {
   /* Eagles color scheme */
@@ -183,7 +183,7 @@ select{cursor:pointer}
   <button class="tab-btn" id="tab-config" onclick="showPage(&#39;config&#39;)">⚙ Config</button>
   <button class="icon-btn" title="Print" onclick="window.print()">⎙</button>
   <button class="icon-btn" title="Reset form" onclick="resetForm()">↺</button>
-<span id="sync-dot" style="font-family: var(--mono); font-size: 10px; letter-spacing: 0.05em; transition: color 0.3s; white-space: nowrap; margin-left: 2px; color: var(--green);">✓ synced</span></div>
+</div>
 
 <!-- ══════════════════════════════════
      DAILY LOG PAGE
@@ -425,14 +425,14 @@ select{cursor:pointer}
   <div class="card">
     <div class="card-head"><span class="card-num">06</span><span class="card-title">Regulatory &amp; Incident Flags</span></div>
     <div class="card-body">
-      <div class="flag-row"><div class="flag-main"><input type="checkbox" id="flag-spdes" onchange="toggleFlagNote(&#39;spdes&#39;)"><span class="flag-text">Turbid discharge observed — potential SPDES exceedance</span><span class="check-tag tag-env">SPDES</span></div><div class="flag-note-wrap" id="flag-spdes-nw"><textarea class="flag-note" id="flag-spdes-note" placeholder="Note or deficiency detail…"></textarea></div></div>
-      <div class="flag-row"><div class="flag-main"><input type="checkbox" id="flag-storm" onchange="toggleFlagNote(&#39;storm&#39;)"><span class="flag-text">Precipitation event &gt;0.5 in. — post-storm inspection required</span><span class="check-tag tag-env">SPDES</span></div><div class="flag-note-wrap" id="flag-storm-nw"><textarea class="flag-note" id="flag-storm-note" placeholder="Note or deficiency detail…"></textarea></div></div>
-      <div class="flag-row"><div class="flag-main"><input type="checkbox" id="flag-buffer" onchange="toggleFlagNote(&#39;buffer&#39;)"><span class="flag-text">Work within 100 ft of regulated waterbody or wetland</span><span class="check-tag tag-ew">DEC</span></div><div class="flag-note-wrap" id="flag-buffer-nw"><textarea class="flag-note" id="flag-buffer-note" placeholder="Note or deficiency detail…"></textarea></div></div>
-      <div class="flag-row"><div class="flag-main"><input type="checkbox" id="flag-riparian" onchange="toggleFlagNote(&#39;riparian&#39;)"><span class="flag-text">Tree felling within riparian corridor or buffer zone</span><span class="check-tag tag-ew">DEC</span></div><div class="flag-note-wrap" id="flag-riparian-nw"><textarea class="flag-note" id="flag-riparian-note" placeholder="Note or deficiency detail…"></textarea></div></div>
-      <div class="flag-row"><div class="flag-main"><input type="checkbox" id="flag-discovery" onchange="toggleFlagNote(&#39;discovery&#39;)"><span class="flag-text">Unanticipated discovery — archaeological, cultural, or hazmat</span><span class="check-tag tag-env">SHPO</span></div><div class="flag-note-wrap" id="flag-discovery-nw"><textarea class="flag-note" id="flag-discovery-note" placeholder="Note or deficiency detail…"></textarea></div></div>
-      <div class="flag-row"><div class="flag-main"><input type="checkbox" id="flag-spill" onchange="toggleFlagNote(&#39;spill&#39;)"><span class="flag-text">Fuel or hydraulic fluid spill observed</span><span class="check-tag tag-safety">SAFETY</span></div><div class="flag-note-wrap" id="flag-spill-nw"><textarea class="flag-note" id="flag-spill-note" placeholder="Note or deficiency detail…"></textarea></div></div>
-      <div class="flag-row"><div class="flag-main"><input type="checkbox" id="flag-nci" onchange="toggleFlagNote(&#39;nci&#39;)"><span class="flag-text">Non-compliance notice issued (NCI)</span><span class="check-tag tag-lod">NCI</span></div><div class="flag-note-wrap" id="flag-nci-nw"><textarea class="flag-note" id="flag-nci-note" placeholder="Note or deficiency detail…"></textarea></div></div>
-      <div class="flag-row"><div class="flag-main"><input type="checkbox" id="flag-stop" onchange="toggleFlagNote(&#39;stop&#39;)"><span class="flag-text">Stop-work condition observed</span><span class="check-tag tag-safety">SAFETY</span></div><div class="flag-note-wrap" id="flag-stop-nw"><textarea class="flag-note" id="flag-stop-note" placeholder="Note or deficiency detail…"></textarea></div></div>
+      <div class="flag-row"><div class="flag-main"><input type="checkbox" id="flag-spdes" onchange="toggleFlagNote('spdes')"><span class="flag-text">Turbid discharge observed — potential SPDES exceedance</span><span class="check-tag tag-env">SPDES</span></div><div class="flag-note-wrap" id="flag-spdes-nw"><textarea class="flag-note" id="flag-spdes-note" placeholder="Note or deficiency detail…"></textarea></div></div>
+      <div class="flag-row"><div class="flag-main"><input type="checkbox" id="flag-storm" onchange="toggleFlagNote('storm')"><span class="flag-text">Precipitation event &gt;0.5 in. — post-storm inspection required</span><span class="check-tag tag-env">SPDES</span></div><div class="flag-note-wrap" id="flag-storm-nw"><textarea class="flag-note" id="flag-storm-note" placeholder="Note or deficiency detail…"></textarea></div></div>
+      <div class="flag-row"><div class="flag-main"><input type="checkbox" id="flag-buffer" onchange="toggleFlagNote('buffer')"><span class="flag-text">Work within 100 ft of regulated waterbody or wetland</span><span class="check-tag tag-ew">DEC</span></div><div class="flag-note-wrap" id="flag-buffer-nw"><textarea class="flag-note" id="flag-buffer-note" placeholder="Note or deficiency detail…"></textarea></div></div>
+      <div class="flag-row"><div class="flag-main"><input type="checkbox" id="flag-riparian" onchange="toggleFlagNote('riparian')"><span class="flag-text">Tree felling within riparian corridor or buffer zone</span><span class="check-tag tag-ew">DEC</span></div><div class="flag-note-wrap" id="flag-riparian-nw"><textarea class="flag-note" id="flag-riparian-note" placeholder="Note or deficiency detail…"></textarea></div></div>
+      <div class="flag-row"><div class="flag-main"><input type="checkbox" id="flag-discovery" onchange="toggleFlagNote('discovery')"><span class="flag-text">Unanticipated discovery — archaeological, cultural, or hazmat</span><span class="check-tag tag-env">SHPO</span></div><div class="flag-note-wrap" id="flag-discovery-nw"><textarea class="flag-note" id="flag-discovery-note" placeholder="Note or deficiency detail…"></textarea></div></div>
+      <div class="flag-row"><div class="flag-main"><input type="checkbox" id="flag-spill" onchange="toggleFlagNote('spill')"><span class="flag-text">Fuel or hydraulic fluid spill observed</span><span class="check-tag tag-safety">SAFETY</span></div><div class="flag-note-wrap" id="flag-spill-nw"><textarea class="flag-note" id="flag-spill-note" placeholder="Note or deficiency detail…"></textarea></div></div>
+      <div class="flag-row"><div class="flag-main"><input type="checkbox" id="flag-nci" onchange="toggleFlagNote('nci')"><span class="flag-text">Non-compliance notice issued (NCI)</span><span class="check-tag tag-lod">NCI</span></div><div class="flag-note-wrap" id="flag-nci-nw"><textarea class="flag-note" id="flag-nci-note" placeholder="Note or deficiency detail…"></textarea></div></div>
+      <div class="flag-row"><div class="flag-main"><input type="checkbox" id="flag-stop" onchange="toggleFlagNote('stop')"><span class="flag-text">Stop-work condition observed</span><span class="check-tag tag-safety">SAFETY</span></div><div class="flag-note-wrap" id="flag-stop-nw"><textarea class="flag-note" id="flag-stop-note" placeholder="Note or deficiency detail…"></textarea></div></div>
     </div>
   </div>
 
@@ -1133,13 +1133,36 @@ const _fbConfig = {
   messagingSenderId: "242008020472",
   appId: "1:242008020472:web:33d7ca5b291382b200320d"
 };
-// Graceful init — if Firebase SDKs fail to load, app continues with localStorage only
+// ── On-screen debug panel (remove after Firebase confirmed working) ──
+function _showDebug(msg, color) {
+  var el = document.getElementById('_fb_debug');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = '_fb_debug';
+    el.style.cssText = 'position:fixed;bottom:80px;left:12px;right:12px;z-index:9999;background:#0a0a0a;border:1px solid #333;border-radius:6px;padding:10px 14px;font-family:monospace;font-size:11px;line-height:1.7;max-height:180px;overflow-y:auto;';
+    el.innerHTML = '<div style="color:#666;margin-bottom:4px;font-size:10px;letter-spacing:.08em;">FIREBASE DEBUG — remove after confirmed ✕ <button onclick="document.getElementById('_fb_debug').remove()" style="background:none;border:none;color:#555;cursor:pointer;float:right;font-size:13px;">✕</button></div>';
+    document.body.appendChild(el);
+  }
+  var line = document.createElement('div');
+  line.style.color = color || '#7ab5b8';
+  line.textContent = new Date().toLocaleTimeString() + ' — ' + msg;
+  el.appendChild(line);
+  console.log('Phinest EI Debug:', msg);
+}
+
+// Firebase init
 var db = null;
-try {
-  firebase.initializeApp(_fbConfig);
-  db = firebase.firestore();
-} catch(e) {
-  console.warn('Phinest EI: Firebase init failed — running in localStorage-only mode.', e.message);
+if (typeof firebase !== 'undefined') {
+  _showDebug('firebase global found ✓', '#7ab5b8');
+  try {
+    firebase.initializeApp(_fbConfig);
+    db = firebase.firestore();
+    _showDebug('Firebase initialized OK ✓', '#27ae60');
+  } catch(e) {
+    _showDebug('initializeApp FAILED: ' + e.message, '#e74c3c');
+  }
+} else {
+  _showDebug('firebase global NOT defined — SDK scripts did not load', '#e74c3c');
 }
 
 // ── Inject sync status indicator into app bar ──
@@ -1164,18 +1187,19 @@ function setSyncStatus(s) {
 // ── Cloud save (called with debounce from autoSave) ──
 var _cloudTimer = null;
 async function cloudSave() {
-  if (!db) { setSyncStatus('offline'); return; }  // Firebase not available — skip silently
+  if (!db) { setSyncStatus('offline'); _showDebug('cloudSave: db is null — Firebase not ready', '#e74c3c'); return; }
   try {
     setSyncStatus('syncing');
+    _showDebug('cloudSave: writing to Firestore…', '#A5ACAF');
     const state = collectFormState();
     state._ts = Date.now();
     await db.collection('sessions').doc('active').set(state);
-    // Mirror timestamp back to localStorage so comparisons stay in sync
     try { localStorage.setItem('msf_autosave', JSON.stringify(state)); } catch {}
     setSyncStatus('synced');
+    _showDebug('cloudSave: write SUCCESS ✓', '#27ae60');
   } catch(e) {
     setSyncStatus('offline');
-    console.warn('Phinest EI: Firestore sync failed —', e.message);
+    _showDebug('cloudSave FAILED: ' + e.message, '#e74c3c');
   }
 }
 
@@ -1209,7 +1233,8 @@ function resetForm() {
 
 // ── Firebase init load — runs async after page restores from localStorage ──
 (async function initFirebaseLoad() {
-  if (!db) { setSyncStatus('offline'); return; }  // Firebase not available
+  if (!db) { setSyncStatus('offline'); _showDebug('initFirebaseLoad: db null — skipping cloud restore', '#e74c3c'); return; }
+  _showDebug('initFirebaseLoad: checking cloud for saved session…', '#A5ACAF');
 
   // If this is an archived file being re-opened, push its state to cloud and exit
   if (typeof SAVED_DATA !== 'undefined' && SAVED_DATA !== null) {
@@ -1236,7 +1261,7 @@ function resetForm() {
     } catch {}
 
     if (cloudTs > localTs) {
-      // Cloud is newer (other device was used) — restore from cloud
+      _showDebug('Cloud is newer — restoring from cloud ✓', '#27ae60');
       document.getElementById('crewContainer').innerHTML = '';
       crewIds = []; crewSeq = 0;
       restoreFormState(cloudState);
@@ -1244,10 +1269,10 @@ function resetForm() {
       showCloudBanner('☁ Session restored from cloud — picked up where you left off.');
       setSyncStatus('synced');
     } else if (localTs > cloudTs) {
-      // Local is newer — push local state up to cloud
+      _showDebug('Local is newer — pushing to cloud…', '#A5ACAF');
       cloudSave();
     } else {
-      // In sync
+      _showDebug('Local and cloud in sync ✓', '#27ae60');
       setSyncStatus('synced');
     }
 
