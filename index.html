@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- saved from url=(0045)file:///C:/Users/timnj/Downloads/index_1.html -->
+<!-- saved from url=(0045)file:///C:/Users/timnj/Downloads/index_2.html -->
 <html lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -10,6 +10,9 @@
 <link rel="apple-touch-icon" href="file:///C:/Users/timnj/Downloads/icon-192.png">
 <link rel="manifest" href="file:///C:/Users/timnj/Downloads/manifest.json">
 <title>Phinest EI — Field Log</title>
+<!-- Firebase SDKs — must load before any inline Firebase code -->
+<script src="./index_files/firebase-app-compat.js.download"></script>
+<script src="./index_files/firebase-firestore-compat.js.download"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com/">
 <link href="./index_files/css2" rel="stylesheet">
 <style>
@@ -1055,10 +1058,9 @@ function fallbackDownload(blob,filename){
 }
 
 // ═══════════════════════════════════════════
-// RESET
+// RESET CORE (Firebase-aware resetForm defined in Firebase block below)
 // ═══════════════════════════════════════════
-function resetForm(){
-  if(!confirm('Reset the daily log? All entries will be cleared. Config and presets are preserved.'))return;
+function _resetFormCore(){
   document.querySelectorAll('#page-log input[type=text]:not([readonly]),#page-log input[type=number],#page-log input[type=time],#page-log textarea').forEach(el=>el.value='');
   document.querySelectorAll('#page-log input[type=date]').forEach(el=>el.value='');
   document.querySelectorAll('#page-log input[type=checkbox],#page-log input[type=radio]').forEach(el=>el.checked=false);
@@ -1119,10 +1121,6 @@ if ('serviceWorker' in navigator) {
 }
 </script>
 
-<!-- FIREBASE SDKs -->
-<script src="./index_files/firebase-app-compat.js.download"></script>
-<script src="./index_files/firebase-firestore-compat.js.download"></script>
-
 <script>
 // ═══════════════════════════════════════════
 // FIREBASE — CLOUD SYNC
@@ -1158,7 +1156,7 @@ function setSyncStatus(s) {
 }
 
 // ── Cloud save (called with debounce from autoSave) ──
-let _cloudTimer = null;
+var _cloudTimer = null;
 async function cloudSave() {
   try {
     setSyncStatus('syncing');
@@ -1194,27 +1192,11 @@ function showCloudBanner(msg) {
   setTimeout(() => { const b = document.getElementById('cloud-banner'); if(b) b.remove(); }, 7000);
 }
 
-// ── Override resetForm to also clear cloud document ──
+// ── resetForm: clears cloud + form ──
 function resetForm() {
   if(!confirm('Reset the daily log? All entries will be cleared. Config and presets are preserved.')) return;
-  // Clear cloud
   db.collection('sessions').doc('active').delete().catch(()=>{});
-  // Clear form
-  document.querySelectorAll('#page-log input[type=text]:not([readonly]),#page-log input[type=number],#page-log input[type=time],#page-log textarea').forEach(el=>el.value='');
-  document.querySelectorAll('#page-log input[type=date]').forEach(el=>el.value='');
-  document.querySelectorAll('#page-log input[type=checkbox],#page-log input[type=radio]').forEach(el=>el.checked=false);
-  document.querySelectorAll('.check-note-wrap,.flag-note-wrap').forEach(el=>el.classList.remove('vis'));
-  document.getElementById('crewContainer').innerHTML=''; crewIds=[]; crewSeq=0; updateCrewBadge();
-  document.getElementById('p-miles').textContent='— mi';
-  document.getElementById('p-hours').textContent='— hrs';
-  document.getElementById('reportDate').value=new Date().toISOString().split('T')[0];
-  document.getElementById('projectName').value='Moraine Solar Energy Center';
-  document.getElementById('preparedBy').value='Tim Shortz';
-  document.getElementById('org').value='London Environmental LLC';
-  document.getElementById('activePhase').value=activePhaseLabel;
-  document.getElementById('contractor').value='Supreme Industries';
-  document.getElementById('reviewedBy').value='Robert Forest Rung';
-  try{ localStorage.removeItem('msf_autosave'); }catch{}
+  _resetFormCore();
   setSyncStatus('idle');
 }
 
