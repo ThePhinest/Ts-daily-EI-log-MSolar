@@ -1,4 +1,4 @@
-const CACHE_NAME = 'phinest-ei-v4';
+const CACHE_NAME = 'phinest-ei-v5';
 const ASSETS = [
   '/Ts-daily-EI-log-MSolar/',
   '/Ts-daily-EI-log-MSolar/index.html',
@@ -25,9 +25,19 @@ self.addEventListener('activate', event => {
 
 self.addEventListener('fetch', event => {
   const url = new URL(event.request.url);
-  const isHTML = event.request.destination === 'document' || url.pathname.endsWith('.html') || url.pathname.endsWith('/');
+
+  // ── Let ALL external/cross-origin requests pass through untouched ──
+  // This is critical — Firebase SDKs, Google Fonts, etc. must never be intercepted
+  if (url.origin !== self.location.origin) {
+    return; // browser handles it normally
+  }
+
+  const isHTML = event.request.destination === 'document'
+    || url.pathname.endsWith('.html')
+    || url.pathname.endsWith('/');
 
   if (isHTML) {
+    // Network-first for HTML — always try to get fresh index.html
     event.respondWith(
       fetch(event.request)
         .then(response => {
@@ -38,6 +48,7 @@ self.addEventListener('fetch', event => {
         .catch(() => caches.match(event.request))
     );
   } else {
+    // Cache-first for same-origin assets (icons, manifest)
     event.respondWith(
       caches.match(event.request).then(cached => {
         if (cached) return cached;
