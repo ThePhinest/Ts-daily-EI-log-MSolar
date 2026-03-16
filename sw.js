@@ -1,4 +1,4 @@
-const CACHE_NAME = 'phinest-ei-v3';
+const CACHE_NAME = 'phinest-ei-v4';
 const ASSETS = [
   '/Ts-daily-EI-log-MSolar/',
   '/Ts-daily-EI-log-MSolar/index.html',
