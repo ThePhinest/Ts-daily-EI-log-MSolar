@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- saved from url=(0045)file:///C:/Users/timnj/Downloads/index_8.html -->
+<!-- saved from url=(0045)file:///C:/Users/timnj/Downloads/index_9.html -->
 <html lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -325,10 +325,35 @@ select{cursor:pointer}
     <div class="card-head">
       <span class="card-num">04</span>
       <span class="card-title">Contractor Crew Observations</span>
-      <span class="card-badge" id="crewBadge">0 blocks</span>
+      <span class="card-badge" id="crewBadge">1 block</span>
     </div>
     <div class="card-body">
-      <div id="crewContainer"></div>
+      <div id="crewContainer"><div class="crew-block" id="crew-1">
+    <div class="crew-block-head">
+      <span class="crew-lbl">Crew Block 1</span>
+      <button class="btn btn-ghost" onclick="removeCrew(1)">✕ Remove</button>
+    </div>
+    <div class="crew-body">
+      <div class="g g3" style="margin-bottom:11px">
+        <div class="field span2"><label>Contractor / Foreman Name</label><input type="text" id="crew-1-name" placeholder="Full name"></div>
+        <div class="field"><label>Hours on Site</label><input type="text" id="crew-1-time" placeholder="e.g. 6:30 AM – 4:30 PM"></div>
+        <div class="field full"><label>Work Location / Area</label><input type="text" id="crew-1-loc" placeholder="e.g. Area 3 — north hillside, adjacent to wetland buffer"></div>
+      </div>
+      <div class="field" style="margin-bottom:10px">
+        <label>Activities Observed</label>
+        <div class="preset-strip" id="chips-crew-1-acts"><button class="preset-chip" type="button" title="Tree felling with chainsaw crews">Tree felling with chainsaw crews</button><button class="preset-chip" type="button" title="Directional felling of trees ≥3&quot; DBH">Directional felling of trees ≥3" DBH</button><button class="preset-chip" type="button" title="Slash/brush management and pile staging">Slash/brush management and pile staging</button><button class="preset-chip" type="button" title="Limbing and bucking of felled material">Limbing and bucking of felled material</button><button class="preset-chip" type="button" title="Equipment staging and access route maintenance">Equipment staging and access route maintenance</button><button class="preset-chip" type="button" title="LOD flagging and boundary verification">LOD flagging and boundary verification</button><button class="preset-chip" type="button" title="Morning safety tailgate / crew briefing">Morning safety tailgate / crew briefing</button><button class="preset-chip" type="button" title="General site mobilization and setup">General site mobilization and setup</button></div>
+        <textarea class="short" id="crew-1-acts" placeholder="Describe contractor activities observed…"></textarea>
+      </div>
+      <div class="field" style="margin-bottom:10px">
+        <label>Env. Compliance Observations</label>
+        <div class="preset-strip" id="chips-crew-1-envcomp"><button class="preset-chip" type="button" title="Work conducted within LOD — no encroachment observed">Work conducted within LOD — no encroachment observed</button><button class="preset-chip" type="button" title="Wetland buffer markers intact and undisturbed">Wetland buffer markers intact and undisturbed</button><button class="preset-chip" type="button" title="Stream buffer maintained — no felling within riparian corridor">Stream buffer maintained — no felling within riparian co…</button><button class="preset-chip" type="button" title="No turbid discharge or runoff observed">No turbid discharge or runoff observed</button><button class="preset-chip" type="button" title="Equipment staged &gt;100 ft from water resources">Equipment staged &gt;100 ft from water resources</button><button class="preset-chip" type="button" title="No fuel or hydraulic spills observed">No fuel or hydraulic spills observed</button><button class="preset-chip" type="button" title="No RTE species or habitat disturbance observed">No RTE species or habitat disturbance observed</button><button class="preset-chip" type="button" title="Environmental controls in satisfactory condition">Environmental controls in satisfactory condition</button></div>
+        <textarea class="short" id="crew-1-envcomp" placeholder="Note compliance or any deficiency observed for this crew…"></textarea>
+      </div>
+      <div class="g g2">
+        <div class="field"><label>Issues / Non-Compliance (Level 1–4 if known)</label><textarea class="short" id="crew-1-issues" placeholder="e.g. Level 2 — slash material observed 3 ft beyond LOD at north boundary…"></textarea></div>
+        <div class="field"><label>Additional Notes</label><textarea class="short" id="crew-1-notes" placeholder="Any other notes for this crew member or area…"></textarea></div>
+      </div>
+    </div></div></div>
       <button class="btn btn-add" onclick="addCrew()">+ Add Crew Block</button>
     </div>
   </div>
@@ -341,7 +366,7 @@ select{cursor:pointer}
       <span class="check-text">Morning safety meeting / tailgate conducted at 6:30 AM prior to work start</span>
       <span class="check-tag tag-ops">OPS</span>
     </div>
-    <div class="check-note-wrap" id="c1-nw">
+    <div class="check-note-wrap vis" id="c1-nw">
       <textarea class="check-note" id="c1-note" placeholder="Note or deficiency detail…"></textarea>
     </div></div><div class="check-item"><div class="check-row">
       <input type="checkbox" id="c2" onchange="toggleNote(&#39;c2&#39;)">
@@ -1161,14 +1186,14 @@ function _showDebug(msg, color) {
   console.log('Phinest EI Debug:', msg);
 }
 
-// Firebase init
+// Firebase init — check for existing app to avoid duplicate init error on reload
 var db = null;
 if (typeof firebase !== 'undefined') {
   _showDebug('firebase global found ✓', '#7ab5b8');
   try {
-    firebase.initializeApp(_fbConfig);
-    db = firebase.firestore();
-    _showDebug('Firebase initialized OK ✓', '#27ae60');
+    const _fbApp = firebase.apps.length ? firebase.apps[0] : firebase.initializeApp(_fbConfig);
+    db = _fbApp.firestore();
+    _showDebug('Firebase initialized OK ✓ (apps: ' + firebase.apps.length + ')', '#27ae60');
   } catch(e) {
     _showDebug('initializeApp FAILED: ' + e.message, '#e74c3c');
   }
@@ -1314,6 +1339,6 @@ function resetForm() {
     console.warn('Phinest EI: Firebase init load failed —', e.message);
   }
 })();
-</script><div id="_fb_debug" style="position: fixed; bottom: 80px; left: 12px; right: 12px; z-index: 9999; background: rgb(10, 10, 10); border: 1px solid rgb(51, 51, 51); border-radius: 6px; padding: 10px 14px; font-family: monospace; font-size: 11px; line-height: 1.7; max-height: 180px; overflow-y: auto;"><div style="color:#666;margin-bottom:4px;font-size:10px;letter-spacing:.08em;">FIREBASE DEBUG &nbsp;<button onclick="document.getElementById(&quot;_fb_debug&quot;).remove()" style="background:none;border:none;color:#555;cursor:pointer;float:right;font-size:13px;">✕</button></div><div style="color: rgb(122, 181, 184);">12:45:18 PM — firebase global found ✓</div><div style="color: rgb(39, 174, 96);">12:45:18 PM — Firebase initialized OK ✓</div><div style="color: rgb(165, 172, 175);">12:45:18 PM — initFirebaseLoad: checking cloud for saved session…</div></div>
+</script><div id="_fb_debug" style="position: fixed; bottom: 80px; left: 12px; right: 12px; z-index: 9999; background: rgb(10, 10, 10); border: 1px solid rgb(51, 51, 51); border-radius: 6px; padding: 10px 14px; font-family: monospace; font-size: 11px; line-height: 1.7; max-height: 180px; overflow-y: auto;"><div style="color:#666;margin-bottom:4px;font-size:10px;letter-spacing:.08em;">FIREBASE DEBUG &nbsp;<button onclick="document.getElementById(&quot;_fb_debug&quot;).remove()" style="background:none;border:none;color:#555;cursor:pointer;float:right;font-size:13px;">✕</button></div><div style="color: rgb(122, 181, 184);">12:53:12 PM — firebase global found ✓</div><div style="color: rgb(39, 174, 96);">12:53:12 PM — Firebase initialized OK ✓ (apps: 1)</div><div style="color: rgb(165, 172, 175);">12:53:12 PM — initFirebaseLoad: checking cloud for saved session…</div><div style="color: rgb(165, 172, 175);">12:53:21 PM — debouncedAutoSave fired — queuing cloud save in 2.5s…</div><div style="color: rgb(165, 172, 175);">12:53:23 PM — debouncedAutoSave fired — queuing cloud save in 2.5s…</div><div style="color: rgb(165, 172, 175);">12:53:25 PM — cloudSave: writing to Firestore…</div><div style="color: rgb(39, 174, 96);">12:53:26 PM — cloudSave: write SUCCESS ✓</div><div style="color: rgb(165, 172, 175);">12:54:13 PM — debouncedAutoSave fired — queuing cloud save in 2.5s…</div><div style="color: rgb(165, 172, 175);">12:54:15 PM — cloudSave: writing to Firestore…</div><div style="color: rgb(39, 174, 96);">12:54:15 PM — cloudSave: write SUCCESS ✓</div><div style="color: rgb(165, 172, 175);">12:54:18 PM — debouncedAutoSave fired — queuing cloud save in 2.5s…</div><div style="color: rgb(165, 172, 175);">12:54:19 PM — debouncedAutoSave fired — queuing cloud save in 2.5s…</div><div style="color: rgb(165, 172, 175);">12:54:22 PM — cloudSave: writing to Firestore…</div><div style="color: rgb(39, 174, 96);">12:54:22 PM — cloudSave: write SUCCESS ✓</div></div>
 
 </body></html>
