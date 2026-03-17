@@ -7,8 +7,8 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Phinest EI">
-<link rel="apple-touch-icon" href="file:///C:/Users/timnj/Downloads/icon-192.png">
-<link rel="manifest" href="file:///C:/Users/timnj/Downloads/manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="manifest" href="manifest.json">
 <title>Phinest EI — Field Log</title>
 <!-- Firebase SDKs — CDN (SW v6 passes external requests through untouched) -->
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
@@ -1122,7 +1122,15 @@ if(SAVED_DATA){
 }
 </script>
 
-<!-- PWA service worker removed — re-add after Firebase sync confirmed -->
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function() {
+      navigator.serviceWorker.register('/Ts-daily-EI-log-MSolar/sw.js')
+        .then(reg => console.log('Phinest EI: SW registered ✓', reg.scope))
+        .catch(err => console.warn('Phinest EI: SW registration failed —', err));
+    });
+  }
+</script>
 
 <script>
 // ═══════════════════════════════════════════
