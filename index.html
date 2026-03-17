@@ -831,7 +831,8 @@ function showPage(name){
   document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
   document.getElementById('page-'+name).classList.add('active');
   document.getElementById('tab-'+name).classList.add('active');
-  if(name==='config') renderConfig();
+  if(name==='config'){ renderConfig(); tsLoadConfigFields(); }
+if(name==='timesheet'){ tsPushFromDailyLog(); tsRenderCurrentWeek(); tsCheckArchivePrompt(); }
 }
 
 // ═══════════════════════════════════════════
@@ -1298,12 +1299,266 @@ function _resetFormCore(){
 }
 
 // ═══════════════════════════════════════════
+// TIMESHEET
+// ═══════════════════════════════════════════
+const TS_DEFAULTS={weekStartDay:0,perDiem:178,mileageRate:0.725,supervisorName:''};
+function tsLoadConfig(){try{const s=localStorage.getItem('msf_ts_config');return s?Object.assign({},TS_DEFAULTS,JSON.parse(s)):Object.assign({},TS_DEFAULTS);}catch{return Object.assign({},TS_DEFAULTS);}}
+function tsSaveConfig(c){localStorage.setItem('msf_ts_config',JSON.stringify(c));}
+function tsFormatDate(d){return d.toISOString().split('T')[0];}
+function tsParseDate(s){const[y,m,dd]=s.split('-').map(Number);return new Date(y,m-1,dd);}
+function tsGetWeekBounds(date){const cfg=tsLoadConfig();const d=new Date(date);d.setHours(0,0,0,0);const diff=(d.getDay()-cfg.weekStartDay+7)%7;const start=new Date(d);start.setDate(d.getDate()-diff);const end=new Date(start);end.setDate(start.getDate()+6);return{start,end};}
+function tsWeekDates(start){const dates=[];for(let i=0;i<7;i++){const d=new Date(start);d.setDate(start.getDate()+i);dates.push(d);}return dates;}
+function tsDisplayDate(d){const days=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];return days[d.getDay()]+' '+(d.getMonth()+1)+'/'+d.getDate();}
+function tsWeekLabel(s,e){const mo=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];return mo[s.getMonth()]+' '+s.getDate()+' \u2013 '+mo[e.getMonth()]+' '+e.getDate()+', '+e.getFullYear();}
+function tsGetAllEntries(){try{return JSON.parse(localStorage.getItem('msf_ts_entries')||'{}');}catch{return{};}}
+function tsGetEntry(ds){return tsGetAllEntries()[ds]||null;}
+function tsSaveEntry(ds,data){const entries=tsGetAllEntries();entries[ds]=Object.assign(entries[ds]||{},data);localStorage.setItem('msf_ts_entries',JSON.stringify(entries));if(db&&_fbReady){db.collection('timesheetEntries').doc(ds).set(entries[ds]).catch(()=>{});}}
+function tsGetArchivedWeeks(){try{return JSON.parse(localStorage.getItem('msf_ts_weeks')||'[]');}catch{return[];}}
+function tsSaveArchivedWeeks(w){localStorage.setItem('msf_ts_weeks',JSON.stringify(w));}
+function tsCalcMileage(miles){return(miles*tsLoadConfig().mileageRate).toFixed(2);}
+
+function tsPushFromDailyLog(){
+  const dateEl=document.getElementById('reportDate');
+  if(!dateEl||!dateEl.value)return;
+  const ds=dateEl.value;
+  const existing=tsGetEntry(ds)||{};
+  const update={};
+  if(!existing._manualHours){
+    const tin=document.getElementById('p-timeIn')?.value||'';
+    const tout=document.getElementById('p-timeOut')?.value||'';
+    if(tin&&tout){const[ih,im]=tin.split(':').map(Number);const[oh,om]=tout.split(':').map(Number);const hrs=((oh*60+om)-(ih*60+im))/60;if(hrs>0)update.hours=Math.round(hrs*10)/10;}
+  }
+  if(!existing._manualMiles){
+    const s=parseFloat(document.getElementById('p-odoStart')?.value)||0;
+    const e=parseFloat(document.getElementById('p-odoEnd')?.value)||0;
+    if(s&&e&&e>s)update.miles=Math.round(e-s);
+  }
+  if(!existing._manualActivity){
+    const sum=document.getElementById('inspSummary')?.value?.trim()||'';
+    if(sum){const first=sum.split(/[.!?]/)[0].trim();update.activitySummary=first.length>80?first.substring(0,80)+'\u2026':first;}
+  }
+  if(!existing._manualPerDiem){update.perDiem=tsLoadConfig().perDiem;}
+  if(Object.keys(update).length>0)tsSaveEntry(ds,update);
+}
+
+function tsRenderCurrentWeek(){
+  const today=new Date();today.setHours(0,0,0,0);
+  const{start,end}=tsGetWeekBounds(today);
+  const dates=tsWeekDates(start);
+  const cfg=tsLoadConfig();
+  const lbl=document.getElementById('ts-week-label');
+  if(lbl)lbl.textContent='Week of '+tsWeekLabel(start,end);
+  const todayStr=tsFormatDate(today);
+  let totH=0,totM=0,totPD=0,totMil=0;
+  let rows='';
+  dates.forEach(d=>{
+    const ds=tsFormatDate(d);
+    const entry=tsGetEntry(ds)||{};
+    const isToday=ds===todayStr;
+    const hours=entry.hours!==undefined?entry.hours:'';
+    const miles=entry.miles!==undefined?entry.miles:'';
+    const perDiem=entry.perDiem!==undefined?entry.perDiem:cfg.perDiem;
+    const mileage=miles!==''?tsCalcMileage(Number(miles)):'0.00';
+    const activity=entry.activitySummary||'';
+    if(hours!=='')totH+=Number(hours);
+    if(miles!=='')totM+=Number(miles);
+    totPD+=Number(perDiem);
+    totMil+=parseFloat(mileage);
+    rows+=`<tr class="${isToday?'ts-row-today':''}" data-date="${ds}">
+      <td class="ts-td-date">${tsDisplayDate(d)}</td>
+      <td><input type="number" class="ts-input" value="${hours}" min="0" max="24" step="0.5" style="width:42px" onchange="tsFieldEdit('${ds}','hours',this.value,'_manualHours')"></td>
+      <td><input type="number" class="ts-input" value="${perDiem}" min="0" step="1" style="width:50px" onchange="tsFieldEdit('${ds}','perDiem',this.value,'_manualPerDiem')"></td>
+      <td><input type="number" class="ts-input" value="${miles}" min="0" step="1" style="width:46px" onchange="tsFieldEdit('${ds}','miles',this.value,'_manualMiles')"></td>
+      <td class="ts-td-calc">$${mileage}</td>
+      <td><input type="text" class="ts-input" value="${activity}" style="width:100%;min-width:90px" onchange="tsFieldEdit('${ds}','activitySummary',this.value,'_manualActivity')" placeholder="Activity\u2026"></td>
+    </tr>`;
+  });
+  rows+=`<tr class="ts-row-totals"><td>Total</td><td>${totH.toFixed(1)}</td><td>$${totPD.toFixed(0)}</td><td>${totM}</td><td>$${totMil.toFixed(2)}</td><td></td></tr>`;
+  const tbody=document.getElementById('ts-week-tbody');
+  if(tbody)tbody.innerHTML=rows;
+}
+
+function tsFieldEdit(ds,field,value,manualFlag){
+  const update={};
+  update[field]=isNaN(Number(value))||field==='activitySummary'?value:Number(value);
+  update[manualFlag]=true;
+  tsSaveEntry(ds,update);
+  tsRenderCurrentWeek();
+}
+
+function tsRenderHistory(){
+  const weeks=tsGetArchivedWeeks();
+  const container=document.getElementById('ts-history-list');
+  if(!container)return;
+  if(weeks.length===0){container.innerHTML='<div style="color:var(--muted);font-size:12px;text-align:center;padding:20px;">No archived weeks yet.</div>';return;}
+  const sorted=[...weeks].sort((a,b)=>b.weekStart.localeCompare(a.weekStart));
+  container.innerHTML=sorted.map((w,i)=>{
+    const s=tsParseDate(w.weekStart),e=tsParseDate(w.weekEnd);
+    const t=w.totals||{};
+    return`<div class="ts-hist-row">
+      <div class="ts-hist-head" onclick="tsToggleHist(${i})">
+        <div><div class="ts-hist-label">${tsWeekLabel(s,e)}</div><div class="ts-hist-meta">${t.hours||0} hrs &nbsp;|&nbsp; ${t.miles||0} mi &nbsp;|&nbsp; $${t.mileage||'0.00'}</div></div>
+        <div class="ts-hist-chevron" id="ts-chev-${i}">\u203a</div>
+      </div>
+      <div class="ts-hist-body" id="ts-hb-${i}" style="display:none;">
+        <table class="ts-tbl" style="margin-top:8px;">
+          <thead><tr><th>Date</th><th>Hrs</th><th>Per Diem</th><th>Miles</th><th>Mil. $</th><th>Activity</th></tr></thead>
+          <tbody>${(w.days||[]).map(d=>`<tr><td class="ts-td-date">${d.display||d.date}</td><td>${d.hours||0}</td><td>$${d.perDiem||0}</td><td>${d.miles||0}</td><td class="ts-td-calc">$${d.mileage||'0.00'}</td><td style="font-size:10px;color:var(--muted2);white-space:normal">${d.activitySummary||''}</td></tr>`).join('')}
+          <tr class="ts-row-totals"><td>Total</td><td>${t.hours||0}</td><td>$${t.perDiem||0}</td><td>${t.miles||0}</td><td>$${t.mileage||'0.00'}</td><td></td></tr></tbody>
+        </table>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function tsToggleHist(i){
+  const b=document.getElementById('ts-hb-'+i),c=document.getElementById('ts-chev-'+i);
+  if(!b)return;
+  const open=b.style.display!=='none';
+  b.style.display=open?'none':'block';
+  if(c)c.style.transform=open?'':'rotate(90deg)';
+}
+
+function tsRenderCumulative(){
+  const weeks=tsGetArchivedWeeks();
+  const entries=tsGetAllEntries();
+  let totH=0,totM=0,totMil=0,totPD=0,days=0;
+  weeks.forEach(w=>{const t=w.totals||{};totH+=Number(t.hours||0);totM+=Number(t.miles||0);totMil+=parseFloat(t.mileage||0);totPD+=Number(t.perDiem||0);days+=(w.days||[]).filter(d=>Number(d.hours)>0).length;});
+  Object.values(entries).forEach(e=>{if(Number(e.hours)>0){totH+=Number(e.hours||0);totM+=Number(e.miles||0);totMil+=parseFloat(tsCalcMileage(Number(e.miles||0)));totPD+=Number(e.perDiem||0);days++;}});
+  const set=(id,v)=>{const el=document.getElementById(id);if(el)el.textContent=v;};
+  set('ts-cum-hours',totH.toFixed(1));
+  set('ts-cum-miles',totM.toLocaleString());
+  set('ts-cum-mileage','$'+totMil.toFixed(2));
+  set('ts-cum-perdiem','$'+totPD.toLocaleString());
+  set('ts-cum-days',days+' days worked');
+  const sorted=[...weeks].sort((a,b)=>b.weekStart.localeCompare(a.weekStart));
+  const tbody=document.getElementById('ts-cum-tbody');
+  if(tbody)tbody.innerHTML=sorted.map(w=>{
+    const t=w.totals||{};const s=tsParseDate(w.weekStart),e=tsParseDate(w.weekEnd);
+    return`<tr><td style="font-size:10px">${(s.getMonth()+1)+'/'+s.getDate()+' \u2013 '+(e.getMonth()+1)+'/'+e.getDate()}</td><td>${t.hours||0}</td><td>${t.miles||0}</td><td class="ts-td-calc">$${t.mileage||'0.00'}</td><td>$${t.perDiem||0}</td></tr>`;
+  }).join('');
+}
+
+function tsArchiveCurrentWeek(){
+  _confirmModal('Archive this week and reset? Archived data is always accessible in History.', function(){
+    const today=new Date();
+    const{start,end}=tsGetWeekBounds(today);
+    _tsDoArchive(start,end);
+  });
+}
+
+function _tsDoArchive(start,end){
+  const cfg=tsLoadConfig();
+  const dates=tsWeekDates(start);
+  let totH=0,totM=0,totMil=0,totPD=0;
+  const days=dates.map(d=>{
+    const ds=tsFormatDate(d);const entry=tsGetEntry(ds)||{};
+    const hours=Number(entry.hours||0),miles=Number(entry.miles||0);
+    const perDiem=Number(entry.perDiem!==undefined?entry.perDiem:cfg.perDiem);
+    const mileage=parseFloat(tsCalcMileage(miles));
+    totH+=hours;totM+=miles;totMil+=mileage;totPD+=perDiem;
+    return{date:ds,display:tsDisplayDate(d),hours,miles,perDiem,mileage:mileage.toFixed(2),activitySummary:entry.activitySummary||'',expenses:entry.expenses||''};
+  });
+  const week={weekStart:tsFormatDate(start),weekEnd:tsFormatDate(end),archivedAt:Date.now(),days,totals:{hours:totH.toFixed(1),miles:totM,mileage:totMil.toFixed(2),perDiem:totPD.toFixed(0)}};
+  const weeks=tsGetArchivedWeeks().filter(w=>w.weekStart!==week.weekStart);
+  weeks.push(week);
+  tsSaveArchivedWeeks(weeks);
+  const entries=tsGetAllEntries();
+  dates.forEach(d=>delete entries[tsFormatDate(d)]);
+  localStorage.setItem('msf_ts_entries',JSON.stringify(entries));
+  localStorage.removeItem('msf_ts_snooze');
+  if(db&&_fbReady)db.collection('timesheetWeeks').doc(week.weekStart).set(week).catch(()=>{});
+  const banner=document.getElementById('ts-archive-banner');if(banner)banner.remove();
+  tsRenderCurrentWeek();tsRenderHistory();tsRenderCumulative();
+}
+
+function tsCheckArchivePrompt(){
+  const today=new Date();today.setHours(0,0,0,0);
+  const{start}=tsGetWeekBounds(today);
+  const prevEnd=new Date(start);prevEnd.setDate(start.getDate()-1);
+  const prevStart=new Date(prevEnd);prevStart.setDate(prevEnd.getDate()-6);
+  const entries=tsGetAllEntries();
+  const prevDates=tsWeekDates(prevStart);
+  const hasPrevData=prevDates.some(d=>tsGetEntry(tsFormatDate(d)));
+  if(!hasPrevData)return;
+  const archived=tsGetArchivedWeeks();
+  if(archived.some(w=>w.weekStart===tsFormatDate(prevStart)))return;
+  try{
+    const snooze=JSON.parse(localStorage.getItem('msf_ts_snooze')||'{}');
+    const count=snooze.count||0,last=snooze.last||0;
+    if(count>=3){_tsShowArchiveBanner(tsFormatDate(prevStart),tsFormatDate(prevEnd));return;}
+    if(count>0&&(Date.now()-last)<86400000)return;
+    localStorage.setItem('msf_ts_snooze',JSON.stringify({count:count+1,last:Date.now()}));
+    setTimeout(()=>{
+      _confirmModal('Week of '+tsWeekLabel(prevStart,prevEnd)+' is complete. Archive and reset?',function(){
+        _tsDoArchive(prevStart,prevEnd);
+        localStorage.removeItem('msf_ts_snooze');
+      });
+    },1500);
+  }catch{}
+}
+
+function _tsShowArchiveBanner(ws,we){
+  if(document.getElementById('ts-archive-banner'))return;
+  const s=tsParseDate(ws),e=tsParseDate(we);
+  const banner=document.createElement('div');
+  banner.id='ts-archive-banner';
+  banner.style.cssText='position:fixed;top:56px;left:0;right:0;z-index:999;background:var(--s1);border-bottom:1px solid var(--amber);color:var(--amber);font-family:var(--mono);font-size:12px;padding:8px 18px;display:flex;justify-content:space-between;align-items:center;';
+  banner.innerHTML=`<span>Week of ${tsWeekLabel(s,e)} not archived \u2014 <button onclick="_tsDoArchive(tsParseDate('${ws}'),tsParseDate('${we}'))" style="background:none;border:none;color:var(--green);cursor:pointer;font-family:var(--mono);font-size:12px;text-decoration:underline;">archive now</button></span><button onclick="document.getElementById('ts-archive-banner').remove()" style="background:none;border:none;color:var(--muted2);cursor:pointer;font-size:16px;">\u2715</button>`;
+  document.body.prepend(banner);
+}
+
+function tsShowView(v){
+  ['week','history','cumul'].forEach(id=>{
+    document.getElementById('ts-view-'+id).style.display='none';
+    document.getElementById('ts-btn-'+id).classList.remove('active');
+  });
+  document.getElementById('ts-view-'+v).style.display='block';
+  document.getElementById('ts-btn-'+v).classList.add('active');
+  if(v==='week'){tsPushFromDailyLog();tsRenderCurrentWeek();}
+  if(v==='history')tsRenderHistory();
+  if(v==='cumul')tsRenderCumulative();
+}
+
+function saveTsConfig(){
+  const cfg={
+    weekStartDay:parseInt(document.getElementById('cfg-ts-weekstart')?.value)||0,
+    perDiem:parseFloat(document.getElementById('cfg-ts-perdiem')?.value)||178,
+    mileageRate:parseFloat(document.getElementById('cfg-ts-mileage')?.value)||0.725,
+    supervisorName:document.getElementById('cfg-ts-supervisor')?.value.trim()||''
+  };
+  tsSaveConfig(cfg);
+  const st=document.getElementById('cfg-ts-status');
+  if(st){st.textContent='\u2713 Saved';st.style.opacity='1';setTimeout(()=>st.style.opacity='0',2500);}
+  tsRenderCurrentWeek();
+}
+
+function tsLoadConfigFields(){
+  const cfg=tsLoadConfig();
+  const ws=document.getElementById('cfg-ts-weekstart');
+  const pd=document.getElementById('cfg-ts-perdiem');
+  const mr=document.getElementById('cfg-ts-mileage');
+  const sv=document.getElementById('cfg-ts-supervisor');
+  if(ws)ws.value=cfg.weekStartDay;
+  if(pd)pd.value=cfg.perDiem;
+  if(mr)mr.value=cfg.mileageRate;
+  if(sv)sv.value=cfg.supervisorName;
+}
+
+function tsInit(){
+  tsPushFromDailyLog();
+  tsRenderCurrentWeek();
+  tsCheckArchivePrompt();
+}
+
+// ═══════════════════════════════════════════
 // INIT
 // ═══════════════════════════════════════════
 document.getElementById('reportDate').value=new Date().toISOString().split('T')[0];
 applyProjectConfig();
 buildChecklist();
 renderAllChips();
+tsInit();
 
 // Restore saved data if this is a re-opened archived file
 if(SAVED_DATA){
