@@ -907,11 +907,14 @@ let crewSeq=0, crewIds=[];
 // ═══════════════════════════════════════════
 function showPage(name){
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
-  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
-  document.getElementById('page-'+name).classList.add('active');
-  document.getElementById('tab-'+name).classList.add('active');
+  document.querySelectorAll('.nav-item').forEach(b=>b.classList.remove('active'));
+  const page=document.getElementById('page-'+name);
+  if(page)page.classList.add('active');
+  const primaryTabs=['log','timesheet','compliance'];
+  const tabEl=document.getElementById('tab-'+(primaryTabs.includes(name)?name:'more'));
+  if(tabEl)tabEl.classList.add('active');
   if(name==='config'){ renderConfig(); tsLoadConfigFields(); }
-if(name==='timesheet'){ tsPushFromDailyLog(); tsRenderCurrentWeek(); tsCheckArchivePrompt(); }
+  if(name==='timesheet'){ tsPushFromDailyLog(); tsRenderCurrentWeek(); tsCheckArchivePrompt(); }
 }
 
 // ═══════════════════════════════════════════
@@ -1622,6 +1625,21 @@ function tsLoadConfigFields(){
   if(pd)pd.value=cfg.perDiem;
   if(mr)mr.value=cfg.mileageRate;
   if(sv)sv.value=cfg.supervisorName;
+}
+
+function toggleMoreMenu(){
+  const overlay=document.getElementById('more-overlay');
+  const panel=document.getElementById('more-panel');
+  const isOpen=panel.classList.contains('open');
+  if(isOpen){closeMoreMenu();}else{overlay.classList.add('open');panel.classList.add('open');document.getElementById('tab-more').classList.add('active');}
+}
+function closeMoreMenu(){
+  document.getElementById('more-overlay').classList.remove('open');
+  document.getElementById('more-panel').classList.remove('open');
+  const active=document.querySelector('.page.active');
+  const name=active?active.id.replace('page-',''):'log';
+  const primaryTabs=['log','timesheet','compliance'];
+  document.getElementById('tab-more').classList.toggle('active',!primaryTabs.includes(name));
 }
 
 function tsInit(){
