@@ -177,6 +177,27 @@ select{cursor:pointer}
 .modal-btns{display:flex;gap:10px;justify-content:flex-end}
 .modal-cancel{font-family:var(--cond);font-weight:700;font-size:12px;letter-spacing:.08em;text-transform:uppercase;background:transparent;border:1px solid var(--border2);color:var(--muted2);padding:8px 18px;border-radius:5px;cursor:pointer}
 .modal-confirm{font-family:var(--cond);font-weight:700;font-size:12px;letter-spacing:.08em;text-transform:uppercase;background:var(--red);border:1px solid var(--red);color:#fff;padding:8px 18px;border-radius:5px;cursor:pointer}
+.ts-toggle{font-family:var(--cond);font-weight:700;font-size:11px;letter-spacing:.08em;text-transform:uppercase;flex:1;padding:8px 4px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--muted2);cursor:pointer;text-align:center;transition:all .15s}
+.ts-toggle.active{background:var(--s3);border-color:#005a64;color:var(--amber2)}
+.ts-tbl{width:100%;border-collapse:collapse;font-size:11px;table-layout:fixed}
+.ts-tbl th{color:var(--muted);font-size:9px;letter-spacing:.08em;text-transform:uppercase;padding:4px 6px;border-bottom:1px solid var(--border);text-align:left;font-weight:700}
+.ts-tbl td{padding:6px 6px;border-bottom:1px solid var(--s1);color:var(--text);vertical-align:middle;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ts-row-today td{background:rgba(0,76,84,0.15)}
+.ts-row-totals td{border-top:1px solid var(--border);border-bottom:none;color:var(--muted2);font-weight:700;font-size:10px;padding-top:8px}
+.ts-input{background:var(--s2);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:var(--body);font-size:11px;padding:3px 5px;width:100%}
+.ts-td-date{color:var(--muted2);white-space:nowrap;font-size:10px;width:68px}
+.ts-td-calc{color:var(--muted2);font-family:var(--mono);font-size:10px}
+.ts-stat-card{background:var(--s2);border-radius:6px;padding:12px}
+.ts-stat-label{font-family:var(--mono);font-size:9px;color:var(--muted);letter-spacing:.08em;text-transform:uppercase;margin-bottom:4px}
+.ts-stat-val{font-size:20px;font-weight:700;color:var(--text)}
+.ts-stat-sub{font-size:10px;color:var(--muted);margin-top:2px}
+.ts-green{color:var(--green)!important}
+.ts-hist-row{background:var(--s1);border-radius:6px;margin-bottom:8px;overflow:hidden;border:1px solid var(--border)}
+.ts-hist-head{padding:10px 12px;display:flex;justify-content:space-between;align-items:center;cursor:pointer}
+.ts-hist-label{font-size:11px;color:var(--text);font-weight:700}
+.ts-hist-meta{font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:2px}
+.ts-hist-chevron{color:var(--muted2);font-size:16px;transition:transform .2s}
+.ts-hist-body{padding:0 12px 10px;border-top:1px solid var(--border)}
 </style>
 </head>
 <body>
@@ -189,6 +210,7 @@ select{cursor:pointer}
   </div>
   <div class="bar-spacer"></div>
   <button class="tab-btn active" id="tab-log" onclick="showPage(&#39;log&#39;)">📋 Daily Log</button>
+  <button class="tab-btn" id="tab-timesheet" onclick="showPage(&#39;timesheet&#39;)">⏱ Timesheet</button>
   <button class="tab-btn" id="tab-config" onclick="showPage(&#39;config&#39;)">⚙ Config</button>
   <button class="icon-btn" title="Print" onclick="window.print()">⎙</button>
   <button class="icon-btn" title="Reset form" onclick="resetForm()">↺</button>
@@ -497,6 +519,92 @@ EI to conduct LOD walk prior to start of operations"></textarea>
 
 
 <!-- ══════════════════════════════════
+     TIMESHEET PAGE
+══════════════════════════════════ -->
+<div class="page" id="page-timesheet"><div class="wrap">
+
+  <div class="card">
+    <div class="card-head">
+      <span class="card-num">TS</span>
+      <span class="card-title">Timesheet</span>
+    </div>
+    <div class="card-body" style="padding:0">
+      <div style="display:flex;gap:8px;padding:14px 17px 0;">
+        <button class="ts-toggle active" id="ts-btn-week" onclick="tsShowView('week')">Current Week</button>
+        <button class="ts-toggle" id="ts-btn-history" onclick="tsShowView('history')">History</button>
+        <button class="ts-toggle" id="ts-btn-cumul" onclick="tsShowView('cumul')">Cumulative</button>
+      </div>
+
+      <!-- CURRENT WEEK -->
+      <div id="ts-view-week" style="padding:14px 17px 16px;">
+        <div id="ts-week-label" style="font-family:var(--mono);font-size:10px;color:var(--muted);letter-spacing:.08em;text-transform:uppercase;margin-bottom:10px;"></div>
+        <div style="overflow-x:auto;">
+          <table class="ts-tbl">
+            <thead>
+              <tr>
+                <th style="width:68px">Date</th>
+                <th style="width:48px">Hours</th>
+                <th style="width:58px">Per Diem</th>
+                <th style="width:52px">Miles</th>
+                <th style="width:58px">Mil. $</th>
+                <th>Activity Summary</th>
+              </tr>
+            </thead>
+            <tbody id="ts-week-tbody"></tbody>
+          </table>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:12px;">
+          <button class="btn" style="flex:1;font-size:11px;padding:8px;" onclick="tsPushFromDailyLog();tsRenderCurrentWeek();">↺ Sync from Log</button>
+          <button class="btn" style="flex:1;font-size:11px;padding:8px;border-color:var(--red);color:var(--red);" onclick="tsArchiveCurrentWeek()">Archive Week</button>
+        </div>
+      </div>
+
+      <!-- HISTORY -->
+      <div id="ts-view-history" style="display:none;padding:14px 17px 16px;">
+        <div style="font-family:var(--mono);font-size:10px;color:var(--muted);letter-spacing:.08em;text-transform:uppercase;margin-bottom:10px;">Past weeks — tap to expand</div>
+        <div id="ts-history-list"></div>
+      </div>
+
+      <!-- CUMULATIVE -->
+      <div id="ts-view-cumul" style="display:none;padding:14px 17px 16px;">
+        <div style="font-family:var(--mono);font-size:10px;color:var(--muted);letter-spacing:.08em;text-transform:uppercase;margin-bottom:10px;">Whole-job totals</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px;">
+          <div class="ts-stat-card">
+            <div class="ts-stat-label">Total Hours</div>
+            <div class="ts-stat-val" id="ts-cum-hours">—</div>
+            <div class="ts-stat-sub" id="ts-cum-days">—</div>
+          </div>
+          <div class="ts-stat-card">
+            <div class="ts-stat-label">Total Miles</div>
+            <div class="ts-stat-val" id="ts-cum-miles">—</div>
+            <div class="ts-stat-sub">driven</div>
+          </div>
+          <div class="ts-stat-card">
+            <div class="ts-stat-label">Mileage Total</div>
+            <div class="ts-stat-val ts-green" id="ts-cum-mileage">—</div>
+            <div class="ts-stat-sub">reimbursable</div>
+          </div>
+          <div class="ts-stat-card">
+            <div class="ts-stat-label">Per Diem Total</div>
+            <div class="ts-stat-val ts-green" id="ts-cum-perdiem">—</div>
+            <div class="ts-stat-sub">earned</div>
+          </div>
+        </div>
+        <div style="font-family:var(--mono);font-size:10px;color:var(--muted);letter-spacing:.08em;text-transform:uppercase;margin-bottom:8px;border-top:1px solid var(--border);padding-top:12px;">Weekly breakdown</div>
+        <div style="overflow-x:auto;">
+          <table class="ts-tbl">
+            <thead><tr><th>Week</th><th style="width:40px">Hrs</th><th style="width:50px">Miles</th><th style="width:58px">Mil. $</th><th style="width:70px">Per Diem</th></tr></thead>
+            <tbody id="ts-cum-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div></div><!-- /page-timesheet -->
+
+
+<!-- ══════════════════════════════════
      CONFIG PAGE
 ══════════════════════════════════ -->
 <div class="page" id="page-config"><div class="wrap">
@@ -529,7 +637,33 @@ EI to conduct LOD walk prior to start of operations"></textarea>
   </div>
 
   <div class="config-section">
-    <div class="config-head"><span class="config-title">Active Phase</span></div>
+    <div class="config-head"><span class="config-title">Timesheet Settings</span></div>
+    <div class="config-body">
+      <p class="config-hint">Configure your timesheet defaults. Values apply to all timesheet calculations and persist through resets.</p>
+      <div class="g g2" style="margin-bottom:10px">
+        <div class="field">
+          <label>Week Start Day</label>
+          <select id="cfg-ts-weekstart" style="background:var(--bg);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--body);font-size:14px;padding:8px 11px;width:100%">
+            <option value="0">Sunday</option>
+            <option value="1">Monday</option>
+            <option value="2">Tuesday</option>
+            <option value="3">Wednesday</option>
+            <option value="4">Thursday</option>
+            <option value="5">Friday</option>
+            <option value="6">Saturday</option>
+          </select>
+        </div>
+        <div class="field"><label>Per Diem Rate ($)</label><input type="number" id="cfg-ts-perdiem" placeholder="178" step="1" min="0"></div>
+        <div class="field"><label>Mileage Rate ($/mi)</label><input type="number" id="cfg-ts-mileage" placeholder="0.725" step="0.001" min="0"></div>
+        <div class="field"><label>Supervisor Name</label><input type="text" id="cfg-ts-supervisor" placeholder="Benjamin Hope"></div>
+      </div>
+      <button class="btn btn-amber" style="font-size:11px;padding:7px 14px" onclick="saveTsConfig()">Save &amp; Apply</button>
+      <span id="cfg-ts-status" style="font-family:var(--mono);font-size:11px;color:var(--green);margin-left:12px;opacity:0;transition:opacity .4s"></span>
+    </div>
+  </div>
+
+  <div class="config-section">
+		<div class="config-head"><span class="config-title">Active Phase</span></div>
     <div class="config-body">
       <p class="config-hint">Controls which preset chips appear in the daily log. Keep in sync with your current project phase.</p>
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
