@@ -209,12 +209,13 @@ select{cursor:pointer}
       <div class="g g3">
         <div class="field full"><label>Project Name</label><input type="text" id="projectName" value="Moraine Solar Energy Center" readonly=""></div>
         <div class="field"><label>Report Date</label><input type="date" id="reportDate"></div>
-        <div class="field"><label>Prepared By</label><input type="text" id="preparedBy" value="Tim Shortz"></div>
-        <div class="field"><label>Organization</label><input type="text" id="org" value="London Environmental LLC"></div>
-        <div class="field span2"><label>Active Phase</label><input type="text" id="activePhase" value="Phase 1 — Tree Felling"></div>
-        <div class="field"><label>Active Contractor</label><input type="text" id="contractor" value="Supreme Industries"></div>
+        <div class="field"><label>Prepared By</label><input type="text" id="preparedBy" value="Tim Shortz" readonly></div>
+        <div class="field"><label>Organization</label><input type="text" id="org" value="London Environmental LLC" readonly></div>
+        <div class="field span2"><label>Active Phase</label><input type="text" id="activePhase" value="Phase 1 — Tree Felling" readonly></div>
         <div class="field span2"><label>Town / County</label><input type="text" id="location" value="Town of Burns, Allegany County, NY" readonly=""></div>
-        <div class="field"><label>Reviewed By</label><input type="text" id="reviewedBy" value="Robert Forest Rung"></div>
+        <div class="field"><label>Active Contractor</label><input type="text" id="contractor" value="Supreme Industries"></div>
+        
+        <div class="field"><label>Reviewed By</label><input type="text" id="reviewedBy" value="Robert Forest Rung" readonly=""></div>
       </div>
     </div>
   </div>
@@ -506,6 +507,24 @@ EI to conduct LOD walk prior to start of operations"></textarea>
         <span style="color:var(--amber);font-weight:500">Config &amp; Presets</span> — Manage quick-insert chips that appear above text fields in the daily log.<br>
         Tag each preset to a phase. Only <strong style="color:var(--text)">active phase</strong> presets (plus "All Phases") appear as chips. All edits save to this browser automatically.
       </div>
+    </div>
+  </div>
+
+  <div class="config-section">
+    <div class="config-head"><span class="config-title">Project &amp; Report Info</span></div>
+    <div class="config-body">
+      <p class="config-hint">These values populate Section 01 on the daily log and persist through resets. Active Contractor can also be edited directly on the main page.</p>
+      <div class="g g2" style="margin-bottom:10px">
+        <div class="field"><label>Project Name</label><input type="text" id="cfg-projectName" placeholder="Moraine Solar Energy Center"></div>
+        <div class="field"><label>Prepared By</label><input type="text" id="cfg-preparedBy" placeholder="Tim Shortz"></div>
+        <div class="field"><label>Organization</label><input type="text" id="cfg-org" placeholder="London Environmental LLC"></div>
+        <div class="field"><label>Active Phase</label><input type="text" id="cfg-activePhase" placeholder="Phase 1 — Tree Felling"></div>
+        <div class="field"><label>Active Contractor</label><input type="text" id="cfg-contractor" placeholder="Supreme Industries"></div>
+        <div class="field"><label>Town / County</label><input type="text" id="cfg-location" placeholder="Town of Burns, Allegany County, NY"></div>
+        <div class="field"><label>Reviewed By</label><input type="text" id="cfg-reviewedBy" placeholder="Robert Forest Rung"></div>
+      </div>
+      <button class="btn btn-amber" style="font-size:11px;padding:7px 14px" onclick="saveProjectConfig()">Save &amp; Apply</button>
+      <span id="cfg-proj-status" style="font-family:var(--mono);font-size:11px;color:var(--green);margin-left:12px;opacity:0;transition:opacity .4s"></span>
     </div>
   </div>
 
@@ -862,6 +881,63 @@ function removePhase(idx){
   if(phases[idx]===activePhaseLabel){alert('Cannot remove the currently active phase.');return}
   phases.splice(idx,1);ss('msf_phases',phases);renderPhaseList();populateSelects();
 }
+// ═══════════════════════════════════════════
+// PROJECT CONFIG (persists through resets)
+// ═══════════════════════════════════════════
+const PROJECT_CONFIG_DEFAULTS = {
+  projectName: 'Moraine Solar Energy Center',
+  preparedBy:  'Tim Shortz',
+  org:         'London Environmental LLC',
+  activePhase: 'Phase 1 — Tree Felling',
+  contractor:  'Supreme Industries',
+  location:    'Town of Burns, Allegany County, NY',
+  reviewedBy:  'Robert Forest Rung'
+};
+
+function loadProjectConfig() {
+  try {
+    const saved = localStorage.getItem('msf_projectconfig');
+    return saved ? Object.assign({}, PROJECT_CONFIG_DEFAULTS, JSON.parse(saved)) : PROJECT_CONFIG_DEFAULTS;
+  } catch { return PROJECT_CONFIG_DEFAULTS; }
+}
+
+function applyProjectConfig() {
+  const cfg = loadProjectConfig();
+  document.getElementById('projectName').value  = cfg.projectName;
+  document.getElementById('preparedBy').value   = cfg.preparedBy;
+  document.getElementById('org').value          = cfg.org;
+  document.getElementById('activePhase').value  = cfg.activePhase;
+  document.getElementById('contractor').value   = cfg.contractor;
+  document.getElementById('location').value     = cfg.location;
+  document.getElementById('reviewedBy').value   = cfg.reviewedBy;
+  // Populate config fields
+  ['projectName','preparedBy','org','activePhase','contractor','location','reviewedBy'].forEach(k => {
+    const el = document.getElementById('cfg-' + k);
+    if (el) el.value = cfg[k];
+  });
+}
+
+function saveProjectConfig() {
+  const cfg = {
+    projectName: document.getElementById('cfg-projectName').value.trim() || PROJECT_CONFIG_DEFAULTS.projectName,
+    preparedBy:  document.getElementById('cfg-preparedBy').value.trim()  || PROJECT_CONFIG_DEFAULTS.preparedBy,
+    org:         document.getElementById('cfg-org').value.trim()         || PROJECT_CONFIG_DEFAULTS.org,
+    activePhase: document.getElementById('cfg-activePhase').value.trim() || PROJECT_CONFIG_DEFAULTS.activePhase,
+    contractor:  document.getElementById('cfg-contractor').value.trim()  || PROJECT_CONFIG_DEFAULTS.contractor,
+    location:    document.getElementById('cfg-location').value.trim()    || PROJECT_CONFIG_DEFAULTS.location,
+    reviewedBy:  document.getElementById('cfg-reviewedBy').value.trim()  || PROJECT_CONFIG_DEFAULTS.reviewedBy
+  };
+  localStorage.setItem('msf_projectconfig', JSON.stringify(cfg));
+  applyProjectConfig();
+  // Also update activePhaseLabel for chip rendering
+  activePhaseLabel = cfg.activePhase;
+  document.getElementById('activePhase').value = cfg.activePhase;
+  renderAllChips();
+  const st = document.getElementById('cfg-proj-status');
+  st.textContent = '✓ Saved'; st.style.opacity = '1';
+  setTimeout(() => st.style.opacity = '0', 2500);
+}
+
 function savePhaseLabel(){
   const val=document.getElementById('activePhaseInput').value.trim();if(!val)return;
   activePhaseLabel=val;ss('msf_activephase',activePhaseLabel);
@@ -1083,12 +1159,7 @@ function _resetFormCore(){
   document.getElementById('p-miles').textContent='— mi';
   document.getElementById('p-hours').textContent='— hrs';
   document.getElementById('reportDate').value=new Date().toISOString().split('T')[0];
-  document.getElementById('projectName').value='Moraine Solar Energy Center';
-  document.getElementById('preparedBy').value='Tim Shortz';
-  document.getElementById('org').value='London Environmental LLC';
-  document.getElementById('activePhase').value=activePhaseLabel;
-  document.getElementById('contractor').value='Supreme Industries';
-  document.getElementById('reviewedBy').value='Robert Forest Rung';
+  applyProjectConfig();
   try{ localStorage.removeItem('msf_autosave'); }catch{}
 }
 
@@ -1096,7 +1167,7 @@ function _resetFormCore(){
 // INIT
 // ═══════════════════════════════════════════
 document.getElementById('reportDate').value=new Date().toISOString().split('T')[0];
-document.getElementById('activePhase').value=activePhaseLabel;
+applyProjectConfig();
 buildChecklist();
 renderAllChips();
 
