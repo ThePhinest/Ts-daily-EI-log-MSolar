@@ -226,12 +226,56 @@ select{cursor:pointer}
     <div class="app-sub">Moraine Solar Energy Center</div>
   </div>
   <div class="bar-spacer"></div>
-  <button class="tab-btn active" id="tab-log" onclick="showPage(&#39;log&#39;)">📋 Daily Log</button>
-  <button class="tab-btn" id="tab-timesheet" onclick="showPage(&#39;timesheet&#39;)">⏱ Timesheet</button>
-  <button class="tab-btn" id="tab-config" onclick="showPage(&#39;config&#39;)">⚙ Config</button>
   <button class="icon-btn" title="Print" onclick="window.print()">⎙</button>
   <button class="icon-btn" title="Reset form" onclick="resetForm()">↺</button>
 <span id="sync-dot" title="" style="font-family: var(--mono); font-size: 10px; letter-spacing: 0.05em; transition: color 0.3s; white-space: nowrap; margin-left: 2px; color: var(--green);">✓ synced</span></div>
+
+<!-- BOTTOM NAV -->
+<nav class="bottom-nav">
+  <button class="nav-item active" id="tab-log" onclick="showPage('log')">
+    <span class="nav-icon">📋</span>
+    <span class="nav-label">Log</span>
+  </button>
+  <button class="nav-item" id="tab-timesheet" onclick="showPage('timesheet')">
+    <span class="nav-icon">⏱</span>
+    <span class="nav-label">Timesheet</span>
+  </button>
+  <button class="nav-item" id="tab-compliance" onclick="showPage('compliance')">
+    <span class="nav-icon">⚠</span>
+    <span class="nav-label">Compliance</span>
+  </button>
+  <button class="nav-item" id="tab-more" onclick="toggleMoreMenu()">
+    <span class="nav-icon">•••</span>
+    <span class="nav-label">More</span>
+  </button>
+</nav>
+
+<!-- MORE SLIDE-UP PANEL -->
+<div class="more-overlay" id="more-overlay" onclick="closeMoreMenu()"></div>
+<div class="more-panel" id="more-panel">
+  <div class="more-handle"></div>
+  <div class="more-panel-title">More</div>
+  <div class="more-row" onclick="showPage('calendar');closeMoreMenu()">
+    <span class="more-row-icon">📅</span>
+    <div><div class="more-row-label">Calendar</div><div class="more-row-sub">History, daily notes</div></div>
+  </div>
+  <div class="more-divider"></div>
+  <div class="more-row" onclick="showPage('forms');closeMoreMenu()">
+    <span class="more-row-icon">📄</span>
+    <div><div class="more-row-label">Forms</div><div class="more-row-sub">Spill report, other docs</div></div>
+  </div>
+  <div class="more-divider"></div>
+  <div class="more-row" onclick="showPage('config');closeMoreMenu()">
+    <span class="more-row-icon">⚙</span>
+    <div><div class="more-row-label">Config</div><div class="more-row-sub">Settings &amp; presets</div></div>
+  </div>
+  <div class="more-divider"></div>
+  <div class="more-section-label">Coming soon</div>
+  <div class="more-row" style="opacity:.4;pointer-events:none;">
+    <span class="more-row-icon">📸</span>
+    <div><div class="more-row-label">Photos</div><div class="more-row-sub">Field photo management</div></div>
+  </div>
+</div>
 
 <!-- ══════════════════════════════════
      DAILY LOG PAGE
@@ -619,6 +663,24 @@ EI to conduct LOD walk prior to start of operations"></textarea>
   </div>
 
 </div></div><!-- /page-timesheet -->
+
+<!-- CALENDAR PAGE (placeholder) -->
+<div class="page" id="page-calendar"><div class="wrap">
+  <div class="card"><div class="card-head"><span class="card-num">📅</span><span class="card-title">Calendar</span></div>
+  <div class="card-body" style="color:var(--muted);font-family:var(--mono);font-size:12px;">Coming soon — historical log viewer and daily notes.</div></div>
+</div></div>
+
+<!-- FORMS PAGE (placeholder) -->
+<div class="page" id="page-forms"><div class="wrap">
+  <div class="card"><div class="card-head"><span class="card-num">📄</span><span class="card-title">Forms</span></div>
+  <div class="card-body" style="color:var(--muted);font-family:var(--mono);font-size:12px;">Coming soon — spill reports and other regulatory forms.</div></div>
+</div></div>
+
+<!-- COMPLIANCE PAGE (placeholder) -->
+<div class="page" id="page-compliance"><div class="wrap">
+  <div class="card"><div class="card-head"><span class="card-num">⚠</span><span class="card-title">Compliance Log</span></div>
+  <div class="card-body" style="color:var(--muted);font-family:var(--mono);font-size:12px;">Coming soon — running compliance observation log.</div></div>
+</div></div>
 
 
 <!-- ══════════════════════════════════
