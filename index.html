@@ -1656,7 +1656,7 @@ function tsDisplayDate(d){const days=['Sun','Mon','Tue','Wed','Thu','Fri','Sat']
 function tsWeekLabel(s,e){const mo=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];return mo[s.getMonth()]+' '+s.getDate()+' \u2013 '+mo[e.getMonth()]+' '+e.getDate()+', '+e.getFullYear();}
 function tsGetAllEntries(){try{return JSON.parse(localStorage.getItem('msf_ts_entries')||'{}');}catch{return{};}}
 function tsGetEntry(ds){return tsGetAllEntries()[ds]||null;}
-function tsSaveEntry(ds,data){const entries=tsGetAllEntries();entries[ds]=Object.assign(entries[ds]||{},data);localStorage.setItem('msf_ts_entries',JSON.stringify(entries));if(typeof db!=='undefined'&&db&&_fbReady){db.collection('timesheetEntries').doc(ds).set(entries[ds]).catch(()=>{});}
+function tsSaveEntry(ds,data){const entries=tsGetAllEntries();entries[ds]=Object.assign(entries[ds]||{},data);localStorage.setItem('msf_ts_entries',JSON.stringify(entries));try{if(typeof db!=='undefined'&&db&&_fbReady){db.collection('timesheetEntries').doc(ds).set(entries[ds]).catch(()=>{});}}catch(e){}}
 function tsGetArchivedWeeks(){try{return JSON.parse(localStorage.getItem('msf_ts_weeks')||'[]');}catch{return[];}}
 function tsSaveArchivedWeeks(w){localStorage.setItem('msf_ts_weeks',JSON.stringify(w));}
 function tsCalcMileage(miles){return(miles*tsLoadConfig().mileageRate).toFixed(2);}
