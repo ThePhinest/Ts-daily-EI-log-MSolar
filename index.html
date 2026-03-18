@@ -2049,6 +2049,12 @@ async function phSaveCloud(){
 
 async function phLoadCloud(){
   if(!db) return false;
+  // Wait for Firebase to be ready (max 5 seconds)
+  let waited = 0;
+  while(!_fbReady && waited < 5000){
+    await new Promise(r => setTimeout(r, 200));
+    waited += 200;
+  }
   try{
     const snap = await db.collection('photos').get();
     if(!snap.empty){
