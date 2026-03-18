@@ -2,7 +2,7 @@
 <!-- saved from url=(0046)file:///C:/Users/timnj/Downloads/index_20.html -->
 <html lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
 
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#004C54">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -176,6 +176,55 @@ select{cursor:pointer}
 .btn-add-p{font-family:var(--cond);font-weight:700;font-size:12px;letter-spacing:.08em;text-transform:uppercase;background:var(--amber-bg);border:1px solid rgba(232,160,32,.3);color:var(--amber);padding:7px 14px;border-radius:5px;cursor:pointer;transition:all .15s;white-space:nowrap}.btn-add-p:hover{background:var(--amber);color:#0d1018}
 .phase-badge{display:inline-block;font-family:var(--mono);font-size:9.5px;padding:2px 8px;border-radius:20px;border:1px solid rgba(232,160,32,.3);color:var(--amber);background:var(--amber-bg);margin-left:6px}
 .mt6{margin-top:6px}
+
+/* ── COMPLIANCE LOG ── */
+.cl-header-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:10px}
+.cl-stats{display:flex;gap:12px}
+.cl-stat{background:var(--s1);border:1px solid var(--border);border-radius:var(--r);padding:8px 14px;text-align:center;min-width:70px}
+.cl-stat-num{font-family:var(--cond);font-weight:700;font-size:22px;color:var(--amber2);display:block;line-height:1}
+.cl-stat-lbl{font-family:var(--mono);font-size:9.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.cl-stat.open .cl-stat-num{color:var(--red)}
+.cl-filter-bar{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}
+.cl-filter-bar input[type=text]{flex:1;min-width:140px;background:var(--bg);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--body);font-size:13px;padding:7px 11px;transition:border-color .15s}
+.cl-filter-bar input:focus{outline:none;border-color:var(--amber)}
+.cl-filter-bar select{background:var(--bg);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--mono);font-size:11px;padding:7px 9px;-webkit-appearance:none;cursor:pointer;transition:border-color .15s}
+.cl-filter-bar select:focus{outline:none;border-color:var(--amber)}
+.cl-auto-banner{background:rgba(232,160,32,0.08);border:1px solid rgba(232,160,32,.35);border-radius:var(--r);padding:12px 16px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.cl-auto-msg{font-family:var(--mono);font-size:12px;color:var(--amber);flex:1}
+.cl-auto-btns{display:flex;gap:8px}
+.cl-entry{background:var(--s1);border:1px solid var(--border);border-radius:var(--r);margin-bottom:10px;overflow:hidden;transition:border-color .15s}
+.cl-entry:hover{border-color:var(--border2)}
+.cl-entry-head{background:var(--s2);padding:9px 14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.cl-entry-date{font-family:var(--mono);font-size:11px;color:var(--muted2)}
+.cl-entry-source{font-family:var(--mono);font-size:9.5px;color:var(--muted);margin-left:auto}
+.cl-level{font-family:var(--cond);font-weight:700;font-size:11px;letter-spacing:.07em;padding:2px 9px;border-radius:20px;border:1px solid;white-space:nowrap}
+.cl-level-1{border-color:#5577aa;color:#5577aa;background:rgba(85,119,170,0.1)}
+.cl-level-2{border-color:var(--amber);color:var(--amber);background:var(--amber-bg)}
+.cl-level-3{border-color:#e07820;color:#e07820;background:rgba(224,120,32,0.1)}
+.cl-level-4{border-color:var(--red);color:var(--red);background:rgba(231,76,60,0.1)}
+.cl-status{font-family:var(--mono);font-size:10px;letter-spacing:.06em;padding:2px 9px;border-radius:20px;border:1px solid;white-space:nowrap}
+.cl-status-open{border-color:var(--red);color:var(--red);background:rgba(231,76,60,0.08)}
+.cl-status-prog{border-color:var(--amber);color:var(--amber);background:var(--amber-bg)}
+.cl-status-resolved{border-color:var(--green);color:var(--green);background:rgba(39,174,96,0.08)}
+.cl-entry-body{padding:12px 14px;display:grid;grid-template-columns:1fr 1fr;gap:8px 16px}
+@media(max-width:600px){.cl-entry-body{grid-template-columns:1fr}}
+.cl-field-lbl{font-family:var(--mono);font-size:9.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:2px}
+.cl-field-val{font-size:13.5px;color:var(--text);line-height:1.45}
+.cl-field-val.full{grid-column:1/-1}
+.cl-resolved-row{grid-column:1/-1;display:flex;align-items:center;gap:8px}
+.cl-entry-footer{padding:8px 14px;display:flex;justify-content:flex-end;gap:8px;border-top:1px solid rgba(36,43,62,.5)}
+.cl-empty{font-family:var(--mono);font-size:12px;color:var(--muted);text-align:center;padding:40px 20px}
+/* Add Entry Form Overlay */
+.cl-form-overlay{position:fixed;inset:0;z-index:600;background:rgba(0,0,0,0);pointer-events:none;transition:background .25s}
+.cl-form-overlay.open{background:rgba(0,0,0,.6);pointer-events:all}
+.cl-form-panel{position:fixed;bottom:0;left:0;right:0;z-index:700;background:var(--s1);border-top:1px solid var(--border2);border-radius:14px 14px 0 0;transform:translateY(100%);transition:transform .28s cubic-bezier(.32,.72,0,1);padding:0 0 env(safe-area-inset-bottom);max-height:85vh;overflow-y:auto}
+.cl-form-panel.open{transform:translateY(0)}
+.cl-form-handle{width:36px;height:4px;background:var(--border2);border-radius:2px;margin:10px auto 4px}
+.cl-form-title{font-family:var(--cond);font-weight:700;font-size:13px;letter-spacing:.1em;text-transform:uppercase;color:var(--amber2);padding:8px 20px 12px;border-bottom:1px solid var(--border)}
+.cl-form-body{padding:16px 20px;display:flex;flex-direction:column;gap:12px}
+.cl-form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media(max-width:500px){.cl-form-row{grid-template-columns:1fr}}
+.cl-form-footer{padding:12px 20px 16px;display:flex;gap:10px;justify-content:flex-end;border-top:1px solid var(--border)}
 
 @media print{
   body{background:white;color:black;font-size:12px}
@@ -676,11 +725,109 @@ EI to conduct LOD walk prior to start of operations"></textarea>
   <div class="card-body" style="color:var(--muted);font-family:var(--mono);font-size:12px;">Coming soon — spill reports and other regulatory forms.</div></div>
 </div></div>
 
-<!-- COMPLIANCE PAGE (placeholder) -->
+<!-- COMPLIANCE PAGE -->
 <div class="page" id="page-compliance"><div class="wrap">
-  <div class="card"><div class="card-head"><span class="card-num">⚠</span><span class="card-title">Compliance Log</span></div>
-  <div class="card-body" style="color:var(--muted);font-family:var(--mono);font-size:12px;">Coming soon — running compliance observation log.</div></div>
+
+  <!-- Header row: stats + add button -->
+  <div class="cl-header-row">
+    <div class="cl-stats">
+      <div class="cl-stat open">
+        <span class="cl-stat-num" id="cl-stat-open">0</span>
+        <span class="cl-stat-lbl">Open</span>
+      </div>
+      <div class="cl-stat">
+        <span class="cl-stat-num" id="cl-stat-total">0</span>
+        <span class="cl-stat-lbl">Total</span>
+      </div>
+    </div>
+    <button class="btn btn-amber" onclick="clShowForm()">+ Add Entry</button>
+  </div>
+
+  <!-- Auto-detect banner (shown when daily log has unlogged issues) -->
+  <div class="cl-auto-banner" id="cl-auto-banner" style="display:none">
+    <span class="cl-auto-msg" id="cl-auto-msg"></span>
+    <div class="cl-auto-btns">
+      <button class="btn btn-amber" style="font-size:11px;padding:5px 12px" onclick="clAutoImport()">Add to Log</button>
+      <button class="btn btn-outline" style="font-size:11px;padding:5px 12px" onclick="document.getElementById('cl-auto-banner').style.display='none'">Dismiss</button>
+    </div>
+  </div>
+
+  <!-- Filter bar -->
+  <div class="cl-filter-bar">
+    <input type="text" id="cl-search" placeholder="🔍 Search location or description…" oninput="clRender()">
+    <select id="cl-filter-level" onchange="clRender()">
+      <option value="">All Levels</option>
+      <option value="1">Level 1 — Observation</option>
+      <option value="2">Level 2 — Corrective Action</option>
+      <option value="3">Level 3 — Non-Compliance</option>
+      <option value="4">Level 4 — Stop Work</option>
+    </select>
+    <select id="cl-filter-status" onchange="clRender()">
+      <option value="">All Status</option>
+      <option value="Open">Open</option>
+      <option value="In Progress">In Progress</option>
+      <option value="Resolved">Resolved</option>
+    </select>
+  </div>
+
+  <!-- Entry list -->
+  <div id="cl-list"></div>
+
 </div></div>
+
+<!-- ADD ENTRY FORM OVERLAY -->
+<div class="cl-form-overlay" id="cl-form-overlay" onclick="clHideForm()"></div>
+<div class="cl-form-panel" id="cl-form-panel">
+  <div class="cl-form-handle"></div>
+  <div class="cl-form-title" id="cl-form-title">New Compliance Entry</div>
+  <div class="cl-form-body">
+    <div class="cl-form-row">
+      <div class="field">
+        <label>Date</label>
+        <input type="date" id="cl-f-date">
+      </div>
+      <div class="field">
+        <label>Level</label>
+        <select id="cl-f-level">
+          <option value="1">Level 1 — Observation</option>
+          <option value="2">Level 2 — Corrective Action</option>
+          <option value="3">Level 3 — Non-Compliance</option>
+          <option value="4">Level 4 — Stop Work Order</option>
+        </select>
+      </div>
+    </div>
+    <div class="field">
+      <label>Location / Description</label>
+      <textarea class="short" id="cl-f-location" placeholder="Describe the location and nature of the observation…"></textarea>
+    </div>
+    <div class="field">
+      <label>Corrective Action Required</label>
+      <textarea class="short" id="cl-f-corrective" placeholder="Describe the corrective action directed or required…"></textarea>
+    </div>
+    <div class="cl-form-row">
+      <div class="field">
+        <label>Status</label>
+        <select id="cl-f-status" onchange="clToggleResolvedDate()">
+          <option value="Open">Open</option>
+          <option value="In Progress">In Progress</option>
+          <option value="Resolved">Resolved</option>
+        </select>
+      </div>
+      <div class="field" id="cl-f-resolved-wrap" style="display:none">
+        <label>Date Resolved</label>
+        <input type="date" id="cl-f-resolved">
+      </div>
+    </div>
+    <div class="field">
+      <label>Source Report Date (optional)</label>
+      <input type="date" id="cl-f-source">
+    </div>
+  </div>
+  <div class="cl-form-footer">
+    <button class="btn btn-outline" onclick="clHideForm()">Cancel</button>
+    <button class="btn btn-amber" onclick="clSubmitForm()">Save Entry</button>
+  </div>
+</div>
 
 
 <!-- ══════════════════════════════════
@@ -915,6 +1062,7 @@ function showPage(name){
   if(tabEl)tabEl.classList.add('active');
   if(name==='config'){ renderConfig(); tsLoadConfigFields(); }
   if(name==='timesheet'){ tsPushFromDailyLog(); tsRenderCurrentWeek(); tsCheckArchivePrompt(); }
+  if(name==='compliance'){ clRender(); clAutoDetect(); }
 }
 
 // ═══════════════════════════════════════════
@@ -1649,6 +1797,310 @@ function tsInit(){
 }
 
 // ═══════════════════════════════════════════
+// COMPLIANCE LOG
+// ═══════════════════════════════════════════
+var _clEntries = []; // in-memory array
+var _clEditId = null; // id of entry being edited (null = new)
+
+// ── Helpers ──
+function clGenId(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
+
+function clLevelLabel(l){
+  const m = {'1':'Level 1 — Observation','2':'Level 2 — Corrective Action','3':'Level 3 — Non-Compliance','4':'Level 4 — Stop Work Order'};
+  return m[String(l)] || 'Level '+l;
+}
+
+function clLevelClass(l){ return 'cl-level cl-level-'+l; }
+
+function clStatusClass(s){
+  if(s==='Open') return 'cl-status cl-status-open';
+  if(s==='In Progress') return 'cl-status cl-status-prog';
+  return 'cl-status cl-status-resolved';
+}
+
+function clFmtDate(d){
+  if(!d) return '';
+  const p = d.split('-');
+  if(p.length!==3) return d;
+  return `${parseInt(p[1])}/${parseInt(p[2])}/${p[0].slice(2)}`;
+}
+
+// ── Persistence: localStorage ──
+function clSaveLocal(){
+  try{ localStorage.setItem('cl_entries', JSON.stringify(_clEntries)); }catch{}
+}
+
+function clLoadLocal(){
+  try{
+    const raw = localStorage.getItem('cl_entries');
+    if(raw){ _clEntries = JSON.parse(raw); }
+  }catch{ _clEntries = []; }
+}
+
+// ── Persistence: Firebase ──
+async function clSaveCloud(){
+  if(!db || !_fbReady) return;
+  try{
+    const batch = db.batch();
+    // Save entire array as single doc for simplicity
+    batch.set(db.collection('compliance').doc('entries'), { list: _clEntries, _ts: Date.now() });
+    await batch.commit();
+  }catch(e){ console.warn('clSaveCloud failed:', e.message); }
+}
+
+async function clLoadCloud(){
+  if(!db) return false;
+  try{
+    const doc = await db.collection('compliance').doc('entries').get();
+    if(doc.exists){
+      const data = doc.data();
+      _clEntries = data.list || [];
+      clSaveLocal();
+      return true;
+    }
+  }catch(e){ console.warn('clLoadCloud failed:', e.message); }
+  return false;
+}
+
+function clSave(){
+  clSaveLocal();
+  clSaveCloud();
+}
+
+// ── Render ──
+function clRender(){
+  const search = (document.getElementById('cl-search')?.value||'').toLowerCase();
+  const filterLevel = document.getElementById('cl-filter-level')?.value||'';
+  const filterStatus = document.getElementById('cl-filter-status')?.value||'';
+
+  let entries = [..._clEntries].sort((a,b)=> b.date > a.date ? 1 : -1);
+
+  if(filterLevel) entries = entries.filter(e=>String(e.level)===filterLevel);
+  if(filterStatus) entries = entries.filter(e=>e.status===filterStatus);
+  if(search) entries = entries.filter(e=>
+    (e.location||'').toLowerCase().includes(search) ||
+    (e.corrective||'').toLowerCase().includes(search)
+  );
+
+  // Update stats (based on ALL entries, not filtered)
+  const openCount = _clEntries.filter(e=>e.status==='Open'||e.status==='In Progress').length;
+  const el = document.getElementById('cl-stat-open');
+  const et = document.getElementById('cl-stat-total');
+  if(el) el.textContent = openCount;
+  if(et) et.textContent = _clEntries.length;
+
+  const list = document.getElementById('cl-list');
+  if(!list) return;
+
+  if(entries.length===0){
+    list.innerHTML = '<div class="cl-empty">'+(
+      _clEntries.length===0
+        ? 'No compliance entries yet.<br>Tap <strong>+ Add Entry</strong> to log an observation.'
+        : 'No entries match the current filters.'
+    )+'</div>';
+    return;
+  }
+
+  list.innerHTML = entries.map(e => {
+    const resolvedRow = e.status==='Resolved' && e.dateResolved
+      ? `<div class="cl-field-val full"><span style="font-family:var(--mono);font-size:9.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em">Resolved</span> <span style="font-size:13px;color:var(--green)">${clFmtDate(e.dateResolved)}</span></div>`
+      : '';
+    const sourceLabel = e.sourceReport ? `Report: ${clFmtDate(e.sourceReport)}` : (e.addedBy==='auto'?'Auto-captured':'Manual entry');
+    return `
+    <div class="cl-entry" id="cle-${e.id}">
+      <div class="cl-entry-head">
+        <span class="cl-entry-date">${clFmtDate(e.date)}</span>
+        <span class="${clLevelClass(e.level)}">${clLevelLabel(e.level)}</span>
+        <span class="${clStatusClass(e.status)}">${e.status}</span>
+        <span class="cl-entry-source">${sourceLabel}</span>
+      </div>
+      <div class="cl-entry-body">
+        <div>
+          <div class="cl-field-lbl">Location / Description</div>
+          <div class="cl-field-val">${e.location||'—'}</div>
+        </div>
+        <div>
+          <div class="cl-field-lbl">Corrective Action</div>
+          <div class="cl-field-val">${e.corrective||'—'}</div>
+        </div>
+        ${resolvedRow}
+      </div>
+      <div class="cl-entry-footer">
+        <button class="btn btn-outline" style="font-size:11px;padding:5px 12px" onclick="clEditEntry('${e.id}')">Edit</button>
+        <button class="btn btn-ghost" style="font-size:11px;padding:5px 12px" onclick="clConfirmDelete('${e.id}')">Delete</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ── Form: show / hide ──
+function clShowForm(prefill){
+  _clEditId = null;
+  // Set defaults
+  document.getElementById('cl-f-date').value = new Date().toISOString().split('T')[0];
+  document.getElementById('cl-f-level').value = '1';
+  document.getElementById('cl-f-location').value = '';
+  document.getElementById('cl-f-corrective').value = '';
+  document.getElementById('cl-f-status').value = 'Open';
+  document.getElementById('cl-f-resolved').value = '';
+  document.getElementById('cl-f-source').value = document.getElementById('reportDate')?.value||'';
+  document.getElementById('cl-f-resolved-wrap').style.display = 'none';
+  document.getElementById('cl-form-title').textContent = 'New Compliance Entry';
+
+  if(prefill){
+    if(prefill.level) document.getElementById('cl-f-level').value = prefill.level;
+    if(prefill.location) document.getElementById('cl-f-location').value = prefill.location;
+    if(prefill.corrective) document.getElementById('cl-f-corrective').value = prefill.corrective;
+    if(prefill.date) document.getElementById('cl-f-date').value = prefill.date;
+    if(prefill.source) document.getElementById('cl-f-source').value = prefill.source;
+  }
+
+  document.getElementById('cl-form-overlay').classList.add('open');
+  document.getElementById('cl-form-panel').classList.add('open');
+}
+
+function clEditEntry(id){
+  const e = _clEntries.find(x=>x.id===id);
+  if(!e) return;
+  _clEditId = id;
+  document.getElementById('cl-f-date').value = e.date||'';
+  document.getElementById('cl-f-level').value = String(e.level||'1');
+  document.getElementById('cl-f-location').value = e.location||'';
+  document.getElementById('cl-f-corrective').value = e.corrective||'';
+  document.getElementById('cl-f-status').value = e.status||'Open';
+  document.getElementById('cl-f-resolved').value = e.dateResolved||'';
+  document.getElementById('cl-f-source').value = e.sourceReport||'';
+  document.getElementById('cl-f-resolved-wrap').style.display = e.status==='Resolved'?'block':'none';
+  document.getElementById('cl-form-title').textContent = 'Edit Compliance Entry';
+  document.getElementById('cl-form-overlay').classList.add('open');
+  document.getElementById('cl-form-panel').classList.add('open');
+}
+
+function clHideForm(){
+  document.getElementById('cl-form-overlay').classList.remove('open');
+  document.getElementById('cl-form-panel').classList.remove('open');
+  _clEditId = null;
+}
+
+function clToggleResolvedDate(){
+  const s = document.getElementById('cl-f-status').value;
+  document.getElementById('cl-f-resolved-wrap').style.display = s==='Resolved'?'block':'none';
+  if(s==='Resolved' && !document.getElementById('cl-f-resolved').value){
+    document.getElementById('cl-f-resolved').value = new Date().toISOString().split('T')[0];
+  }
+}
+
+function clSubmitForm(){
+  const location = document.getElementById('cl-f-location').value.trim();
+  if(!location){ document.getElementById('cl-f-location').focus(); return; }
+
+  const entry = {
+    id: _clEditId || clGenId(),
+    date: document.getElementById('cl-f-date').value,
+    level: parseInt(document.getElementById('cl-f-level').value),
+    location: location,
+    corrective: document.getElementById('cl-f-corrective').value.trim(),
+    status: document.getElementById('cl-f-status').value,
+    dateResolved: document.getElementById('cl-f-status').value==='Resolved' ? document.getElementById('cl-f-resolved').value : '',
+    sourceReport: document.getElementById('cl-f-source').value,
+    addedBy: _clEditId ? (_clEntries.find(x=>x.id===_clEditId)?.addedBy||'manual') : 'manual'
+  };
+
+  if(_clEditId){
+    const idx = _clEntries.findIndex(x=>x.id===_clEditId);
+    if(idx>=0) _clEntries[idx] = entry;
+  } else {
+    _clEntries.push(entry);
+  }
+
+  clSave();
+  clHideForm();
+  clRender();
+}
+
+// ── Delete with confirm modal ──
+function clConfirmDelete(id){
+  const e = _clEntries.find(x=>x.id===id);
+  if(!e) return;
+  var ov = document.createElement('div');
+  ov.className = 'modal-overlay';
+  ov.innerHTML = '<div class="modal-box">' +
+    '<div class="modal-title">⚠ Delete Entry?</div>' +
+    '<div class="modal-msg">Delete the <strong>' + clLevelLabel(e.level) + '</strong> entry from <strong>' + clFmtDate(e.date) + '</strong>?<br><br>This cannot be undone.</div>' +
+    '<div class="modal-btns">' +
+      '<button class="modal-cancel" id="_clmc">Cancel</button>' +
+      '<button class="modal-confirm" id="_clmok">Delete</button>' +
+    '</div></div>';
+  document.body.appendChild(ov);
+  document.getElementById('_clmc').onclick = function(){ ov.remove(); };
+  document.getElementById('_clmok').onclick = function(){
+    ov.remove();
+    _clEntries = _clEntries.filter(x=>x.id!==id);
+    clSave();
+    clRender();
+  };
+}
+
+// ── Auto-detect issues from daily log ──
+function clAutoDetect(){
+  const reportDate = document.getElementById('reportDate')?.value || '';
+  const detected = [];
+  const levelRx = /level\s*([1-4])/i;
+
+  // Check nonCompliance field
+  const nc = document.getElementById('nonCompliance')?.value.trim()||'';
+  if(nc){
+    const m = nc.match(levelRx);
+    detected.push({ level: m?parseInt(m[1]):2, location: nc, corrective:'', date:reportDate, source:reportDate, addedBy:'auto' });
+  }
+
+  // Check all crew block issues fields
+  document.querySelectorAll('[id$="-issues"]').forEach(el=>{
+    const val = el.value.trim();
+    if(!val) return;
+    const m = val.match(levelRx);
+    detected.push({ level: m?parseInt(m[1]):2, location: val, corrective:'', date:reportDate, source:reportDate, addedBy:'auto' });
+  });
+
+  if(detected.length===0) return;
+
+  // Filter out already-logged (same date + first 40 chars of location)
+  const newOnes = detected.filter(d=>{
+    const key = d.date + d.location.slice(0,40).toLowerCase();
+    return !_clEntries.some(e=> (e.date + (e.location||'').slice(0,40).toLowerCase()) === key);
+  });
+
+  if(newOnes.length===0) return;
+
+  const banner = document.getElementById('cl-auto-banner');
+  const msg = document.getElementById('cl-auto-msg');
+  if(banner && msg){
+    msg.textContent = `${newOnes.length} issue${newOnes.length>1?'s':''} detected in today's log — add to compliance log?`;
+    banner.style.display = 'flex';
+    banner._pending = newOnes;
+  }
+}
+
+function clAutoImport(){
+  const banner = document.getElementById('cl-auto-banner');
+  const pending = banner?._pending||[];
+  pending.forEach(d=>{
+    _clEntries.push({ id:clGenId(), date:d.date, level:d.level, location:d.location, corrective:d.corrective, status:'Open', dateResolved:'', sourceReport:d.source, addedBy:'auto' });
+  });
+  clSave();
+  banner.style.display = 'none';
+  clRender();
+}
+
+// ── Init compliance log ──
+async function clInit(){
+  clLoadLocal();
+  const fromCloud = await clLoadCloud();
+  if(!fromCloud) clLoadLocal(); // fallback
+  clRender();
+}
+
+// ═══════════════════════════════════════════
 // INIT
 // ═══════════════════════════════════════════
 document.getElementById('reportDate').value=new Date().toISOString().split('T')[0];
@@ -1656,6 +2108,7 @@ applyProjectConfig();
 buildChecklist();
 renderAllChips();
 tsInit();
+clInit();
 
 // Restore saved data if this is a re-opened archived file
 if(SAVED_DATA){
