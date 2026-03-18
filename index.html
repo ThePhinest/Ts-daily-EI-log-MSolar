@@ -185,6 +185,44 @@ select{cursor:pointer}
 .phase-badge{display:inline-block;font-family:var(--mono);font-size:9.5px;padding:2px 8px;border-radius:20px;border:1px solid rgba(232,160,32,.3);color:var(--amber);background:var(--amber-bg);margin-left:6px}
 .mt6{margin-top:6px}
 
+/* ── PHOTOS ── */
+.ph-header-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:10px}
+.ph-filter-bar{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;align-items:center}
+.ph-filter-bar input[type=date]{background:var(--bg);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--mono);font-size:11px;padding:7px 9px;-webkit-appearance:none;transition:border-color .15s}
+.ph-filter-bar input[type=date]:focus{outline:none;border-color:var(--amber)}
+.ph-upload-zone{border:2px dashed var(--border2);border-radius:var(--r);padding:28px 20px;text-align:center;cursor:pointer;transition:all .2s;margin-bottom:16px;background:var(--s1)}
+.ph-upload-zone:hover,.ph-upload-zone.drag{border-color:var(--amber);background:var(--amber-bg)}
+.ph-upload-icon{font-size:28px;margin-bottom:8px}
+.ph-upload-txt{font-family:var(--cond);font-weight:700;font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted2)}
+.ph-upload-sub{font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:4px}
+.ph-day-group{margin-bottom:20px}
+.ph-day-label{font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted2);padding:6px 0;border-bottom:1px solid var(--border);margin-bottom:10px}
+.ph-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px}
+@media(max-width:400px){.ph-grid{grid-template-columns:repeat(2,1fr)}}
+.ph-thumb{position:relative;border-radius:var(--r);overflow:hidden;background:var(--s2);border:1px solid var(--border);cursor:pointer;aspect-ratio:4/3}
+.ph-thumb img{width:100%;height:100%;object-fit:cover;display:block;transition:opacity .2s}
+.ph-thumb-caption{position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.65);color:#fff;font-family:var(--mono);font-size:9.5px;padding:4px 7px;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ph-thumb-del{position:absolute;top:4px;right:4px;background:rgba(0,0,0,.6);border:none;color:#fff;border-radius:50%;width:22px;height:22px;font-size:13px;cursor:pointer;display:none;align-items:center;justify-content:center;line-height:1}
+.ph-thumb:hover .ph-thumb-del{display:flex}
+.ph-loading{font-family:var(--mono);font-size:11px;color:var(--muted);text-align:center;padding:20px}
+.ph-empty{font-family:var(--mono);font-size:12px;color:var(--muted);text-align:center;padding:40px 20px}
+.ph-load-more{width:100%;margin-top:8px}
+/* Lightbox */
+.ph-lightbox{position:fixed;inset:0;z-index:800;background:rgba(0,0,0,.92);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px}
+.ph-lightbox.hidden{display:none}
+.ph-lb-img{max-width:100%;max-height:60vh;border-radius:var(--r);object-fit:contain}
+.ph-lb-caption-wrap{margin-top:14px;width:100%;max-width:500px;display:flex;flex-direction:column;gap:8px}
+.ph-lb-caption{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.2);border-radius:5px;color:#fff;font-family:var(--body);font-size:14px;padding:8px 12px;width:100%;resize:none;min-height:56px;line-height:1.5}
+.ph-lb-caption:focus{outline:none;border-color:var(--amber)}
+.ph-lb-row{display:flex;gap:10px;justify-content:flex-end}
+.ph-lb-close{position:absolute;top:16px;right:20px;background:none;border:none;color:rgba(255,255,255,.7);font-size:26px;cursor:pointer;line-height:1}
+.ph-lb-date{font-family:var(--mono);font-size:10px;color:rgba(255,255,255,.5);text-align:center;margin-top:4px}
+/* Upload progress */
+.ph-progress{background:var(--s1);border:1px solid var(--border);border-radius:var(--r);padding:12px 16px;margin-bottom:14px;display:none}
+.ph-progress-bar-wrap{background:var(--bg);border-radius:20px;height:6px;margin-top:8px;overflow:hidden}
+.ph-progress-bar{background:var(--amber);height:100%;border-radius:20px;width:0%;transition:width .3s}
+.ph-progress-txt{font-family:var(--mono);font-size:11px;color:var(--muted2)}
+
 /* ── COMPLIANCE LOG ── */
 .cl-header-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:10px}
 .cl-stats{display:flex;gap:12px}
@@ -328,8 +366,7 @@ select{cursor:pointer}
     <div><div class="more-row-label">Settings</div><div class="more-row-sub">Preferences &amp; presets</div></div>
   </div>
   <div class="more-divider"></div>
-  <div class="more-section-label">Coming soon</div>
-  <div class="more-row" style="opacity:.4;pointer-events:none;">
+  <div class="more-row" onclick="showPage('photos');closeMoreMenu()">
     <span class="more-row-icon">📸</span>
     <div><div class="more-row-label">Photos</div><div class="more-row-sub">Field photo management</div></div>
   </div>
@@ -734,6 +771,72 @@ EI to conduct LOD walk prior to start of operations"></textarea>
   <div class="card-body" style="color:var(--muted);font-family:var(--mono);font-size:12px;">Coming soon — spill reports and other regulatory forms.</div></div>
 </div></div>
 
+<!-- PHOTOS PAGE -->
+<div class="page" id="page-photos"><div class="wrap">
+
+  <div class="ph-header-row">
+    <div class="cl-stats">
+      <div class="cl-stat">
+        <span class="cl-stat-num" id="ph-stat-total">0</span>
+        <span class="cl-stat-lbl">Photos</span>
+      </div>
+      <div class="cl-stat">
+        <span class="cl-stat-num" id="ph-stat-days">0</span>
+        <span class="cl-stat-lbl">Days</span>
+      </div>
+    </div>
+    <button class="btn btn-amber" onclick="document.getElementById('ph-file-input').click()">+ Upload Photos</button>
+    <input type="file" id="ph-file-input" accept="image/*" multiple style="display:none" onchange="phHandleFiles(this.files)">
+  </div>
+
+  <!-- Upload zone -->
+  <div class="ph-upload-zone" id="ph-upload-zone"
+    ondragover="event.preventDefault();this.classList.add('drag')"
+    ondragleave="this.classList.remove('drag')"
+    ondrop="event.preventDefault();this.classList.remove('drag');phHandleFiles(event.dataTransfer.files)"
+    onclick="document.getElementById('ph-file-input').click()">
+    <div class="ph-upload-icon">📸</div>
+    <div class="ph-upload-txt">Tap to upload or drag photos here</div>
+    <div class="ph-upload-sub">Solocator JPEGs or any photo — compressed automatically</div>
+  </div>
+
+  <!-- Progress bar -->
+  <div class="ph-progress" id="ph-progress">
+    <div class="ph-progress-txt" id="ph-progress-txt">Uploading…</div>
+    <div class="ph-progress-bar-wrap"><div class="ph-progress-bar" id="ph-progress-bar"></div></div>
+  </div>
+
+  <!-- Filter bar -->
+  <div class="ph-filter-bar">
+    <label style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em">From</label>
+    <input type="date" id="ph-filter-from" onchange="phRender()">
+    <label style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em">To</label>
+    <input type="date" id="ph-filter-to" onchange="phRender()">
+    <button class="btn btn-outline" style="font-size:11px;padding:5px 12px" onclick="phClearFilters()">Clear</button>
+  </div>
+
+  <!-- Photo library -->
+  <div id="ph-library"></div>
+
+  <!-- Load more -->
+  <button class="btn btn-outline ph-load-more" id="ph-load-more" style="display:none" onclick="phLoadMore()">Load older photos</button>
+
+</div></div>
+
+<!-- LIGHTBOX -->
+<div class="ph-lightbox hidden" id="ph-lightbox">
+  <button class="ph-lb-close" onclick="phCloseLightbox()">✕</button>
+  <img class="ph-lb-img" id="ph-lb-img" src="" alt="">
+  <div class="ph-lb-date" id="ph-lb-date"></div>
+  <div class="ph-lb-caption-wrap">
+    <textarea class="ph-lb-caption" id="ph-lb-caption" placeholder="Add a caption…" rows="2"></textarea>
+    <div class="ph-lb-row">
+      <button class="btn btn-outline" style="font-size:11px;padding:6px 14px" onclick="phCloseLightbox()">Close</button>
+      <button class="btn btn-amber" style="font-size:11px;padding:6px 14px" onclick="phSaveCaption()">Save Caption</button>
+    </div>
+  </div>
+</div>
+
 <!-- COMPLIANCE PAGE -->
 <div class="page" id="page-compliance"><div class="wrap">
 
@@ -1072,6 +1175,7 @@ function showPage(name){
   if(name==='config'){ renderConfig(); tsLoadConfigFields(); }
   if(name==='timesheet'){ tsPushFromDailyLog(); tsRenderCurrentWeek(); tsCheckArchivePrompt(); }
   if(name==='compliance'){ clRender(); clAutoDetect(); }
+  if(name==='photos'){ _phDaysShown=7; phRender(); }
 }
 
 // ═══════════════════════════════════════════
@@ -1799,6 +1903,331 @@ function closeMoreMenu(){
   document.getElementById('tab-more').classList.toggle('active',!primaryTabs.includes(name));
 }
 
+// ═══════════════════════════════════════════
+// PHOTOS
+// ═══════════════════════════════════════════
+var _phPhotos = [];       // in-memory array, sorted newest first
+var _phLbId = null;       // current lightbox photo id
+var _phPageSize = 7;      // days to show per load
+var _phDaysShown = 7;     // current days window
+
+function phGenId(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
+
+function phFmtDate(d){
+  if(!d) return '';
+  const p = d.split('-');
+  if(p.length!==3) return d;
+  return `${parseInt(p[1])}/${parseInt(p[2])}/${p[0].slice(2)}`;
+}
+
+function phDayLabel(d){
+  if(!d) return '';
+  const p = d.split('-');
+  if(p.length!==3) return d;
+  const dt = new Date(parseInt(p[0]), parseInt(p[1])-1, parseInt(p[2]));
+  const days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return `${days[dt.getDay()]}, ${months[dt.getMonth()]} ${dt.getDate()}, ${p[0]}`;
+}
+
+// ── Parse Solocator filename for date/time ──
+function phParseFilename(name){
+  // Solocator_YYYY-MM-DD_HH-MM-SS.jpeg
+  const m = name.match(/(\d{4})-(\d{2})-(\d{2})_(\d{2})-(\d{2})/);
+  if(m){
+    const date = `${m[1]}-${m[2]}-${m[3]}`;
+    const time = `${m[4]}:${m[5]}`;
+    return { date, caption: `Photo taken ${phFmtDate(date)} at ${time}` };
+  }
+  return { date: new Date().toISOString().split('T')[0], caption: '' };
+}
+
+// ── Compress image to base64 ──
+function phCompress(file, maxW, maxH, quality){
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        let w = img.width, h = img.height;
+        if(w > maxW || h > maxH){
+          const ratio = Math.min(maxW/w, maxH/h);
+          w = Math.round(w*ratio); h = Math.round(h*ratio);
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+// ── Handle file upload ──
+async function phHandleFiles(files){
+  if(!files || files.length===0) return;
+  const arr = Array.from(files).filter(f => f.type.startsWith('image/'));
+  if(arr.length===0) return;
+
+  const prog = document.getElementById('ph-progress');
+  const progBar = document.getElementById('ph-progress-bar');
+  const progTxt = document.getElementById('ph-progress-txt');
+  prog.style.display = 'block';
+
+  for(let i=0; i<arr.length; i++){
+    const file = arr[i];
+    progTxt.textContent = `Processing photo ${i+1} of ${arr.length}…`;
+    progBar.style.width = `${Math.round(((i)/arr.length)*100)}%`;
+
+    const { date, caption } = phParseFilename(file.name);
+
+    // Generate thumb (140px) and full (900px)
+    const thumb = await phCompress(file, 140, 105, 0.7);
+    const full  = await phCompress(file, 900, 675, 0.82);
+
+    const entry = {
+      id: phGenId(),
+      date,
+      caption,
+      filename: file.name,
+      thumb,
+      full,
+      uploadedAt: Date.now()
+    };
+
+    _phPhotos.push(entry);
+  }
+
+  progBar.style.width = '100%';
+  progTxt.textContent = `${arr.length} photo${arr.length>1?'s':''} uploaded successfully`;
+  setTimeout(()=>{ prog.style.display='none'; progBar.style.width='0%'; }, 2500);
+
+  // Reset file input
+  document.getElementById('ph-file-input').value = '';
+
+  phSave();
+  phRender();
+}
+
+// ── Persistence ──
+function phSaveLocal(){
+  try{ localStorage.setItem('ph_photos', JSON.stringify(_phPhotos)); }catch{}
+}
+
+function phLoadLocal(){
+  try{
+    const raw = localStorage.getItem('ph_photos');
+    if(raw) _phPhotos = JSON.parse(raw);
+  }catch{ _phPhotos = []; }
+}
+
+async function phSaveCloud(){
+  if(!db || !_fbReady) return;
+  try{
+    // Store each photo as its own doc for efficient lazy loading
+    const batch = db.batch();
+    _phPhotos.forEach(p => {
+      // Only save thumb to main index doc, full image stored separately
+      const ref = db.collection('photos').doc(p.id);
+      batch.set(ref, {
+        id: p.id, date: p.date, caption: p.caption,
+        filename: p.filename, thumb: p.thumb, uploadedAt: p.uploadedAt
+      });
+    });
+    await batch.commit();
+    // Save full images separately to avoid batch size limits
+    for(const p of _phPhotos){
+      if(p.full){
+        await db.collection('photos_full').doc(p.id).set({ full: p.full });
+      }
+    }
+  }catch(e){ console.warn('phSaveCloud failed:', e.message); }
+}
+
+async function phLoadCloud(){
+  if(!db) return false;
+  try{
+    const snap = await db.collection('photos').orderBy('uploadedAt','desc').get();
+    if(!snap.empty){
+      _phPhotos = snap.docs.map(d => d.data());
+      phSaveLocal();
+      return true;
+    }
+  }catch(e){ console.warn('phLoadCloud failed:', e.message); }
+  return false;
+}
+
+function phSave(){
+  phSaveLocal();
+  phSaveCloud();
+}
+
+// ── Load full image for lightbox ──
+async function phGetFull(id){
+  // Check in-memory first
+  const p = _phPhotos.find(x=>x.id===id);
+  if(p && p.full) return p.full;
+  // Fetch from Firestore
+  if(db){
+    try{
+      const doc = await db.collection('photos_full').doc(id).get();
+      if(doc.exists){
+        const full = doc.data().full;
+        if(p) p.full = full; // cache in memory
+        return full;
+      }
+    }catch(e){ console.warn('phGetFull failed:', e.message); }
+  }
+  return p ? p.thumb : ''; // fallback to thumb
+}
+
+// ── Render library ──
+function phRender(){
+  const fromDate = document.getElementById('ph-filter-from')?.value||'';
+  const toDate   = document.getElementById('ph-filter-to')?.value||'';
+
+  let photos = [..._phPhotos].sort((a,b)=> b.date > a.date ? 1 : b.date < a.date ? -1 : b.uploadedAt - a.uploadedAt);
+
+  if(fromDate) photos = photos.filter(p=>p.date >= fromDate);
+  if(toDate)   photos = photos.filter(p=>p.date <= toDate);
+
+  // Stats (all photos, not filtered)
+  const allDates = [...new Set(_phPhotos.map(p=>p.date))];
+  const el = document.getElementById('ph-stat-total');
+  const ed = document.getElementById('ph-stat-days');
+  if(el) el.textContent = _phPhotos.length;
+  if(ed) ed.textContent = allDates.length;
+
+  const lib = document.getElementById('ph-library');
+  if(!lib) return;
+
+  if(photos.length===0){
+    lib.innerHTML = '<div class="ph-empty">'+(
+      _phPhotos.length===0
+        ? 'No photos yet.<br>Tap <strong>+ Upload Photos</strong> or drag photos here.'
+        : 'No photos match the current filters.'
+    )+'</div>';
+    document.getElementById('ph-load-more').style.display = 'none';
+    return;
+  }
+
+  // Group by date, limit to _phDaysShown unique dates
+  const grouped = {};
+  photos.forEach(p=>{ if(!grouped[p.date]) grouped[p.date]=[]; grouped[p.date].push(p); });
+  const sortedDates = Object.keys(grouped).sort((a,b)=>b>a?1:-1);
+
+  const visibleDates = sortedDates.slice(0, _phDaysShown);
+  const hasMore = sortedDates.length > _phDaysShown;
+
+  lib.innerHTML = visibleDates.map(date => `
+    <div class="ph-day-group">
+      <div class="ph-day-label">${phDayLabel(date)} — ${grouped[date].length} photo${grouped[date].length>1?'s':''}</div>
+      <div class="ph-grid">
+        ${grouped[date].map(p=>`
+          <div class="ph-thumb" onclick="phOpenLightbox('${p.id}')">
+            <img src="${p.thumb}" alt="${p.caption||''}" loading="lazy">
+            <div class="ph-thumb-caption">${p.caption||'Tap to add caption'}</div>
+            <button class="ph-thumb-del" onclick="event.stopPropagation();phConfirmDelete('${p.id}')">✕</button>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  `).join('');
+
+  document.getElementById('ph-load-more').style.display = hasMore ? 'block' : 'none';
+}
+
+function phLoadMore(){
+  _phDaysShown += _phPageSize;
+  phRender();
+}
+
+function phClearFilters(){
+  document.getElementById('ph-filter-from').value='';
+  document.getElementById('ph-filter-to').value='';
+  phRender();
+}
+
+// ── Lightbox ──
+async function phOpenLightbox(id){
+  _phLbId = id;
+  const p = _phPhotos.find(x=>x.id===id);
+  if(!p) return;
+  const lb = document.getElementById('ph-lightbox');
+  const img = document.getElementById('ph-lb-img');
+  const cap = document.getElementById('ph-lb-caption');
+  const dat = document.getElementById('ph-lb-date');
+  // Show thumb immediately while full loads
+  img.src = p.thumb;
+  cap.value = p.caption||'';
+  dat.textContent = phDayLabel(p.date);
+  lb.classList.remove('hidden');
+  // Load full image async
+  const full = await phGetFull(id);
+  if(_phLbId === id) img.src = full; // only update if still viewing same photo
+}
+
+function phCloseLightbox(){
+  document.getElementById('ph-lightbox').classList.add('hidden');
+  _phLbId = null;
+}
+
+function phSaveCaption(){
+  if(!_phLbId) return;
+  const cap = document.getElementById('ph-lb-caption').value.trim();
+  const p = _phPhotos.find(x=>x.id===_phLbId);
+  if(p){
+    p.caption = cap;
+    phSave();
+    phRender();
+  }
+  phCloseLightbox();
+}
+
+// ── Delete with confirm ──
+function phConfirmDelete(id){
+  const p = _phPhotos.find(x=>x.id===id);
+  if(!p) return;
+  var ov = document.createElement('div');
+  ov.className = 'modal-overlay';
+  ov.innerHTML = '<div class="modal-box">' +
+    '<div class="modal-title">⚠ Delete Photo?</div>' +
+    '<div class="modal-msg">Delete the photo from <strong>' + phDayLabel(p.date) + '</strong>?<br><br>This cannot be undone.</div>' +
+    '<div class="modal-btns">' +
+      '<button class="modal-cancel" id="_phmc">Cancel</button>' +
+      '<button class="modal-confirm" id="_phmok">Delete</button>' +
+    '</div></div>';
+  document.body.appendChild(ov);
+  document.getElementById('_phmc').onclick = function(){ ov.remove(); };
+  document.getElementById('_phmok').onclick = async function(){
+    ov.remove();
+    _phPhotos = _phPhotos.filter(x=>x.id!==id);
+    phSaveLocal();
+    if(db){
+      try{
+        await db.collection('photos').doc(id).delete();
+        await db.collection('photos_full').doc(id).delete();
+      }catch(e){ console.warn('phDelete cloud failed:', e.message); }
+    }
+    phRender();
+  };
+}
+
+// ── Close lightbox on backdrop tap ──
+document.getElementById('ph-lightbox')?.addEventListener('click', function(e){
+  if(e.target===this) phCloseLightbox();
+});
+
+// ── Init ──
+async function phInit(){
+  phLoadLocal();
+  const fromCloud = await phLoadCloud();
+  if(!fromCloud) phLoadLocal();
+  phRender();
+}
+
 function tsInit(){
   tsPushFromDailyLog();
   tsRenderCurrentWeek();
@@ -2143,6 +2572,7 @@ buildChecklist();
 renderAllChips();
 tsInit();
 clInit();
+phInit();
 
 // Restore saved data if this is a re-opened archived file
 if(SAVED_DATA){
