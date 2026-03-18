@@ -428,7 +428,7 @@ select{cursor:pointer}
       <div class="g g2" style="margin-bottom:12px">
         <div class="field">
           <label>Total Miles Driven</label>
-          <div class="miles-auto" id="p-miles">6.0 mi</div>
+          <div class="miles-auto" id="p-miles">— mi</div>
         </div>
         <div class="field">
           <label>Total Hours on Site</label>
@@ -2579,7 +2579,6 @@ buildChecklist();
 renderAllChips();
 tsInit();
 clInit();
-phInit();
 
 // Restore saved data if this is a re-opened archived file
 if(SAVED_DATA){
@@ -2790,6 +2789,7 @@ function resetForm() {
               }
       _fbReady = true;
       setSyncStatus('synced');
+      phInit();
       return;
     }
 
@@ -2810,12 +2810,15 @@ function resetForm() {
       showCloudBanner('☁ Session restored from cloud — picked up where you left off.');
       _fbReady = true;
       setSyncStatus('synced');
+      phInit();
     } else if (localTs > cloudTs) {
       _fbReady = true;
       cloudSave();
+      phInit();
     } else {
       _fbReady = true;
       setSyncStatus('synced');
+      phInit();
     }
 
   } catch(e) {
