@@ -1809,15 +1809,22 @@ function tsInit(){
 // THEME TOGGLE
 // ═══════════════════════════════════════════
 function applyTheme(t){
-  document.body.classList.toggle('theme-light', t==='light');
+  const prefersDark=window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const isLight = t==='light' || (t==='system' && !prefersDark);
+  document.body.classList.toggle('theme-light', isLight);
   const btn=document.getElementById('theme-btn');
-  if(btn) btn.textContent = t==='light' ? '🌙' : '☀';
+  if(btn) btn.textContent = t==='light' ? '🌙' : t==='system' ? '⊙' : '☀';
   try{ localStorage.setItem('phinest_theme', t); }catch{}
 }
 function toggleTheme(){
   const current=localStorage.getItem('phinest_theme')||'dark';
-  applyTheme(current==='dark'?'light':'dark');
+  const next = current==='dark' ? 'light' : current==='light' ? 'system' : 'dark';
+  applyTheme(next);
 }
+window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function(){
+  const current=localStorage.getItem('phinest_theme')||'dark';
+  if(current==='system') applyTheme('system');
+});
 (function initTheme(){
   const saved=localStorage.getItem('phinest_theme')||'dark';
   applyTheme(saved);
