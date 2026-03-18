@@ -2050,7 +2050,7 @@ async function phSaveCloud(){
 async function phLoadCloud(){
   if(!db) return false;
   try{
-    const snap = await db.collection('photos').orderBy('uploadedAt','desc').get();
+    const snap = await db.collection('photos').get();
     if(!snap.empty){
       _phPhotos = snap.docs.map(d => d.data());
       phSaveLocal();
