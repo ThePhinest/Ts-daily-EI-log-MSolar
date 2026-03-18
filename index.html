@@ -2224,8 +2224,8 @@ document.getElementById('ph-lightbox')?.addEventListener('click', function(e){
 // ── Init ──
 async function phInit(){
   phLoadLocal();
+  phRender();
   const fromCloud = await phLoadCloud();
-  if(!fromCloud) phLoadLocal();
   phRender();
 }
 
