@@ -29,6 +29,14 @@
 }
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 body{background:var(--bg);color:var(--text);font-family:var(--body);font-size:14.5px;line-height:1.5;min-height:100vh;padding-bottom:80px}
+body.theme-light{
+  --bg:#f5f7fa;--s1:#ffffff;--s2:#edf0f4;--s3:#004C54;
+  --border:#d0d8e4;--border2:#b0bec5;
+  --amber:#004C54;--amber2:#003840;--amber-bg:rgba(0,76,84,0.08);
+  --text:#1a2535;--muted:#6a9aaa;--muted2:#4a7080;
+  --green:#1e8449;--red:#e74c3c;
+  --personal-border:#b0bec5;--personal-bg:rgba(0,76,84,0.06);--personal-accent:#4a7080;--personal-accent2:#004C54;
+}
 .bottom-nav{position:fixed;bottom:0;left:0;right:0;z-index:400;background:var(--s1);border-top:1px solid var(--border);display:flex;align-items:stretch;height:62px;padding-bottom:env(safe-area-inset-bottom)}
 .nav-item{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;cursor:pointer;border:none;background:transparent;padding:6px 2px;transition:all .15s;border-top:2px solid transparent}
 .nav-item.active{background:rgba(0,76,84,0.2);border-top-color:var(--s3)}
@@ -275,8 +283,9 @@ select{cursor:pointer}
     <div class="app-sub">Moraine Solar Energy Center</div>
   </div>
   <div class="bar-spacer"></div>
-  <button class="icon-btn" title="Print" onclick="window.print()">⎙</button>
-  <button class="icon-btn" title="Reset form" onclick="resetForm()">↺</button>
+  <button class="icon-btn" title="Toggle theme" onclick="toggleTheme()" id="theme-btn">☀</button>
+<button class="icon-btn" title="Print" onclick="window.print()">⎙</button>
+<button class="icon-btn" title="Reset form" onclick="resetForm()">↺</button>
 <span id="sync-dot" title="" style="font-family: var(--mono); font-size: 10px; letter-spacing: 0.05em; transition: color 0.3s; white-space: nowrap; margin-left: 2px; color: var(--green);">✓ synced</span></div>
 
 <!-- BOTTOM NAV -->
@@ -316,7 +325,7 @@ select{cursor:pointer}
   <div class="more-divider"></div>
   <div class="more-row" onclick="showPage('config');closeMoreMenu()">
     <span class="more-row-icon">⚙</span>
-    <div><div class="more-row-label">Config</div><div class="more-row-sub">Settings &amp; presets</div></div>
+    <div><div class="more-row-label">Settings</div><div class="more-row-sub">Preferences &amp; presets</div></div>
   </div>
   <div class="more-divider"></div>
   <div class="more-section-label">Coming soon</div>
@@ -1795,6 +1804,24 @@ function tsInit(){
   tsRenderCurrentWeek();
   tsCheckArchivePrompt();
 }
+
+// ═══════════════════════════════════════════
+// THEME TOGGLE
+// ═══════════════════════════════════════════
+function applyTheme(t){
+  document.body.classList.toggle('theme-light', t==='light');
+  const btn=document.getElementById('theme-btn');
+  if(btn) btn.textContent = t==='light' ? '🌙' : '☀';
+  try{ localStorage.setItem('phinest_theme', t); }catch{}
+}
+function toggleTheme(){
+  const current=localStorage.getItem('phinest_theme')||'dark';
+  applyTheme(current==='dark'?'light':'dark');
+}
+(function initTheme(){
+  const saved=localStorage.getItem('phinest_theme')||'dark';
+  applyTheme(saved);
+})();
 
 // ═══════════════════════════════════════════
 // COMPLIANCE LOG
