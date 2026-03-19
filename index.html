@@ -3389,7 +3389,6 @@ buildChecklist();
 renderAllChips();
 renderNav();
 tsInit();
-clInit();
 
 // Restore saved data if this is a re-opened archived file
 if(SAVED_DATA){
@@ -3603,6 +3602,7 @@ function resetForm() {
       _fbReady = true;
       setSyncStatus('synced');
       phInit();
+      clInit();
       return;
     }
 
@@ -3624,6 +3624,7 @@ function resetForm() {
       _fbReady = true;
       setSyncStatus('synced');
       phInit();
+      clInit();
     } else if (localTs > cloudTs) {
       _fbReady = true;
       cloudSave();
