@@ -3134,36 +3134,108 @@ function calOpenDay(date){
   document.getElementById('cal-list-view').style.display='none';
   document.getElementById('cal-view-toggle').style.display='none';
   document.getElementById('cal-day-view').style.display='block';
+
+  // ── Title + indicators ──
   const title=document.getElementById('cal-day-title');
-  if(title) title.textContent=dlFmtDisplay(date);
+  if(title){
+    const indicators=calGetDotIndicators(rec);
+    title.innerHTML=dlFmtDisplay(date)+'<span style="margin-left:10px;font-size:13px;vertical-align:middle">'+indicators+'</span>';
+  }
   const content=document.getElementById('cal-day-content');
   if(!content) return;
-  // Build summary sections
-  const tin=rec.p_timeIn||'—'; const tout=rec.p_timeOut||'—';
-  const os=parseFloat(rec.p_odoStart||0); const oe=parseFloat(rec.p_odoEnd||0);
-  const miles=(os&&oe&&oe>os)?(oe-os)+' mi':'—';
+
+  // ── Time & miles — prefer timesheet entry, fall back to raw fields ──
+  let tin='—', tout='—', hours='—', miles='—';
+  try{
+    const tsEntry=tsGetEntry(date);
+    if(tsEntry){
+      if(tsEntry.hours) hours=tsEntry.hours+' hrs';
+      if(tsEntry.miles) miles=tsEntry.miles+' mi';
+    }
+  }catch{}
+  // Also show raw time in/out if available
+  if(rec.p_timeIn) tin=rec.p_timeIn;
+  if(rec.p_timeOut) tout=rec.p_timeOut;
+  // Fall back to odometer if no timesheet miles
+  if(miles==='—'){
+    const os=parseFloat(rec.p_odoStart||0); const oe=parseFloat(rec.p_odoEnd||0);
+    if(os&&oe&&oe>os) miles=(oe-os)+' mi';
+  }
+
+  // ── Weather ──
+  let weather='—';
+  if(rec.weather){
+    const w=rec.weather;
+    const parts=[w.sky,w.tempAM?w.tempAM+'° AM':'',w.tempPM?w.tempPM+'° PM':'',w.wind?'Wind: '+w.wind:'',w.precip?'Precip: '+w.precip:''].filter(Boolean);
+    weather=parts.join(' · ')||'—';
+  }
+
+  // ── Inspection summary ──
   const summary=(rec.inspSummary||rec.inspectionSummary||'').trim()||'No summary recorded.';
   const contractor=rec.contractor||'—';
-  const weather=rec.weather?[rec.weather.sky,rec.weather.tempAM?rec.weather.tempAM+'°AM':'',rec.weather.tempPM?rec.weather.tempPM+'°PM':''].filter(Boolean).join(' · '):'—';
-  // Compliance count
-  let compCount=0;
-  try{ const cl=JSON.parse(localStorage.getItem('cl_entries')||'[]'); compCount=cl.filter(e=>e.date===date).length; }catch{}
-  // Photo count
-  let phCount=0;
-  try{ const ph=JSON.parse(localStorage.getItem('ph_photos')||'[]'); phCount=ph.filter(p=>(p.date||'').startsWith(date)).length; }catch{}
-  // Edit log
+
+  // ── Compliance entries — summary lines ──
+  let compSection='';
+  try{
+    const cl=JSON.parse(localStorage.getItem('cl_entries')||'[]');
+    const entries=cl.filter(e=>e.date===date);
+    if(entries.length>0){
+      const levelLabel={1:'L1 — Observation',2:'L2 — Corrective Action',3:'L3 — Non-Compliance',4:'L4 — Stop Work'};
+      const levelColor={1:'var(--muted2)',2:'var(--amber)',3:'#e67e22',4:'var(--red)'};
+      const rows=entries.map(e=>`
+        <div style="display:flex;align-items:flex-start;gap:8px;padding:6px 0;border-bottom:1px solid var(--border)">
+          <span style="font-family:var(--mono);font-size:9px;color:${levelColor[e.level]||'var(--muted)'};white-space:nowrap;padding-top:1px">${levelLabel[e.level]||'L?'}</span>
+          <span style="font-family:var(--body);font-size:12px;color:var(--text);flex:1">${e.location||'No description'}</span>
+          <span style="font-family:var(--mono);font-size:9px;color:var(--muted);white-space:nowrap">${e.status||''}</span>
+        </div>`).join('');
+      compSection=`<div class="cal-day-section" style="flex-direction:column;align-items:flex-start">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;width:100%">
+          <div class="cal-day-icon">❗</div>
+          <div class="cal-day-label">Compliance — ${entries.length} entr${entries.length===1?'y':'ies'}</div>
+        </div>
+        <div style="width:100%;padding-left:32px">${rows}</div>
+      </div>`;
+    }
+  }catch{}
+
+  // ── Photos — thumbnail strip ──
+  let photoSection='';
+  try{
+    const ph=JSON.parse(localStorage.getItem('ph_photos')||'[]');
+    const dayPhotos=ph.filter(p=>(p.date||'').startsWith(date));
+    if(dayPhotos.length>0){
+      const thumbs=dayPhotos.slice(0,6).map(p=>
+        p.thumb?`<img src="${p.thumb}" style="width:52px;height:52px;object-fit:cover;border-radius:5px;border:1px solid var(--border);cursor:pointer" onclick="showPage('photos')" title="${p.caption||''}">`
+               :`<div style="width:52px;height:52px;background:var(--s2);border-radius:5px;border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:18px">📸</div>`
+      ).join('');
+      const extra=dayPhotos.length>6?`<div style="font-family:var(--mono);font-size:10px;color:var(--muted);align-self:center">+${dayPhotos.length-6} more</div>`:'';
+      photoSection=`<div class="cal-day-section" style="flex-direction:column;align-items:flex-start">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;width:100%">
+          <div class="cal-day-icon">📸</div>
+          <div class="cal-day-label">Photos — ${dayPhotos.length}</div>
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;padding-left:32px">${thumbs}${extra}</div>
+      </div>`;
+    }
+  }catch{}
+
+  // ── Edit audit trail ──
   let editSection='';
   if(rec._edited&&rec._editLog&&rec._editLog.length>0){
     const entries=rec._editLog.map(e=>{
       const dt=new Date(e.at);
-      return dt.toLocaleDateString()+' '+dt.toLocaleTimeString()+' — '+e.by+': '+e.action;
-    }).join('<br>');
-    editSection=`<div class="cal-day-section">
-      <div class="cal-day-icon">⚠️</div>
-      <div><div class="cal-day-label">Edited After Archive <span class="cal-edit-badge">MODIFIED</span></div>
-      <div class="cal-edit-log">${entries}</div></div>
+      return `<div style="padding:3px 0;border-bottom:1px solid var(--border)">${dt.toLocaleDateString()+' '+dt.toLocaleTimeString()} — <strong>${e.by}</strong>: ${e.action}</div>`;
+    }).join('');
+    editSection=`<div class="cal-day-section" style="flex-direction:column;align-items:flex-start">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;width:100%">
+        <div class="cal-day-icon">⚠️</div>
+        <div class="cal-day-label">Edited After Archive <span class="cal-edit-badge">MODIFIED</span></div>
+      </div>
+      <div class="cal-edit-log" style="width:100%;margin-left:32px">${entries}</div>
     </div>`;
   }
+
+  // ── Assemble ──
   content.innerHTML=`
     <div class="cal-day-card">
       <div class="cal-day-section">
@@ -3176,31 +3248,27 @@ function calOpenDay(date){
       </div>
       <div class="cal-day-section">
         <div class="cal-day-icon">🕒</div>
-        <div><div class="cal-day-label">Time</div><div class="cal-day-val">${tin} – ${tout}</div></div>
+        <div>
+          <div class="cal-day-label">Time on Site</div>
+          <div class="cal-day-val">${tin} – ${tout}${hours!=='—'?' &nbsp;·&nbsp; <strong>'+hours+'</strong>':''}</div>
+        </div>
       </div>
       <div class="cal-day-section">
         <div class="cal-day-icon">🚚</div>
-        <div><div class="cal-day-label">Miles</div><div class="cal-day-val">${miles}</div></div>
+        <div><div class="cal-day-label">Miles Driven</div><div class="cal-day-val">${miles}</div></div>
       </div>
       <div class="cal-day-section">
         <div class="cal-day-icon">📋</div>
-        <div><div class="cal-day-label">Inspection Summary</div><div class="cal-day-val">${summary.length>200?summary.substring(0,200)+'…':summary}</div></div>
+        <div><div class="cal-day-label">Inspection Summary</div><div class="cal-day-val" style="white-space:pre-line">${summary.length>300?summary.substring(0,300)+'…':summary}</div></div>
       </div>
-      ${compCount>0?`<div class="cal-day-section">
-        <div class="cal-day-icon">❗</div>
-        <div><div class="cal-day-label">Compliance Entries</div><div class="cal-day-val">${compCount} entr${compCount===1?'y':'ies'} logged</div></div>
-      </div>`:''}
-      ${phCount>0?`<div class="cal-day-section">
-        <div class="cal-day-icon">📸</div>
-        <div><div class="cal-day-label">Photos</div><div class="cal-day-val">${phCount} photo${phCount===1?'':'s'} uploaded</div></div>
-      </div>`:''}
+      ${compSection}
+      ${photoSection}
       ${editSection}
     </div>
-    <button class="btn btn-amber" style="width:100%;margin-top:4px" onclick="dlLoadFromCalendar('${date}')">
+    <button class="btn btn-amber" style="width:100%;margin-top:8px;padding:13px;font-size:13px" onclick="dlLoadFromCalendar('${date}')">
       📂 Load This Log into Form
     </button>`;
 }
-
 // ── Calendar view state ──
 let _calView = 'grid'; // 'grid' or 'list'
 let _calYear = new Date().getFullYear();
