@@ -128,7 +128,7 @@ body.theme-light{
 .np-check{font-size:13px;color:var(--s3);font-weight:bold}
 
 /* APP BAR */
-.app-bar{position:sticky;top:0;z-index:300;background:var(--s1);border-bottom:2px solid var(--amber);padding:0 20px;height:52px;display:flex;align-items:center;gap:12px}
+.app-bar{position:sticky;top:0;z-index:300;background:var(--s1);border-bottom:2px solid var(--amber);padding:env(safe-area-inset-top) 20px 0;min-height:52px;display:flex;align-items:center;gap:12px}
 .app-title{font-family:var(--cond);font-weight:800;font-size:18px;letter-spacing:.09em;text-transform:uppercase;color:var(--amber)}
 .app-sub{font-family:var(--mono);font-size:10px;color:var(--muted);letter-spacing:.04em}
 .bar-spacer{flex:1}
