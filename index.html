@@ -2849,6 +2849,16 @@ function dlFmtDisplay(dateStr){
 }
 
 // ── New day detection + modal ──
+function debugNewDay(){
+  console.log('today:', new Date().toISOString().split('T')[0]);
+  console.log('suppressed:', localStorage.getItem('pei_newday_suppress'));
+  const saved = localStorage.getItem('msf_autosave');
+  const state = saved ? JSON.parse(saved) : {};
+  console.log('savedDate:', state.reportDate||'(none)');
+  localStorage.removeItem('pei_newday_suppress');
+  console.log('Suppression cleared — calling checkNewDay()...');
+  checkNewDay();
+}
 function checkNewDay(){
   const today=new Date().toISOString().split('T')[0];
   // Check suppression — if already handled today, skip
