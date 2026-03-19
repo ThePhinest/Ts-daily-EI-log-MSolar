@@ -355,7 +355,8 @@ select{cursor:pointer}
   <div class="bar-spacer"></div>
   <button class="icon-btn" title="Toggle theme" onclick="toggleTheme()" id="theme-btn">☀</button>
 <button class="icon-btn" title="Print" onclick="window.print()">⎙</button>
-<button class="icon-btn" title="Reset form" onclick="resetForm()">↺</button>
+<button class="icon-btn" title="Reset form" onclick="resetForm()">🗑</button>
+<button class="icon-btn" title="Reload app" onclick="location.reload()">⟳</button>
 <span id="sync-dot" title="" style="font-family: var(--mono); font-size: 10px; letter-spacing: 0.05em; transition: color 0.3s; white-space: nowrap; margin-left: 2px; color: var(--green);">✓ synced</span></div>
 
 <!-- BOTTOM NAV -->
@@ -3139,6 +3140,7 @@ function resetForm() {
       _fbReady = true;
       setSyncStatus('synced');
       phInit();
+      setTimeout(checkNewDay, 300);
     } else if (localTs > cloudTs) {
       _fbReady = true;
       cloudSave();
