@@ -373,30 +373,7 @@ select{cursor:pointer}
 <div class="more-panel" id="more-panel">
   <div class="more-handle"></div>
   <div class="more-panel-title">More</div>
-  <div class="more-row" onclick="showPage('calendar');closeMoreMenu()">
-    <span class="more-row-icon">📅</span>
-    <div><div class="more-row-label">Calendar</div><div class="more-row-sub">History, daily notes</div></div>
-  </div>
-  <div class="more-divider"></div>
-  <div class="more-row" onclick="showPage('forms');closeMoreMenu()">
-    <span class="more-row-icon">📄</span>
-    <div><div class="more-row-label">Forms</div><div class="more-row-sub">Spill report, other docs</div></div>
-  </div>
-  <div class="more-divider"></div>
-  <div class="more-row" onclick="showPage('photos');closeMoreMenu()">
-    <span class="more-row-icon">📸</span>
-    <div><div class="more-row-label">Photos</div><div class="more-row-sub">Field photo management</div></div>
-  </div>
-  <div class="more-divider"></div>
-  <div class="more-row" onclick="showPage('docs');closeMoreMenu()">
-    <span class="more-row-icon">📁</span>
-    <div><div class="more-row-label">Docs</div><div class="more-row-sub">Project documents &amp; reference files</div></div>
-  </div>
-  <div class="more-divider"></div>
-  <div class="more-row" onclick="showPage('config');closeMoreMenu()">
-    <span class="more-row-icon">⚙</span>
-    <div><div class="more-row-label">Settings</div><div class="more-row-sub">Preferences &amp; presets</div></div>
-  </div>
+  <div id="more-menu-rows"></div>
   <div style="height:16px"></div>
 </div>
 
@@ -2072,11 +2049,35 @@ function tsLoadConfigFields(){
 }
 
 function toggleMoreMenu(){
+  renderMoreMenu();
   const overlay=document.getElementById('more-overlay');
   const panel=document.getElementById('more-panel');
   const isOpen=panel.classList.contains('open');
   if(isOpen){closeMoreMenu();}else{overlay.classList.add('open');panel.classList.add('open');document.getElementById('tab-more').classList.add('active');}
 }
+const MORE_SUBS = {
+  log:        'Daily field log',
+  timesheet:  'Hours, miles &amp; per diem',
+  compliance: 'Level 1–4 observation log',
+  photos:     'Field photo management',
+  calendar:   'History, daily notes',
+  forms:      'Forms &amp; reports',
+  docs:       'Project documents &amp; reference files',
+  config:     'Preferences &amp; presets',
+};
+
+function renderMoreMenu(){
+  const container = document.getElementById('more-menu-rows');
+  if(!container) return;
+  const overflow = PAGE_REGISTRY.filter(p => !_navSlots.includes(p.id));
+  container.innerHTML = overflow.map((p,i) => `
+    ${i>0?'<div class="more-divider"></div>':''}
+    <div class="more-row" onclick="showPage('${p.id}');closeMoreMenu()">
+      <span class="more-row-icon">${p.icon}</span>
+      <div><div class="more-row-label">${p.label}</div><div class="more-row-sub">${MORE_SUBS[p.id]||''}</div></div>
+    </div>`).join('');
+}
+
 function closeMoreMenu(){
   document.getElementById('more-overlay').classList.remove('open');
   document.getElementById('more-panel').classList.remove('open');
