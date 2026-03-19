@@ -3295,8 +3295,7 @@ function calRenderList(){
   if(count)count.textContent=dates.length+' day'+(dates.length===1?'':'s');
   list.innerHTML=dates.map(date=>{
     const rec=all[date];
-    const summary=(rec.inspSummary||rec.inspectionSummary||'').trim().replace(/[
-].*/,'').split(/[.!?]/)[0].trim();
+    const summary=(rec.inspSummary||rec.inspectionSummary||'').trim().replace(/\r?\n.*/,'').split(/[.!?]/)[0].trim();
     const displaySummary=summary.length>60?summary.substring(0,60)+'…':summary||'No summary';
     return `<div class="cal-row" onclick="calOpenDay('${date}')">
       <div class="cal-row-date">${dlFmtDisplay(date)}</div>
