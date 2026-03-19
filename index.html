@@ -38,7 +38,7 @@ body.theme-light{
   --personal-border:#b0bec5;--personal-bg:rgba(0,76,84,0.06);--personal-accent:#4a7080;--personal-accent2:#004C54;
 }
 .bottom-nav{position:fixed;bottom:0;left:0;right:0;z-index:400;background:var(--s1);border-top:1px solid var(--border);display:flex;align-items:stretch;height:95px;padding-bottom:calc(env(safe-area-inset-bottom) + 25px)}
-.nav-item{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding-top:14px;gap:3px;cursor:pointer;border:none;background:transparent;padding-bottom:0;transition:all .15s;border-top:2px solid transparent;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
+.nav-item{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding-top:14px;gap:3px;cursor:pointer;border:none;background:transparent;padding-bottom:0;transition:all .15s;border-top:2px solid transparent}
 .nav-item.active{background:rgba(0,76,84,0.2);border-top-color:var(--s3);margin-bottom:-1px}
 .nav-item .nav-icon{font-size:18px;line-height:1}
 .nav-item .nav-label{font-family:var(--cond);font-weight:700;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);transition:color .15s}
@@ -57,6 +57,25 @@ body.theme-light{
 .more-row-sub{font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:1px}
 .more-divider{height:1px;background:var(--border);margin:2px 0}
 .more-section-label{font-family:var(--mono);font-size:9px;color:var(--muted);letter-spacing:.1em;text-transform:uppercase;padding:10px 20px 4px}
+
+/* NEW DAY MODAL */
+.nd-overlay{position:fixed;inset:0;z-index:700;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:20px}
+.nd-card{background:var(--s1);border:1px solid var(--border2);border-radius:12px;width:100%;max-width:360px;overflow:hidden}
+.nd-head{background:var(--s2);border-bottom:1px solid var(--border);padding:14px 18px;display:flex;align-items:center;gap:10px}
+.nd-head-icon{font-size:20px}
+.nd-head-title{font-family:var(--cond);font-weight:800;font-size:15px;letter-spacing:.09em;text-transform:uppercase;color:var(--amber)}
+.nd-body{padding:18px}
+.nd-msg{font-family:var(--body);font-size:14px;color:var(--text);line-height:1.6;margin-bottom:6px}
+.nd-date{font-family:var(--mono);font-size:12px;color:var(--muted2);margin-bottom:18px}
+.nd-btns{display:flex;flex-direction:column;gap:9px}
+.nd-btn{width:100%;padding:11px 16px;border-radius:7px;border:none;cursor:pointer;font-family:var(--cond);font-weight:700;font-size:13px;letter-spacing:.08em;text-transform:uppercase;transition:all .15s;text-align:left;display:flex;align-items:center;gap:10px}
+.nd-btn-primary{background:var(--s3);color:#fff}
+.nd-btn-primary:hover{filter:brightness(1.1)}
+.nd-btn-secondary{background:var(--s2);color:var(--text);border:1px solid var(--border2)}
+.nd-btn-secondary:hover{border-color:var(--amber);color:var(--amber)}
+.nd-btn-ghost{background:transparent;color:var(--muted);border:1px solid var(--border)}
+.nd-btn-ghost:hover{color:var(--text)}
+.nd-btn-icon{font-size:16px;width:20px;text-align:center}
 
 /* NAV PICKER POPUP */
 #nav-picker{display:none;position:fixed;inset:0;z-index:600}
@@ -359,6 +378,28 @@ select{cursor:pointer}
   </button>
 </nav>
 
+<!-- NEW DAY MODAL -->
+<div class="nd-overlay" id="nd-overlay" style="display:none">
+  <div class="nd-card">
+    <div class="nd-head">
+      <span class="nd-head-icon">📅</span>
+      <span class="nd-head-title">New Day Detected</span>
+    </div>
+    <div class="nd-body">
+      <div class="nd-msg">Your log is from a previous day.</div>
+      <div class="nd-date" id="nd-prev-date"></div>
+      <div class="nd-btns">
+        <button class="nd-btn nd-btn-primary" onclick="newDayStartFresh()">
+          <span class="nd-btn-icon">🌅</span> Start Fresh — New Day
+        </button>
+        <button class="nd-btn nd-btn-ghost" onclick="newDayKeepContinue()">
+          <span class="nd-btn-icon">📋</span> Keep &amp; Continue
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- NAV PICKER POPUP -->
 <div id="nav-picker">
   <div id="nav-picker-backdrop" onclick="hideNavPicker()"></div>
@@ -373,7 +414,30 @@ select{cursor:pointer}
 <div class="more-panel" id="more-panel">
   <div class="more-handle"></div>
   <div class="more-panel-title">More</div>
-  <div id="more-menu-rows"></div>
+  <div class="more-row" onclick="showPage('calendar');closeMoreMenu()">
+    <span class="more-row-icon">📅</span>
+    <div><div class="more-row-label">Calendar</div><div class="more-row-sub">History, daily notes</div></div>
+  </div>
+  <div class="more-divider"></div>
+  <div class="more-row" onclick="showPage('forms');closeMoreMenu()">
+    <span class="more-row-icon">📄</span>
+    <div><div class="more-row-label">Forms</div><div class="more-row-sub">Spill report, other docs</div></div>
+  </div>
+  <div class="more-divider"></div>
+  <div class="more-row" onclick="showPage('photos');closeMoreMenu()">
+    <span class="more-row-icon">📸</span>
+    <div><div class="more-row-label">Photos</div><div class="more-row-sub">Field photo management</div></div>
+  </div>
+  <div class="more-divider"></div>
+  <div class="more-row" onclick="showPage('docs');closeMoreMenu()">
+    <span class="more-row-icon">📁</span>
+    <div><div class="more-row-label">Docs</div><div class="more-row-sub">Project documents &amp; reference files</div></div>
+  </div>
+  <div class="more-divider"></div>
+  <div class="more-row" onclick="showPage('config');closeMoreMenu()">
+    <span class="more-row-icon">⚙</span>
+    <div><div class="more-row-label">Settings</div><div class="more-row-sub">Preferences &amp; presets</div></div>
+  </div>
   <div style="height:16px"></div>
 </div>
 
@@ -1388,8 +1452,8 @@ function navAddLongPress(btn,slotIdx){
   let _lpt=null;
   const cancel=()=>{ clearTimeout(_lpt); _lpt=null; };
   btn.addEventListener('touchstart',e=>{
-    _lpt=setTimeout(()=>{ showNavPicker(btn,slotIdx); },620);
-  },{passive:true});
+    _lpt=setTimeout(()=>{ e.preventDefault(); showNavPicker(btn,slotIdx); },620);
+  },{passive:false});
   btn.addEventListener('touchend',cancel);
   btn.addEventListener('touchmove',cancel);
   btn.addEventListener('touchcancel',cancel);
@@ -2049,35 +2113,11 @@ function tsLoadConfigFields(){
 }
 
 function toggleMoreMenu(){
-  renderMoreMenu();
   const overlay=document.getElementById('more-overlay');
   const panel=document.getElementById('more-panel');
   const isOpen=panel.classList.contains('open');
   if(isOpen){closeMoreMenu();}else{overlay.classList.add('open');panel.classList.add('open');document.getElementById('tab-more').classList.add('active');}
 }
-const MORE_SUBS = {
-  log:        'Daily field log',
-  timesheet:  'Hours, miles &amp; per diem',
-  compliance: 'Level 1–4 observation log',
-  photos:     'Field photo management',
-  calendar:   'History, daily notes',
-  forms:      'Forms &amp; reports',
-  docs:       'Project documents &amp; reference files',
-  config:     'Preferences &amp; presets',
-};
-
-function renderMoreMenu(){
-  const container = document.getElementById('more-menu-rows');
-  if(!container) return;
-  const overflow = PAGE_REGISTRY.filter(p => !_navSlots.includes(p.id));
-  container.innerHTML = overflow.map((p,i) => `
-    ${i>0?'<div class="more-divider"></div>':''}
-    <div class="more-row" onclick="showPage('${p.id}');closeMoreMenu()">
-      <span class="more-row-icon">${p.icon}</span>
-      <div><div class="more-row-label">${p.label}</div><div class="more-row-sub">${MORE_SUBS[p.id]||''}</div></div>
-    </div>`).join('');
-}
-
 function closeMoreMenu(){
   document.getElementById('more-overlay').classList.remove('open');
   document.getElementById('more-panel').classList.remove('open');
@@ -2757,6 +2797,105 @@ async function clInit(){
 }
 
 // ═══════════════════════════════════════════
+// DAILY LOG ARCHIVE SYSTEM
+// ═══════════════════════════════════════════
+
+// ── Storage helpers ──
+function dlGetAll(){
+  try{ return JSON.parse(localStorage.getItem('pei_daily_logs')||'{}'); }catch{ return {}; }
+}
+function dlGet(date){
+  return dlGetAll()[date]||null;
+}
+function dlSaveLocal(date, record){
+  try{
+    const all=dlGetAll();
+    all[date]=record;
+    localStorage.setItem('pei_daily_logs',JSON.stringify(all));
+  }catch{}
+}
+
+// ── Archive current log to a given date ──
+async function dlArchive(date){
+  if(!date) return;
+  const state=collectFormState();
+  if(!state) return;
+  const existing=dlGet(date)||{};
+  const record=Object.assign({},state,{
+    _archivedAt: existing._archivedAt||Date.now(),
+    _archivedDate: date,
+    _edited: existing._edited||false,
+    _editLog: existing._editLog||[]
+  });
+  dlSaveLocal(date, record);
+  try{
+    if(typeof db!=='undefined'&&db&&_fbReady){
+      await db.collection('dailyLogs').doc(date).set(record);
+    }
+  }catch(e){}
+}
+
+// ── Format date for display: "Mon, Mar 18" ──
+function dlFmtDisplay(dateStr){
+  if(!dateStr) return '';
+  try{
+    const [y,m,d]=dateStr.split('-').map(Number);
+    const dt=new Date(y,m-1,d);
+    const days=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    const months=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    return days[dt.getDay()]+', '+months[m-1]+' '+d;
+  }catch{ return dateStr; }
+}
+
+// ── New day detection + modal ──
+function checkNewDay(){
+  const today=new Date().toISOString().split('T')[0];
+  // Check suppression — if already handled today, skip
+  const suppressed=localStorage.getItem('pei_newday_suppress')||'';
+  if(suppressed===today) return;
+  // Get last log date from autosave
+  let savedDate='';
+  try{
+    const saved=localStorage.getItem('msf_autosave');
+    if(saved){
+      const state=JSON.parse(saved);
+      savedDate=state.reportDate||'';
+    }
+  }catch{}
+  // Only trigger if we have a saved log from a previous day
+  if(!savedDate||savedDate===today) return;
+  // Show modal
+  const el=document.getElementById('nd-prev-date');
+  if(el) el.textContent='Last log: '+dlFmtDisplay(savedDate)+' ('+savedDate+')';
+  document.getElementById('nd-overlay').style.display='flex';
+  // Store the previous date for use in reset handler
+  document.getElementById('nd-overlay').dataset.prevDate=savedDate;
+}
+
+async function newDayStartFresh(){
+  const overlay=document.getElementById('nd-overlay');
+  const prevDate=overlay.dataset.prevDate||'';
+  overlay.style.display='none';
+  // Archive the previous day's log
+  if(prevDate) await dlArchive(prevDate);
+  // Suppress for today
+  const today=new Date().toISOString().split('T')[0];
+  localStorage.setItem('pei_newday_suppress',today);
+  // Reset form — _resetFormCore sets today's date automatically
+  if(typeof db!=='undefined'&&db&&_fbReady){
+    try{ await db.collection('sessions').doc('active').delete(); }catch{}
+  }
+  _resetFormCore();
+  setSyncStatus&&setSyncStatus('synced');
+}
+
+function newDayKeepContinue(){
+  document.getElementById('nd-overlay').style.display='none';
+  const today=new Date().toISOString().split('T')[0];
+  localStorage.setItem('pei_newday_suppress',today);
+}
+
+// ═══════════════════════════════════════════
 // INIT
 // ═══════════════════════════════════════════
 document.getElementById('reportDate').value=new Date().toISOString().split('T')[0];
@@ -2787,6 +2926,8 @@ if(SAVED_DATA){
     }
   }catch{}
 }
+// Check for new day after restore is complete
+setTimeout(checkNewDay, 400);
 </script>
 
 <script>
