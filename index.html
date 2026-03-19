@@ -1411,9 +1411,8 @@ function navAddLongPress(btn,slotIdx){
   let _lpt=null;
   const cancel=()=>{ clearTimeout(_lpt); _lpt=null; };
   btn.addEventListener('touchstart',e=>{
-    e.preventDefault();
     _lpt=setTimeout(()=>{ showNavPicker(btn,slotIdx); },620);
-  },{passive:false});
+  },{passive:true});
   btn.addEventListener('touchend',cancel);
   btn.addEventListener('touchmove',cancel);
   btn.addEventListener('touchcancel',cancel);
