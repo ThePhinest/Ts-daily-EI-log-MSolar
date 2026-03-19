@@ -58,6 +58,18 @@ body.theme-light{
 .more-divider{height:1px;background:var(--border);margin:2px 0}
 .more-section-label{font-family:var(--mono);font-size:9px;color:var(--muted);letter-spacing:.1em;text-transform:uppercase;padding:10px 20px 4px}
 
+/* NAV PICKER POPUP */
+#nav-picker{display:none;position:fixed;inset:0;z-index:600}
+#nav-picker-backdrop{position:absolute;inset:0}
+.nav-picker-card{position:absolute;background:var(--s1);border:1px solid var(--border2);border-radius:10px;min-width:190px;box-shadow:0 8px 32px rgba(0,0,0,.45);overflow:hidden}
+.np-title{font-family:var(--mono);font-size:9.5px;color:var(--muted);letter-spacing:.09em;text-transform:uppercase;padding:9px 14px 7px;border-bottom:1px solid var(--border)}
+.np-row{display:flex;align-items:center;gap:10px;padding:11px 14px;cursor:pointer;transition:background .12s}
+.np-row:hover{background:rgba(165,172,175,0.08)}
+.np-row.np-active{background:rgba(0,76,84,0.18)}
+.np-icon{font-size:15px;width:20px;text-align:center;line-height:1}
+.np-label{font-family:var(--cond);font-weight:700;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--text);flex:1}
+.np-check{font-size:13px;color:var(--s3);font-weight:bold}
+
 /* APP BAR */
 .app-bar{position:sticky;top:0;z-index:300;background:var(--s1);border-bottom:2px solid var(--amber);padding:0 20px;height:52px;display:flex;align-items:center;gap:12px}
 .app-title{font-family:var(--cond);font-weight:800;font-size:18px;letter-spacing:.09em;text-transform:uppercase;color:var(--amber)}
@@ -329,23 +341,32 @@ select{cursor:pointer}
 
 <!-- BOTTOM NAV -->
 <nav class="bottom-nav">
-  <button class="nav-item active" id="tab-log" onclick="showPage('log')">
+  <button class="nav-item active" id="nav-slot-1" data-page="log">
     <span class="nav-icon">📋</span>
-    <span class="nav-label">Log</span>
+    <span class="nav-label">Daily Log</span>
   </button>
-  <button class="nav-item" id="tab-timesheet" onclick="showPage('timesheet')">
-    <span class="nav-icon">⏱</span>
-    <span class="nav-label">Timesheet</span>
+  <button class="nav-item" id="nav-slot-2" data-page="calendar">
+    <span class="nav-icon">📅</span>
+    <span class="nav-label">Calendar</span>
   </button>
-  <button class="nav-item" id="tab-compliance" onclick="showPage('compliance')">
-    <span class="nav-icon">⚠</span>
-    <span class="nav-label">Compliance</span>
+  <button class="nav-item" id="nav-slot-3" data-page="photos">
+    <span class="nav-icon">📸</span>
+    <span class="nav-label">Photos</span>
   </button>
   <button class="nav-item" id="tab-more" onclick="toggleMoreMenu()">
     <span class="nav-icon">•••</span>
     <span class="nav-label">More</span>
   </button>
 </nav>
+
+<!-- NAV PICKER POPUP -->
+<div id="nav-picker">
+  <div id="nav-picker-backdrop" onclick="hideNavPicker()"></div>
+  <div class="nav-picker-card" id="nav-picker-card">
+    <div class="np-title">Change Tab</div>
+    <div id="nav-picker-inner"></div>
+  </div>
+</div>
 
 <!-- MORE SLIDE-UP PANEL -->
 <div class="more-overlay" id="more-overlay" onclick="closeMoreMenu()"></div>
@@ -365,6 +386,11 @@ select{cursor:pointer}
   <div class="more-row" onclick="showPage('photos');closeMoreMenu()">
     <span class="more-row-icon">📸</span>
     <div><div class="more-row-label">Photos</div><div class="more-row-sub">Field photo management</div></div>
+  </div>
+  <div class="more-divider"></div>
+  <div class="more-row" onclick="showPage('docs');closeMoreMenu()">
+    <span class="more-row-icon">📁</span>
+    <div><div class="more-row-label">Docs</div><div class="more-row-sub">Project documents &amp; reference files</div></div>
   </div>
   <div class="more-divider"></div>
   <div class="more-row" onclick="showPage('config');closeMoreMenu()">
@@ -769,8 +795,14 @@ EI to conduct LOD walk prior to start of operations"></textarea>
 
 <!-- FORMS PAGE (placeholder) -->
 <div class="page" id="page-forms"><div class="wrap">
-  <div class="card"><div class="card-head"><span class="card-num">📄</span><span class="card-title">Forms</span></div>
+  <div class="card"><div class="card-head"><span class="card-num">📄</span><span class="card-title">Forms / Reports</span></div>
   <div class="card-body" style="color:var(--muted);font-family:var(--mono);font-size:12px;">Coming soon — spill reports and other regulatory forms.</div></div>
+</div></div>
+
+<!-- DOCS PAGE (placeholder) -->
+<div class="page" id="page-docs"><div class="wrap">
+  <div class="card"><div class="card-head"><span class="card-num">📁</span><span class="card-title">Docs</span></div>
+  <div class="card-body" style="color:var(--muted);font-family:var(--mono);font-size:12px;">Coming soon — project document library. Upload and reference EMPs, permits, drawings, and specs.</div></div>
 </div></div>
 
 <!-- PHOTOS PAGE -->
@@ -959,6 +991,14 @@ EI to conduct LOD walk prior to start of operations"></textarea>
   </div>
 
   <div class="config-section">
+    <div class="config-head"><span class="config-title">Navigation Layout</span></div>
+    <div class="config-body">
+      <p class="config-hint">Choose which pages appear in the 3 customizable nav slots. Slot 4 (More) is always fixed. You can also long-press any nav button to swap it quickly.</p>
+      <div class="g g3" style="margin-bottom:12px" id="nav-config-slots"></div>
+      <button class="btn btn-amber" style="font-size:11px;padding:7px 14px" onclick="saveNavConfig()">Save &amp; Apply</button>
+      <span id="cfg-nav-status" style="font-family:var(--mono);font-size:11px;color:var(--green);margin-left:12px;opacity:0;transition:opacity .4s"></span>
+    </div>
+  </div>
     <div class="config-head"><span class="config-title">Project &amp; Report Info</span></div>
     <div class="config-body">
       <p class="config-hint">These values populate Section 01 on the daily log and persist through resets. Active Contractor can also be edited directly on the main page.</p>
@@ -1171,10 +1211,16 @@ function showPage(name){
   document.querySelectorAll('.nav-item').forEach(b=>b.classList.remove('active'));
   const page=document.getElementById('page-'+name);
   if(page)page.classList.add('active');
-  const primaryTabs=['log','timesheet','compliance'];
-  const tabEl=document.getElementById('tab-'+(primaryTabs.includes(name)?name:'more'));
-  if(tabEl)tabEl.classList.add('active');
-  if(name==='config'){ renderConfig(); tsLoadConfigFields(); }
+  // Highlight the correct nav slot
+  const slotIdx=_navSlots.indexOf(name);
+  if(slotIdx>=0){
+    const btn=document.getElementById('nav-slot-'+(slotIdx+1));
+    if(btn)btn.classList.add('active');
+  } else {
+    const moreBtn=document.getElementById('tab-more');
+    if(moreBtn)moreBtn.classList.add('active');
+  }
+  if(name==='config'){ renderConfig(); tsLoadConfigFields(); renderNavConfig(); }
   if(name==='timesheet'){ tsPushFromDailyLog(); tsRenderCurrentWeek(); tsCheckArchivePrompt(); }
   if(name==='compliance'){ clRender(); clAutoDetect(); }
   if(name==='photos'){ _phDaysShown=7; phRender(); }
@@ -1308,6 +1354,141 @@ function appendField(fieldId,text){
 function renderAllChips(){
   renderChips('inspSummary','obs');renderChips('genComms','comms');renderChips('lookahead','look');
   crewIds.forEach(id=>{renderChips(`crew-${id}-acts`,'act');renderChips(`crew-${id}-envcomp`,'env')});
+}
+
+// ═══════════════════════════════════════════
+// ═══════════════════════════════════════════
+// PAGE REGISTRY & CUSTOMIZABLE NAV
+// ═══════════════════════════════════════════
+const PAGE_REGISTRY = [
+  { id:'log',        label:'Daily Log',   icon:'📋' },
+  { id:'timesheet',  label:'Timesheet',   icon:'⏱'  },
+  { id:'compliance', label:'Compliance',  icon:'⚠'  },
+  { id:'photos',     label:'Photos',      icon:'📸' },
+  { id:'calendar',   label:'Calendar',    icon:'📅' },
+  { id:'forms',      label:'Forms',       icon:'📄' },
+  { id:'docs',       label:'Docs',        icon:'📁' },
+  { id:'config',     label:'Settings',    icon:'⚙'  },
+];
+
+const _NAV_DEFAULTS = ['log','calendar','photos'];
+let _navSlots = _NAV_DEFAULTS.slice();
+
+function navLoadSlots(){
+  try{
+    const s=localStorage.getItem('pei_nav_slots');
+    if(s){ const p=JSON.parse(s); if(Array.isArray(p)&&p.length===3)return p; }
+  }catch{}
+  return _NAV_DEFAULTS.slice();
+}
+
+function navSaveSlots(){
+  try{ localStorage.setItem('pei_nav_slots',JSON.stringify(_navSlots)); }catch{}
+}
+
+function renderNav(){
+  _navSlots=navLoadSlots();
+  for(let i=0;i<3;i++){
+    const pageId=_navSlots[i];
+    const page=PAGE_REGISTRY.find(p=>p.id===pageId)||PAGE_REGISTRY[0];
+    const btn=document.getElementById('nav-slot-'+(i+1));
+    if(!btn)continue;
+    btn.dataset.page=page.id;
+    btn.querySelector('.nav-icon').textContent=page.icon;
+    btn.querySelector('.nav-label').textContent=page.label;
+    btn.onclick=()=>showPage(page.id);
+    // Remove old long-press listeners by cloning
+    const fresh=btn.cloneNode(true);
+    fresh.onclick=()=>showPage(page.id);
+    btn.parentNode.replaceChild(fresh,btn);
+    navAddLongPress(document.getElementById('nav-slot-'+(i+1)),i);
+  }
+}
+
+// ── Long-press detection ──
+function navAddLongPress(btn,slotIdx){
+  if(!btn)return;
+  let _lpt=null;
+  const cancel=()=>{ clearTimeout(_lpt); _lpt=null; };
+  btn.addEventListener('touchstart',e=>{
+    _lpt=setTimeout(()=>{ e.preventDefault(); showNavPicker(btn,slotIdx); },620);
+  },{passive:false});
+  btn.addEventListener('touchend',cancel);
+  btn.addEventListener('touchmove',cancel);
+  btn.addEventListener('touchcancel',cancel);
+  // Desktop support
+  btn.addEventListener('mousedown',e=>{ if(e.button!==0)return; _lpt=setTimeout(()=>showNavPicker(btn,slotIdx),620); });
+  btn.addEventListener('mouseup',cancel);
+  btn.addEventListener('mouseleave',cancel);
+}
+
+// ── Picker popup ──
+let _navPickerSlot=0;
+
+function showNavPicker(btn,slotIdx){
+  _navPickerSlot=slotIdx;
+  const inner=document.getElementById('nav-picker-inner');
+  inner.innerHTML=PAGE_REGISTRY.map(p=>`
+    <div class="np-row ${_navSlots[slotIdx]===p.id?'np-active':''}" onclick="navSetSlot(${slotIdx},'${p.id}')">
+      <span class="np-icon">${p.icon}</span>
+      <span class="np-label">${p.label}</span>
+      ${_navSlots[slotIdx]===p.id?'<span class="np-check">✓</span>':''}
+    </div>`).join('');
+  const picker=document.getElementById('nav-picker');
+  const card=document.getElementById('nav-picker-card');
+  picker.style.display='block';
+  // Position above button
+  const rect=btn.getBoundingClientRect();
+  const cardW=200;
+  let left=rect.left+rect.width/2-cardW/2;
+  left=Math.max(8,Math.min(left,window.innerWidth-cardW-8));
+  const bottom=window.innerHeight-rect.top+10;
+  card.style.width=cardW+'px';
+  card.style.left=left+'px';
+  card.style.bottom=bottom+'px';
+}
+
+function hideNavPicker(){
+  document.getElementById('nav-picker').style.display='none';
+}
+
+function navSetSlot(slotIdx,pageId){
+  _navSlots[slotIdx]=pageId;
+  navSaveSlots();
+  renderNav();
+  hideNavPicker();
+}
+
+// ── Settings nav config renderer ──
+function renderNavConfig(){
+  const container=document.getElementById('nav-config-slots');
+  if(!container)return;
+  container.innerHTML=_navSlots.map((pageId,i)=>{
+    const opts=PAGE_REGISTRY.map(p=>`<option value="${p.id}"${pageId===p.id?' selected':''}>${p.icon} ${p.label}</option>`).join('');
+    return `<div class="field"><label>Slot ${i+1}</label>
+      <select id="cfg-nav-slot-${i}" style="background:var(--bg);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--body);font-size:14px;padding:8px 11px;width:100%">${opts}</select>
+    </div>`;
+  }).join('');
+}
+
+function saveNavConfig(){
+  for(let i=0;i<3;i++){
+    const sel=document.getElementById('cfg-nav-slot-'+i);
+    if(sel)_navSlots[i]=sel.value;
+  }
+  navSaveSlots();
+  renderNav();
+  // Re-highlight active slot
+  const activePage=document.querySelector('.page.active');
+  if(activePage){
+    const name=activePage.id.replace('page-','');
+    const slotIdx=_navSlots.indexOf(name);
+    document.querySelectorAll('.nav-item').forEach(b=>b.classList.remove('active'));
+    if(slotIdx>=0) document.getElementById('nav-slot-'+(slotIdx+1))?.classList.add('active');
+    else document.getElementById('tab-more')?.classList.add('active');
+  }
+  const s=document.getElementById('cfg-nav-status');
+  if(s){s.textContent='Saved!';s.style.opacity='1';setTimeout(()=>s.style.opacity='0',2000);}
 }
 
 // ═══════════════════════════════════════════
@@ -1901,8 +2082,8 @@ function closeMoreMenu(){
   document.getElementById('more-panel').classList.remove('open');
   const active=document.querySelector('.page.active');
   const name=active?active.id.replace('page-',''):'log';
-  const primaryTabs=['log','timesheet','compliance'];
-  document.getElementById('tab-more').classList.toggle('active',!primaryTabs.includes(name));
+  const inSlot=_navSlots.includes(name);
+  document.getElementById('tab-more').classList.toggle('active',!inSlot);
 }
 
 // ═══════════════════════════════════════════
@@ -2581,6 +2762,7 @@ document.getElementById('reportDate').value=new Date().toISOString().split('T')[
 applyProjectConfig();
 buildChecklist();
 renderAllChips();
+renderNav();
 tsInit();
 clInit();
 
