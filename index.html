@@ -2659,7 +2659,7 @@ async function clSaveCloud(){
 }
 
 async function clLoadCloud(){
-  if(!db) return false;
+  if(!db || !_fbReady) return false;
   try{
     const doc = await db.collection('compliance').doc('entries').get();
     if(doc.exists){
