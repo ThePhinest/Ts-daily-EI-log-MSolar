@@ -58,6 +58,29 @@ body.theme-light{
 .more-divider{height:1px;background:var(--border);margin:2px 0}
 .more-section-label{font-family:var(--mono);font-size:9px;color:var(--muted);letter-spacing:.1em;text-transform:uppercase;padding:10px 20px 4px}
 
+/* CALENDAR GRID */
+.cal-view-toggle{display:flex;gap:6px;margin-bottom:14px}
+.cal-toggle-btn{flex:1;padding:7px 10px;border-radius:6px;border:1px solid var(--border2);background:transparent;color:var(--muted);font-family:var(--cond);font-weight:700;font-size:11px;letter-spacing:.08em;text-transform:uppercase;cursor:pointer;transition:all .15s}
+.cal-toggle-btn.active{background:var(--s3);color:#fff;border-color:var(--s3)}
+.cal-month-nav{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.cal-month-label{font-family:var(--cond);font-weight:800;font-size:16px;letter-spacing:.08em;text-transform:uppercase;color:var(--amber)}
+.cal-nav-btn{background:transparent;border:1px solid var(--border2);color:var(--muted2);width:32px;height:32px;border-radius:6px;cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;transition:all .15s}
+.cal-nav-btn:hover{border-color:var(--amber);color:var(--amber)}
+.cal-grid{width:100%}
+.cal-grid-head{display:grid;grid-template-columns:repeat(7,1fr);margin-bottom:4px}
+.cal-grid-dow{font-family:var(--mono);font-size:9px;color:var(--muted);text-align:center;text-transform:uppercase;letter-spacing:.06em;padding:4px 0}
+.cal-grid-body{display:grid;grid-template-columns:repeat(7,1fr);gap:3px}
+.cal-cell{min-height:52px;border-radius:6px;padding:5px 4px;display:flex;flex-direction:column;align-items:center;gap:2px;position:relative}
+.cal-cell.empty{opacity:0}
+.cal-cell.has-log{background:var(--s1);border:1px solid var(--border);cursor:pointer;transition:border-color .15s,background .15s}
+.cal-cell.has-log:hover{border-color:var(--amber);background:var(--s2)}
+.cal-cell.today .cal-cell-num{background:var(--s3);color:#fff;border-radius:50%;width:22px;height:22px;display:flex;align-items:center;justify-content:center}
+.cal-cell.no-log{background:transparent;border:1px solid transparent}
+.cal-cell-num{font-family:var(--mono);font-size:11px;color:var(--text);font-weight:600;line-height:1;padding:2px}
+.cal-cell.empty .cal-cell-num,.cal-cell.no-log .cal-cell-num{color:var(--border2)}
+.cal-cell-dots{display:flex;flex-wrap:wrap;gap:2px;justify-content:center;max-width:44px}
+.cal-dot{font-size:9px;line-height:1}
+
 /* CALENDAR LIST */
 .cal-row{background:var(--s1);border:1px solid var(--border);border-radius:var(--r);margin-bottom:10px;padding:13px 16px;cursor:pointer;transition:border-color .15s,background .15s;display:flex;align-items:center;gap:12px}
 .cal-row:hover{border-color:var(--amber);background:var(--s2)}
@@ -880,6 +903,12 @@ EI to conduct LOD walk prior to start of operations"></textarea>
     <div id="cal-count" style="font-family:var(--mono);font-size:11px;color:var(--muted)"></div>
   </div>
 
+  <!-- View toggle (hidden when in day view) -->
+  <div class="cal-view-toggle" id="cal-view-toggle">
+    <button class="cal-toggle-btn active" id="cal-toggle-grid" onclick="calSetView('grid')">📅 Grid</button>
+    <button class="cal-toggle-btn" id="cal-toggle-list" onclick="calSetView('list')">☰ List</button>
+  </div>
+
   <!-- Day view (hidden by default) -->
   <div id="cal-day-view" style="display:none">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
@@ -889,8 +918,26 @@ EI to conduct LOD walk prior to start of operations"></textarea>
     <div id="cal-day-content"></div>
   </div>
 
+  <!-- Grid view -->
+  <div id="cal-grid-view">
+    <div class="cal-month-nav">
+      <button class="cal-nav-btn" onclick="calMonthNav(-1)">&#8249;</button>
+      <div class="cal-month-label" id="cal-month-label"></div>
+      <button class="cal-nav-btn" onclick="calMonthNav(1)">&#8250;</button>
+    </div>
+    <div class="cal-grid">
+      <div class="cal-grid-head">
+        <div class="cal-grid-dow">Su</div><div class="cal-grid-dow">Mo</div>
+        <div class="cal-grid-dow">Tu</div><div class="cal-grid-dow">We</div>
+        <div class="cal-grid-dow">Th</div><div class="cal-grid-dow">Fr</div>
+        <div class="cal-grid-dow">Sa</div>
+      </div>
+      <div class="cal-grid-body" id="cal-grid-body"></div>
+    </div>
+  </div>
+
   <!-- Log list -->
-  <div id="cal-list-view">
+  <div id="cal-list-view" style="display:none">
     <div id="cal-list"></div>
     <div id="cal-empty" style="display:none;font-family:var(--mono);font-size:12px;color:var(--muted);text-align:center;padding:40px 0">
       No archived logs yet.<br>Start a new day to begin building your history.
@@ -3074,35 +3121,18 @@ async function calLoadCloud(){
 
 async function calRender(){
   await calLoadCloud();
-  const all=dlGetAll();
-  const dates=Object.keys(all).sort((a,b)=>b.localeCompare(a));
-  const list=document.getElementById('cal-list');
-  const empty=document.getElementById('cal-empty');
-  const count=document.getElementById('cal-count');
-  if(!list) return;
-  if(dates.length===0){
-    list.innerHTML=''; if(empty)empty.style.display='block';
-    if(count)count.textContent='';
-    return;
-  }
-  if(empty)empty.style.display='none';
-  if(count)count.textContent=dates.length+' day'+(dates.length===1?'':'s');
-  list.innerHTML=dates.map(date=>{
-    const rec=all[date];
-    const summary=(rec.inspSummary||rec.inspectionSummary||'').trim().replace(/[\r\n].*/,'').split(/[.!?]/)[0].trim();
-    const displaySummary=summary.length>60?summary.substring(0,60)+'…':summary||'No summary';
-    return `<div class="cal-row" onclick="calOpenDay('${date}')">
-      <div class="cal-row-date">${dlFmtDisplay(date)}</div>
-      <div class="cal-row-summary">${displaySummary}</div>
-      <div class="cal-row-indicators">${calGetIndicators(rec)}</div>
-    </div>`;
-  }).join('');
+  // Reset month to current on fresh open
+  const now=new Date();
+  _calYear=now.getFullYear(); _calMonth=now.getMonth();
+  calSetView(_calView);
 }
 
 function calOpenDay(date){
   const rec=dlGet(date);
   if(!rec) return;
+  document.getElementById('cal-grid-view').style.display='none';
   document.getElementById('cal-list-view').style.display='none';
+  document.getElementById('cal-view-toggle').style.display='none';
   document.getElementById('cal-day-view').style.display='block';
   const title=document.getElementById('cal-day-title');
   if(title) title.textContent=dlFmtDisplay(date);
@@ -3171,9 +3201,115 @@ function calOpenDay(date){
     </button>`;
 }
 
+// ── Calendar view state ──
+let _calView = 'grid'; // 'grid' or 'list'
+let _calYear = new Date().getFullYear();
+let _calMonth = new Date().getMonth(); // 0-indexed
+
+function calSetView(v){
+  _calView = v;
+  document.getElementById('cal-grid-view').style.display = v==='grid' ? 'block' : 'none';
+  document.getElementById('cal-list-view').style.display = v==='list' ? 'block' : 'none';
+  document.getElementById('cal-toggle-grid').classList.toggle('active', v==='grid');
+  document.getElementById('cal-toggle-list').classList.toggle('active', v==='list');
+  if(v==='grid') calRenderGrid();
+  if(v==='list') calRenderList();
+}
+
+function calMonthNav(dir){
+  _calMonth += dir;
+  if(_calMonth < 0){ _calMonth=11; _calYear--; }
+  if(_calMonth > 11){ _calMonth=0; _calYear++; }
+  calRenderGrid();
+}
+
+function calGetDotIndicators(record){
+  const dots=[];
+  if(record._edited) dots.push('<span class="cal-dot" title="Edited">⚠️</span>');
+  else dots.push('<span class="cal-dot" style="color:var(--green)" title="Log saved">●</span>');
+  try{
+    const cl=JSON.parse(localStorage.getItem('cl_entries')||'[]');
+    if(cl.some(e=>e.date===record._archivedDate)) dots.push('<span class="cal-dot" title="Compliance">❗</span>');
+  }catch{}
+  try{
+    const ph=JSON.parse(localStorage.getItem('ph_photos')||'[]');
+    if(ph.some(p=>(p.date||'').startsWith(record._archivedDate))) dots.push('<span class="cal-dot" title="Photos">📸</span>');
+  }catch{}
+  const tin=record.p_timeIn||''; const tout=record.p_timeOut||'';
+  if(tin&&tout) dots.push('<span class="cal-dot" title="Hours">🕒</span>');
+  const os=parseFloat(record.p_odoStart||0); const oe=parseFloat(record.p_odoEnd||0);
+  if(os&&oe&&oe>os) dots.push('<span class="cal-dot" title="Miles">🚚</span>');
+  return dots.join('');
+}
+
+function calRenderGrid(){
+  const months=['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const label=document.getElementById('cal-month-label');
+  if(label) label.textContent=months[_calMonth]+' '+_calYear;
+  const body=document.getElementById('cal-grid-body');
+  if(!body) return;
+  const all=dlGetAll();
+  const today=new Date().toISOString().split('T')[0];
+  // First day of month and total days
+  const firstDay=new Date(_calYear,_calMonth,1).getDay(); // 0=Sun
+  const daysInMonth=new Date(_calYear,_calMonth+1,0).getDate();
+  let cells='';
+  // Empty cells before first day
+  for(let i=0;i<firstDay;i++){
+    cells+=`<div class="cal-cell empty"><div class="cal-cell-num"></div></div>`;
+  }
+  // Day cells
+  for(let d=1;d<=daysInMonth;d++){
+    const mm=String(_calMonth+1).padStart(2,'0');
+    const dd=String(d).padStart(2,'0');
+    const dateStr=`${_calYear}-${mm}-${dd}`;
+    const rec=all[dateStr]||null;
+    const isToday=dateStr===today;
+    if(rec){
+      cells+=`<div class="cal-cell has-log${isToday?' today':''}" onclick="calOpenDay('${dateStr}')">
+        <div class="cal-cell-num">${d}</div>
+        <div class="cal-cell-dots">${calGetDotIndicators(rec)}</div>
+      </div>`;
+    } else {
+      cells+=`<div class="cal-cell no-log${isToday?' today':''}">
+        <div class="cal-cell-num">${d}</div>
+      </div>`;
+    }
+  }
+  body.innerHTML=cells;
+}
+
+function calRenderList(){
+  const all=dlGetAll();
+  const dates=Object.keys(all).sort((a,b)=>b.localeCompare(a));
+  const list=document.getElementById('cal-list');
+  const empty=document.getElementById('cal-empty');
+  const count=document.getElementById('cal-count');
+  if(!list) return;
+  if(dates.length===0){
+    list.innerHTML=''; if(empty)empty.style.display='block';
+    if(count)count.textContent='';
+    return;
+  }
+  if(empty)empty.style.display='none';
+  if(count)count.textContent=dates.length+' day'+(dates.length===1?'':'s');
+  list.innerHTML=dates.map(date=>{
+    const rec=all[date];
+    const summary=(rec.inspSummary||rec.inspectionSummary||'').trim().replace(/[
+].*/,'').split(/[.!?]/)[0].trim();
+    const displaySummary=summary.length>60?summary.substring(0,60)+'…':summary||'No summary';
+    return `<div class="cal-row" onclick="calOpenDay('${date}')">
+      <div class="cal-row-date">${dlFmtDisplay(date)}</div>
+      <div class="cal-row-summary">${displaySummary}</div>
+      <div class="cal-row-indicators">${calGetIndicators(rec)}</div>
+    </div>`;
+  }).join('');
+}
+
 function calCloseDayView(){
   document.getElementById('cal-day-view').style.display='none';
-  document.getElementById('cal-list-view').style.display='block';
+  document.getElementById('cal-view-toggle').style.display='flex';
+  calSetView(_calView);
 }
 
 // ═══════════════════════════════════════════
