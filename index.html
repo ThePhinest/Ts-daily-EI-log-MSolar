@@ -2873,6 +2873,10 @@ function checkNewDay(){
       savedDate=state.reportDate||'';
     }
   }catch{}
+  // Fallback — read from DOM if localStorage is empty (e.g. after Firebase restore on iPhone)
+  if(!savedDate){
+    savedDate=document.getElementById('reportDate')?.value||'';
+  }
   // Only trigger if we have a saved log from a previous day
   if(!savedDate||savedDate===today) return;
   // Show modal
@@ -3159,6 +3163,7 @@ function resetForm() {
       _fbReady = true;
       setSyncStatus('synced');
       phInit();
+      setTimeout(checkNewDay, 300);
     }
 
   } catch(e) {
