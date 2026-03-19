@@ -58,6 +58,21 @@ body.theme-light{
 .more-divider{height:1px;background:var(--border);margin:2px 0}
 .more-section-label{font-family:var(--mono);font-size:9px;color:var(--muted);letter-spacing:.1em;text-transform:uppercase;padding:10px 20px 4px}
 
+/* CALENDAR LIST */
+.cal-row{background:var(--s1);border:1px solid var(--border);border-radius:var(--r);margin-bottom:10px;padding:13px 16px;cursor:pointer;transition:border-color .15s,background .15s;display:flex;align-items:center;gap:12px}
+.cal-row:hover{border-color:var(--amber);background:var(--s2)}
+.cal-row-date{font-family:var(--cond);font-weight:800;font-size:15px;letter-spacing:.07em;text-transform:uppercase;color:var(--amber2);min-width:130px}
+.cal-row-summary{font-family:var(--body);font-size:12px;color:var(--muted);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cal-row-indicators{display:flex;gap:4px;font-size:13px;flex-shrink:0}
+.cal-day-card{background:var(--s1);border:1px solid var(--border);border-radius:var(--r);margin-bottom:12px;overflow:hidden}
+.cal-day-section{display:flex;align-items:center;gap:12px;padding:13px 16px;border-bottom:1px solid var(--border)}
+.cal-day-section:last-child{border-bottom:none}
+.cal-day-icon{font-size:18px;width:24px;text-align:center}
+.cal-day-label{font-family:var(--cond);font-weight:700;font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--amber2)}
+.cal-day-val{font-family:var(--body);font-size:12px;color:var(--muted);margin-top:2px}
+.cal-edit-badge{font-family:var(--mono);font-size:10px;background:rgba(165,172,175,0.1);border:1px solid var(--border2);border-radius:4px;padding:2px 8px;color:var(--amber);margin-left:8px}
+.cal-edit-log{font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:6px;padding:8px 10px;background:var(--s2);border-radius:5px;border:1px solid var(--border)}
+
 /* NEW DAY MODAL */
 .nd-overlay{position:fixed;inset:0;z-index:700;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:20px}
 .nd-card{background:var(--s1);border:1px solid var(--border2);border-radius:12px;width:100%;max-width:360px;overflow:hidden}
@@ -355,8 +370,7 @@ select{cursor:pointer}
   <div class="bar-spacer"></div>
   <button class="icon-btn" title="Toggle theme" onclick="toggleTheme()" id="theme-btn">☀</button>
 <button class="icon-btn" title="Print" onclick="window.print()">⎙</button>
-<button class="icon-btn" title="Reset form" onclick="resetForm()">🗑</button>
-<button class="icon-btn" title="Reload app" onclick="location.reload()">⟳</button>
+<button class="icon-btn" title="Reset form" onclick="resetForm()">↺</button>
 <span id="sync-dot" title="" style="font-family: var(--mono); font-size: 10px; letter-spacing: 0.05em; transition: color 0.3s; white-space: nowrap; margin-left: 2px; color: var(--green);">✓ synced</span></div>
 
 <!-- BOTTOM NAV -->
@@ -393,8 +407,33 @@ select{cursor:pointer}
         <button class="nd-btn nd-btn-primary" onclick="newDayStartFresh()">
           <span class="nd-btn-icon">🌅</span> Start Fresh — New Day
         </button>
+        <button class="nd-btn nd-btn-secondary" onclick="newDayLoadPrevious()">
+          <span class="nd-btn-icon">📂</span> Load a Previous Log
+        </button>
         <button class="nd-btn nd-btn-ghost" onclick="newDayKeepContinue()">
           <span class="nd-btn-icon">📋</span> Keep &amp; Continue
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- LOAD LOG CONFIRMATION MODAL -->
+<div class="nd-overlay" id="ld-overlay" style="display:none">
+  <div class="nd-card">
+    <div class="nd-head">
+      <span class="nd-head-icon">📂</span>
+      <span class="nd-head-title">Load Previous Log</span>
+    </div>
+    <div class="nd-body">
+      <div class="nd-msg" id="ld-msg">Load this log into the form?</div>
+      <div class="nd-date" id="ld-date"></div>
+      <div class="nd-btns">
+        <button class="nd-btn nd-btn-primary" onclick="dlConfirmLoad()">
+          <span class="nd-btn-icon">📂</span> Load — Archive &amp; Replace Current
+        </button>
+        <button class="nd-btn nd-btn-ghost" onclick="dlCancelLoad()">
+          <span class="nd-btn-icon">✕</span> Cancel
         </button>
       </div>
     </div>
@@ -829,10 +868,35 @@ EI to conduct LOD walk prior to start of operations"></textarea>
 
 </div></div><!-- /page-timesheet -->
 
-<!-- CALENDAR PAGE (placeholder) -->
+<!-- CALENDAR PAGE -->
 <div class="page" id="page-calendar"><div class="wrap">
-  <div class="card"><div class="card-head"><span class="card-num">📅</span><span class="card-title">Calendar</span></div>
-  <div class="card-body" style="color:var(--muted);font-family:var(--mono);font-size:12px;">Coming soon — historical log viewer and daily notes.</div></div>
+
+  <!-- Header -->
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+    <div>
+      <div style="font-family:var(--cond);font-weight:800;font-size:18px;letter-spacing:.08em;text-transform:uppercase;color:var(--amber)">Log History</div>
+      <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:2px">Tap a day to view or load</div>
+    </div>
+    <div id="cal-count" style="font-family:var(--mono);font-size:11px;color:var(--muted)"></div>
+  </div>
+
+  <!-- Day view (hidden by default) -->
+  <div id="cal-day-view" style="display:none">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+      <button class="btn btn-outline" style="font-size:11px;padding:5px 12px" onclick="calCloseDayView()">← Back</button>
+      <div id="cal-day-title" style="font-family:var(--cond);font-weight:800;font-size:16px;letter-spacing:.08em;text-transform:uppercase;color:var(--amber)"></div>
+    </div>
+    <div id="cal-day-content"></div>
+  </div>
+
+  <!-- Log list -->
+  <div id="cal-list-view">
+    <div id="cal-list"></div>
+    <div id="cal-empty" style="display:none;font-family:var(--mono);font-size:12px;color:var(--muted);text-align:center;padding:40px 0">
+      No archived logs yet.<br>Start a new day to begin building your history.
+    </div>
+  </div>
+
 </div></div>
 
 <!-- FORMS PAGE (placeholder) -->
@@ -1263,6 +1327,7 @@ function showPage(name){
     if(moreBtn)moreBtn.classList.add('active');
   }
   if(name==='config'){ renderConfig(); tsLoadConfigFields(); renderNavConfig(); }
+  if(name==='calendar'){ calRender(); }
   if(name==='timesheet'){ tsPushFromDailyLog(); tsRenderCurrentWeek(); tsCheckArchivePrompt(); }
   if(name==='compliance'){ clRender(); clAutoDetect(); }
   if(name==='photos'){ _phDaysShown=7; phRender(); }
@@ -2849,16 +2914,6 @@ function dlFmtDisplay(dateStr){
 }
 
 // ── New day detection + modal ──
-function debugNewDay(){
-  console.log('today:', new Date().toISOString().split('T')[0]);
-  console.log('suppressed:', localStorage.getItem('pei_newday_suppress'));
-  const saved = localStorage.getItem('msf_autosave');
-  const state = saved ? JSON.parse(saved) : {};
-  console.log('savedDate:', state.reportDate||'(none)');
-  localStorage.removeItem('pei_newday_suppress');
-  console.log('Suppression cleared — calling checkNewDay()...');
-  checkNewDay();
-}
 function checkNewDay(){
   const today=new Date().toISOString().split('T')[0];
   // Check suppression — if already handled today, skip
@@ -2873,10 +2928,6 @@ function checkNewDay(){
       savedDate=state.reportDate||'';
     }
   }catch{}
-  // Fallback — read from DOM if localStorage is empty (e.g. after Firebase restore on iPhone)
-  if(!savedDate){
-    savedDate=document.getElementById('reportDate')?.value||'';
-  }
   // Only trigger if we have a saved log from a previous day
   if(!savedDate||savedDate===today) return;
   // Show modal
@@ -2908,6 +2959,222 @@ function newDayKeepContinue(){
   document.getElementById('nd-overlay').style.display='none';
   const today=new Date().toISOString().split('T')[0];
   localStorage.setItem('pei_newday_suppress',today);
+}
+
+async function newDayLoadPrevious(){
+  const overlay=document.getElementById('nd-overlay');
+  const prevDate=overlay.dataset.prevDate||'';
+  overlay.style.display='none';
+  // Archive current log first
+  if(prevDate) await dlArchive(prevDate);
+  // Suppress new day for today
+  const today=new Date().toISOString().split('T')[0];
+  localStorage.setItem('pei_newday_suppress',today);
+  // Navigate to calendar
+  showPage('calendar');
+}
+
+// ═══════════════════════════════════════════
+// LOAD LOG SYSTEM
+// ═══════════════════════════════════════════
+let _ldPending = null; // date string of log pending load
+
+async function dlLoadFromCalendar(date){
+  const record = dlGet(date);
+  if(!record){ alert('No archived log found for '+date); return; }
+  _ldPending = date;
+  // Show confirmation modal
+  const dateEl = document.getElementById('ld-date');
+  const msgEl = document.getElementById('ld-msg');
+  if(dateEl) dateEl.textContent = dlFmtDisplay(date)+' ('+date+')';
+  if(msgEl) msgEl.textContent = 'Your current log will be archived before loading.';
+  document.getElementById('ld-overlay').style.display='flex';
+}
+
+async function dlConfirmLoad(){
+  document.getElementById('ld-overlay').style.display='none';
+  if(!_ldPending) return;
+  // Archive current log state before replacing
+  const currentDate = document.getElementById('reportDate')?.value||'';
+  if(currentDate) await dlArchive(currentDate);
+  // Load the selected log
+  const record = dlGet(_ldPending);
+  if(!record){ _ldPending=null; return; }
+  // Flag as edited if it was already archived before
+  if(record._archivedAt){
+    const cfg = JSON.parse(localStorage.getItem('msf_projectconfig')||'{}');
+    const editor = cfg.preparedBy||'Unknown';
+    record._edited = true;
+    record._editLog = record._editLog||[];
+    record._editLog.push({ at: Date.now(), by: editor, action: 'Loaded and edited' });
+    dlSaveLocal(_ldPending, record);
+    try{
+      if(typeof db!=='undefined'&&db&&_fbReady){
+        await db.collection('dailyLogs').doc(_ldPending).set(record);
+      }
+    }catch{}
+  }
+  // Restore into form
+  document.getElementById('crewContainer').innerHTML='';
+  crewIds=[]; crewSeq=0;
+  restoreFormState(record);
+  try{ localStorage.setItem('msf_autosave', JSON.stringify(record)); }catch{}
+  if(typeof db!=='undefined'&&db&&_fbReady){
+    try{ await db.collection('sessions').doc('active').set(record); }catch{}
+  }
+  _ldPending=null;
+  showPage('log');
+}
+
+function dlCancelLoad(){
+  document.getElementById('ld-overlay').style.display='none';
+  _ldPending=null;
+}
+
+// ═══════════════════════════════════════════
+// CALENDAR RENDER
+// ═══════════════════════════════════════════
+
+function calGetIndicators(record){
+  const indicators=[];
+  // Green dot always for a saved log
+  if(record._edited) indicators.push('<span title="Edited after archive">⚠️</span>');
+  else indicators.push('<span style="color:var(--green)" title="Log saved">●</span>');
+  // Compliance entries
+  try{
+    const cl=JSON.parse(localStorage.getItem('cl_entries')||'[]');
+    const hasComp=cl.some(e=>e.date===record._archivedDate);
+    if(hasComp) indicators.push('<span title="Compliance entries">❗</span>');
+  }catch{}
+  // Photos
+  try{
+    const ph=JSON.parse(localStorage.getItem('ph_photos')||'[]');
+    const hasPh=ph.some(p=>(p.date||'').startsWith(record._archivedDate));
+    if(hasPh) indicators.push('<span title="Photos">📸</span>');
+  }catch{}
+  // Hours
+  const tin=record.p_timeIn||''; const tout=record.p_timeOut||'';
+  if(tin&&tout) indicators.push('<span title="Hours logged">🕒</span>');
+  // Miles
+  const os=parseFloat(record.p_odoStart||0); const oe=parseFloat(record.p_odoEnd||0);
+  if(os&&oe&&oe>os) indicators.push('<span title="Miles logged">🚚</span>');
+  return indicators.join('');
+}
+
+async function calLoadCloud(){
+  try{
+    if(typeof db==='undefined'||!db||!_fbReady) return;
+    const snap=await db.collection('dailyLogs').get();
+    if(snap.empty) return;
+    const all=dlGetAll();
+    snap.forEach(doc=>{ if(!all[doc.id]) all[doc.id]=doc.data(); });
+    localStorage.setItem('pei_daily_logs',JSON.stringify(all));
+  }catch{}
+}
+
+async function calRender(){
+  await calLoadCloud();
+  const all=dlGetAll();
+  const dates=Object.keys(all).sort((a,b)=>b.localeCompare(a));
+  const list=document.getElementById('cal-list');
+  const empty=document.getElementById('cal-empty');
+  const count=document.getElementById('cal-count');
+  if(!list) return;
+  if(dates.length===0){
+    list.innerHTML=''; if(empty)empty.style.display='block';
+    if(count)count.textContent='';
+    return;
+  }
+  if(empty)empty.style.display='none';
+  if(count)count.textContent=dates.length+' day'+(dates.length===1?'':'s');
+  list.innerHTML=dates.map(date=>{
+    const rec=all[date];
+    const summary=(rec.inspSummary||rec.inspectionSummary||'').trim().split(/[.!?
+]/)[0].trim();
+    const displaySummary=summary.length>60?summary.substring(0,60)+'…':summary||'No summary';
+    return `<div class="cal-row" onclick="calOpenDay('${date}')">
+      <div class="cal-row-date">${dlFmtDisplay(date)}</div>
+      <div class="cal-row-summary">${displaySummary}</div>
+      <div class="cal-row-indicators">${calGetIndicators(rec)}</div>
+    </div>`;
+  }).join('');
+}
+
+function calOpenDay(date){
+  const rec=dlGet(date);
+  if(!rec) return;
+  document.getElementById('cal-list-view').style.display='none';
+  document.getElementById('cal-day-view').style.display='block';
+  const title=document.getElementById('cal-day-title');
+  if(title) title.textContent=dlFmtDisplay(date);
+  const content=document.getElementById('cal-day-content');
+  if(!content) return;
+  // Build summary sections
+  const tin=rec.p_timeIn||'—'; const tout=rec.p_timeOut||'—';
+  const os=parseFloat(rec.p_odoStart||0); const oe=parseFloat(rec.p_odoEnd||0);
+  const miles=(os&&oe&&oe>os)?(oe-os)+' mi':'—';
+  const summary=(rec.inspSummary||rec.inspectionSummary||'').trim()||'No summary recorded.';
+  const contractor=rec.contractor||'—';
+  const weather=rec.weather?[rec.weather.sky,rec.weather.tempAM?rec.weather.tempAM+'°AM':'',rec.weather.tempPM?rec.weather.tempPM+'°PM':''].filter(Boolean).join(' · '):'—';
+  // Compliance count
+  let compCount=0;
+  try{ const cl=JSON.parse(localStorage.getItem('cl_entries')||'[]'); compCount=cl.filter(e=>e.date===date).length; }catch{}
+  // Photo count
+  let phCount=0;
+  try{ const ph=JSON.parse(localStorage.getItem('ph_photos')||'[]'); phCount=ph.filter(p=>(p.date||'').startsWith(date)).length; }catch{}
+  // Edit log
+  let editSection='';
+  if(rec._edited&&rec._editLog&&rec._editLog.length>0){
+    const entries=rec._editLog.map(e=>{
+      const dt=new Date(e.at);
+      return dt.toLocaleDateString()+' '+dt.toLocaleTimeString()+' — '+e.by+': '+e.action;
+    }).join('<br>');
+    editSection=`<div class="cal-day-section">
+      <div class="cal-day-icon">⚠️</div>
+      <div><div class="cal-day-label">Edited After Archive <span class="cal-edit-badge">MODIFIED</span></div>
+      <div class="cal-edit-log">${entries}</div></div>
+    </div>`;
+  }
+  content.innerHTML=`
+    <div class="cal-day-card">
+      <div class="cal-day-section">
+        <div class="cal-day-icon">🏗️</div>
+        <div><div class="cal-day-label">Contractor</div><div class="cal-day-val">${contractor}</div></div>
+      </div>
+      <div class="cal-day-section">
+        <div class="cal-day-icon">🌤️</div>
+        <div><div class="cal-day-label">Weather</div><div class="cal-day-val">${weather}</div></div>
+      </div>
+      <div class="cal-day-section">
+        <div class="cal-day-icon">🕒</div>
+        <div><div class="cal-day-label">Time</div><div class="cal-day-val">${tin} – ${tout}</div></div>
+      </div>
+      <div class="cal-day-section">
+        <div class="cal-day-icon">🚚</div>
+        <div><div class="cal-day-label">Miles</div><div class="cal-day-val">${miles}</div></div>
+      </div>
+      <div class="cal-day-section">
+        <div class="cal-day-icon">📋</div>
+        <div><div class="cal-day-label">Inspection Summary</div><div class="cal-day-val">${summary.length>200?summary.substring(0,200)+'…':summary}</div></div>
+      </div>
+      ${compCount>0?`<div class="cal-day-section">
+        <div class="cal-day-icon">❗</div>
+        <div><div class="cal-day-label">Compliance Entries</div><div class="cal-day-val">${compCount} entr${compCount===1?'y':'ies'} logged</div></div>
+      </div>`:''}
+      ${phCount>0?`<div class="cal-day-section">
+        <div class="cal-day-icon">📸</div>
+        <div><div class="cal-day-label">Photos</div><div class="cal-day-val">${phCount} photo${phCount===1?'':'s'} uploaded</div></div>
+      </div>`:''}
+      ${editSection}
+    </div>
+    <button class="btn btn-amber" style="width:100%;margin-top:4px" onclick="dlLoadFromCalendar('${date}')">
+      📂 Load This Log into Form
+    </button>`;
+}
+
+function calCloseDayView(){
+  document.getElementById('cal-day-view').style.display='none';
+  document.getElementById('cal-list-view').style.display='block';
 }
 
 // ═══════════════════════════════════════════
@@ -3154,7 +3421,6 @@ function resetForm() {
       _fbReady = true;
       setSyncStatus('synced');
       phInit();
-      setTimeout(checkNewDay, 300);
     } else if (localTs > cloudTs) {
       _fbReady = true;
       cloudSave();
@@ -3163,7 +3429,6 @@ function resetForm() {
       _fbReady = true;
       setSyncStatus('synced');
       phInit();
-      setTimeout(checkNewDay, 300);
     }
 
   } catch(e) {
