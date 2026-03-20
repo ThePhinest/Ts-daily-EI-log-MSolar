@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <html lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
- 
+
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#004C54">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -142,12 +142,19 @@ body.theme-light{
 
 /* CARD */
 .card{background:var(--s1);border:1px solid var(--border);border-radius:var(--r);margin-bottom:16px;overflow:hidden}
-.card-head{background:var(--s2);border-bottom:1px solid var(--border);padding:10px 17px;display:flex;align-items:center;gap:10px}
+.card-head{background:var(--s2);border-bottom:1px solid var(--border);padding:10px 17px;display:flex;align-items:center;gap:10px;cursor:pointer;user-select:none;-webkit-user-select:none}
+.card-head:hover{background:var(--bg)}
 .card-num{font-family:var(--mono);font-size:10px;color:var(--muted);padding:2px 7px;border:1px solid var(--border2);border-radius:4px}
 .card-title{font-family:var(--cond);font-weight:700;font-size:13px;letter-spacing:.12em;text-transform:uppercase;color:var(--amber2)}
 .card-badge{margin-left:auto;font-family:var(--mono);font-size:10px;color:var(--muted)}
 .card-body{padding:17px}
-
+.card-chevron{margin-left:auto;font-size:11px;color:var(--muted);transition:transform .2s;line-height:1}
+.card.collapsed .card-chevron{transform:rotate(-90deg)}
+.card.collapsed .card-body{display:none}
+.card.collapsed .card-head{border-bottom:none}
+.card-personal.collapsed .card-body{display:none}
+.card-personal.collapsed .card-personal-head{border-bottom:none}
+.card-personal .card-personal-head{cursor:pointer;user-select:none;-webkit-user-select:none}
 /* PERSONAL CARD */
 .card-personal{background:var(--personal-bg);border:1px solid var(--personal-border);border-radius:var(--r);margin-bottom:16px;overflow:hidden}
 .card-personal-head{background:rgba(0,76,84,0.25);border-bottom:1px solid var(--personal-border);padding:10px 17px;display:flex;align-items:center;gap:10px}
@@ -227,16 +234,19 @@ select{cursor:pointer}
 .flag-note:focus{outline:none;border-color:var(--red)}
 
 /* EXPORT PANEL */
-.export-panel{background:var(--s1);border:1px solid var(--border);border-radius:var(--r);padding:18px;margin-bottom:16px}
+.export-panel{background:var(--s1);border:1px solid var(--border);border-radius:var(--r);padding:14px;margin-bottom:16px}
 .export-title{font-family:var(--cond);font-weight:700;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted2);margin-bottom:12px}
 .copy-status{font-family:var(--mono);font-size:11px;color:var(--green);text-align:center;min-height:18px;margin-top:8px;opacity:0;transition:opacity .3s}.copy-status.show{opacity:1}
 .dl-status{font-family:var(--mono);font-size:11px;color:var(--personal-accent2);text-align:center;min-height:18px;margin-top:8px;opacity:0;transition:opacity .3s}.dl-status.show{opacity:1}
-.export-hint{font-family:var(--mono);font-size:10.5px;color:var(--muted);text-align:center;margin-top:8px;line-height:1.7}
+.export-hint{font-family:var(--mono);font-size:10.5px;color:var(--muted);text-align:center;margin-top:5px;line-height:1.5}
 .divider-export{height:1px;background:var(--border);margin:14px 0}
 
 /* CONFIG PAGE */
 .config-section{background:var(--s1);border:1px solid var(--border);border-radius:var(--r);margin-bottom:16px;overflow:hidden}
-.config-head{background:var(--s2);border-bottom:1px solid var(--border);padding:10px 17px;display:flex;align-items:center;gap:10px}
+.config-head{background:var(--s2);border-bottom:1px solid var(--border);padding:10px 17px;display:flex;align-items:center;gap:10px;cursor:pointer;user-select:none;-webkit-user-select:none}
+.config-head:hover{background:var(--bg)}
+.config-section.collapsed .config-body{display:none}
+.config-section.collapsed .config-head{border-bottom:none}
 .config-title{font-family:var(--cond);font-weight:700;font-size:13px;letter-spacing:.1em;text-transform:uppercase;color:var(--amber2)}
 .config-sub{font-family:var(--mono);font-size:10px;color:var(--muted);margin-left:auto}
 .config-body{padding:16px}
@@ -536,11 +546,18 @@ select{cursor:pointer}
 ══════════════════════════════════ -->
 <div class="page active" id="page-log"><div class="wrap">
 
+  <!-- COLLAPSE ALL / EXPAND ALL -->
+  <div style="display:flex;gap:8px;margin-bottom:12px;justify-content:flex-end">
+    <button class="btn btn-outline" style="font-size:10px;padding:5px 12px" onclick="collapseAllSections()">Collapse All</button>
+    <button class="btn btn-outline" style="font-size:10px;padding:5px 12px" onclick="expandAllSections()">Expand All</button>
+  </div>
+
   <!-- 01 PROJECT INFO -->
-  <div class="card">
-    <div class="card-head">
+  <div class="card" id="sec-01">
+    <div class="card-head" id="ch-01" onclick="toggleSection('sec-01')">
       <span class="card-num">01</span>
       <span class="card-title">Project &amp; Report Info</span>
+      <span class="card-chevron">▾</span>
     </div>
     <div class="card-body">
       <div class="g g3">
@@ -558,10 +575,11 @@ select{cursor:pointer}
   </div>
 
   <!-- DAILY TIMESHEET ENTRY -->
-  <div class="card">
-    <div class="card-head">
+  <div class="card" id="sec-ts">
+    <div class="card-head" onclick="toggleSection('sec-ts')">
       <span class="card-num">⏱</span>
       <span class="card-title">Daily Timesheet Entry</span>
+      <span class="card-chevron">▾</span>
     </div>
     <div class="card-body">
       <div class="g g4" style="margin-bottom:12px">
@@ -596,10 +614,11 @@ select{cursor:pointer}
   </div>
 
   <!-- 02 WEATHER -->
-  <div class="card">
-    <div class="card-head">
+  <div class="card" id="sec-02">
+    <div class="card-head" onclick="toggleSection('sec-02')">
       <span class="card-num">02</span>
       <span class="card-title">Weather Conditions</span>
+      <span class="card-chevron">▾</span>
     </div>
     <div class="card-body">
       <div class="g g4" style="margin-bottom:15px">
@@ -633,8 +652,8 @@ select{cursor:pointer}
   </div>
 
   <!-- 03 INSPECTION SUMMARY -->
-  <div class="card">
-    <div class="card-head"><span class="card-num">03</span><span class="card-title">Inspection Summary</span></div>
+  <div class="card" id="sec-03">
+    <div class="card-head" onclick="toggleSection('sec-03')"><span class="card-num">03</span><span class="card-title">Inspection Summary</span><span class="card-chevron">▾</span></div>
     <div class="card-body">
       <div class="g">
         <div class="field">
@@ -653,11 +672,12 @@ select{cursor:pointer}
   </div>
 
   <!-- 04 CREW BLOCKS -->
-  <div class="card">
-    <div class="card-head">
+  <div class="card" id="sec-04">
+    <div class="card-head" onclick="toggleSection('sec-04')">
       <span class="card-num">04</span>
       <span class="card-title">Contractor Crew Observations</span>
       <span class="card-badge" id="crewBadge">0 blocks</span>
+      <span class="card-chevron">▾</span>
     </div>
     <div class="card-body">
       <div id="crewContainer"></div>
@@ -666,8 +686,8 @@ select{cursor:pointer}
   </div>
 
   <!-- 05 PHASE 1 COMPLIANCE -->
-  <div class="card">
-    <div class="card-head"><span class="card-num">05</span><span class="card-title">Phase 1 — Tree Felling Compliance Checklist</span></div>
+  <div class="card" id="sec-05">
+    <div class="card-head" onclick="toggleSection('sec-05')"><span class="card-num">05</span><span class="card-title">Phase 1 — Tree Felling Compliance Checklist</span><span class="card-chevron">▾</span></div>
     <div class="card-body" id="checklistBody"><div class="check-item"><div class="check-row">
       <input type="checkbox" id="c1" onchange="toggleNote(&#39;c1&#39;)">
       <span class="check-text">Morning safety meeting / tailgate conducted at 6:30 AM prior to work start</span>
@@ -763,8 +783,8 @@ select{cursor:pointer}
   </div>
 
   <!-- 06 REGULATORY FLAGS -->
-  <div class="card">
-    <div class="card-head"><span class="card-num">06</span><span class="card-title">Regulatory &amp; Incident Flags</span></div>
+  <div class="card" id="sec-06">
+    <div class="card-head" onclick="toggleSection('sec-06')"><span class="card-num">06</span><span class="card-title">Regulatory &amp; Incident Flags</span><span class="card-chevron">▾</span></div>
     <div class="card-body">
       <div class="flag-row"><div class="flag-main"><input type="checkbox" id="flag-spdes" onchange="toggleFlagNote(&#39;spdes&#39;)"><span class="flag-text">Turbid discharge observed — potential SPDES exceedance</span><span class="check-tag tag-env">SPDES</span></div><div class="flag-note-wrap" id="flag-spdes-nw"><textarea class="flag-note" id="flag-spdes-note" placeholder="Note or deficiency detail…"></textarea></div></div>
       <div class="flag-row"><div class="flag-main"><input type="checkbox" id="flag-storm" onchange="toggleFlagNote(&#39;storm&#39;)"><span class="flag-text">Precipitation event &gt;0.5 in. — post-storm inspection required</span><span class="check-tag tag-env">SPDES</span></div><div class="flag-note-wrap" id="flag-storm-nw"><textarea class="flag-note" id="flag-storm-note" placeholder="Note or deficiency detail…"></textarea></div></div>
@@ -778,8 +798,8 @@ select{cursor:pointer}
   </div>
 
   <!-- 07 GENERAL COMMS -->
-  <div class="card">
-    <div class="card-head"><span class="card-num">07</span><span class="card-title">General Communication to Contractors</span></div>
+  <div class="card" id="sec-07">
+    <div class="card-head" onclick="toggleSection('sec-07')"><span class="card-num">07</span><span class="card-title">General Communication to Contractors</span><span class="card-chevron">▾</span></div>
     <div class="card-body">
       <div class="field">
         <label>Directives, communications, and coordination notes</label>
@@ -790,8 +810,8 @@ select{cursor:pointer}
   </div>
 
   <!-- 08 24-HR LOOK AHEAD -->
-  <div class="card">
-    <div class="card-head"><span class="card-num">08</span><span class="card-title">24-Hour Look Ahead</span></div>
+  <div class="card" id="sec-08">
+    <div class="card-head" onclick="toggleSection('sec-08')"><span class="card-num">08</span><span class="card-title">24-Hour Look Ahead</span><span class="card-chevron">▾</span></div>
     <div class="card-body">
       <div class="field" style="margin-bottom:12px">
         <label>Expected Weather Conditions</label>
@@ -808,11 +828,12 @@ EI to conduct LOD walk prior to start of operations"></textarea>
   </div>
 
   <!-- PERSONAL NOTES — NOT EXPORTED -->
-  <div class="card-personal">
-    <div class="card-personal-head">
+  <div class="card-personal" id="sec-notes">
+    <div class="card-personal-head" onclick="toggleSection('sec-notes')">
       <span class="personal-icon">🔒</span>
       <span class="personal-title">Personal Notes</span>
       <span class="personal-badge">NOT INCLUDED IN REPORTS</span>
+      <span class="card-chevron" style="margin-left:8px">▾</span>
     </div>
     <div class="card-body">
       <div class="field">
@@ -894,6 +915,11 @@ EI to conduct LOD walk prior to start of operations"></textarea>
             <div class="ts-stat-sub" id="ts-cum-days">—</div>
           </div>
           <div class="ts-stat-card">
+            <div class="ts-stat-label">Gross Wages</div>
+            <div class="ts-stat-val ts-green" id="ts-cum-wages">—</div>
+            <div class="ts-stat-sub" id="ts-cum-wages-sub">hrs × rate</div>
+          </div>
+          <div class="ts-stat-card">
             <div class="ts-stat-label">Total Miles</div>
             <div class="ts-stat-val" id="ts-cum-miles">—</div>
             <div class="ts-stat-sub">driven</div>
@@ -903,7 +929,7 @@ EI to conduct LOD walk prior to start of operations"></textarea>
             <div class="ts-stat-val ts-green" id="ts-cum-mileage">—</div>
             <div class="ts-stat-sub">reimbursable</div>
           </div>
-          <div class="ts-stat-card">
+          <div class="ts-stat-card" style="grid-column:1/-1">
             <div class="ts-stat-label">Per Diem Total</div>
             <div class="ts-stat-val ts-green" id="ts-cum-perdiem">—</div>
             <div class="ts-stat-sub">earned</div>
@@ -1202,8 +1228,8 @@ EI to conduct LOD walk prior to start of operations"></textarea>
     </div>
   </div>
 
-  <div class="config-section">
-    <div class="config-head"><span class="config-title">Navigation Layout</span></div>
+  <div class="config-section" id="cfg-nav">
+    <div class="config-head" onclick="toggleSection('cfg-nav')"><span class="config-title">Navigation Layout</span><span class="card-chevron">▾</span></div>
     <div class="config-body">
       <p class="config-hint">Choose which pages appear in the 3 customizable nav slots. Slot 4 (More) is always fixed. You can also long-press any nav button to swap it quickly.</p>
       <div class="g g3" style="margin-bottom:12px" id="nav-config-slots"></div>
@@ -1211,7 +1237,7 @@ EI to conduct LOD walk prior to start of operations"></textarea>
       <span id="cfg-nav-status" style="font-family:var(--mono);font-size:11px;color:var(--green);margin-left:12px;opacity:0;transition:opacity .4s"></span>
     </div>
   </div>
-    <div class="config-head"><span class="config-title">Project &amp; Report Info</span></div>
+    <div class="config-head" onclick="toggleSection('cfg-proj')"><span class="config-title">Project &amp; Report Info</span><span class="card-chevron">▾</span></div>
     <div class="config-body">
       <p class="config-hint">These values populate Section 01 on the daily log and persist through resets. Active Contractor can also be edited directly on the main page.</p>
       <div class="g g2" style="margin-bottom:10px">
@@ -1228,8 +1254,8 @@ EI to conduct LOD walk prior to start of operations"></textarea>
     </div>
   </div>
 
-  <div class="config-section">
-    <div class="config-head"><span class="config-title">Timesheet Settings</span></div>
+  <div class="config-section" id="cfg-ts">
+    <div class="config-head" onclick="toggleSection('cfg-ts')"><span class="config-title">Timesheet Settings</span><span class="card-chevron">▾</span></div>
     <div class="config-body">
       <p class="config-hint">Configure your timesheet defaults. Values apply to all timesheet calculations and persist through resets.</p>
       <div class="g g2" style="margin-bottom:10px">
@@ -1247,6 +1273,19 @@ EI to conduct LOD walk prior to start of operations"></textarea>
         </div>
         <div class="field"><label>Per Diem Rate ($)</label><input type="number" id="cfg-ts-perdiem" placeholder="178" step="1" min="0"></div>
         <div class="field"><label>Mileage Rate ($/mi)</label><input type="number" id="cfg-ts-mileage" placeholder="0.725" step="0.001" min="0"></div>
+        <div class="field"><label>Hourly Rate ($/hr)</label><input type="number" id="cfg-ts-hourlyrate" placeholder="0.00" step="0.01" min="0"></div>
+        <div class="field"><label>Pay Type</label>
+          <select id="cfg-ts-paytype">
+            <option value="hourly">Hourly (with OT)</option>
+            <option value="salary">Salary (straight time)</option>
+          </select>
+        </div>
+        <div class="field" id="cfg-ts-ot-wrap"><label>OT Threshold</label>
+          <select id="cfg-ts-ottype">
+            <option value="daily">Daily — over 8 hrs/day</option>
+            <option value="weekly">Weekly — over 40 hrs/week</option>
+          </select>
+        </div>
         <div class="field"><label>Supervisor Name</label><input type="text" id="cfg-ts-supervisor" placeholder="Benjamin Hope"></div>
       </div>
       <button class="btn btn-amber" style="font-size:11px;padding:7px 14px" onclick="saveTsConfig()">Save &amp; Apply</button>
@@ -1254,8 +1293,8 @@ EI to conduct LOD walk prior to start of operations"></textarea>
     </div>
   </div>
 
-  <div class="config-section">
-    <div class="config-head"><span class="config-title">Field Observation Presets</span><span class="config-sub">→ Inspection Summary</span></div>
+  <div class="config-section" id="cfg-obs">
+    <div class="config-head" onclick="toggleSection('cfg-obs')"><span class="config-title">Field Observation Presets</span><span class="config-sub">→ Inspection Summary</span><span class="card-chevron">▾</span></div>
     <div class="config-body">
       <p class="config-hint">Quick-insert observation bullets for the Inspection Summary field.</p>
       <ul class="preset-list" id="list-obs"></ul>
@@ -1267,8 +1306,8 @@ EI to conduct LOD walk prior to start of operations"></textarea>
     </div>
   </div>
 
-  <div class="config-section">
-    <div class="config-head"><span class="config-title">Contractor Activity Presets</span><span class="config-sub">→ Crew Block: Activities</span></div>
+  <div class="config-section" id="cfg-act">
+    <div class="config-head" onclick="toggleSection('cfg-act')"><span class="config-title">Contractor Activity Presets</span><span class="config-sub">→ Crew Block: Activities</span><span class="card-chevron">▾</span></div>
     <div class="config-body">
       <p class="config-hint">Quick-insert activities for crew block "Activities Observed" fields.</p>
       <ul class="preset-list" id="list-act"></ul>
@@ -1280,8 +1319,8 @@ EI to conduct LOD walk prior to start of operations"></textarea>
     </div>
   </div>
 
-  <div class="config-section">
-    <div class="config-head"><span class="config-title">Env. Compliance Observation Presets</span><span class="config-sub">→ Crew Block: Env. Compliance</span></div>
+  <div class="config-section" id="cfg-env">
+    <div class="config-head" onclick="toggleSection('cfg-env')"><span class="config-title">Env. Compliance Observation Presets</span><span class="config-sub">→ Crew Block: Env. Compliance</span><span class="card-chevron">▾</span></div>
     <div class="config-body">
       <p class="config-hint">Quick-insert compliance observations for crew block "Env. Compliance" fields.</p>
       <ul class="preset-list" id="list-env"></ul>
@@ -1293,8 +1332,8 @@ EI to conduct LOD walk prior to start of operations"></textarea>
     </div>
   </div>
 
-  <div class="config-section">
-    <div class="config-head"><span class="config-title">General Comms Templates</span><span class="config-sub">→ General Communication</span></div>
+  <div class="config-section" id="cfg-comms">
+    <div class="config-head" onclick="toggleSection('cfg-comms')"><span class="config-title">General Comms Templates</span><span class="config-sub">→ General Communication</span><span class="card-chevron">▾</span></div>
     <div class="config-body">
       <p class="config-hint">Standard directives, reminders, and communication templates.</p>
       <ul class="preset-list" id="list-comms"></ul>
@@ -1306,8 +1345,8 @@ EI to conduct LOD walk prior to start of operations"></textarea>
     </div>
   </div>
 
-  <div class="config-section">
-    <div class="config-head"><span class="config-title">Look Ahead Presets</span><span class="config-sub">→ 24-Hour Look Ahead</span></div>
+  <div class="config-section" id="cfg-look">
+    <div class="config-head" onclick="toggleSection('cfg-look')"><span class="config-title">Look Ahead Presets</span><span class="config-sub">→ 24-Hour Look Ahead</span><span class="card-chevron">▾</span></div>
     <div class="config-body">
       <p class="config-hint">Common next-day anticipated work items.</p>
       <ul class="preset-list" id="list-look"></ul>
@@ -1319,8 +1358,8 @@ EI to conduct LOD walk prior to start of operations"></textarea>
     </div>
   </div>
 
-  <div class="config-section">
-    <div class="config-head"><span class="config-title">Phase Labels</span><span class="config-sub">Manage available phase tags</span></div>
+  <div class="config-section" id="cfg-phases">
+    <div class="config-head" onclick="toggleSection('cfg-phases')"><span class="config-title">Phase Labels</span><span class="config-sub">Manage available phase tags</span><span class="card-chevron">▾</span></div>
     <div class="config-body">
       <p class="config-hint">Add phase tags here as the project progresses. Each preset is tagged to one phase.</p>
       <ul class="preset-list" id="list-phases"></ul>
@@ -1331,8 +1370,8 @@ EI to conduct LOD walk prior to start of operations"></textarea>
     </div>
   </div>
 
-  <div class="config-section">
-    <div class="config-head"><span class="config-title">Active Phase</span></div>
+  <div class="config-section" id="cfg-phase">
+    <div class="config-head" onclick="toggleSection('cfg-phase')"><span class="config-title">Active Phase</span><span class="card-chevron">▾</span></div>
     <div class="config-body">
       <p class="config-hint">Controls which preset chips appear in the daily log. Keep in sync with your current project phase.</p>
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
@@ -2064,15 +2103,14 @@ function _resetFormCore(){
   document.getElementById('p-miles').textContent='— mi';
   document.getElementById('p-hours').textContent='— hrs';
   document.getElementById('reportDate').value=new Date().toISOString().split('T')[0];
-applyProjectConfig();
-restoreCollapsedSections();
+  applyProjectConfig();
   try{ localStorage.removeItem('msf_autosave'); }catch{}
 }
 
 // ═══════════════════════════════════════════
 // TIMESHEET
 // ═══════════════════════════════════════════
-const TS_DEFAULTS={weekStartDay:0,perDiem:178,mileageRate:0.725,supervisorName:''};
+const TS_DEFAULTS={weekStartDay:0,perDiem:178,mileageRate:0.725,supervisorName:'',hourlyRate:0,payType:'hourly',otType:'daily'};
 function tsLoadConfig(){try{const s=localStorage.getItem('msf_ts_config');return s?Object.assign({},TS_DEFAULTS,JSON.parse(s)):Object.assign({},TS_DEFAULTS);}catch{return Object.assign({},TS_DEFAULTS);}}
 function tsSaveConfig(c){localStorage.setItem('msf_ts_config',JSON.stringify(c));}
 function tsFormatDate(d){return d.toISOString().split('T')[0];}
@@ -2193,6 +2231,7 @@ function tsToggleHist(i){
 function tsRenderCumulative(){
   const weeks=tsGetArchivedWeeks();
   const entries=tsGetAllEntries();
+  const cfg=tsLoadConfig();
   let totH=0,totM=0,totMil=0,totPD=0,days=0;
   weeks.forEach(w=>{const t=w.totals||{};totH+=Number(t.hours||0);totM+=Number(t.miles||0);totMil+=parseFloat(t.mileage||0);totPD+=Number(t.perDiem||0);days+=(w.days||[]).filter(d=>Number(d.hours)>0).length;});
   Object.values(entries).forEach(e=>{if(Number(e.hours)>0){totH+=Number(e.hours||0);totM+=Number(e.miles||0);totMil+=parseFloat(tsCalcMileage(Number(e.miles||0)));totPD+=Number(e.perDiem||0);days++;}});
@@ -2202,6 +2241,44 @@ function tsRenderCumulative(){
   set('ts-cum-mileage','$'+totMil.toFixed(2));
   set('ts-cum-perdiem','$'+totPD.toLocaleString());
   set('ts-cum-days',days+' days worked');
+  // ── Gross wages calculation ──
+  const rate=parseFloat(cfg.hourlyRate)||0;
+  if(rate>0){
+    let grossWages=0;
+    if(cfg.payType==='salary'){
+      grossWages=totH*rate;
+    } else {
+      // Hourly with OT
+      if(cfg.otType==='weekly'){
+        const regH=Math.min(totH,40);
+        const otH=Math.max(totH-40,0);
+        grossWages=(regH*rate)+(otH*rate*1.5);
+      } else {
+        // Daily OT — need per-day breakdown
+        // Approximate from archived weeks daily data
+        let calcWages=0;
+        weeks.forEach(w=>{
+          (w.days||[]).forEach(d=>{
+            const h=Number(d.hours||0);
+            const reg=Math.min(h,8);
+            const ot=Math.max(h-8,0);
+            calcWages+=(reg*rate)+(ot*rate*1.5);
+          });
+        });
+        Object.values(entries).forEach(e=>{
+          const h=Number(e.hours||0);
+          if(h>0){const reg=Math.min(h,8);const ot=Math.max(h-8,0);calcWages+=(reg*rate)+(ot*rate*1.5);}
+        });
+        grossWages=calcWages;
+      }
+    }
+    set('ts-cum-wages','$'+grossWages.toFixed(2));
+    const subLabel=cfg.payType==='salary'?'straight time':(cfg.otType==='daily'?'w/ daily OT':'w/ weekly OT');
+    set('ts-cum-wages-sub',subLabel);
+  } else {
+    set('ts-cum-wages','—');
+    set('ts-cum-wages-sub','set hourly rate in settings');
+  }
   const sorted=[...weeks].sort((a,b)=>b.weekStart.localeCompare(a.weekStart));
   const tbody=document.getElementById('ts-cum-tbody');
   if(tbody)tbody.innerHTML=sorted.map(w=>{
@@ -2296,12 +2373,22 @@ function saveTsConfig(){
     weekStartDay:parseInt(document.getElementById('cfg-ts-weekstart')?.value)||0,
     perDiem:parseFloat(document.getElementById('cfg-ts-perdiem')?.value)||178,
     mileageRate:parseFloat(document.getElementById('cfg-ts-mileage')?.value)||0.725,
-    supervisorName:document.getElementById('cfg-ts-supervisor')?.value.trim()||''
+    supervisorName:document.getElementById('cfg-ts-supervisor')?.value.trim()||'',
+    hourlyRate:parseFloat(document.getElementById('cfg-ts-hourlyrate')?.value)||0,
+    payType:document.getElementById('cfg-ts-paytype')?.value||'hourly',
+    otType:document.getElementById('cfg-ts-ottype')?.value||'daily'
   };
   tsSaveConfig(cfg);
   const st=document.getElementById('cfg-ts-status');
   if(st){st.textContent='\u2713 Saved';st.style.opacity='1';setTimeout(()=>st.style.opacity='0',2500);}
   tsRenderCurrentWeek();
+  tsRenderCumulative();
+}
+
+function tsToggleOTWrap(){
+  const pt=document.getElementById('cfg-ts-paytype')?.value;
+  const wrap=document.getElementById('cfg-ts-ot-wrap');
+  if(wrap) wrap.style.display=(pt==='hourly')?'':'none';
 }
 
 function tsLoadConfigFields(){
@@ -2310,10 +2397,17 @@ function tsLoadConfigFields(){
   const pd=document.getElementById('cfg-ts-perdiem');
   const mr=document.getElementById('cfg-ts-mileage');
   const sv=document.getElementById('cfg-ts-supervisor');
+  const hr=document.getElementById('cfg-ts-hourlyrate');
+  const pt=document.getElementById('cfg-ts-paytype');
+  const ot=document.getElementById('cfg-ts-ottype');
   if(ws)ws.value=cfg.weekStartDay;
   if(pd)pd.value=cfg.perDiem;
   if(mr)mr.value=cfg.mileageRate;
   if(sv)sv.value=cfg.supervisorName;
+  if(hr)hr.value=cfg.hourlyRate||'';
+  if(pt){pt.value=cfg.payType||'hourly';pt.onchange=tsToggleOTWrap;}
+  if(ot)ot.value=cfg.otType||'daily';
+  tsToggleOTWrap();
 }
 
 function toggleMoreMenu(){
@@ -3583,6 +3677,7 @@ function calCloseDayView(){
 // ═══════════════════════════════════════════
 document.getElementById('reportDate').value=new Date().toISOString().split('T')[0];
 applyProjectConfig();
+restoreCollapsedSections();
 buildChecklist();
 renderAllChips();
 renderNav();
