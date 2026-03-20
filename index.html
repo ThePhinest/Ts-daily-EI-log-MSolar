@@ -1880,6 +1880,12 @@ function toggleReorderMode(key){
     }).filter(Boolean);
     presets[key]=newOrder;
     ss('msf_presets',presets);
+    // Clean up event listeners using stored refs
+    ul.onmouseover=null;
+    if(ul._touchMove) ul.removeEventListener('touchmove',ul._touchMove);
+    if(ul._touchEnd) ul.removeEventListener('touchend',ul._touchEnd);
+    if(ul._mouseUp) document.removeEventListener('mouseup',ul._mouseUp);
+    ul._touchMove=null;ul._touchEnd=null;ul._mouseUp=null;
     renderPresetList(key);
     renderAllChips();
   } else {
@@ -1893,18 +1899,25 @@ function toggleReorderMode(key){
 }
 
 function _initDrag(ul,key){
-  let dragEl=null, dragIdx=null;
+  // Clean up any previous handlers first
+  ul.onmouseover=null;
+  const oldTouchMove=ul._touchMove;
+  const oldTouchEnd=ul._touchEnd;
+  if(oldTouchMove) ul.removeEventListener('touchmove',oldTouchMove);
+  if(oldTouchEnd) ul.removeEventListener('touchend',oldTouchEnd);
+  const oldMouseUp=ul._mouseUp;
+  if(oldMouseUp) document.removeEventListener('mouseup',oldMouseUp);
+
+  let dragEl=null;
   ul.querySelectorAll('.drag-handle').forEach(handle=>{
     const li=handle.closest('li');
-    // Mouse events
     handle.onmousedown=function(e){
-      dragEl=li; dragIdx=parseInt(li.dataset.idx);
+      dragEl=li;
       li.classList.add('dragging');
       e.preventDefault();
     };
-    // Touch events
     handle.ontouchstart=function(e){
-      dragEl=li; dragIdx=parseInt(li.dataset.idx);
+      dragEl=li;
       li.classList.add('dragging');
     };
   });
@@ -1915,11 +1928,12 @@ function _initDrag(ul,key){
       target.classList.add('drag-over');
     }
   };
-  ul.ontouchmove=function(e){
+  const touchMove=function(e){
+    if(!dragEl) return;
     e.preventDefault();
     const touch=e.touches[0];
     const target=document.elementFromPoint(touch.clientX,touch.clientY)?.closest('li');
-    if(dragEl&&target&&target!==dragEl&&ul.contains(target)){
+    if(target&&target!==dragEl&&ul.contains(target)){
       ul.querySelectorAll('li').forEach(l=>l.classList.remove('drag-over'));
       target.classList.add('drag-over');
     }
@@ -1933,15 +1947,19 @@ function _initDrag(ul,key){
       const toIdx=items.indexOf(overEl);
       if(fromIdx<toIdx) ul.insertBefore(dragEl,overEl.nextSibling);
       else ul.insertBefore(dragEl,overEl);
-      // Update data-idx values
       [...ul.querySelectorAll('li')].forEach((li,i)=>li.dataset.idx=i);
     }
     dragEl.classList.remove('dragging');
     ul.querySelectorAll('li').forEach(l=>l.classList.remove('drag-over'));
-    dragEl=null; dragIdx=null;
+    dragEl=null;
   };
-  document.onmouseup=drop;
-  ul.ontouchend=drop;
+  // Store refs so we can remove them later
+  ul._touchMove=touchMove;
+  ul._touchEnd=drop;
+  ul._mouseUp=drop;
+  ul.addEventListener('touchmove',touchMove,{passive:false});
+  ul.addEventListener('touchend',drop);
+  document.addEventListener('mouseup',drop);
 }
 const PROJECT_CONFIG_DEFAULTS = {
   projectName: 'Moraine Solar Energy Center',
