@@ -52,9 +52,12 @@ body.theme-light{
 .more-panel-title{font-family:var(--mono);font-size:10px;color:var(--muted);letter-spacing:.1em;text-transform:uppercase;padding:6px 20px 10px;border-bottom:1px solid var(--border)}
 .more-row{display:flex;align-items:center;gap:14px;padding:13px 20px;cursor:pointer;transition:background .12s}
 .more-row:hover{background:rgba(165,172,175,0.05)}
-.more-row-icon{font-size:18px;width:26px;text-align:center;line-height:1}
-.more-row-label{font-family:var(--cond);font-weight:700;font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--text)}
-.more-row-sub{font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:1px}
+.more-row-icon{font-size:22px;width:28px;text-align:center;line-height:1}
+.more-row-label{font-family:var(--cond);font-weight:700;font-size:15px;letter-spacing:.08em;text-transform:uppercase;color:var(--text)}
+.more-row-sub{font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:2px}
+.more-row-sm .more-row-icon{font-size:16px;width:24px}
+.more-row-sm .more-row-label{font-size:12px}
+.more-row-sm .more-row-sub{font-size:10px}
 .more-divider{height:1px;background:var(--border);margin:2px 0}
 .more-section-label{font-family:var(--mono);font-size:9px;color:var(--muted);letter-spacing:.1em;text-transform:uppercase;padding:10px 20px 4px}
 
@@ -563,17 +566,17 @@ body.theme-light .preset-chip:hover{background:rgba(0,76,84,0.18);border-color:v
   </div>
   <div class="more-divider"></div>
   <div class="more-section-label">Actions</div>
-  <div class="more-row" onclick="window.print();closeMoreMenu()">
+  <div class="more-row more-row-sm" onclick="window.print();closeMoreMenu()">
     <span class="more-row-icon">⎙</span>
     <div><div class="more-row-label">Print</div><div class="more-row-sub">Print current log view</div></div>
   </div>
   <div class="more-divider"></div>
-  <div class="more-row" onclick="downloadLog();closeMoreMenu()">
+  <div class="more-row more-row-sm" onclick="downloadLog();closeMoreMenu()">
     <span class="more-row-icon">⬇</span>
     <div><div class="more-row-label">Download Log</div><div class="more-row-sub">Save filled log as archive file</div></div>
   </div>
   <div class="more-divider"></div>
-  <div class="more-row" onclick="closeMoreMenu();resetForm()" style="color:var(--red)">
+  <div class="more-row more-row-sm" onclick="closeMoreMenu();resetForm()" style="color:var(--red)">
     <span class="more-row-icon">🗑</span>
     <div><div class="more-row-label" style="color:var(--red)">Reset Log</div><div class="more-row-sub">Clear today's log only</div></div>
   </div>
