@@ -3092,7 +3092,8 @@ async function dlConfirmLoad(){
   const record = dlGet(_ldPending);
   if(!record){ _ldPending=null; return; }
   // Track which date we loaded — edited flag set only if user actually changes something
-  _editingArchivedDate = record._archivedAt ? _ldPending : null;
+  const _today = new Date().toISOString().split('T')[0];
+_editingArchivedDate = (record._archivedAt && _ldPending !== _today) ? _ldPending : null;
   // Restore into form
   document.getElementById('crewContainer').innerHTML='';
   crewIds=[]; crewSeq=0;
