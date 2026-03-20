@@ -30,12 +30,12 @@
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 body{background:var(--bg);color:var(--text);font-family:var(--body);font-size:14.5px;line-height:1.5;min-height:100vh;padding-bottom:80px}
 body.theme-light{
-  --bg:#f5f7fa;--s1:#ffffff;--s2:#edf0f4;--s3:#004C54;
-  --border:#d0d0d0;--border2:#b0b0b0;
-  --amber:#004C54;--amber2:#003840;--amber-bg:rgba(0,76,84,0.08);
-  --text:#1a1a1a;--muted:#5a8a8a;--muted2:#3a6a6a;
+  --bg:#f5f7fa;--s1:#ffffff;--s2:#c8d4da;--s3:#004C54;
+  --border:#a8b8c2;--border2:#a8b8c2;
+  --amber:#003840;--amber2:#002830;--amber-bg:rgba(0,76,84,0.1);
+  --text:#1a1a1a;--muted:#3a6a6a;--muted2:#3a6a6a;
   --green:#1e8449;--red:#e74c3c;
-  --personal-border:#b0b0b0;--personal-bg:rgba(0,76,84,0.06);--personal-accent:#3a6a6a;--personal-accent2:#004C54;
+  --personal-border:#a8b8c2;--personal-bg:rgba(0,76,84,0.06);--personal-accent:#3a6a6a;--personal-accent2:#003840;
 }
 .bottom-nav{position:fixed;bottom:0;left:0;right:0;z-index:400;background:var(--s1);border-top:1px solid var(--border);display:flex;align-items:stretch;height:95px;padding-bottom:calc(env(safe-area-inset-bottom) + 25px)}
 .nav-item{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding-top:14px;gap:3px;cursor:pointer;border:none;background:transparent;padding-bottom:0;transition:all .15s;border-top:2px solid transparent;user-select:none;-webkit-user-select:none;}
@@ -187,6 +187,8 @@ select{cursor:pointer}
 .preset-strip{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:7px}
 .preset-chip{font-family:var(--body);font-size:12px;font-weight:500;background:var(--s3);border:1px solid var(--border2);color:var(--muted2);border-radius:20px;padding:3px 11px;cursor:pointer;transition:all .12s;white-space:nowrap}
 .preset-chip:hover{border-color:var(--amber);color:var(--amber);background:var(--amber-bg)}
+body.theme-light .preset-chip{background:var(--amber-bg);color:var(--amber);border-color:rgba(0,76,84,0.3)}
+body.theme-light .preset-chip:hover{background:rgba(0,76,84,0.18);border-color:var(--amber);color:var(--amber2)}
 
 /* BUTTONS */
 .btn{font-family:var(--cond);font-weight:700;font-size:12.5px;letter-spacing:.1em;text-transform:uppercase;border:none;border-radius:5px;padding:8px 16px;cursor:pointer;transition:all .15s;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
