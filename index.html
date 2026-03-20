@@ -1462,6 +1462,33 @@ function calcHours(){
 document.getElementById('p-timeIn').addEventListener('change',calcHours);
 document.getElementById('p-timeOut').addEventListener('change',calcHours);
 
+// ── Collapsible sections ──
+const COLLAPSE_KEY='pei_collapsed_sections';
+function _getCollapsed(){try{return JSON.parse(localStorage.getItem(COLLAPSE_KEY)||'[]');}catch{return[];}}
+function _saveCollapsed(arr){try{localStorage.setItem(COLLAPSE_KEY,JSON.stringify(arr));}catch{}}
+function toggleSection(id){
+  const el=document.getElementById(id);if(!el)return;
+  const collapsed=_getCollapsed();
+  const isCollapsed=el.classList.contains('collapsed');
+  if(isCollapsed){el.classList.remove('collapsed');const i=collapsed.indexOf(id);if(i>-1)collapsed.splice(i,1);}
+  else{el.classList.add('collapsed');if(!collapsed.includes(id))collapsed.push(id);}
+  _saveCollapsed(collapsed);
+}
+function collapseAllSections(){
+  const ids=['sec-01','sec-ts','sec-02','sec-03','sec-04','sec-05','sec-06','sec-07','sec-08','sec-notes'];
+  ids.forEach(id=>{const el=document.getElementById(id);if(el)el.classList.add('collapsed');});
+  _saveCollapsed(ids);
+}
+function expandAllSections(){
+  const ids=['sec-01','sec-ts','sec-02','sec-03','sec-04','sec-05','sec-06','sec-07','sec-08','sec-notes'];
+  ids.forEach(id=>{const el=document.getElementById(id);if(el)el.classList.remove('collapsed');});
+  _saveCollapsed([]);
+}
+function restoreCollapsedSections(){
+  const collapsed=_getCollapsed();
+  collapsed.forEach(id=>{const el=document.getElementById(id);if(el)el.classList.add('collapsed');});
+}
+
 // ═══════════════════════════════════════════
 // CHECKLIST
 // ═══════════════════════════════════════════
@@ -2037,7 +2064,8 @@ function _resetFormCore(){
   document.getElementById('p-miles').textContent='— mi';
   document.getElementById('p-hours').textContent='— hrs';
   document.getElementById('reportDate').value=new Date().toISOString().split('T')[0];
-  applyProjectConfig();
+applyProjectConfig();
+restoreCollapsedSections();
   try{ localStorage.removeItem('msf_autosave'); }catch{}
 }
 
