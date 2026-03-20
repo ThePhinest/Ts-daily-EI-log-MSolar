@@ -1985,6 +1985,7 @@ function fallbackDownload(blob,filename){
 // RESET CORE (Firebase-aware resetForm defined in Firebase block below)
 // ═══════════════════════════════════════════
 function _resetFormCore(){
+  _editingArchivedDate = null; // clear any pending edit tracking
   document.querySelectorAll('#page-log input[type=text]:not([readonly]),#page-log input[type=number],#page-log input[type=time],#page-log textarea').forEach(el=>el.value='');
   document.querySelectorAll('#page-log input[type=date]').forEach(el=>el.value='');
   document.querySelectorAll('#page-log input[type=checkbox],#page-log input[type=radio]').forEach(el=>el.checked=false);
@@ -2966,6 +2967,28 @@ async function dlArchive(date){
       await db.collection('dailyLogs').doc(date).set(record);
     }
   }catch(e){}
+  // ── Auto-push hours & miles to timesheet on archive (manual overrides preserved) ──
+  try{
+    const f=state.fields||{};
+    const tin=f['p-timeIn']||''; const tout=f['p-timeOut']||'';
+    const os=parseFloat(f['p-odoStart']||0); const oe=parseFloat(f['p-odoEnd']||0);
+    const miles=(os&&oe&&oe>os)?(oe-os):0;
+    // Calculate hours from time in/out
+    let hours=0;
+    if(tin&&tout){
+      const [h1,m1]=tin.split(':').map(Number);
+      const [h2,m2]=tout.split(':').map(Number);
+      const diff=((h2*60+m2)-(h1*60+m1))/60;
+      if(diff>0) hours=Math.round(diff*10)/10;
+    }
+    const existing=tsGetEntry(date)||{};
+    const update={};
+    if(!existing._manualHours && hours>0) update.hours=hours;
+    if(!existing._manualMiles && miles>0) update.miles=miles;
+    if(!existing._manualActivity && f.activePhase) update.activitySummary=f.activePhase;
+    if(!existing._manualPerDiem) update.perDiem=tsLoadConfig().perDiem;
+    if(Object.keys(update).length>0) tsSaveEntry(date, update);
+  }catch(e){}
 }
 
 // ── Format date for display: "Mon, Mar 18" ──
@@ -3045,6 +3068,7 @@ async function newDayLoadPrevious(){
 // LOAD LOG SYSTEM
 // ═══════════════════════════════════════════
 let _ldPending = null; // date string of log pending load
+let _editingArchivedDate = null; // set when a previous archived log is loaded — triggers edited flag on first change
 
 async function dlLoadFromCalendar(date){
   const record = dlGet(date);
@@ -3067,20 +3091,8 @@ async function dlConfirmLoad(){
   // Load the selected log
   const record = dlGet(_ldPending);
   if(!record){ _ldPending=null; return; }
-  // Flag as edited if it was already archived before
-  if(record._archivedAt){
-    const cfg = JSON.parse(localStorage.getItem('msf_projectconfig')||'{}');
-    const editor = cfg.preparedBy||'Unknown';
-    record._edited = true;
-    record._editLog = record._editLog||[];
-    record._editLog.push({ at: Date.now(), by: editor, action: 'Loaded and edited' });
-    dlSaveLocal(_ldPending, record);
-    try{
-      if(typeof db!=='undefined'&&db&&_fbReady){
-        await db.collection('dailyLogs').doc(_ldPending).set(record);
-      }
-    }catch{}
-  }
+  // Track which date we loaded — edited flag set only if user actually changes something
+  _editingArchivedDate = record._archivedAt ? _ldPending : null;
   // Restore into form
   document.getElementById('crewContainer').innerHTML='';
   crewIds=[]; crewSeq=0;
@@ -3372,9 +3384,17 @@ function calRenderGrid(){
         <div class="cal-cell-dots">${calGetDotIndicators(rec)}</div>
       </div>`;
     } else {
-      cells+=`<div class="cal-cell no-log${isToday?' today':''}">
-        <div class="cal-cell-num">${d}</div>
-      </div>`;
+      // Empty day — tappable if today or in the past
+      const isPast=dateStr<=today;
+      if(isPast){
+        cells+=`<div class="cal-cell no-log${isToday?' today':''}" style="cursor:pointer;opacity:0.5" onclick="calOpenNewDay('${dateStr}')" title="Start log for this day">
+          <div class="cal-cell-num">${d}</div>
+        </div>`;
+      } else {
+        cells+=`<div class="cal-cell no-log">
+          <div class="cal-cell-num">${d}</div>
+        </div>`;
+      }
     }
   }
   body.innerHTML=cells;
@@ -3405,6 +3425,29 @@ function calRenderList(){
       <div class="cal-row-indicators">${calGetIndicators(rec)}</div>
     </div>`;
   }).join('');
+}
+
+function calOpenNewDay(date){
+  // Load the form with this date pre-filled and flag as backdated entry
+  _confirmModal('No log exists for '+dlFmtDisplay(date)+'. Start a new log for this day?', function(){
+    // Set report date field and reset form content
+    _resetFormCore();
+    const el=document.getElementById('reportDate');
+    if(el){ el.value=date; }
+    // Flag as edited (backdated entry)
+    dlSaveLocal(date, Object.assign(collectFormState(),{
+      _archivedDate: date,
+      _archivedAt: Date.now(),
+      _edited: true,
+      _editLog:[{at:Date.now(), by:'EI', action:'Backdated log created'}]
+    }));
+    showPage('log');
+  });
+  // Adjust modal button label
+  setTimeout(function(){
+    const btn=document.getElementById('_mok');
+    if(btn) btn.textContent='Start Log';
+  },10);
 }
 
 function calCloseDayView(){
@@ -3559,8 +3602,26 @@ async function cloudSave() {
 function debouncedAutoSave() {
   clearTimeout(_asTimer);
   _asTimer = setTimeout(function() {
+    // If user is editing a previously archived log, mark it as edited on first change
+    if (_editingArchivedDate) {
+      try {
+        const record = dlGet(_editingArchivedDate);
+        if (record && !record._edited) {
+          const cfg = JSON.parse(localStorage.getItem('msf_projectconfig')||'{}');
+          const editor = cfg.preparedBy||'EI';
+          record._edited = true;
+          record._editLog = record._editLog||[];
+          record._editLog.push({ at: Date.now(), by: editor, action: 'Edited after archive' });
+          dlSaveLocal(_editingArchivedDate, record);
+          if (typeof db!=='undefined'&&db&&_fbReady){
+            db.collection('dailyLogs').doc(_editingArchivedDate).set(record).catch(()=>{});
+          }
+        }
+      } catch(e) {}
+      _editingArchivedDate = null; // only flag once
+    }
     _autoSaveLocal();
-        clearTimeout(_cloudTimer);
+    clearTimeout(_cloudTimer);
     _cloudTimer = setTimeout(cloudSave, 2500);
   }, 600);
 }
