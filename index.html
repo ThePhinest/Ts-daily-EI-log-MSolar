@@ -1,5 +1,4 @@
 <!DOCTYPE html>
-<!-- saved from url=(0046)file:///C:/Users/timnj/Downloads/index_20.html -->
 <html lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -13,8 +12,9 @@
 <!-- Firebase SDKs — CDN (SW v6 passes external requests through untouched) -->
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
-<link rel="preconnect" href="https://fonts.googleapis.com/">
-<link href="./index_files/css2" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
 :root {
   /* C1 — Lifted Navy */
@@ -38,7 +38,7 @@ body.theme-light{
   --personal-border:#b0bec5;--personal-bg:rgba(0,76,84,0.06);--personal-accent:#4a7080;--personal-accent2:#004C54;
 }
 .bottom-nav{position:fixed;bottom:0;left:0;right:0;z-index:400;background:var(--s1);border-top:1px solid var(--border);display:flex;align-items:stretch;height:95px;padding-bottom:calc(env(safe-area-inset-bottom) + 25px)}
-.nav-item{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding-top:14px;gap:3px;cursor:pointer;border:none;background:transparent;padding-bottom:0;transition:all .15s;border-top:2px solid transparent}
+.nav-item{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding-top:14px;gap:3px;cursor:pointer;border:none;background:transparent;padding-bottom:0;transition:all .15s;border-top:2px solid transparent;user-select:none;-webkit-user-select:none;}
 .nav-item.active{background:rgba(0,76,84,0.2);border-top-color:var(--s3);margin-bottom:-1px}
 .nav-item .nav-icon{font-size:18px;line-height:1}
 .nav-item .nav-label{font-family:var(--cond);font-weight:700;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);transition:color .15s}
@@ -385,17 +385,17 @@ select{cursor:pointer}
 <body>
 
 <!-- APP BAR -->
-<div class="app-bar">
-  <div>
-    <div class="app-title">Phinest EI</div>
-    <div class="app-sub">Moraine Solar Energy Center</div>
-  </div>
-  <div class="bar-spacer"></div>
+<div class="app-bar" style="justify-content:space-between">
   <button class="icon-btn" title="Toggle theme" onclick="toggleTheme()" id="theme-btn">☀</button>
-<button class="icon-btn" title="Print" onclick="window.print()">⎙</button>
-<button class="icon-btn" title="Reset form" onclick="resetForm()">🗑</button>
-<button class="icon-btn" title="Reload app" onclick="location.reload()">⟳</button>
-<span id="sync-dot" title="" style="font-family: var(--mono); font-size: 10px; letter-spacing: 0.05em; transition: color 0.3s; white-space: nowrap; margin-left: 2px; color: var(--green);">✓ synced</span></div>
+  <div style="text-align:center;flex:1">
+    <div class="app-title" id="app-bar-title">Phinest EI</div>
+    <div class="app-sub" id="app-bar-sub">Moraine Solar Energy Center</div>
+  </div>
+  <div style="display:flex;align-items:center;gap:6px">
+    <button class="icon-btn" title="Reload app" onclick="location.reload()">⟳</button>
+    <span id="sync-dot" title="" style="font-family: var(--mono); font-size: 10px; letter-spacing: 0.05em; transition: color 0.3s; white-space: nowrap; margin-left: 2px; color: var(--green);">✓ synced</span>
+  </div>
+</div>
 
 <!-- BOTTOM NAV -->
 <nav class="bottom-nav">
@@ -483,6 +483,11 @@ select{cursor:pointer}
     <div><div class="more-row-label">Calendar</div><div class="more-row-sub">History, daily notes</div></div>
   </div>
   <div class="more-divider"></div>
+  <div class="more-row" onclick="showPage('timesheet');closeMoreMenu()">
+    <span class="more-row-icon">⏱</span>
+    <div><div class="more-row-label">Timesheet</div><div class="more-row-sub">Hours, miles &amp; per diem</div></div>
+  </div>
+  <div class="more-divider"></div>
   <div class="more-row" onclick="showPage('forms');closeMoreMenu()">
     <span class="more-row-icon">📄</span>
     <div><div class="more-row-label">Forms</div><div class="more-row-sub">Spill report, other docs</div></div>
@@ -501,6 +506,17 @@ select{cursor:pointer}
   <div class="more-row" onclick="showPage('config');closeMoreMenu()">
     <span class="more-row-icon">⚙</span>
     <div><div class="more-row-label">Settings</div><div class="more-row-sub">Preferences &amp; presets</div></div>
+  </div>
+  <div class="more-divider"></div>
+  <div class="more-section-label">Actions</div>
+  <div class="more-row" onclick="window.print();closeMoreMenu()">
+    <span class="more-row-icon">⎙</span>
+    <div><div class="more-row-label">Print</div><div class="more-row-sub">Print current log view</div></div>
+  </div>
+  <div class="more-divider"></div>
+  <div class="more-row" onclick="closeMoreMenu();resetForm()" style="color:var(--red)">
+    <span class="more-row-icon">🗑</span>
+    <div><div class="more-row-label" style="color:var(--red)">Reset Log</div><div class="more-row-sub">Clear today's log only</div></div>
   </div>
   <div style="height:16px"></div>
 </div>
@@ -1726,6 +1742,9 @@ function applyProjectConfig() {
   document.getElementById('contractor').value   = cfg.contractor;
   document.getElementById('location').value     = cfg.location;
   document.getElementById('reviewedBy').value   = cfg.reviewedBy;
+  // Update app bar subtitle dynamically from project name
+  const sub = document.getElementById('app-bar-sub');
+  if (sub && cfg.projectName) sub.textContent = cfg.projectName;
   // Populate config fields
   ['projectName','preparedBy','org','activePhase','contractor','location','reviewedBy'].forEach(k => {
     const el = document.getElementById('cfg-' + k);
