@@ -445,6 +445,10 @@ select{cursor:pointer}
     <div class="nd-body">
       <div class="nd-msg">Your log is from a previous day.</div>
       <div class="nd-date" id="nd-prev-date"></div>
+      <div id="nd-day-note" style="display:none;background:rgba(0,76,84,0.15);border:1px solid rgba(0,76,84,0.4);border-radius:6px;padding:10px 12px;margin-bottom:14px;font-family:var(--body);font-size:13px;color:var(--text);line-height:1.5">
+        <div style="font-family:var(--mono);font-size:9px;color:var(--muted2);letter-spacing:.08em;text-transform:uppercase;margin-bottom:5px">📝 Note for Today</div>
+        <div id="nd-day-note-text"></div>
+      </div>
       <div class="nd-btns">
         <button class="nd-btn nd-btn-primary" onclick="newDayStartFresh()">
           <span class="nd-btn-icon">🌅</span> Start Fresh — New Day
@@ -475,6 +479,31 @@ select{cursor:pointer}
           <span class="nd-btn-icon">📂</span> Load — Archive &amp; Replace Current
         </button>
         <button class="nd-btn nd-btn-ghost" onclick="dlCancelLoad()">
+          <span class="nd-btn-icon">✕</span> Cancel
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- DAY NOTE MODAL -->
+<div class="nd-overlay" id="daynote-overlay" style="display:none">
+  <div class="nd-card">
+    <div class="nd-head">
+      <span class="nd-head-icon">📝</span>
+      <span class="nd-head-title" id="daynote-title">Note for Date</span>
+    </div>
+    <div class="nd-body">
+      <div class="nd-msg" style="font-size:12px;margin-bottom:10px">Add a reminder or note for this day. It will show up when the day arrives.</div>
+      <textarea id="daynote-text" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--body);font-size:14px;padding:10px;resize:vertical;min-height:100px;line-height:1.5;margin-bottom:12px" placeholder="e.g. Crew mobilization expected, pre-inspection walkthrough scheduled…"></textarea>
+      <div class="nd-btns">
+        <button class="nd-btn nd-btn-primary" onclick="dayNoteSave()">
+          <span class="nd-btn-icon">💾</span> Save Note
+        </button>
+        <button class="nd-btn nd-btn-ghost" onclick="dayNoteClear()" id="daynote-clear-btn" style="display:none">
+          <span class="nd-btn-icon">🗑</span> Clear Note
+        </button>
+        <button class="nd-btn nd-btn-ghost" onclick="dayNoteClose()">
           <span class="nd-btn-icon">✕</span> Cancel
         </button>
       </div>
@@ -1035,6 +1064,7 @@ EI to conduct LOD walk prior to start of operations"></textarea>
     <span style="font-family:var(--mono);font-size:11px;color:var(--muted2)">📸 Photos</span>
     <span style="font-family:var(--mono);font-size:11px;color:var(--muted2)">🕒 Hours logged</span>
     <span style="font-family:var(--mono);font-size:11px;color:var(--muted2)">🚚 Miles logged</span>
+    <span style="font-family:var(--mono);font-size:11px;color:var(--muted2)">📝 Day note</span>
   </div>
 
 </div></div>
@@ -3232,6 +3262,65 @@ async function clInit(){
 }
 
 // ═══════════════════════════════════════════
+// DAY NOTES
+// ═══════════════════════════════════════════
+const DN_KEY='pei_day_notes';
+function dnGetAll(){try{return JSON.parse(localStorage.getItem(DN_KEY)||'{}');}catch{return{};}}
+function dnGet(date){return dnGetAll()[date]||null;}
+function dnSaveLocal(date,note){const all=dnGetAll();if(note){all[date]={note,_ts:Date.now()};}else{delete all[date];}localStorage.setItem(DN_KEY,JSON.stringify(all));}
+async function dnSaveCloud(date,note){
+  if(!db||!_fbReady)return;
+  try{
+    if(note){await db.collection('dayNotes').doc(date).set({note,_ts:Date.now()});}
+    else{await db.collection('dayNotes').doc(date).delete();}
+  }catch(e){}
+}
+async function dnLoadCloud(){
+  if(!db||!_fbReady)return;
+  try{
+    const snap=await db.collection('dayNotes').get();
+    if(snap.empty)return;
+    const all=dnGetAll();
+    snap.forEach(doc=>{all[doc.id]=doc.data();});
+    localStorage.setItem(DN_KEY,JSON.stringify(all));
+  }catch(e){}
+}
+
+// ── Day note modal ──
+let _dnCurrentDate=null;
+async function dayNoteOpen(date){
+  _dnCurrentDate=date;
+  await dnLoadCloud();
+  const existing=dnGet(date);
+  const title=document.getElementById('daynote-title');
+  const textarea=document.getElementById('daynote-text');
+  const clearBtn=document.getElementById('daynote-clear-btn');
+  if(title) title.textContent='Note for '+dlFmtDisplay(date);
+  if(textarea) textarea.value=existing?existing.note:'';
+  if(clearBtn) clearBtn.style.display=existing?'':'none';
+  document.getElementById('daynote-overlay').style.display='flex';
+  setTimeout(()=>textarea?.focus(),100);
+}
+async function dayNoteSave(){
+  if(!_dnCurrentDate)return;
+  const note=document.getElementById('daynote-text')?.value.trim()||'';
+  dnSaveLocal(_dnCurrentDate,note||null);
+  await dnSaveCloud(_dnCurrentDate,note||null);
+  dayNoteClose();
+  calRenderGrid();
+  calRenderDayViewGrid();
+}
+function dayNoteClear(){
+  const textarea=document.getElementById('daynote-text');
+  if(textarea) textarea.value='';
+  document.getElementById('daynote-clear-btn').style.display='none';
+}
+function dayNoteClose(){
+  document.getElementById('daynote-overlay').style.display='none';
+  _dnCurrentDate=null;
+}
+
+// ═══════════════════════════════════════════
 // DAILY LOG ARCHIVE SYSTEM
 // ═══════════════════════════════════════════
 
@@ -3324,6 +3413,16 @@ function checkNewDay(){
   // Show modal
   const el=document.getElementById('nd-prev-date');
   if(el) el.textContent='Last log: '+dlFmtDisplay(savedDate)+' ('+savedDate+')';
+  // Show day note reminder if one exists for today
+  const dn=dnGet(today);
+  const noteBox=document.getElementById('nd-day-note');
+  const noteText=document.getElementById('nd-day-note-text');
+  if(dn&&dn.note&&noteBox&&noteText){
+    noteText.textContent=dn.note;
+    noteBox.style.display='block';
+  } else if(noteBox){
+    noteBox.style.display='none';
+  }
   document.getElementById('nd-overlay').style.display='flex';
   // Store the previous date for use in reset handler
   document.getElementById('nd-overlay').dataset.prevDate=savedDate;
@@ -3462,6 +3561,7 @@ async function calLoadCloud(){
 
 async function calRender(){
   await calLoadCloud();
+  await dnLoadCloud();
   // Always close day view and reset to grid/list on tab activation
   document.getElementById('cal-day-view').style.display='none';
   document.getElementById('cal-view-toggle').style.display='flex';
@@ -3682,7 +3782,11 @@ function calRenderDayViewGrid(){
           <div class="cal-cell-num">${d}</div>
         </div>`;
       } else {
-        cells+=`<div class="cal-cell no-log"><div class="cal-cell-num">${d}</div></div>`;
+        const dn=dnGet(dateStr);
+        cells+=`<div class="cal-cell no-log" style="cursor:pointer" onclick="dayNoteOpen('${dateStr}')" title="Add note for this day">
+          <div class="cal-cell-num">${d}</div>
+          ${dn?'<div class="cal-cell-dots"><span class="cal-dot" title="Day note">📝</span></div>':''}
+        </div>`;
       }
     }
   }
@@ -3744,8 +3848,11 @@ function calRenderGrid(){
           <div class="cal-cell-num">${d}</div>
         </div>`;
       } else {
-        cells+=`<div class="cal-cell no-log">
+        // Future day — check for note
+        const dn=dnGet(dateStr);
+        cells+=`<div class="cal-cell no-log" style="cursor:pointer" onclick="dayNoteOpen('${dateStr}')" title="Add note for this day">
           <div class="cal-cell-num">${d}</div>
+          ${dn?'<div class="cal-cell-dots"><span class="cal-dot" title="Day note">📝</span></div>':''}
         </div>`;
       }
     }
