@@ -655,6 +655,7 @@ select{cursor:pointer}
     <div class="card-head" onclick="toggleSection('sec-02')">
       <span class="card-num">02</span>
       <span class="card-title">Weather Conditions</span>
+      <button class="btn btn-outline" id="wx-btn" onclick="event.stopPropagation();getMyWeather()" style="font-size:10px;padding:4px 10px;margin-left:auto;margin-right:8px">⛅ Get My Weather</button>
       <span class="card-chevron">▾</span>
     </div>
     <div class="card-body">
@@ -3318,6 +3319,126 @@ function dayNoteClear(){
 function dayNoteClose(){
   document.getElementById('daynote-overlay').style.display='none';
   _dnCurrentDate=null;
+}
+
+// ═══════════════════════════════════════════
+// AUTO WEATHER — Open-Meteo (no API key)
+// ═══════════════════════════════════════════
+function getMyWeather(){
+  const btn=document.getElementById('wx-btn');
+  if(btn){btn.textContent='📍 Getting location…';btn.disabled=true;}
+  if(!navigator.geolocation){
+    alert('Geolocation is not supported on this device.');
+    if(btn){btn.textContent='⛅ Get My Weather';btn.disabled=false;}
+    return;
+  }
+  navigator.geolocation.getCurrentPosition(
+    async function(pos){
+      const lat=pos.coords.latitude.toFixed(4);
+      const lon=pos.coords.longitude.toFixed(4);
+      if(btn) btn.textContent='⛅ Fetching weather…';
+      try{
+        const url=`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}`+
+          `&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,windspeed_10m_max,winddirection_10m_dominant,weathercode`+
+          `&hourly=precipitation&current_weather=true`+
+          `&temperature_unit=fahrenheit&windspeed_unit=mph&precipitation_unit=inch&timezone=auto&forecast_days=3`;
+        const res=await fetch(url);
+        const data=await res.json();
+        _applyWeatherData(data);
+        if(btn){btn.textContent='✓ Weather filled';btn.style.color='var(--green)';
+          setTimeout(()=>{btn.textContent='⛅ Get My Weather';btn.style.color='';btn.disabled=false;},3000);}
+      }catch(e){
+        alert('Weather fetch failed. Check your connection and try again.');
+        if(btn){btn.textContent='⛅ Get My Weather';btn.disabled=false;}
+      }
+    },
+    function(err){
+      alert('Location access denied. Please allow location access and try again.');
+      if(btn){btn.textContent='⛅ Get My Weather';btn.disabled=false;}
+    },
+    {timeout:10000,maximumAge:0}
+  );
+}
+
+function _applyWeatherData(data){
+  const d=data.daily;
+  const cw=data.current_weather;
+  if(!d||!cw) return;
+
+  // ── Temps: today's low = AM, today's high = PM ──
+  const hiF=Math.round(d.temperature_2m_max[0]);
+  const loF=Math.round(d.temperature_2m_min[0]);
+  const amEl=document.getElementById('tempAM');
+  const pmEl=document.getElementById('tempPM');
+  if(amEl) amEl.value=loF;
+  if(pmEl) pmEl.value=hiF;
+
+  // ── Wind: max speed + cardinal direction ──
+  const wspd=Math.round(d.windspeed_10m_max[0]);
+  const wdir=d.winddirection_10m_dominant[0];
+  const dirs=['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
+  const cardDir=dirs[Math.round(wdir/22.5)%16];
+  const windEl=document.getElementById('wind');
+  if(windEl) windEl.value=`${wspd} mph ${cardDir}`;
+
+  // ── Precip: today's total ──
+  const precip=d.precipitation_sum[0]||0;
+  const precipEl=document.getElementById('precip');
+  if(precipEl) precipEl.value=precip.toFixed(2);
+
+  // ── Sky conditions: map WMO code to checkboxes ──
+  const wmo=d.weathercode[0];
+  // Clear all sky checkboxes first
+  document.querySelectorAll('input[name="sky"]').forEach(cb=>cb.checked=false);
+  // WMO code mapping
+  if(wmo===0){
+    document.getElementById('sky-clear').checked=true;
+  } else if(wmo<=2){
+    document.getElementById('sky-partly').checked=true;
+  } else if(wmo===3){
+    document.getElementById('sky-overcast').checked=true;
+  } else if(wmo<=49){
+    // Fog/drizzle range
+    document.getElementById('sky-fog').checked=true;
+  } else if(wmo<=59){
+    document.getElementById('sky-rain').checked=true;
+  } else if(wmo<=69){
+    // Freezing rain / mix
+    document.getElementById('sky-mix').checked=true;
+  } else if(wmo<=79){
+    document.getElementById('sky-snow').checked=true;
+  } else if(wmo<=84){
+    document.getElementById('sky-rain').checked=true;
+  } else if(wmo<=94){
+    document.getElementById('sky-mix').checked=true;
+  } else {
+    document.getElementById('sky-overcast').checked=true;
+  }
+
+  // ── Forecast: tomorrow's conditions ──
+  const tmrHi=Math.round(d.temperature_2m_max[1]);
+  const tmrLo=Math.round(d.temperature_2m_min[1]);
+  const tmrWmo=d.weathercode[1];
+  const tmrWspd=Math.round(d.windspeed_10m_max[1]);
+  const tmrDesc=_wmoToDesc(tmrWmo);
+  const fcastEl=document.getElementById('upcomingWeather');
+  if(fcastEl) fcastEl.value=`Tomorrow: ${tmrDesc}, High ${tmrHi}°F / Low ${tmrLo}°F, Winds up to ${tmrWspd} mph`;
+
+  // Trigger autosave
+  debouncedAutoSave();
+}
+
+function _wmoToDesc(code){
+  if(code===0) return 'Clear';
+  if(code<=2) return 'Partly Cloudy';
+  if(code===3) return 'Overcast';
+  if(code<=49) return 'Fog';
+  if(code<=59) return 'Rain / Drizzle';
+  if(code<=69) return 'Freezing Rain';
+  if(code<=79) return 'Snow';
+  if(code<=84) return 'Rain Showers';
+  if(code<=94) return 'Snow Showers';
+  return 'Thunderstorms';
 }
 
 // ═══════════════════════════════════════════
