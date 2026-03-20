@@ -2986,13 +2986,13 @@ function checkNewDay(){
   // Check suppression — if already handled today, skip
   const suppressed=localStorage.getItem('pei_newday_suppress')||'';
   if(suppressed===today) return;
-  // Get last log date from autosave
+  // Get last log date from autosave — stored under fields.reportDate
   let savedDate='';
   try{
     const saved=localStorage.getItem('msf_autosave');
     if(saved){
       const state=JSON.parse(saved);
-      savedDate=state.reportDate||'';
+      savedDate=(state.fields&&state.fields.reportDate)||state.reportDate||'';
     }
   }catch{}
   // Only trigger if we have a saved log from a previous day
@@ -3120,11 +3120,17 @@ function calGetIndicators(record){
     if(hasPh) indicators.push('<span title="Photos">📸</span>');
   }catch{}
   // Hours
-  const tin=record.p_timeIn||''; const tout=record.p_timeOut||'';
+  const f=record.fields||{};
+  const tin=f['p-timeIn']||''; const tout=f['p-timeOut']||'';
   if(tin&&tout) indicators.push('<span title="Hours logged">🕒</span>');
-  // Miles
-  const os=parseFloat(record.p_odoStart||0); const oe=parseFloat(record.p_odoEnd||0);
-  if(os&&oe&&oe>os) indicators.push('<span title="Miles logged">🚚</span>');
+  // Miles — check timesheet first, then odometer
+  const tsE=tsGetEntry(record._archivedDate||'');
+  if(tsE&&tsE.miles){
+    indicators.push('<span title="Miles logged">🚚</span>');
+  } else {
+    const os=parseFloat(f['p-odoStart']||0); const oe=parseFloat(f['p-odoEnd']||0);
+    if(os&&oe&&oe>os) indicators.push('<span title="Miles logged">🚚</span>');
+  }
   return indicators.join('');
 }
 
@@ -3165,6 +3171,7 @@ function calOpenDay(date){
   if(!content) return;
 
   // ── Time & miles — prefer timesheet entry, fall back to raw fields ──
+  const f=rec.fields||{};
   let tin='—', tout='—', hours='—', miles='—';
   try{
     const tsEntry=tsGetEntry(date);
@@ -3173,26 +3180,32 @@ function calOpenDay(date){
       if(tsEntry.miles) miles=tsEntry.miles+' mi';
     }
   }catch{}
-  // Also show raw time in/out if available
-  if(rec.p_timeIn) tin=rec.p_timeIn;
-  if(rec.p_timeOut) tout=rec.p_timeOut;
+  // Raw time in/out from fields
+  if(f['p-timeIn']) tin=f['p-timeIn'];
+  if(f['p-timeOut']) tout=f['p-timeOut'];
   // Fall back to odometer if no timesheet miles
   if(miles==='—'){
-    const os=parseFloat(rec.p_odoStart||0); const oe=parseFloat(rec.p_odoEnd||0);
+    const os=parseFloat(f['p-odoStart']||0); const oe=parseFloat(f['p-odoEnd']||0);
     if(os&&oe&&oe>os) miles=(oe-os)+' mi';
   }
 
-  // ── Weather ──
+  // ── Weather — build from fields + sky array ──
   let weather='—';
-  if(rec.weather){
-    const w=rec.weather;
-    const parts=[w.sky,w.tempAM?w.tempAM+'° AM':'',w.tempPM?w.tempPM+'° PM':'',w.wind?'Wind: '+w.wind:'',w.precip?'Precip: '+w.precip:''].filter(Boolean);
+  try{
+    const sky=Array.isArray(rec.sky)?rec.sky.join(', '):(rec.sky||'');
+    const parts=[
+      sky||'',
+      f.tempAM?f.tempAM+'° AM':'',
+      f.tempPM?f.tempPM+'° PM':'',
+      f.wind?'Wind: '+f.wind:'',
+      f.precip?'Precip: '+f.precip+'"':''
+    ].filter(Boolean);
     weather=parts.join(' · ')||'—';
-  }
+  }catch{}
 
   // ── Inspection summary ──
-  const summary=(rec.inspSummary||rec.inspectionSummary||'').trim()||'No summary recorded.';
-  const contractor=rec.contractor||'—';
+  const summary=(f.inspSummary||f.inspectionSummary||'').trim()||'No summary recorded.';
+  const contractor=(f.contractor||'—');
 
   // ── Compliance entries — summary lines ──
   let compSection='';
@@ -3206,7 +3219,7 @@ function calOpenDay(date){
         <div style="display:flex;align-items:flex-start;gap:8px;padding:6px 0;border-bottom:1px solid var(--border)">
           <span style="font-family:var(--mono);font-size:9px;color:${levelColor[e.level]||'var(--muted)'};white-space:nowrap;padding-top:1px">${levelLabel[e.level]||'L?'}</span>
           <span style="font-family:var(--body);font-size:12px;color:var(--text);flex:1">${e.location||'No description'}</span>
-          <span style="font-family:var(--mono);font-size:9px;color:var(--muted);white-space:nowrap">${e.status||''}</span>
+          <span style="font-family:var(--mono);font-size:9px;color:var(--muted2);white-space:nowrap;cursor:pointer;text-decoration:underline" onclick="showPage('compliance')" title="View in compliance log">${e.status||''}</span>
         </div>`).join('');
       compSection=`<div class="cal-day-section" style="flex-direction:column;align-items:flex-start">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;width:100%">
@@ -3383,7 +3396,8 @@ function calRenderList(){
   if(count)count.textContent=dates.length+' day'+(dates.length===1?'':'s');
   list.innerHTML=dates.map(date=>{
     const rec=all[date];
-    const summary=(rec.inspSummary||rec.inspectionSummary||'').trim().replace(/\r?\n.*/,'').split(/[.!?]/)[0].trim();
+    const rf=rec.fields||{};
+    const summary=(rf.inspSummary||rf.inspectionSummary||'').trim().replace(/\r?\n.*/,'').split(/[.!?]/)[0].trim();
     const displaySummary=summary.length>60?summary.substring(0,60)+'…':summary||'No summary';
     return `<div class="cal-row" onclick="calOpenDay('${date}')">
       <div class="cal-row-date">${dlFmtDisplay(date)}</div>
@@ -3429,8 +3443,7 @@ if(SAVED_DATA){
     }
   }catch{}
 }
-// Check for new day after restore is complete
-setTimeout(checkNewDay, 400);
+// checkNewDay is called after Firebase restore completes (see initFirebaseLoad)
 </script>
 
 <script>
@@ -3580,13 +3593,34 @@ function _confirmModal(msg, onConfirm) {
   document.getElementById('_mok').onclick = function() { ov.remove(); onConfirm(); };
 }
 
-// ── resetForm: clears cloud + form ──
+// ── resetForm: clears cloud + form — only permitted on today's log ──
 function resetForm() {
+  const today = new Date().toISOString().split('T')[0];
+  let savedDate = '';
+  try {
+    const saved = localStorage.getItem('msf_autosave');
+    if (saved) {
+      const state = JSON.parse(saved);
+      savedDate = (state.fields && state.fields.reportDate) || state.reportDate || '';
+    }
+  } catch {}
+  // Block reset if the active log is from a previous day
+  if (savedDate && savedDate !== today) {
+    _confirmModal('This log is from ' + dlFmtDisplay(savedDate) + '. Previous day logs cannot be reset — use the Calendar to load and edit them instead.', function(){});
+    // Override the modal button to be informational only
+    setTimeout(function(){
+      const btn = document.getElementById('_mok');
+      if (btn) { btn.style.display = 'none'; }
+      const cancel = document.getElementById('_mc');
+      if (cancel) { cancel.textContent = 'OK'; }
+    }, 10);
+    return;
+  }
   _confirmModal('Reset the daily log? All entries will be cleared. Config and presets are preserved.', function() {
-        if (db) db.collection('sessions').doc('active').delete().catch(function(e){  });
+    if (db) db.collection('sessions').doc('active').delete().catch(function(e){});
     _resetFormCore();
     setSyncStatus('idle');
-      });
+  });
 }
 
 // ── Firebase init load — runs async after page restores from localStorage ──
@@ -3622,6 +3656,7 @@ function resetForm() {
       setSyncStatus('synced');
       phInit();
       clInit();
+      checkNewDay();
       return;
     }
 
@@ -3644,19 +3679,23 @@ function resetForm() {
       setSyncStatus('synced');
       phInit();
       clInit();
+      checkNewDay();
     } else if (localTs > cloudTs) {
       _fbReady = true;
       cloudSave();
       phInit();
+      checkNewDay();
     } else {
       _fbReady = true;
       setSyncStatus('synced');
       phInit();
+      checkNewDay();
     }
 
   } catch(e) {
     setSyncStatus('offline');
     console.warn('Phinest EI: Firebase init load failed —', e.message);
+    checkNewDay(); // still check even if Firebase fails — local data may have previous day
   }
   _fbReady = true; // allow cloudSave from this point forward
 })();
