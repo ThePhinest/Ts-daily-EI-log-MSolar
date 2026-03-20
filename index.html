@@ -18,8 +18,8 @@
 <style>
 :root {
   /* C2 — True Charcoal */
-  --bg:#1a1a1a;--s1:#252525;--s2:#1a1a1a;--s3:#004C54;
-  --border:#383838;--border2:#444444;
+  --bg:#1a1a1a;--s1:#252525;--s2:rgba(0,76,84,0.35);--s3:#004C54;
+  --border:#383838;--border2:rgba(0,76,84,0.5);
   --amber:#A5ACAF;--amber2:#C8CDD0;--amber-bg:rgba(165,172,175,0.1);
   --text:#d0d0d0;--muted:#5a8a8a;--muted2:#7aacac;
   --green:#27ae60;--red:#e74c3c;
@@ -1237,6 +1237,14 @@ EI to conduct LOD walk prior to start of operations"></textarea>
       <span id="cfg-nav-status" style="font-family:var(--mono);font-size:11px;color:var(--green);margin-left:12px;opacity:0;transition:opacity .4s"></span>
     </div>
   </div>
+
+  <!-- COLLAPSE ALL / EXPAND ALL — SETTINGS -->
+  <div style="display:flex;gap:8px;margin-bottom:12px;justify-content:flex-end">
+    <button class="btn btn-outline" style="font-size:10px;padding:5px 12px" onclick="collapseAllConfig()">Collapse All</button>
+    <button class="btn btn-outline" style="font-size:10px;padding:5px 12px" onclick="expandAllConfig()">Expand All</button>
+  </div>
+
+  <div class="config-section" id="cfg-proj">
     <div class="config-head" onclick="toggleSection('cfg-proj')"><span class="config-title">Project &amp; Report Info</span><span class="card-chevron">▾</span></div>
     <div class="config-body">
       <p class="config-hint">These values populate Section 01 on the daily log and persist through resets. Active Contractor can also be edited directly on the main page.</p>
@@ -1507,11 +1515,12 @@ function _getCollapsed(){try{return JSON.parse(localStorage.getItem(COLLAPSE_KEY
 function _saveCollapsed(arr){try{localStorage.setItem(COLLAPSE_KEY,JSON.stringify(arr));}catch{}}
 function toggleSection(id){
   const el=document.getElementById(id);if(!el)return;
-  const collapsed=_getCollapsed();
+  const isCfg=id.startsWith('cfg-');
+  const collapsed=isCfg?_getCollapsedConfig():_getCollapsed();
   const isCollapsed=el.classList.contains('collapsed');
   if(isCollapsed){el.classList.remove('collapsed');const i=collapsed.indexOf(id);if(i>-1)collapsed.splice(i,1);}
   else{el.classList.add('collapsed');if(!collapsed.includes(id))collapsed.push(id);}
-  _saveCollapsed(collapsed);
+  isCfg?_saveCollapsedConfig(collapsed):_saveCollapsed(collapsed);
 }
 function collapseAllSections(){
   const ids=['sec-01','sec-ts','sec-02','sec-03','sec-04','sec-05','sec-06','sec-07','sec-08','sec-notes'];
@@ -1523,9 +1532,22 @@ function expandAllSections(){
   ids.forEach(id=>{const el=document.getElementById(id);if(el)el.classList.remove('collapsed');});
   _saveCollapsed([]);
 }
+const CFG_COLLAPSE_KEY='pei_collapsed_config';
+function _getCollapsedConfig(){try{return JSON.parse(localStorage.getItem(CFG_COLLAPSE_KEY)||'[]');}catch{return[];}}
+function _saveCollapsedConfig(arr){try{localStorage.setItem(CFG_COLLAPSE_KEY,JSON.stringify(arr));}catch{}}
+function collapseAllConfig(){
+  const ids=['cfg-nav','cfg-proj','cfg-ts','cfg-obs','cfg-act','cfg-env','cfg-comms','cfg-look','cfg-phases','cfg-phase'];
+  ids.forEach(id=>{const el=document.getElementById(id);if(el)el.classList.add('collapsed');});
+  _saveCollapsedConfig(ids);
+}
+function expandAllConfig(){
+  const ids=['cfg-nav','cfg-proj','cfg-ts','cfg-obs','cfg-act','cfg-env','cfg-comms','cfg-look','cfg-phases','cfg-phase'];
+  ids.forEach(id=>{const el=document.getElementById(id);if(el)el.classList.remove('collapsed');});
+  _saveCollapsedConfig([]);
+}
 function restoreCollapsedSections(){
-  const collapsed=_getCollapsed();
-  collapsed.forEach(id=>{const el=document.getElementById(id);if(el)el.classList.add('collapsed');});
+  _getCollapsed().forEach(id=>{const el=document.getElementById(id);if(el)el.classList.add('collapsed');});
+  _getCollapsedConfig().forEach(id=>{const el=document.getElementById(id);if(el)el.classList.add('collapsed');});
 }
 
 // ═══════════════════════════════════════════
