@@ -1228,6 +1228,12 @@ EI to conduct LOD walk prior to start of operations"></textarea>
     </div>
   </div>
 
+  <!-- COLLAPSE ALL / EXPAND ALL — SETTINGS -->
+  <div style="display:flex;gap:8px;margin-bottom:12px;justify-content:flex-end">
+    <button class="btn btn-outline" style="font-size:10px;padding:5px 12px" onclick="collapseAllConfig()">Collapse All</button>
+    <button class="btn btn-outline" style="font-size:10px;padding:5px 12px" onclick="expandAllConfig()">Expand All</button>
+  </div>
+
   <div class="config-section" id="cfg-nav">
     <div class="config-head" onclick="toggleSection('cfg-nav')"><span class="config-title">Navigation Layout</span><span class="card-chevron">▾</span></div>
     <div class="config-body">
@@ -1236,12 +1242,6 @@ EI to conduct LOD walk prior to start of operations"></textarea>
       <button class="btn btn-amber" style="font-size:11px;padding:7px 14px" onclick="saveNavConfig()">Save &amp; Apply</button>
       <span id="cfg-nav-status" style="font-family:var(--mono);font-size:11px;color:var(--green);margin-left:12px;opacity:0;transition:opacity .4s"></span>
     </div>
-  </div>
-
-  <!-- COLLAPSE ALL / EXPAND ALL — SETTINGS -->
-  <div style="display:flex;gap:8px;margin-bottom:12px;justify-content:flex-end">
-    <button class="btn btn-outline" style="font-size:10px;padding:5px 12px" onclick="collapseAllConfig()">Collapse All</button>
-    <button class="btn btn-outline" style="font-size:10px;padding:5px 12px" onclick="expandAllConfig()">Expand All</button>
   </div>
 
   <div class="config-section" id="cfg-proj">
