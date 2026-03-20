@@ -253,6 +253,14 @@ select{cursor:pointer}
 .config-hint{font-family:var(--mono);font-size:10.5px;color:var(--muted);margin-bottom:12px;line-height:1.6}
 .preset-list{list-style:none;margin-bottom:10px}
 .preset-list li{display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid rgba(36,43,62,.5)}.preset-list li:last-child{border-bottom:none}
+.preset-list li.dragging{opacity:0.4;background:var(--s2)}
+.preset-list li.drag-over{border-top:2px solid var(--s3)}
+.drag-handle{font-size:14px;color:var(--muted);cursor:grab;padding:0 4px;display:none;user-select:none;-webkit-user-select:none;touch-action:none}
+.drag-handle:active{cursor:grabbing}
+.reorder-mode .drag-handle{display:block}
+.reorder-mode .del-p{display:none}
+.btn-reorder{font-family:var(--cond);font-weight:700;font-size:11px;letter-spacing:.08em;text-transform:uppercase;background:transparent;border:1px solid var(--border2);color:var(--muted2);padding:5px 10px;border-radius:5px;cursor:pointer;transition:all .15s;white-space:nowrap}.btn-reorder:hover{border-color:var(--amber);color:var(--amber)}
+.btn-reorder.active{background:var(--s3);color:#fff;border-color:var(--s3)}
 .p-text{flex:1;font-size:13.5px}
 .p-phase{font-family:var(--mono);font-size:9.5px;padding:1px 6px;border-radius:20px;border:1px solid var(--border2);color:var(--muted2);white-space:nowrap}
 .del-p{background:transparent;border:none;color:var(--muted);font-size:15px;cursor:pointer;padding:2px 5px;border-radius:3px;transition:color .12s;line-height:1}.del-p:hover{color:var(--red)}
@@ -1310,6 +1318,7 @@ EI to conduct LOD walk prior to start of operations"></textarea>
         <input type="text" id="new-obs-text" placeholder="New observation…">
         <select id="new-obs-phase"></select>
         <button class="btn-add-p" onclick="addPreset(&#39;obs&#39;)">+ Add</button>
+        <button class="btn-reorder" id="reorder-btn-obs" onclick="toggleReorderMode('obs')">⇅ Reorder</button>
       </div>
     </div>
   </div>
@@ -1323,6 +1332,7 @@ EI to conduct LOD walk prior to start of operations"></textarea>
         <input type="text" id="new-act-text" placeholder="New activity…">
         <select id="new-act-phase"></select>
         <button class="btn-add-p" onclick="addPreset(&#39;act&#39;)">+ Add</button>
+        <button class="btn-reorder" id="reorder-btn-act" onclick="toggleReorderMode('act')">⇅ Reorder</button>
       </div>
     </div>
   </div>
@@ -1336,6 +1346,7 @@ EI to conduct LOD walk prior to start of operations"></textarea>
         <input type="text" id="new-env-text" placeholder="New compliance observation…">
         <select id="new-env-phase"></select>
         <button class="btn-add-p" onclick="addPreset(&#39;env&#39;)">+ Add</button>
+        <button class="btn-reorder" id="reorder-btn-env" onclick="toggleReorderMode('env')">⇅ Reorder</button>
       </div>
     </div>
   </div>
@@ -1349,6 +1360,7 @@ EI to conduct LOD walk prior to start of operations"></textarea>
         <input type="text" id="new-comms-text" placeholder="New communication template…">
         <select id="new-comms-phase"></select>
         <button class="btn-add-p" onclick="addPreset(&#39;comms&#39;)">+ Add</button>
+        <button class="btn-reorder" id="reorder-btn-comms" onclick="toggleReorderMode('comms')">⇅ Reorder</button>
       </div>
     </div>
   </div>
@@ -1362,6 +1374,7 @@ EI to conduct LOD walk prior to start of operations"></textarea>
         <input type="text" id="new-look-text" placeholder="New look ahead item…">
         <select id="new-look-phase"></select>
         <button class="btn-add-p" onclick="addPreset(&#39;look&#39;)">+ Add</button>
+        <button class="btn-reorder" id="reorder-btn-look" onclick="toggleReorderMode('look')">⇅ Reorder</button>
       </div>
     </div>
   </div>
@@ -1811,11 +1824,15 @@ function renderPhaseList(){
 function renderPresetList(key){
   const ids={obs:'list-obs',act:'list-act',env:'list-env',comms:'list-comms',look:'list-look'};
   const ul=document.getElementById(ids[key]);ul.innerHTML='';
+  const isReordering=ul.classList.contains('reorder-mode');
   (presets[key]||[]).forEach((item,i)=>{
     const li=document.createElement('li');
-    li.innerHTML=`<span class="p-text">${item.text}</span><span class="p-phase">${item.phase}</span><button class="del-p" onclick="removePreset('${key}',${i})">✕</button>`;
+    li.dataset.idx=i;li.dataset.origIdx=i;li.dataset.key=key;
+    li.innerHTML=`<span class="drag-handle" title="Drag to reorder">≡</span><span class="p-text">${item.text}</span><span class="p-phase">${item.phase}</span><button class="del-p" onclick="removePreset('${key}',${i})">✕</button>`;
+    if(isReordering) li.classList.add('reorder-mode');
     ul.appendChild(li);
   });
+  if(isReordering) _initDrag(ul,key);
 }
 function populateSelects(){
   ['obs','act','env','comms','look'].forEach(k=>{
@@ -1843,9 +1860,89 @@ function removePhase(idx){
   if(phases[idx]===activePhaseLabel){alert('Cannot remove the currently active phase.');return}
   phases.splice(idx,1);ss('msf_phases',phases);renderPhaseList();populateSelects();
 }
-// ═══════════════════════════════════════════
-// PROJECT CONFIG (persists through resets)
-// ═══════════════════════════════════════════
+
+// ── Preset reorder mode ──
+function toggleReorderMode(key){
+  const ids={obs:'list-obs',act:'list-act',env:'list-env',comms:'list-comms',look:'list-look'};
+  const ul=document.getElementById(ids[key]);
+  const btn=document.getElementById('reorder-btn-'+key);
+  if(!ul||!btn)return;
+  const isActive=ul.classList.contains('reorder-mode');
+  if(isActive){
+    ul.classList.remove('reorder-mode');
+    btn.classList.remove('active');
+    btn.textContent='⇅ Reorder';
+    // Save new order based on current DOM order
+    const domItems=[...ul.querySelectorAll('li')];
+    const newOrder=domItems.map(li=>{
+      const origIdx=parseInt(li.dataset.origIdx!==undefined?li.dataset.origIdx:li.dataset.idx);
+      return presets[key][origIdx];
+    }).filter(Boolean);
+    presets[key]=newOrder;
+    ss('msf_presets',presets);
+    renderPresetList(key);
+    renderAllChips();
+  } else {
+    ul.classList.add('reorder-mode');
+    btn.classList.add('active');
+    btn.textContent='✓ Done';
+    // Add reorder-mode class to all li items and init drag
+    ul.querySelectorAll('li').forEach(li=>li.classList.add('reorder-mode'));
+    _initDrag(ul,key);
+  }
+}
+
+function _initDrag(ul,key){
+  let dragEl=null, dragIdx=null;
+  ul.querySelectorAll('.drag-handle').forEach(handle=>{
+    const li=handle.closest('li');
+    // Mouse events
+    handle.onmousedown=function(e){
+      dragEl=li; dragIdx=parseInt(li.dataset.idx);
+      li.classList.add('dragging');
+      e.preventDefault();
+    };
+    // Touch events
+    handle.ontouchstart=function(e){
+      dragEl=li; dragIdx=parseInt(li.dataset.idx);
+      li.classList.add('dragging');
+    };
+  });
+  ul.onmouseover=function(e){
+    const target=e.target.closest('li');
+    if(dragEl&&target&&target!==dragEl){
+      ul.querySelectorAll('li').forEach(l=>l.classList.remove('drag-over'));
+      target.classList.add('drag-over');
+    }
+  };
+  ul.ontouchmove=function(e){
+    e.preventDefault();
+    const touch=e.touches[0];
+    const target=document.elementFromPoint(touch.clientX,touch.clientY)?.closest('li');
+    if(dragEl&&target&&target!==dragEl&&ul.contains(target)){
+      ul.querySelectorAll('li').forEach(l=>l.classList.remove('drag-over'));
+      target.classList.add('drag-over');
+    }
+  };
+  const drop=function(){
+    if(!dragEl)return;
+    const overEl=ul.querySelector('.drag-over');
+    if(overEl&&overEl!==dragEl){
+      const items=[...ul.querySelectorAll('li')];
+      const fromIdx=items.indexOf(dragEl);
+      const toIdx=items.indexOf(overEl);
+      if(fromIdx<toIdx) ul.insertBefore(dragEl,overEl.nextSibling);
+      else ul.insertBefore(dragEl,overEl);
+      // Update data-idx values
+      [...ul.querySelectorAll('li')].forEach((li,i)=>li.dataset.idx=i);
+    }
+    dragEl.classList.remove('dragging');
+    ul.querySelectorAll('li').forEach(l=>l.classList.remove('drag-over'));
+    dragEl=null; dragIdx=null;
+  };
+  document.onmouseup=drop;
+  ul.ontouchend=drop;
+}
 const PROJECT_CONFIG_DEFAULTS = {
   projectName: 'Moraine Solar Energy Center',
   preparedBy:  'Tim Shortz',
