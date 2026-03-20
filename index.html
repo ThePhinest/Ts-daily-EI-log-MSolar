@@ -1435,7 +1435,7 @@ function showPage(name){
   if(name==='config'){ renderConfig(); tsLoadConfigFields(); renderNavConfig(); }
   if(name==='calendar'){ calRender(); }
   if(name==='timesheet'){ tsPushFromDailyLog(); tsRenderCurrentWeek(); tsCheckArchivePrompt(); }
-  if(name==='compliance'){ clRender(); clAutoDetect(); }
+  if(name==='compliance'){ clInit(); clAutoDetect(); }
   if(name==='photos'){ _phDaysShown=7; phRender(); }
 }
 
