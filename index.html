@@ -150,14 +150,14 @@ body.theme-light{
 
 /* PERSONAL CARD */
 .card-personal{background:var(--personal-bg);border:1px solid var(--personal-border);border-radius:var(--r);margin-bottom:16px;overflow:hidden}
-.card-personal-head{background:rgba(58,53,96,0.35);border-bottom:1px solid var(--personal-border);padding:10px 17px;display:flex;align-items:center;gap:10px}
+.card-personal-head{background:rgba(0,76,84,0.25);border-bottom:1px solid var(--personal-border);padding:10px 17px;display:flex;align-items:center;gap:10px}
 .personal-icon{font-size:13px}
 .personal-title{font-family:var(--cond);font-weight:700;font-size:13px;letter-spacing:.12em;text-transform:uppercase;color:var(--personal-accent2)}
-.personal-badge{margin-left:auto;font-family:var(--mono);font-size:9.5px;color:var(--personal-accent);background:rgba(136,120,204,0.12);border:1px solid rgba(136,120,204,0.3);padding:2px 9px;border-radius:20px;letter-spacing:.06em}
+.personal-badge{margin-left:auto;font-family:var(--mono);font-size:9.5px;color:var(--personal-accent);background:rgba(0,76,84,0.15);border:1px solid rgba(0,76,84,0.4);padding:2px 9px;border-radius:20px;letter-spacing:.06em}
 .card-personal .card-body{padding:17px}
 .card-personal input[type=text],.card-personal input[type=number],.card-personal input[type=time],.card-personal textarea{border-color:var(--personal-border)}
 .card-personal input:focus,.card-personal textarea:focus{border-color:var(--personal-accent)!important;outline:none}
-.miles-auto{font-family:var(--mono);font-size:13px;color:var(--personal-accent2);background:rgba(58,53,96,0.4);border:1px solid var(--personal-border);border-radius:5px;padding:8px 11px;text-align:center}
+.miles-auto{font-family:var(--mono);font-size:13px;color:var(--personal-accent2);background:rgba(0,76,84,0.2);border:1px solid var(--personal-border);border-radius:5px;padding:8px 11px;text-align:center}
 .personal-note{font-family:var(--mono);font-size:10px;color:var(--personal-accent);letter-spacing:.05em;margin-top:10px;display:block;text-align:center}
 
 /* GRID */
@@ -552,12 +552,11 @@ select{cursor:pointer}
     </div>
   </div>
 
-  <!-- PERSONAL RECORD — UNNUMBERED, NOT EXPORTED -->
-  <div class="card-personal">
-    <div class="card-personal-head">
-      <span class="personal-icon">🔒</span>
-      <span class="personal-title">Personal Daily Record</span>
-      <span class="personal-badge">NOT INCLUDED IN REPORTS</span>
+  <!-- DAILY TIMESHEET ENTRY -->
+  <div class="card">
+    <div class="card-head">
+      <span class="card-num">⏱</span>
+      <span class="card-title">Daily Timesheet Entry</span>
     </div>
     <div class="card-body">
       <div class="g g4" style="margin-bottom:12px">
@@ -578,7 +577,7 @@ select{cursor:pointer}
           <input type="number" id="p-odoEnd" placeholder="miles" oninput="calcMiles()">
         </div>
       </div>
-      <div class="g g2" style="margin-bottom:12px">
+      <div class="g g2">
         <div class="field">
           <label>Total Miles Driven</label>
           <div class="miles-auto" id="p-miles">— mi</div>
@@ -588,11 +587,6 @@ select{cursor:pointer}
           <div class="miles-auto" id="p-hours">— hrs</div>
         </div>
       </div>
-      <div class="field">
-        <label>Personal Notes</label>
-        <textarea class="short" id="p-notes" placeholder="Personal observations, reminders, follow-ups — this field is never exported to Claude or included in any report…"></textarea>
-      </div>
-      <span class="personal-note">⚠ This section is saved to your local HTML file only — it is never copied to clipboard or included in any report export.</span>
     </div>
   </div>
 
@@ -805,6 +799,21 @@ select{cursor:pointer}
 Equipment delivery — additional chainsaw crews expected
 EI to conduct LOD walk prior to start of operations"></textarea>
       </div>
+    </div>
+  </div>
+
+  <!-- PERSONAL NOTES — NOT EXPORTED -->
+  <div class="card-personal">
+    <div class="card-personal-head">
+      <span class="personal-icon">🔒</span>
+      <span class="personal-title">Personal Notes</span>
+      <span class="personal-badge">NOT INCLUDED IN REPORTS</span>
+    </div>
+    <div class="card-body">
+      <div class="field">
+        <textarea class="short" id="p-notes" placeholder="Personal observations, reminders, follow-ups — this field is never exported to Claude or included in any report…"></textarea>
+      </div>
+      <span class="personal-note">⚠ Never copied to clipboard or included in any report export.</span>
     </div>
   </div>
 
