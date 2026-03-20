@@ -3203,6 +3203,9 @@ async function calLoadCloud(){
 
 async function calRender(){
   await calLoadCloud();
+  // Always close day view and reset to grid/list on tab activation
+  document.getElementById('cal-day-view').style.display='none';
+  document.getElementById('cal-view-toggle').style.display='flex';
   // Reset month to current on fresh open
   const now=new Date();
   _calYear=now.getFullYear(); _calMonth=now.getMonth();
@@ -3519,22 +3522,22 @@ function calRenderList(){
 }
 
 function calOpenNewDay(date){
-  // Load the form with this date pre-filled and flag as backdated entry
+  const today=new Date().toISOString().split('T')[0];
   _confirmModal('No log exists for '+dlFmtDisplay(date)+'. Start a new log for this day?', function(){
-    // Set report date field and reset form content
     _resetFormCore();
     const el=document.getElementById('reportDate');
     if(el){ el.value=date; }
-    // Flag as edited (backdated entry)
-    dlSaveLocal(date, Object.assign(collectFormState(),{
+    // Only flag as edited if it's a genuine past date, not today
+    const isBackdated = date < today;
+    const record = Object.assign(collectFormState(),{
       _archivedDate: date,
       _archivedAt: Date.now(),
-      _edited: true,
-      _editLog:[{at:Date.now(), by:'EI', action:'Backdated log created'}]
-    }));
+      _edited: isBackdated,
+      _editLog: isBackdated ? [{at:Date.now(), by:'EI', action:'Backdated log created'}] : []
+    });
+    dlSaveLocal(date, record);
     showPage('log');
   });
-  // Adjust modal button label
   setTimeout(function(){
     const btn=document.getElementById('_mok');
     if(btn) btn.textContent='Start Log';
