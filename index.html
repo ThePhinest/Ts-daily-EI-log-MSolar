@@ -17,13 +17,13 @@
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
 :root {
-  /* C1 — Lifted Navy */
-  --bg:#141c28;--s1:#1a2535;--s2:#141c28;--s3:#004C54;
-  --border:#253548;--border2:#2d4060;
+  /* C2 — True Charcoal */
+  --bg:#1a1a1a;--s1:#252525;--s2:#1a1a1a;--s3:#004C54;
+  --border:#383838;--border2:#444444;
   --amber:#A5ACAF;--amber2:#C8CDD0;--amber-bg:rgba(165,172,175,0.1);
-  --text:#E0E4E8;--muted:#4a7080;--muted2:#6a9aaa;
+  --text:#d0d0d0;--muted:#5a8a8a;--muted2:#7aacac;
   --green:#27ae60;--red:#e74c3c;
-  --personal-border:#2d4060;--personal-bg:rgba(0,76,84,0.2);--personal-accent:#6a9aaa;--personal-accent2:#A5ACAF;
+  --personal-border:#383838;--personal-bg:rgba(0,76,84,0.2);--personal-accent:#5a8a8a;--personal-accent2:#d0d0d0;
   --mono:'IBM Plex Mono',monospace;--cond:'Barlow Condensed',sans-serif;--body:'Barlow',sans-serif;
   --r:7px;
 }
@@ -31,18 +31,18 @@
 body{background:var(--bg);color:var(--text);font-family:var(--body);font-size:14.5px;line-height:1.5;min-height:100vh;padding-bottom:80px}
 body.theme-light{
   --bg:#f5f7fa;--s1:#ffffff;--s2:#edf0f4;--s3:#004C54;
-  --border:#d0d8e4;--border2:#b0bec5;
+  --border:#d0d0d0;--border2:#b0b0b0;
   --amber:#004C54;--amber2:#003840;--amber-bg:rgba(0,76,84,0.08);
-  --text:#1a2535;--muted:#6a9aaa;--muted2:#4a7080;
+  --text:#1a1a1a;--muted:#5a8a8a;--muted2:#3a6a6a;
   --green:#1e8449;--red:#e74c3c;
-  --personal-border:#b0bec5;--personal-bg:rgba(0,76,84,0.06);--personal-accent:#4a7080;--personal-accent2:#004C54;
+  --personal-border:#b0b0b0;--personal-bg:rgba(0,76,84,0.06);--personal-accent:#3a6a6a;--personal-accent2:#004C54;
 }
 .bottom-nav{position:fixed;bottom:0;left:0;right:0;z-index:400;background:var(--s1);border-top:1px solid var(--border);display:flex;align-items:stretch;height:95px;padding-bottom:calc(env(safe-area-inset-bottom) + 25px)}
 .nav-item{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding-top:14px;gap:3px;cursor:pointer;border:none;background:transparent;padding-bottom:0;transition:all .15s;border-top:2px solid transparent;user-select:none;-webkit-user-select:none;}
 .nav-item.active{background:rgba(0,76,84,0.2);border-top-color:var(--s3);margin-bottom:-1px}
 .nav-item .nav-icon{font-size:18px;line-height:1}
 .nav-item .nav-label{font-family:var(--cond);font-weight:700;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);transition:color .15s}
-.nav-item+.nav-item{border-left:1px solid #2d4060}
+.nav-item+.nav-item{border-left:1px solid #444444}
 .nav-item.active .nav-label{color:var(--muted2)}
 .more-overlay{position:fixed;inset:0;z-index:450;background:rgba(0,0,0,0);pointer-events:none;transition:background .25s}
 .more-overlay.open{background:rgba(0,0,0,.55);pointer-events:all}
@@ -976,6 +976,17 @@ EI to conduct LOD walk prior to start of operations"></textarea>
     <div id="cal-empty" style="display:none;font-family:var(--mono);font-size:12px;color:var(--muted);text-align:center;padding:40px 0">
       No archived logs yet.<br>Start a new day to begin building your history.
     </div>
+  </div>
+
+  <!-- Legend -->
+  <div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:16px;padding:10px 12px;background:var(--s1);border:1px solid var(--border);border-radius:var(--r)">
+    <span style="font-family:var(--mono);font-size:9.5px;color:var(--muted);letter-spacing:.06em;text-transform:uppercase;width:100%;margin-bottom:2px">Legend</span>
+    <span style="font-family:var(--mono);font-size:11px;color:var(--muted2)"><span style="color:var(--green)">●</span> Log saved</span>
+    <span style="font-family:var(--mono);font-size:11px;color:var(--muted2)">⚠️ Edited after archive</span>
+    <span style="font-family:var(--mono);font-size:11px;color:var(--muted2)">❗ Compliance entry</span>
+    <span style="font-family:var(--mono);font-size:11px;color:var(--muted2)">📸 Photos</span>
+    <span style="font-family:var(--mono);font-size:11px;color:var(--muted2)">🕒 Hours logged</span>
+    <span style="font-family:var(--mono);font-size:11px;color:var(--muted2)">🚚 Miles logged</span>
   </div>
 
 </div></div>
