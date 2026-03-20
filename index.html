@@ -514,6 +514,11 @@ select{cursor:pointer}
     <div><div class="more-row-label">Print</div><div class="more-row-sub">Print current log view</div></div>
   </div>
   <div class="more-divider"></div>
+  <div class="more-row" onclick="downloadLog();closeMoreMenu()">
+    <span class="more-row-icon">⬇</span>
+    <div><div class="more-row-label">Download Log</div><div class="more-row-sub">Save filled log as archive file</div></div>
+  </div>
+  <div class="more-divider"></div>
   <div class="more-row" onclick="closeMoreMenu();resetForm()" style="color:var(--red)">
     <span class="more-row-icon">🗑</span>
     <div><div class="more-row-label" style="color:var(--red)">Reset Log</div><div class="more-row-sub">Clear today's log only</div></div>
@@ -812,11 +817,6 @@ EI to conduct LOD walk prior to start of operations"></textarea>
         <div class="copy-status" id="copyStatus">✓ Copied — paste into the Moraine Solar Claude project.</div>
         <div class="export-hint">Exports report-relevant data only. Personal section never included.</div>
       </div>
-      <div>
-        <button class="btn btn-download" onclick="downloadLog()">⬇ Download Filled Log —<br>Save Daily Archive</button>
-        <div class="dl-status" id="dlStatus">✓ Saved — check your Downloads folder.</div>
-        <div class="export-hint" style="color:var(--personal-accent);opacity:.7">Saves complete log including personal records.<br>Re-open anytime — all entries preserved.</div>
-      </div>
     </div>
   </div>
 
@@ -933,6 +933,23 @@ EI to conduct LOD walk prior to start of operations"></textarea>
       <div id="cal-day-title" style="font-family:var(--cond);font-weight:800;font-size:16px;letter-spacing:.08em;text-transform:uppercase;color:var(--amber)"></div>
     </div>
     <div id="cal-day-content"></div>
+    <!-- Persistent mini calendar always visible below day detail -->
+    <div style="margin-top:18px;background:var(--s1);border:1px solid var(--border);border-radius:var(--r);padding:14px">
+      <div class="cal-month-nav">
+        <button class="cal-nav-btn" onclick="calDayViewMonthNav(-1)">&#8249;</button>
+        <div class="cal-month-label" id="cal-dv-month-label"></div>
+        <button class="cal-nav-btn" onclick="calDayViewMonthNav(1)">&#8250;</button>
+      </div>
+      <div class="cal-grid">
+        <div class="cal-grid-head">
+          <div class="cal-grid-dow">Su</div><div class="cal-grid-dow">Mo</div>
+          <div class="cal-grid-dow">Tu</div><div class="cal-grid-dow">We</div>
+          <div class="cal-grid-dow">Th</div><div class="cal-grid-dow">Fr</div>
+          <div class="cal-grid-dow">Sa</div>
+        </div>
+        <div class="cal-grid-body" id="cal-dv-grid-body"></div>
+      </div>
+    </div>
   </div>
 
   <!-- Grid view -->
@@ -1213,17 +1230,6 @@ EI to conduct LOD walk prior to start of operations"></textarea>
   </div>
 
   <div class="config-section">
-		<div class="config-head"><span class="config-title">Active Phase</span></div>
-    <div class="config-body">
-      <p class="config-hint">Controls which preset chips appear in the daily log. Keep in sync with your current project phase.</p>
-      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-        <input type="text" id="activePhaseInput" style="max-width:320px;background:var(--bg);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--body);font-size:14px;padding:8px 11px" placeholder="Active phase label">
-        <button class="btn btn-amber" style="font-size:11px;padding:7px 14px" onclick="savePhaseLabel()">Save &amp; Apply</button>
-      </div>
-    </div>
-  </div>
-
-  <div class="config-section">
     <div class="config-head"><span class="config-title">Field Observation Presets</span><span class="config-sub">→ Inspection Summary</span></div>
     <div class="config-body">
       <p class="config-hint">Quick-insert observation bullets for the Inspection Summary field.</p>
@@ -1296,6 +1302,17 @@ EI to conduct LOD walk prior to start of operations"></textarea>
       <div class="add-preset-row">
         <input type="text" id="new-phase-text" placeholder="e.g. Phase 2 — Grading &amp; Earthwork">
         <button class="btn-add-p" onclick="addPhase()">+ Add Phase</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="config-section">
+    <div class="config-head"><span class="config-title">Active Phase</span></div>
+    <div class="config-body">
+      <p class="config-hint">Controls which preset chips appear in the daily log. Keep in sync with your current project phase.</p>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <input type="text" id="activePhaseInput" style="max-width:320px;background:var(--bg);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--body);font-size:14px;padding:8px 11px" placeholder="Active phase label">
+        <button class="btn btn-amber" style="font-size:11px;padding:7px 14px" onclick="savePhaseLabel()">Save &amp; Apply</button>
       </div>
     </div>
   </div>
@@ -3092,8 +3109,9 @@ async function dlConfirmLoad(){
   const record = dlGet(_ldPending);
   if(!record){ _ldPending=null; return; }
   // Track which date we loaded — edited flag set only if user actually changes something
+  // Never flag today as edited just because it was auto-archived when loading another day
   const _today = new Date().toISOString().split('T')[0];
-_editingArchivedDate = (record._archivedAt && _ldPending !== _today) ? _ldPending : null;
+  _editingArchivedDate = (record._archivedAt && _ldPending !== _today) ? _ldPending : null;
   // Restore into form
   document.getElementById('crewContainer').innerHTML='';
   crewIds=[]; crewSeq=0;
@@ -3314,6 +3332,7 @@ function calOpenDay(date){
     <button class="btn btn-amber" style="width:100%;margin-top:8px;padding:13px;font-size:13px" onclick="dlLoadFromCalendar('${date}')">
       📂 Load This Log into Form
     </button>`;
+  calRenderDayViewGrid();
 }
 // ── Calendar view state ──
 let _calView = 'grid'; // 'grid' or 'list'
@@ -3335,6 +3354,52 @@ function calMonthNav(dir){
   if(_calMonth < 0){ _calMonth=11; _calYear--; }
   if(_calMonth > 11){ _calMonth=0; _calYear++; }
   calRenderGrid();
+}
+
+function calDayViewMonthNav(dir){
+  _calMonth += dir;
+  if(_calMonth < 0){ _calMonth=11; _calYear--; }
+  if(_calMonth > 11){ _calMonth=0; _calYear++; }
+  calRenderDayViewGrid();
+}
+
+function calRenderDayViewGrid(){
+  const months=['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const label=document.getElementById('cal-dv-month-label');
+  if(label) label.textContent=months[_calMonth]+' '+_calYear;
+  const body=document.getElementById('cal-dv-grid-body');
+  if(!body) return;
+  const all=dlGetAll();
+  const today=new Date().toISOString().split('T')[0];
+  const firstDay=new Date(_calYear,_calMonth,1).getDay();
+  const daysInMonth=new Date(_calYear,_calMonth+1,0).getDate();
+  let cells='';
+  for(let i=0;i<firstDay;i++){
+    cells+=`<div class="cal-cell empty"><div class="cal-cell-num"></div></div>`;
+  }
+  for(let d=1;d<=daysInMonth;d++){
+    const mm=String(_calMonth+1).padStart(2,'0');
+    const dd=String(d).padStart(2,'0');
+    const dateStr=`${_calYear}-${mm}-${dd}`;
+    const rec=all[dateStr]||null;
+    const isToday=dateStr===today;
+    if(rec){
+      cells+=`<div class="cal-cell has-log${isToday?' today':''}" onclick="calOpenDay('${dateStr}')">
+        <div class="cal-cell-num">${d}</div>
+        <div class="cal-cell-dots">${calGetDotIndicators(rec)}</div>
+      </div>`;
+    } else {
+      const isPast=dateStr<=today;
+      if(isPast){
+        cells+=`<div class="cal-cell no-log${isToday?' today':''}" style="cursor:pointer;opacity:0.5" onclick="calOpenNewDay('${dateStr}')" title="Start log for this day">
+          <div class="cal-cell-num">${d}</div>
+        </div>`;
+      } else {
+        cells+=`<div class="cal-cell no-log"><div class="cal-cell-num">${d}</div></div>`;
+      }
+    }
+  }
+  body.innerHTML=cells;
 }
 
 function calGetDotIndicators(record){
