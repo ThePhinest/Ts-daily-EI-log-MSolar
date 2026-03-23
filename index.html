@@ -4598,7 +4598,7 @@ async function rptCallClaude(apiKey,logData,compEntries){
     :'No compliance issues';
   const timeIn=logData['p-timeIn']||'6:30 AM';
   const userPrompt=`REPORT DATE: ${logData.reportDate}\nACTIVE PHASE: ${logData.activePhase}\nCONTRACTOR: ${logData.contractor}\nTIME IN: ${timeIn}\n\nCREW BLOCKS:\n${crewSummary}\n\nINSPECTION SUMMARY:\n${logData.inspectionSummary||''}\n\nAGENCY INSPECTION:\n${logData.agencyInspection||''}\n\nCOMPLIANCE ISSUES:\n${compSummary}\n\nLANDOWNER/PUBLIC:\n${logData.landownerContact||''}\n\nT&E/RTE:\n${logData.rteObservation||''}\n\nGENERAL COMMS:\n${logData.generalComms||''}\n\n24-HOUR LOOK AHEAD:\n${logData.lookahead||''}\n\nReturn ONLY valid JSON — no markdown, no preamble:\n{"contractorActivities":"...","fieldObservationsOpening":"...","fieldObservationsBullets":["..."],"fieldObservationsClosing":"...","agencyInspection":"...","complianceIssues":[{"level":"...","description":"...","corrective":"...","status":"...","dateResolved":""}],"landownerContact":"...","rteObservation":"...","generalComms":"...","lookaheadBullets":["..."]}`;
-  const systemPrompt=`You are an Environmental Inspector (EI) report writer for the Moraine Solar Energy Center, a 94 MW AC PV solar facility in the Town of Burns, Allegany County, NY. Polish raw field notes into professional Daily Environmental Compliance Report language.\n\nSTYLE RULES:\n- Use "conducting" not "performing"\n- Use definitive language — "will" not "is anticipated to"\n- Refer to the Environmental Inspector as "EI" — never first person\n- Contractor language should be collaborative in tone\n- Keep language tight and direct — no filler\n- Do not mention residential proximity unless explicitly flagged\n\nFIELD OBSERVATIONS:\n- Opening must use the time from TIME IN field and detect work type from crew activities\n- Include 3-5 specific observation bullets based on crew block data\n- Standard Phase 1 Tree Felling bullets: felling method/equipment, directional felling practices, slash/material management, access/staging\n- Closing must reference LOD compliance and buffer integrity\n\nCOMPLIANCE:\n- Polish description and corrective action text\n- Keep Level and Status exactly as provided\n- If no issues: [{"level":"No issues identified","description":"All areas inspected — no compliance concerns observed.","corrective":"N/A","status":"Compliant","dateResolved":""}]\n\nReturn ONLY valid JSON — no code fences, no explanation.`;
+  const systemPrompt=`You are an Environmental Inspector (EI) report writer for the Moraine Solar Energy Center, a 94 MW AC PV solar facility in the Town of Burns, Allegany County, NY. Polish raw field notes into professional Daily Environmental Compliance Report language.\n\nSTYLE RULES:\n- Use "conducting" not "performing"\n- Use definitive language — "will" not "is anticipated to"\n- Refer to the Environmental Inspector as "EI" — never first person\n- Contractor language should be collaborative in tone\n- Keep language tight and direct — no filler\n- Do not mention residential proximity unless explicitly flagged\n\nFIELD OBSERVATIONS:\n- Opening must use the time from TIME IN field and detect work type from crew activities\n- Opening MUST end with the exact phrase: "The following activities were observed:"\n- Include 3-5 specific observation bullets based on crew block data\n- Standard Phase 1 Tree Felling bullets: felling method/equipment, directional felling practices, slash/material management, access/staging\n- Closing must reference LOD compliance and buffer integrity\n\nGENERAL COMMUNICATIONS:\n- Frame as a documented field discussion with the contractor — professional record of what was communicated on site\n- Phrasing should reflect: "EI discussed [topic] with [contractor/foreman]..." or "EI communicated to contractor..." \n- Collaborative tone — not directive or accusatory\n- If blank, return "No general communications to report."\n\nCOMPLIANCE:\n- Polish description and corrective action text\n- Keep Level and Status exactly as provided\n- If no issues: [{"level":"No issues identified","description":"All areas inspected — no compliance concerns observed.","corrective":"N/A","status":"Compliant","dateResolved":""}]\n\nReturn ONLY valid JSON — no code fences, no explanation.`;
   const resp=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:4000,system:systemPrompt,messages:[{role:'user',content:userPrompt}]})});
   if(!resp.ok){const err=await resp.text();throw new Error('Claude API error '+resp.status+': '+err);}
   const data=await resp.json();
@@ -4626,7 +4626,7 @@ async function rptBuildDocx(logData,polished,photos){
   // Helpers
   const spacer=(pts=80)=>new Paragraph({spacing:{before:0,after:pts}});
   const h1=(text)=>new Paragraph({children:[new TextRun({text,bold:true,color:WHITE,font:'Arial',size:24})],shading:{fill:BLUE,type:ShadingType.CLEAR},spacing:{before:200,after:100},indent:{left:120}});
-  const h2=(text)=>new Paragraph({children:[new TextRun({text,bold:true,color:MID_BLUE,font:'Arial',size:22,underline:{}})],spacing:{before:160,after:60}});
+  const h2=(text)=>new Paragraph({children:[new TextRun({text,bold:true,color:MID_BLUE,font:'Arial',size:22})],border:{bottom:{style:BorderStyle.SINGLE,size:6,color:MID_BLUE,space:1}},spacing:{before:160,after:60}});
   const body=(text)=>new Paragraph({children:[new TextRun({text,font:'Arial',size:20})],spacing:{before:40,after:40}});
   const bullet=(text)=>new Paragraph({children:[new TextRun({text:'\u2022  '+text,font:'Arial',size:20})],indent:{left:360},spacing:{before:20,after:20}});
   const infoRow=(label,value)=>new TableRow({children:[
@@ -4711,7 +4711,12 @@ async function rptBuildDocx(logData,polished,photos){
   const sec4=[h1('4.  General Communication to Contractors'),spacer(60),body(polished.generalComms||'No general communications to report.')];
   // Section 5: Look Ahead
   const laItems=polished.lookaheadBullets||(logData.lookahead?logData.lookahead.split('\n').filter(l=>l.trim()):[]);
-  const sec5=[h1('5.  24-Hour Look Ahead'),spacer(60),...(laItems.length>0?laItems.map(b=>bullet(b)):[body(logData.lookahead||'No look ahead items recorded.')])];
+  const upcomingWx=(logData.weather&&logData.weather.upcomingForecast)?logData.weather.upcomingForecast.trim():'';
+  const sec5=[
+    h1('5.  24-Hour Look Ahead'),spacer(60),
+    ...(upcomingWx?[body(`Expected Weather: ${upcomingWx}`),spacer(40)]:[]),
+    ...(laItems.length>0?laItems.map(b=>bullet(b)):[body(logData.lookahead||'No look ahead items recorded.')])
+  ];
   // Section 6: Photos
   const dayPhotos=photos.filter(p=>p.date===logData.reportDate).sort((a,b)=>a.uploadedAt-b.uploadedAt);
   const photoRows=[];
@@ -4741,7 +4746,7 @@ async function rptBuildDocx(logData,polished,photos){
   // Certification
   const certBlock=[
     spacer(120),
-    new Paragraph({children:[new TextRun({text:'Report Certification',bold:true,font:'Arial',size:22})],spacing:{before:0,after:60}}),
+    new Paragraph({children:[new TextRun({text:'Report Certification',bold:true,font:'Arial',size:22,color:MID_BLUE})],border:{bottom:{style:BorderStyle.SINGLE,size:6,color:MID_BLUE,space:1}},spacing:{before:0,after:60}}),
     body('I certify that the information contained in this Daily Environmental Compliance Report is accurate and complete to the best of my knowledge, and that all observations were conducted in accordance with the applicable Environmental Management and Construction Plan (EM\u0026CP) and all other relevant permit conditions and regulatory requirements.'),
     spacer(80),
     new Table({rows:[
