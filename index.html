@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
 
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, interactive-widget=resizes-visual">
 <meta name="theme-color" content="#004C54">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -251,7 +251,7 @@ body.theme-light .preset-chip:hover{background:rgba(0,76,84,0.18);border-color:v
 /* CONFIG PAGE */
 .config-section{background:var(--s1);border:1px solid var(--border);border-radius:var(--r);margin-bottom:16px;overflow:hidden}
 .config-head{background:var(--s2);border-bottom:1px solid var(--border);padding:10px 17px;display:flex;align-items:center;gap:10px;cursor:pointer;user-select:none;-webkit-user-select:none}
-@media(hover:hover){.config-head:hover{background:var(--bg)}}
+.config-head:hover{background:var(--bg)}
 .config-section.collapsed .config-body{display:none}
 .config-section.collapsed .config-head{border-bottom:none}
 .config-title{font-family:var(--cond);font-weight:700;font-size:15px;letter-spacing:.1em;text-transform:uppercase;color:var(--amber2)}
@@ -651,12 +651,12 @@ body.theme-light .preset-chip:hover{background:rgba(0,76,84,0.18);border-color:v
       </div>
       <div class="g g2">
         <div class="field">
-          <label>Total Miles Driven</label>
-          <div class="miles-auto" id="p-miles">— mi</div>
-        </div>
-        <div class="field">
           <label>Total Hours on Site</label>
           <div class="miles-auto" id="p-hours">— hrs</div>
+        </div>
+        <div class="field">
+          <label>Total Miles Driven</label>
+          <div class="miles-auto" id="p-miles">— mi</div>
         </div>
       </div>
     </div>
@@ -1439,7 +1439,7 @@ EI to conduct LOD walk prior to start of operations"></textarea>
     <div class="config-body">
       <p class="config-hint">Controls which preset chips appear in the daily log. Keep in sync with your current project phase.</p>
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-        <select id="activePhaseSelect" style="flex:1;max-width:320px;background:var(--bg);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--body);font-size:17px;padding:8px 11px;-webkit-appearance:none"></select>
+        <input type="text" id="activePhaseInput" style="max-width:320px;background:var(--bg);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--body);font-size:17px;padding:8px 11px" placeholder="Active phase label">
         <button class="btn btn-amber" style="font-size:11px;padding:7px 14px" onclick="savePhaseLabel()">Save &amp; Apply</button>
       </div>
     </div>
@@ -1852,11 +1852,7 @@ function saveNavConfig(){
 // CONFIG
 // ═══════════════════════════════════════════
 function renderConfig(){
-  // Populate active phase select
-  const pSel=document.getElementById('activePhaseSelect');
-  if(pSel){
-    pSel.innerHTML=phases.map(p=>`<option value="${p}"${p===activePhaseLabel?' selected':''}>${p}</option>`).join('');
-  }
+  document.getElementById('activePhaseInput').value=activePhaseLabel;
   renderPhaseList();populateSelects();
   ['obs','act','env','comms','look'].forEach(k=>renderPresetList(k));
 }
@@ -1867,11 +1863,6 @@ function renderPhaseList(){
     li.innerHTML=`<span class="p-text">${ph}</span>${ph===activePhaseLabel?'<span class="phase-badge">active</span>':''}<button class="del-p" onclick="removePhase(${i})">✕</button>`;
     ul.appendChild(li);
   });
-  // Keep active phase select in sync
-  const pSel=document.getElementById('activePhaseSelect');
-  if(pSel){
-    pSel.innerHTML=phases.map(p=>`<option value="${p}"${p===activePhaseLabel?' selected':''}>${p}</option>`).join('');
-  }
 }
 function renderPresetList(key){
   const ids={obs:'list-obs',act:'list-act',env:'list-env',comms:'list-comms',look:'list-look'};
@@ -2073,18 +2064,10 @@ function saveProjectConfig() {
 }
 
 function savePhaseLabel(){
-  const sel=document.getElementById('activePhaseSelect');
-  const val=(sel?sel.value:'')||activePhaseLabel;
-  if(!val) return;
-  activePhaseLabel=val;
-  ss('msf_activephase',activePhaseLabel);
+  const val=document.getElementById('activePhaseInput').value.trim();if(!val)return;
+  activePhaseLabel=val;ss('msf_activephase',activePhaseLabel);
   document.getElementById('activePhase').value=val;
-  // Keep cfg-activePhase in sync so Project & Report Info settings reflects it
-  const cfgAP=document.getElementById('cfg-activePhase');
-  if(cfgAP) cfgAP.value=val;
   renderPhaseList();renderAllChips();
-  // Push to cloud so other devices pick it up
-  if(typeof cloudSave==='function') cloudSave();
 }
 
 // ═══════════════════════════════════════════
@@ -2118,11 +2101,11 @@ function collectFormState(){
     });
     state.crew.push(block);
   });
-  // Phase state — needed for cross-device sync
-  state.activePhaseLabel=activePhaseLabel;
-  state.phases=phases;
   return state;
 }
+
+// ═══════════════════════════════════════════
+// RESTORE FORM STATE (on re-open)
 // ═══════════════════════════════════════════
 function restoreFormState(state){
   if(!state)return;
@@ -2157,18 +2140,6 @@ function restoreFormState(state){
   });
   updateCrewBadge();
   calcMiles();calcHours();
-  // Restore phase state from cloud if present
-  if(state.activePhaseLabel){
-    activePhaseLabel=state.activePhaseLabel;
-    ss('msf_activephase',activePhaseLabel);
-    const ap=document.getElementById('activePhase');
-    if(ap) ap.value=activePhaseLabel;
-  }
-  if(state.phases&&Array.isArray(state.phases)&&state.phases.length>0){
-    phases=state.phases;
-    ss('msf_phases',phases);
-  }
-  renderAllChips();
 }
 
 function buildCrewHTML(id, num){
@@ -2396,11 +2367,6 @@ async function tsLoadFromFirestore(){
       if(changed) localStorage.setItem('msf_ts_entries',JSON.stringify(local));
     }
   }catch(e){console.warn('Phinest EI: tsLoadFromFirestore failed —',e.message);}
-  // Re-render timesheet if it's currently visible so data appears without page reload
-  const tsPage=document.getElementById('page-timesheet');
-  if(tsPage&&tsPage.classList.contains('active')){
-    tsRenderCurrentWeek();tsRenderHistory();tsRenderCumulative();
-  }
 }
 function tsCalcMileage(miles){return(miles*tsLoadConfig().mileageRate).toFixed(2);}
 
@@ -2418,7 +2384,7 @@ function tsPushFromDailyLog(){
   if(!existing._manualMiles){
     const s=parseFloat(document.getElementById('p-odoStart')?.value)||0;
     const e=parseFloat(document.getElementById('p-odoEnd')?.value)||0;
-    if(e>s)update.miles=Math.round(e-s);
+    if(s&&e&&e>s)update.miles=Math.round(e-s);
   }
   if(!existing._manualActivity){
     const sum=document.getElementById('inspSummary')?.value?.trim()||'';
@@ -4296,14 +4262,28 @@ if (typeof firebase !== 'undefined') {
   bar.appendChild(el);
 })();
   
-// ── Tap outside any input/textarea/select to dismiss keyboard ──
-document.addEventListener('touchend',function(e){
+// ── iPad/iOS keyboard nav fix — relock bottom nav when keyboard resizes viewport ──
+if(window.visualViewport){
+  window.visualViewport.addEventListener('resize',function(){
+    const nav=document.querySelector('.bottom-nav');
+    if(!nav) return;
+    const offset=window.innerHeight-window.visualViewport.height-window.visualViewport.offsetTop;
+    nav.style.transform=offset>0?`translateY(-${offset}px) translateZ(0)`:'translateZ(0)';
+  });
+  window.visualViewport.addEventListener('scroll',function(){
+    const nav=document.querySelector('.bottom-nav');
+    if(!nav) return;
+    const offset=window.innerHeight-window.visualViewport.height-window.visualViewport.offsetTop;
+    nav.style.transform=offset>0?`translateY(-${offset}px) translateZ(0)`:'translateZ(0)';
+  });
+}
+// ── iPad landscape + hardware keyboard: scroll focused input into view ──
+document.addEventListener('focusin',function(e){
   const tag=e.target.tagName;
-  if(tag!=='INPUT'&&tag!=='TEXTAREA'&&tag!=='SELECT'&&!e.target.isContentEditable){
-    const active=document.activeElement;
-    if(active&&(active.tagName==='INPUT'||active.tagName==='TEXTAREA'||active.tagName==='SELECT')){
-      active.blur();
-    }
+  if(tag==='INPUT'||tag==='TEXTAREA'||tag==='SELECT'){
+    setTimeout(function(){
+      e.target.scrollIntoView({block:'center',behavior:'smooth'});
+    },300);
   }
 },{passive:true});
 
