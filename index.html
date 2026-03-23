@@ -37,7 +37,7 @@ body.theme-light{
   --green:#1e8449;--red:#e74c3c;
   --personal-border:#a8b8c2;--personal-bg:rgba(0,76,84,0.06);--personal-accent:#3a6a6a;--personal-accent2:#003840;
 }
-.bottom-nav{position:fixed;bottom:0;left:0;right:0;z-index:400;background:var(--s1);border-top:1px solid var(--border);display:flex;align-items:stretch;height:95px;padding-bottom:calc(env(safe-area-inset-bottom) + 25px)}
+.bottom-nav{position:fixed;bottom:0;left:0;right:0;z-index:200;background:var(--s1);border-top:1px solid var(--border);display:flex;align-items:stretch;height:95px;padding-bottom:calc(env(safe-area-inset-bottom) + 25px);transform:translateZ(0);-webkit-transform:translateZ(0)}
 .nav-item{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding-top:14px;gap:3px;cursor:pointer;border:none;background:transparent;padding-bottom:0;transition:all .15s;border-top:2px solid transparent;user-select:none;-webkit-user-select:none;}
 .nav-item.active{background:rgba(0,76,84,0.2);border-top-color:var(--s3);margin-bottom:-1px}
 .nav-item .nav-icon{font-size:22px;line-height:1}
@@ -81,7 +81,7 @@ body.theme-light{
 .cal-cell.today .cal-cell-num{background:var(--s3);color:#fff;border-radius:50%;width:22px;height:22px;display:flex;align-items:center;justify-content:center}
 .cal-cell.no-log{background:transparent;border:1px solid transparent}
 .cal-cell-num{font-family:var(--mono);font-size:13px;color:var(--text);font-weight:600;line-height:1;padding:2px}
-.cal-cell.empty .cal-cell-num,.cal-cell.no-log .cal-cell-num{color:var(--border2)}
+.cal-cell.empty .cal-cell-num,.cal-cell.no-log:not(.today) .cal-cell-num{color:var(--border2)}
 .cal-cell-dots{display:flex;flex-wrap:wrap;gap:2px;justify-content:center;max-width:44px}
 .cal-dot{font-size:9px;line-height:1}
 
@@ -134,7 +134,7 @@ body.theme-light{
 /* APP BAR */
 .app-bar{position:sticky;top:0;z-index:300;background:var(--s1);border-bottom:2px solid var(--amber);padding:env(safe-area-inset-top) 20px 0;min-height:52px;display:flex;align-items:center;gap:12px}
 .app-title{font-family:var(--cond);font-weight:800;font-size:21px;letter-spacing:.09em;text-transform:uppercase;color:var(--amber)}
-.app-sub{font-family:var(--mono);font-size:12px;color:var(--muted);letter-spacing:.04em}
+.app-sub{font-family:var(--mono);font-size:12px;color:var(--muted);letter-spacing:.04em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
 .bar-spacer{flex:1}
 .tab-btn{display:none}
 .icon-btn{background:transparent;border:1px solid var(--border2);color:var(--muted2);font-size:17px;padding:5px 10px;border-radius:5px;cursor:pointer;transition:all .15s}
@@ -147,7 +147,7 @@ body.theme-light{
 /* CARD */
 .card{background:var(--s1);border:1px solid var(--border);border-radius:var(--r);margin-bottom:16px;overflow:hidden}
 .card-head{background:var(--s2);border-bottom:1px solid var(--border);padding:10px 17px;display:flex;align-items:center;gap:10px;cursor:pointer;user-select:none;-webkit-user-select:none}
-.card-head:hover{background:var(--bg)}
+@media(hover:hover){.card-head:hover{background:var(--bg)}}
 .card-num{font-family:var(--mono);font-size:12px;color:var(--muted);padding:2px 7px;border:1px solid var(--border2);border-radius:4px}
 .card-title{font-family:var(--cond);font-weight:700;font-size:15px;letter-spacing:.12em;text-transform:uppercase;color:var(--amber2)}
 .card-badge{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--muted)}
@@ -181,6 +181,7 @@ body.theme-light{
 label{font-family:var(--mono);font-size:13px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted2)}
 .card-personal label{color:var(--personal-accent)}
 input[type=text],input[type=date],input[type=number],input[type=time],select,textarea{background:var(--bg);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--body);font-size:17px;padding:8px 11px;width:100%;transition:border-color .15s;-webkit-appearance:none}
+input[type=time]{min-height:44px;box-sizing:border-box}
 input:focus,select:focus,textarea:focus{outline:none;border-color:var(--amber)}
 input[readonly]{color:var(--muted2);cursor:default}
 textarea{resize:vertical;min-height:88px;line-height:1.6}
@@ -610,7 +611,12 @@ body.theme-light .preset-chip:hover{background:rgba(0,76,84,0.18);border-color:v
         <div class="field"><label>Organization</label><input type="text" id="org" value="London Environmental LLC" readonly></div>
         <div class="field span2"><label>Active Phase</label><input type="text" id="activePhase" value="Phase 1 — Tree Felling" readonly></div>
         <div class="field span2"><label>Town / County</label><input type="text" id="location" value="Town of Burns, Allegany County, NY" readonly=""></div>
-        <div class="field"><label>Active Contractor</label><input type="text" id="contractor" value="Supreme Industries"></div>
+        <div class="field"><label>Active Contractor</label>
+          <div style="display:flex;gap:6px;align-items:center">
+            <input type="text" id="contractor" value="Supreme Industries" placeholder="— none on site —" style="flex:1">
+            <button class="btn btn-outline" style="font-size:11px;padding:6px 10px;white-space:nowrap" onclick="document.getElementById('contractor').value='';cloudSave&&cloudSave()" title="Clear contractor">✕ Clear</button>
+          </div>
+        </div>
         
         <div class="field"><label>Reviewed By</label><input type="text" id="reviewedBy" value="Robert Forest Rung" readonly=""></div>
       </div>
@@ -1292,7 +1298,7 @@ EI to conduct LOD walk prior to start of operations"></textarea>
   <div class="config-section" id="cfg-proj">
     <div class="config-head" onclick="toggleSection('cfg-proj')"><span class="config-title">Project &amp; Report Info</span><span class="card-chevron">▾</span></div>
     <div class="config-body">
-      <p class="config-hint">These values populate Section 01 on the daily log and persist through resets. Active Contractor can also be edited directly on the main page.</p>
+      <p class="config-hint">These values populate Section 01 on the daily log and persist through resets. Active Contractor sets the default — you can clear or change it per day directly on the log (e.g. for remote days with no crew on site).</p>
       <div class="g g2" style="margin-bottom:10px">
         <div class="field"><label>Project Name</label><input type="text" id="cfg-projectName" placeholder="Moraine Solar Energy Center"></div>
         <div class="field"><label>Prepared By</label><input type="text" id="cfg-preparedBy" placeholder="Tim Shortz"></div>
@@ -1542,7 +1548,7 @@ function showPage(name){
 function calcMiles(){
   const s=parseFloat(document.getElementById('p-odoStart').value)||0;
   const e=parseFloat(document.getElementById('p-odoEnd').value)||0;
-  document.getElementById('p-miles').textContent = (s&&e&&e>s) ? `${(e-s).toFixed(1)} mi` : '— mi';
+  document.getElementById('p-miles').textContent = (e > s) ? `${(e-s).toFixed(1)} mi` : '— mi';
 }
 
 function calcHours(){
@@ -2021,7 +2027,9 @@ function applyProjectConfig() {
   document.getElementById('preparedBy').value   = cfg.preparedBy;
   document.getElementById('org').value          = cfg.org;
   document.getElementById('activePhase').value  = cfg.activePhase;
-  document.getElementById('contractor').value   = cfg.contractor;
+  // Contractor: only apply default if field is currently empty (per-day override preserved)
+  const contractorEl = document.getElementById('contractor');
+  if(contractorEl && contractorEl.value.trim()==='') contractorEl.value = cfg.contractor;
   document.getElementById('location').value     = cfg.location;
   document.getElementById('reviewedBy').value   = cfg.reviewedBy;
   // Update app bar subtitle dynamically from project name
@@ -2276,7 +2284,7 @@ function _resetFormCore(){
   document.getElementById('crewContainer').innerHTML='';crewIds=[];crewSeq=0;updateCrewBadge();
   document.getElementById('p-miles').textContent='— mi';
   document.getElementById('p-hours').textContent='— hrs';
-  document.getElementById('reportDate').value=new Date().toISOString().split('T')[0];
+  document.getElementById('reportDate').value=localToday();
   applyProjectConfig();
   try{ localStorage.removeItem('msf_autosave'); }catch{}
 }
@@ -2286,7 +2294,6 @@ function _resetFormCore(){
 // ═══════════════════════════════════════════
 const TS_DEFAULTS={weekStartDay:0,perDiem:178,mileageRate:0.725,supervisorName:'',hourlyRate:0,payType:'hourly',otType:'daily'};
 function tsLoadConfig(){try{const s=localStorage.getItem('msf_ts_config');return s?Object.assign({},TS_DEFAULTS,JSON.parse(s)):Object.assign({},TS_DEFAULTS);}catch{return Object.assign({},TS_DEFAULTS);}}
-function tsSaveConfig(c){localStorage.setItem('msf_ts_config',JSON.stringify(c));}
 function tsFormatDate(d){return d.toISOString().split('T')[0];}
 function tsParseDate(s){const[y,m,dd]=s.split('-').map(Number);return new Date(y,m-1,dd);}
 function tsGetWeekBounds(date){const cfg=tsLoadConfig();const d=new Date(date);d.setHours(0,0,0,0);const diff=(d.getDay()-cfg.weekStartDay+7)%7;const start=new Date(d);start.setDate(d.getDate()-diff);const end=new Date(start);end.setDate(start.getDate()+6);return{start,end};}
@@ -2297,7 +2304,69 @@ function tsGetAllEntries(){try{return JSON.parse(localStorage.getItem('msf_ts_en
 function tsGetEntry(ds){return tsGetAllEntries()[ds]||null;}
 function tsSaveEntry(ds,data){const entries=tsGetAllEntries();entries[ds]=Object.assign(entries[ds]||{},data);localStorage.setItem('msf_ts_entries',JSON.stringify(entries));try{if(typeof db!=='undefined'&&db&&_fbReady){db.collection('timesheetEntries').doc(ds).set(entries[ds]).catch(()=>{});}}catch(e){}}
 function tsGetArchivedWeeks(){try{return JSON.parse(localStorage.getItem('msf_ts_weeks')||'[]');}catch{return[];}}
-function tsSaveArchivedWeeks(w){localStorage.setItem('msf_ts_weeks',JSON.stringify(w));}
+function tsSaveArchivedWeeks(w){
+  localStorage.setItem('msf_ts_weeks',JSON.stringify(w));
+  // Mirror full weeks array to Firestore so other devices stay in sync
+  if(typeof db!=='undefined'&&db&&_fbReady){
+    db.collection('timesheetMeta').doc('archivedWeeks').set({weeks:w,_ts:Date.now()}).catch(()=>{});
+  }
+}
+function tsSaveConfig(c){
+  localStorage.setItem('msf_ts_config',JSON.stringify(c));
+  if(typeof db!=='undefined'&&db&&_fbReady){
+    db.collection('timesheetMeta').doc('config').set(Object.assign({},c,{_ts:Date.now()})).catch(()=>{});
+  }
+}
+
+// ── Pull timesheet data from Firestore on init (runs once after Firebase ready) ──
+async function tsLoadFromFirestore(){
+  if(!db) return;
+  try{
+    // 1. Archived weeks
+    const weeksDoc=await db.collection('timesheetMeta').doc('archivedWeeks').get();
+    if(weeksDoc.exists){
+      const data=weeksDoc.data();
+      const remoteWeeks=data.weeks||[];
+      const remoteTs=data._ts||0;
+      let localTs=0;
+      try{const lw=JSON.parse(localStorage.getItem('msf_ts_weeks')||'[]');localTs=lw._ts||0;}catch{}
+      // Merge: remote wins for any week not in local; local wins for current
+      const localWeeks=tsGetArchivedWeeks();
+      const merged=Object.values(
+        [...localWeeks,...remoteWeeks].reduce((acc,w)=>{
+          const key=w.weekStart;
+          if(!acc[key]||w.archivedAt>(acc[key].archivedAt||0)) acc[key]=w;
+          return acc;
+        },{})
+      ).sort((a,b)=>a.weekStart>b.weekStart?1:-1);
+      localStorage.setItem('msf_ts_weeks',JSON.stringify(merged));
+    }
+    // 2. Config
+    const cfgDoc=await db.collection('timesheetMeta').doc('config').get();
+    if(cfgDoc.exists){
+      const remote=cfgDoc.data();
+      let localCfg={};
+      try{localCfg=JSON.parse(localStorage.getItem('msf_ts_config')||'{}');}catch{}
+      const remoteTs=remote._ts||0;
+      const localTs=localCfg._ts||0;
+      if(remoteTs>localTs){
+        const {_ts,...cfg}=remote;
+        localStorage.setItem('msf_ts_config',JSON.stringify(cfg));
+      }
+    }
+    // 3. Individual day entries — merge any remote entries not in local
+    const entriesSnap=await db.collection('timesheetEntries').get();
+    if(!entriesSnap.empty){
+      const local=tsGetAllEntries();
+      let changed=false;
+      entriesSnap.forEach(doc=>{
+        const ds=doc.id;
+        if(!local[ds]){local[ds]=doc.data();changed=true;}
+      });
+      if(changed) localStorage.setItem('msf_ts_entries',JSON.stringify(local));
+    }
+  }catch(e){console.warn('Phinest EI: tsLoadFromFirestore failed —',e.message);}
+}
 function tsCalcMileage(miles){return(miles*tsLoadConfig().mileageRate).toFixed(2);}
 
 function tsPushFromDailyLog(){
@@ -3489,7 +3558,7 @@ async function dlArchive(date){
     const f=state.fields||{};
     const tin=f['p-timeIn']||''; const tout=f['p-timeOut']||'';
     const os=parseFloat(f['p-odoStart']||0); const oe=parseFloat(f['p-odoEnd']||0);
-    const miles=(os&&oe&&oe>os)?(oe-os):0;
+    const miles=(oe>os)?(oe-os):0;
     // Calculate hours from time in/out
     let hours=0;
     if(tin&&tout){
@@ -3506,6 +3575,69 @@ async function dlArchive(date){
     if(!existing._manualPerDiem) update.perDiem=tsLoadConfig().perDiem;
     if(Object.keys(update).length>0) tsSaveEntry(date, update);
   }catch(e){}
+  // ── Option C: backfill past week snapshot if this date is in a past week ──
+  try{ tsBackfillWeekFromLogs(date); }catch(e){}
+}
+
+// ── Backfill / update a week snapshot from archived daily logs ──
+// Called whenever a log is archived. If the date belongs to a past week (not
+// the current active week), scan all archived logs in that week, rebuild the
+// week snapshot, and save it — creating it if it doesn't exist yet.
+function tsBackfillWeekFromLogs(date){
+  const today=localToday();
+  const{start:curStart}=tsGetWeekBounds(tsParseDate(today));
+  const{start,end}=tsGetWeekBounds(tsParseDate(date));
+  // Only backfill past weeks — current week is handled by normal flow
+  if(tsFormatDate(start)===tsFormatDate(curStart)) return;
+  const cfg=tsLoadConfig();
+  const dates=tsWeekDates(start);
+  let totH=0,totM=0,totMil=0,totPD=0;
+  const days=dates.map(d=>{
+    const ds=tsFormatDate(d);
+    // Prefer timesheet entry (may have manual overrides), fall back to archived log
+    const tsEntry=tsGetEntry(ds)||{};
+    let hours=Number(tsEntry.hours||0);
+    let miles=Number(tsEntry.miles||0);
+    let activitySummary=tsEntry.activitySummary||'';
+    // If no timesheet entry, try to pull from the archived daily log
+    if(!hours&&!miles){
+      const log=dlGet(ds);
+      if(log){
+        const f=log.fields||{};
+        const tin=f['p-timeIn']||''; const tout=f['p-timeOut']||'';
+        const os=parseFloat(f['p-odoStart']||0); const oe=parseFloat(f['p-odoEnd']||0);
+        if(tin&&tout){
+          const[h1,m1]=tin.split(':').map(Number);
+          const[h2,m2]=tout.split(':').map(Number);
+          const diff=((h2*60+m2)-(h1*60+m1))/60;
+          if(diff>0) hours=Math.round(diff*10)/10;
+        }
+        if(oe>os) miles=oe-os;
+        if(!activitySummary&&f.activePhase) activitySummary=f.activePhase;
+      }
+    }
+    const perDiem=Number(tsEntry.perDiem!==undefined?tsEntry.perDiem:cfg.perDiem);
+    const mileage=parseFloat(tsCalcMileage(miles));
+    totH+=hours; totM+=miles; totMil+=mileage; totPD+=perDiem;
+    return{date:ds,display:tsDisplayDate(d),hours,miles,perDiem,mileage:mileage.toFixed(2),activitySummary,expenses:tsEntry.expenses||''};
+  });
+  // Only save the week if at least one day has data
+  const hasData=days.some(d=>d.hours>0||d.miles>0);
+  if(!hasData) return;
+  const weekStart=tsFormatDate(start);
+  const weekEnd=tsFormatDate(end);
+  const existing=tsGetArchivedWeeks();
+  const idx=existing.findIndex(w=>w.weekStart===weekStart);
+  const week={
+    weekStart,weekEnd,
+    archivedAt: idx>=0 ? existing[idx].archivedAt : Date.now(),
+    _backfilled: true,
+    days,
+    totals:{hours:totH.toFixed(1),miles:totM,mileage:totMil.toFixed(2),perDiem:totPD.toFixed(0)}
+  };
+  if(idx>=0) existing[idx]=week; else existing.push(week);
+  existing.sort((a,b)=>a.weekStart>b.weekStart?1:-1);
+  tsSaveArchivedWeeks(existing);
 }
 
 // ── Format date for display: "Mon, Mar 18" ──
@@ -3520,9 +3652,12 @@ function dlFmtDisplay(dateStr){
   }catch{ return dateStr; }
 }
 
+// ── Local date helper — always returns YYYY-MM-DD in device local time, never UTC ──
+function localToday(){const d=new Date();const y=d.getFullYear();const m=String(d.getMonth()+1).padStart(2,'0');const dd=String(d.getDate()).padStart(2,'0');return `${y}-${m}-${dd}`;}
+
 // ── New day detection + modal ──
 function checkNewDay(){
-  const today=new Date().toISOString().split('T')[0];
+  const today=localToday();
   // Check suppression — if already handled today, skip
   const suppressed=localStorage.getItem('pei_newday_suppress')||'';
   if(suppressed===today) return;
@@ -3562,7 +3697,7 @@ async function newDayStartFresh(){
   // Archive the previous day's log
   if(prevDate) await dlArchive(prevDate);
   // Suppress for today
-  const today=new Date().toISOString().split('T')[0];
+  const today=localToday();
   localStorage.setItem('pei_newday_suppress',today);
   // Reset form — _resetFormCore sets today's date automatically
   if(typeof db!=='undefined'&&db&&_fbReady){
@@ -3574,7 +3709,7 @@ async function newDayStartFresh(){
 
 function newDayKeepContinue(){
   document.getElementById('nd-overlay').style.display='none';
-  const today=new Date().toISOString().split('T')[0];
+  const today=localToday();
   localStorage.setItem('pei_newday_suppress',today);
 }
 
@@ -3585,7 +3720,7 @@ async function newDayLoadPrevious(){
   // Archive current log first
   if(prevDate) await dlArchive(prevDate);
   // Suppress new day for today
-  const today=new Date().toISOString().split('T')[0];
+  const today=localToday();
   localStorage.setItem('pei_newday_suppress',today);
   // Navigate to calendar
   showPage('calendar');
@@ -3731,7 +3866,7 @@ function calOpenDay(date){
   // Fall back to odometer if no timesheet miles
   if(miles==='—'){
     const os=parseFloat(f['p-odoStart']||0); const oe=parseFloat(f['p-odoEnd']||0);
-    if(os&&oe&&oe>os) miles=(oe-os)+' mi';
+    if(oe>os) miles=(oe-os)+' mi';
   }
 
   // ── Weather — build from fields + sky array ──
@@ -4046,7 +4181,7 @@ function calCloseDayView(){
 // ═══════════════════════════════════════════
 // INIT
 // ═══════════════════════════════════════════
-document.getElementById('reportDate').value=new Date().toISOString().split('T')[0];
+document.getElementById('reportDate').value=localToday();
 applyProjectConfig();
 restoreCollapsedSections();
 buildChecklist();
@@ -4305,6 +4440,7 @@ function resetForm() {
       setSyncStatus('synced');
       phInit();
       clInit();
+      tsLoadFromFirestore();
       checkNewDay();
       return;
     }
@@ -4328,16 +4464,19 @@ function resetForm() {
       setSyncStatus('synced');
       phInit();
       clInit();
+      tsLoadFromFirestore();
       checkNewDay();
     } else if (localTs > cloudTs) {
       _fbReady = true;
       cloudSave();
       phInit();
+      tsLoadFromFirestore();
       checkNewDay();
     } else {
       _fbReady = true;
       setSyncStatus('synced');
       phInit();
+      tsLoadFromFirestore();
       checkNewDay();
     }
 
