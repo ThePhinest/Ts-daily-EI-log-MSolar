@@ -4261,7 +4261,22 @@ if (typeof firebase !== 'undefined') {
   el.style.cssText = 'font-family:var(--mono);font-size:10px;letter-spacing:.05em;transition:color .3s;white-space:nowrap;margin-left:2px';
   bar.appendChild(el);
 })();
-
+  
+// ── iPad/iOS keyboard nav fix — relock bottom nav when keyboard resizes viewport ──
+if(window.visualViewport){
+  window.visualViewport.addEventListener('resize',function(){
+    const nav=document.querySelector('.bottom-nav');
+    if(!nav) return;
+    const offset=window.innerHeight-window.visualViewport.height-window.visualViewport.offsetTop;
+    nav.style.transform=offset>0?`translateY(-${offset}px) translateZ(0)`:'translateZ(0)';
+  });
+  window.visualViewport.addEventListener('scroll',function(){
+    const nav=document.querySelector('.bottom-nav');
+    if(!nav) return;
+    const offset=window.innerHeight-window.visualViewport.height-window.visualViewport.offsetTop;
+    nav.style.transform=offset>0?`translateY(-${offset}px) translateZ(0)`:'translateZ(0)';
+  });
+}
 function setSyncStatus(s) {
   const el = document.getElementById('sync-dot');
   if (!el) return;
