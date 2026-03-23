@@ -2340,6 +2340,7 @@ async function tsLoadFromFirestore(){
         },{})
       ).sort((a,b)=>a.weekStart>b.weekStart?1:-1);
       localStorage.setItem('msf_ts_weeks',JSON.stringify(merged));
+      db.collection('timesheetMeta').doc('archivedWeeks').set({weeks:merged,_ts:Date.now()}).catch(()=>{});
     }
     // 2. Config
     const cfgDoc=await db.collection('timesheetMeta').doc('config').get();
