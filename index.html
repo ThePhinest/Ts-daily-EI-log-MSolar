@@ -4591,14 +4591,24 @@ function toggleApiKeyVisibility(){
 }
 
 // ── Claude API polish call ──
+// ── Convert HH:MM (24hr) to H:MM AM/PM ──
+function _rptFmtTime(t){
+  if(!t) return '';
+  const[h,m]=t.split(':').map(Number);
+  if(isNaN(h)||isNaN(m)) return t;
+  const ampm=h>=12?'PM':'AM';
+  const h12=h%12||12;
+  return `${h12}:${String(m).padStart(2,'0')} ${ampm}`;
+}
+
 async function rptCallClaude(apiKey,logData,compEntries){
   const crewSummary=(logData.crewBlocks||[]).map(b=>`Crew: ${b.name} | Time: ${b.time} | Location: ${b.location}\nActivities: ${b.activities}\nEnv Compliance: ${b.envCompliance}\nIssues: ${b.issues}\nNotes: ${b.notes}`).join('\n\n');
   const compSummary=compEntries.length>0
     ?compEntries.map(e=>`Level ${e.level} — ${e.location}|Corrective: ${e.corrective}|Status: ${e.status}${e.dateResolved?'|Resolved: '+e.dateResolved:''}`).join('\n')
     :'No compliance issues';
-  const timeIn=logData['p-timeIn']||'6:30 AM';
+  const timeIn=_rptFmtTime(logData['p-timeIn'])||'6:30 AM';
   const userPrompt=`REPORT DATE: ${logData.reportDate}\nACTIVE PHASE: ${logData.activePhase}\nCONTRACTOR: ${logData.contractor}\nTIME IN: ${timeIn}\n\nCREW BLOCKS:\n${crewSummary}\n\nINSPECTION SUMMARY:\n${logData.inspectionSummary||''}\n\nAGENCY INSPECTION:\n${logData.agencyInspection||''}\n\nCOMPLIANCE ISSUES:\n${compSummary}\n\nLANDOWNER/PUBLIC:\n${logData.landownerContact||''}\n\nT&E/RTE:\n${logData.rteObservation||''}\n\nGENERAL COMMS:\n${logData.generalComms||''}\n\n24-HOUR LOOK AHEAD:\n${logData.lookahead||''}\n\nReturn ONLY valid JSON — no markdown, no preamble:\n{"contractorActivities":"...","fieldObservationsOpening":"...","fieldObservationsBullets":["..."],"fieldObservationsClosing":"...","agencyInspection":"...","complianceIssues":[{"level":"...","description":"...","corrective":"...","status":"...","dateResolved":""}],"landownerContact":"...","rteObservation":"...","generalComms":"...","lookaheadBullets":["..."]}`;
-  const systemPrompt=`You are an Environmental Inspector (EI) report writer for the Moraine Solar Energy Center, a 94 MW AC PV solar facility in the Town of Burns, Allegany County, NY. Polish raw field notes into professional Daily Environmental Compliance Report language.\n\nSTYLE RULES:\n- Use "conducting" not "performing"\n- Use definitive language — "will" not "is anticipated to"\n- Refer to the Environmental Inspector as "EI" — never first person\n- Contractor language should be collaborative in tone\n- Keep language tight and direct — no filler\n- Do not mention residential proximity unless explicitly flagged\n\nFIELD OBSERVATIONS:\n- Opening must use the time from TIME IN field and detect work type from crew activities\n- Opening MUST end with the exact phrase: "The following activities were observed:"\n- Include 3-5 specific observation bullets based on crew block data\n- Standard Phase 1 Tree Felling bullets: felling method/equipment, directional felling practices, slash/material management, access/staging\n- Closing must reference LOD compliance and buffer integrity\n\nGENERAL COMMUNICATIONS:\n- Frame as a documented field discussion with the contractor — professional record of what was communicated on site\n- Phrasing should reflect: "EI discussed [topic] with [contractor/foreman]..." or "EI communicated to contractor..." \n- Collaborative tone — not directive or accusatory\n- If blank, return "No general communications to report."\n\nCOMPLIANCE:\n- Polish description and corrective action text\n- Keep Level and Status exactly as provided\n- If no issues: [{"level":"No issues identified","description":"All areas inspected — no compliance concerns observed.","corrective":"N/A","status":"Compliant","dateResolved":""}]\n\nReturn ONLY valid JSON — no code fences, no explanation.`;
+  const systemPrompt=`You are an Environmental Inspector (EI) report writer for the Moraine Solar Energy Center, a 94 MW AC PV solar facility in the Town of Burns, Allegany County, NY. Polish raw field notes into professional Daily Environmental Compliance Report language.\n\nSTYLE RULES:\n- Use "conducting" not "performing"\n- Use definitive language — "will" not "is anticipated to"\n- Refer to the Environmental Inspector as "EI" — never first person\n- Contractor language should be collaborative in tone\n- Keep language tight and direct — no filler\n- Do not mention residential proximity unless explicitly flagged\n\nCONTRACTOR ACTIVITIES:\n- ALWAYS begin with attending the morning safety meeting/tailgate — e.g. "[Contractor] personnel attended the morning safety meeting/tailgate at [TIME], then conducted..."\n- Follow with description of work activities from crew block data\n\nFIELD OBSERVATIONS:\n- Opening must use the time from TIME IN field and detect work type from crew activities\n- Opening MUST end with the exact phrase: "The following activities were observed:"\n- Include 3-5 specific observation bullets based on crew block data\n- Standard Phase 1 Tree Felling bullets: felling method/equipment, directional felling practices, slash/material management, access/staging\n- Closing must reference LOD compliance and buffer integrity\n\nGENERAL COMMUNICATIONS:\n- Frame as a documented field discussion with the contractor — professional record of what was communicated on site\n- Phrasing should reflect: "EI discussed [topic] with [contractor/foreman]..." or "EI communicated to contractor..." \n- Collaborative tone — not directive or accusatory\n- If blank, return "No general communications to report."\n\nCOMPLIANCE:\n- Polish description and corrective action text\n- Keep Level and Status exactly as provided\n- If no issues: [{"level":"No issues identified","description":"All areas inspected — no compliance concerns observed.","corrective":"N/A","status":"Compliant","dateResolved":""}]\n\nReturn ONLY valid JSON — no code fences, no explanation.`;
   const resp=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:4000,system:systemPrompt,messages:[{role:'user',content:userPrompt}]})});
   if(!resp.ok){const err=await resp.text();throw new Error('Claude API error '+resp.status+': '+err);}
   const data=await resp.json();
@@ -4610,7 +4620,7 @@ async function rptCallClaude(apiKey,logData,compEntries){
 // ── DOCX Assembly ──
 async function rptBuildDocx(logData,polished,photos){
   if(!window.docx) throw new Error('Report library not loaded. Please refresh and try again.');
-  const{Document,Packer,Paragraph,TextRun,Table,TableRow,TableCell,AlignmentType,BorderStyle,WidthType,ShadingType,ImageRun,Footer}=window.docx;
+  const{Document,Packer,Paragraph,TextRun,Table,TableRow,TableCell,AlignmentType,BorderStyle,WidthType,ShadingType,ImageRun,Footer,Header,PageNumber,NumberFormat}=window.docx;
   const BLUE='1F3864',LT_BLUE='D9E2F3',MID_BLUE='2E5496',WHITE='FFFFFF';
   const bdr={style:BorderStyle.SINGLE,size:1,color:'AAAAAA'};
   const borders={top:bdr,bottom:bdr,left:bdr,right:bdr};
@@ -4756,16 +4766,26 @@ async function rptBuildDocx(logData,polished,photos){
       infoRow('Reviewed by:',logData.reviewedBy)
     ]})
   ];
-  // Footer
-  const footer=new Footer({children:[new Paragraph({alignment:AlignmentType.CENTER,children:[new TextRun({text:`${logData.project}  |  Environmental Inspector Daily Report  |  Confidential`,font:'Arial',size:16,color:'888888'})]})]});
-  // Assemble
+  // Footer — top border line, centered text, page number
+  const footer=new Footer({children:[new Paragraph({
+    alignment:AlignmentType.CENTER,
+    border:{top:{style:BorderStyle.SINGLE,size:6,color:'AAAAAA',space:4}},
+    spacing:{before:80},
+    children:[
+      new TextRun({text:`${logData.project}  |  Environmental Inspector Daily Report  |  Confidential  |  Page `,font:'Arial',size:16,color:'888888'}),
+      new TextRun({children:[PageNumber.CURRENT],font:'Arial',size:16,color:'888888'})
+    ]
+  })]});
+  // Word header — repeats on every page
+  const wordHeader=new Header({children:[headerTable]});
+  // Assemble — headerTable now in section header, not body
   const children=[
-    headerTable,...titleBlock,infoTable,spacer(120),
+    ...titleBlock,infoTable,spacer(120),
     h1('1.  Weather Conditions'),spacer(60),weatherTable,spacer(80),
     ...sec2,spacer(80),...sec3,spacer(80),...sec4,spacer(80),...sec5,spacer(80),...sec6,
     ...certBlock
   ];
-  const doc=new Document({sections:[{properties:{page:{size:{width:12240,height:15840},margin:{top:1526,bottom:1080,left:1080,right:1080}}},footers:{default:footer},children}]});
+  const doc=new Document({sections:[{properties:{page:{size:{width:12240,height:15840},margin:{top:1440,bottom:1080,left:1080,right:1080}}},headers:{default:wordHeader},footers:{default:footer},children}]});
   return Packer.toBlob(doc);
 }
 
