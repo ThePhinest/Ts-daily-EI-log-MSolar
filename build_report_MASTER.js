@@ -16,8 +16,10 @@ const {
   ImageRun
 } = require('/home/claude/.npm-global/lib/node_modules/docx');
 
-const fs   = require('fs');
-const path = require('path');
+const fs             = require('fs');
+const path           = require('path');
+const { execSync }   = require('child_process');
+const os             = require('os');
 
 const BLUE       = "1F3864";
 const LIGHT_BLUE = "D9E2F3";
@@ -463,7 +465,32 @@ function normalizeLog(app){
     contractor:     app.contractor               || 'Supreme Industries',
   };
 }
+// ── HEADER FIX — overwrite header1.xml with known-good navy borders ──
+// The docx library outputs AAAAAA/size-1 borders regardless of JS spec.
+// This function unpacks the built docx, overwrites header1.xml with the
+// correct XML (navy 1F3864, size 8), then repacks. Runs after every build.
+async function fixHeader(docxPath) {
+  const tmpDir = path.join(os.tmpdir(), `ei_header_fix_${Date.now()}`);
+  const CORRECT_HEADER_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:hdr xmlns:wpc="http://schemas.microsoft.com/office/word/2010/wordprocessingCanvas" xmlns:cx="http://schemas.microsoft.com/office/drawing/2014/chartex" xmlns:cx1="http://schemas.microsoft.com/office/drawing/2015/9/8/chartex" xmlns:cx2="http://schemas.microsoft.com/office/drawing/2015/10/21/chartex" xmlns:cx3="http://schemas.microsoft.com/office/drawing/2016/5/9/chartex" xmlns:cx4="http://schemas.microsoft.com/office/drawing/2016/5/10/chartex" xmlns:cx5="http://schemas.microsoft.com/office/drawing/2016/5/11/chartex" xmlns:cx6="http://schemas.microsoft.com/office/drawing/2016/5/12/chartex" xmlns:cx7="http://schemas.microsoft.com/office/drawing/2016/5/13/chartex" xmlns:cx8="http://schemas.microsoft.com/office/drawing/2016/5/14/chartex" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" xmlns:aink="http://schemas.microsoft.com/office/drawing/2016/ink" xmlns:am3d="http://schemas.microsoft.com/office/drawing/2017/model3d" xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:oel="http://schemas.microsoft.com/office/2019/extlst" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:wp14="http://schemas.microsoft.com/office/word/2010/wordprocessingDrawing" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:w10="urn:schemas-microsoft-com:office:word" xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml" xmlns:w15="http://schemas.microsoft.com/office/word/2012/wordml" xmlns:w16cex="http://schemas.microsoft.com/office/word/2018/wordml/cex" xmlns:w16cid="http://schemas.microsoft.com/office/word/2016/wordml/cid" xmlns:w16="http://schemas.microsoft.com/office/word/2018/wordml" xmlns:w16du="http://schemas.microsoft.com/office/word/2023/wordml/word16du" xmlns:w16sdtdh="http://schemas.microsoft.com/office/word/2020/wordml/sdtdatahash" xmlns:w16sdtfl="http://schemas.microsoft.com/office/word/2024/wordml/sdtformatlock" xmlns:w16se="http://schemas.microsoft.com/office/word/2015/wordml/symex" xmlns:wpg="http://schemas.microsoft.com/office/word/2010/wordprocessingGroup" xmlns:wpi="http://schemas.microsoft.com/office/word/2010/wordprocessingInk" xmlns:wne="http://schemas.microsoft.com/office/word/2006/wordml" xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape" mc:Ignorable="w14 w15 w16se w16cid w16 w16cex w16sdtdh w16sdtfl w16du wp14"><w:tbl><w:tblPr><w:tblW w:w="5000" w:type="pct"/><w:tblInd w:w="-9" w:type="dxa"/><w:tblBorders><w:top w:val="none" w:sz="0" w:space="0" w:color="FFFFFF"/><w:left w:val="none" w:sz="0" w:space="0" w:color="FFFFFF"/><w:bottom w:val="none" w:sz="0" w:space="0" w:color="FFFFFF"/><w:right w:val="none" w:sz="0" w:space="0" w:color="FFFFFF"/><w:insideH w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:insideV w:val="single" w:sz="4" w:space="0" w:color="auto"/></w:tblBorders><w:tblCellMar><w:left w:w="10" w:type="dxa"/><w:right w:w="10" w:type="dxa"/></w:tblCellMar><w:tblLook w:val="0000" w:firstRow="0" w:lastRow="0" w:firstColumn="0" w:lastColumn="0" w:noHBand="0" w:noVBand="0"/></w:tblPr><w:tblGrid><w:gridCol w:w="6047"/><w:gridCol w:w="4031"/></w:tblGrid><w:tr w:rsidR="002528EB" w14:paraId="3D48DE7F" w14:textId="77777777"><w:tblPrEx><w:tblCellMar><w:top w:w="0" w:type="dxa"/><w:bottom w:w="0" w:type="dxa"/></w:tblCellMar></w:tblPrEx><w:tc><w:tcPr><w:tcW w:w="3000" w:type="pct"/><w:tcBorders><w:top w:val="single" w:sz="8" w:space="0" w:color="1F3864"/><w:left w:val="single" w:sz="8" w:space="0" w:color="1F3864"/><w:bottom w:val="none" w:sz="0" w:space="0" w:color="FFFFFF"/><w:right w:val="none" w:sz="0" w:space="0" w:color="FFFFFF"/></w:tcBorders><w:shd w:val="clear" w:color="auto" w:fill="D9E2F3"/><w:tcMar><w:top w:w="80" w:type="dxa"/><w:left w:w="120" w:type="dxa"/><w:bottom w:w="40" w:type="dxa"/><w:right w:w="120" w:type="dxa"/></w:tcMar></w:tcPr><w:p w14:paraId="735EACF8" w14:textId="77777777" w:rsidR="002528EB" w:rsidRDefault="0095688B"><w:r><w:rPr><w:rFonts w:ascii="Arial" w:eastAsia="Arial" w:hAnsi="Arial" w:cs="Arial"/><w:b/><w:bCs/><w:color w:val="1F3864"/><w:sz w:val="22"/><w:szCs w:val="22"/></w:rPr><w:t>MORAINE SOLAR ENERGY CENTER</w:t></w:r></w:p></w:tc><w:tc><w:tcPr><w:tcW w:w="2000" w:type="pct"/><w:tcBorders><w:top w:val="single" w:sz="8" w:space="0" w:color="1F3864"/><w:left w:val="none" w:sz="0" w:space="0" w:color="FFFFFF"/><w:bottom w:val="none" w:sz="0" w:space="0" w:color="FFFFFF"/><w:right w:val="single" w:sz="8" w:space="0" w:color="1F3864"/></w:tcBorders><w:shd w:val="clear" w:color="auto" w:fill="D9E2F3"/><w:tcMar><w:top w:w="80" w:type="dxa"/><w:left w:w="120" w:type="dxa"/><w:bottom w:w="40" w:type="dxa"/><w:right w:w="120" w:type="dxa"/></w:tcMar></w:tcPr><w:p w14:paraId="121EA912" w14:textId="77777777" w:rsidR="002528EB" w:rsidRDefault="0095688B"><w:pPr><w:jc w:val="right"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Arial" w:eastAsia="Arial" w:hAnsi="Arial" w:cs="Arial"/><w:sz w:val="18"/><w:szCs w:val="18"/></w:rPr><w:t>Town of Burns, Allegany County, NY</w:t></w:r></w:p></w:tc></w:tr><w:tr w:rsidR="002528EB" w14:paraId="4501C766" w14:textId="77777777"><w:tblPrEx><w:tblCellMar><w:top w:w="0" w:type="dxa"/><w:bottom w:w="0" w:type="dxa"/></w:tblCellMar></w:tblPrEx><w:tc><w:tcPr><w:tcW w:w="3000" w:type="pct"/><w:tcBorders><w:top w:val="none" w:sz="0" w:space="0" w:color="FFFFFF"/><w:left w:val="single" w:sz="8" w:space="0" w:color="1F3864"/><w:bottom w:val="single" w:sz="8" w:space="0" w:color="1F3864"/><w:right w:val="none" w:sz="0" w:space="0" w:color="FFFFFF"/></w:tcBorders><w:shd w:val="clear" w:color="auto" w:fill="D9E2F3"/><w:tcMar><w:top w:w="40" w:type="dxa"/><w:left w:w="120" w:type="dxa"/><w:bottom w:w="80" w:type="dxa"/><w:right w:w="120" w:type="dxa"/></w:tcMar></w:tcPr><w:p w14:paraId="2F8C8880" w14:textId="77777777" w:rsidR="002528EB" w:rsidRDefault="0095688B"><w:r><w:rPr><w:rFonts w:ascii="Arial" w:eastAsia="Arial" w:hAnsi="Arial" w:cs="Arial"/><w:color w:val="2E5496"/><w:sz w:val="18"/><w:szCs w:val="18"/></w:rPr><w:t>Daily Environmental Compliance Report</w:t></w:r></w:p></w:tc><w:tc><w:tcPr><w:tcW w:w="2000" w:type="pct"/><w:tcBorders><w:top w:val="none" w:sz="0" w:space="0" w:color="FFFFFF"/><w:left w:val="none" w:sz="0" w:space="0" w:color="FFFFFF"/><w:bottom w:val="single" w:sz="8" w:space="0" w:color="1F3864"/><w:right w:val="single" w:sz="8" w:space="0" w:color="1F3864"/></w:tcBorders><w:shd w:val="clear" w:color="auto" w:fill="D9E2F3"/><w:tcMar><w:top w:w="40" w:type="dxa"/><w:left w:w="120" w:type="dxa"/><w:bottom w:w="80" w:type="dxa"/><w:right w:w="120" w:type="dxa"/></w:tcMar></w:tcPr><w:p w14:paraId="3D5D7296" w14:textId="77777777" w:rsidR="002528EB" w:rsidRDefault="002528EB"/></w:tc></w:tr></w:tbl></w:hdr>`;
 
+  try {
+    fs.mkdirSync(tmpDir, { recursive: true });
+    execSync(`unzip -q "${docxPath}" -d "${tmpDir}"`);
+    const headerPath = path.join(tmpDir, 'word', 'header1.xml');
+    if (fs.existsSync(headerPath)) {
+      fs.writeFileSync(headerPath, CORRECT_HEADER_XML, 'utf8');
+      execSync(`cd "${tmpDir}" && zip -qr "${docxPath}" .`);
+      console.log('  Header fix applied — navy borders confirmed.');
+    } else {
+      console.warn('  header1.xml not found — skipping header fix.');
+    }
+  } catch(e) {
+    console.warn('  Header fix failed:', e.message);
+  } finally {
+    try { execSync(`rm -rf "${tmpDir}"`); } catch{}
+  }
+}
 // ── MAIN ──────────────────────────────────────────────────────
 async function main(){
   const args     = process.argv.slice(2);
@@ -661,6 +688,8 @@ async function main(){
   const buf = await Packer.toBuffer(doc);
   fs.writeFileSync(outPath, buf);
   console.log(`\nReport written: ${outPath}`);
+  console.log("Applying header fix...");
+  await fixHeader(outPath);
   console.log("Remember: proofread before distribution.");
 }
 
