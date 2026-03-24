@@ -2045,14 +2045,21 @@ function loadProjectConfig() {
 }
 
 async function syncProjectConfigFromCloud() {
-  if(!db || !_fbReady) return;
+  if(!db) return;
+  let waited=0;
+  while(!_fbReady && waited<5000){ await new Promise(r=>setTimeout(r,200)); waited+=200; }
+  if(!_fbReady) return;
   try {
     const doc = await db.collection('settings').doc('projectConfig').get();
     if(doc.exists) {
       const data = doc.data();
       delete data._ts;
       localStorage.setItem('msf_projectconfig', JSON.stringify(data));
-      applyProjectConfig();
+        applyProjectConfig();
+        ['projectName','preparedBy','org','activePhase','contractor','location','reviewedBy'].forEach(k=>{
+          const el=document.getElementById('cfg-'+k);
+          if(el) el.value=data[k]||'';
+        });
     }
   } catch(e) { console.warn('syncProjectConfig failed:', e.message); }
 }
