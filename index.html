@@ -4254,12 +4254,13 @@ const _fbConfig = {
 
 // Firebase init — check for existing app to avoid duplicate init error on reload
 var db = null;
+var storage = null;
 var _fbReady = false;
 if (typeof firebase !== 'undefined') {
   try {
     const _fbApp = firebase.apps.length ? firebase.apps[0] : firebase.initializeApp(_fbConfig);
     db = _fbApp.firestore();
-    const storage = _fbApp.storage();
+    storage = _fbApp.storage();
     console.log('Phinest EI: Firebase initialized OK');
   } catch(e) {
     console.error('Phinest EI: Firebase init failed —', e.message);
