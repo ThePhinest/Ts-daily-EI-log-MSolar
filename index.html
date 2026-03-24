@@ -2062,6 +2062,10 @@ async function syncProjectConfigFromCloud() {
         });
         const apInput=document.getElementById('activePhaseInput');
         if(apInput && data.activePhase) apInput.value=data.activePhase;
+        activePhaseLabel=data.activePhase||activePhaseLabel;
+        ss('msf_activephase',activePhaseLabel);
+        renderPhaseList();
+        renderAllChips();
     }
   } catch(e) { console.warn('syncProjectConfig failed:', e.message); }
 }
