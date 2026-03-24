@@ -2044,6 +2044,19 @@ function loadProjectConfig() {
   } catch { return PROJECT_CONFIG_DEFAULTS; }
 }
 
+async function syncProjectConfigFromCloud() {
+  if(!db || !_fbReady) return;
+  try {
+    const doc = await db.collection('settings').doc('projectConfig').get();
+    if(doc.exists) {
+      const data = doc.data();
+      delete data._ts;
+      localStorage.setItem('msf_projectconfig', JSON.stringify(data));
+      applyProjectConfig();
+    }
+  } catch(e) { console.warn('syncProjectConfig failed:', e.message); }
+}
+
 function applyProjectConfig() {
   const cfg = loadProjectConfig();
   document.getElementById('projectName').value  = cfg.projectName;
@@ -2076,6 +2089,7 @@ function saveProjectConfig() {
     reviewedBy:  document.getElementById('cfg-reviewedBy').value.trim()  || PROJECT_CONFIG_DEFAULTS.reviewedBy
   };
   localStorage.setItem('msf_projectconfig', JSON.stringify(cfg));
+  try{if(typeof db!=='undefined'&&db&&_fbReady){db.collection('settings').doc('projectConfig').set(Object.assign({},cfg,{_ts:Date.now()})).catch(()=>{});}}catch(e){}
   applyProjectConfig();
   // Also update activePhaseLabel for chip rendering
   activePhaseLabel = cfg.activePhase;
@@ -4289,11 +4303,12 @@ if(window.visualViewport){
     nav.style.transform=offset>0?`translateY(-${offset}px) translateZ(0)`:'translateZ(0)';
   });
   window.visualViewport.addEventListener('scroll',function(){
-    const nav=document.querySelector('.bottom-nav');
-    if(!nav) return;
-    const offset=window.innerHeight-window.visualViewport.height-window.visualViewport.offsetTop;
-    nav.style.transform=offset>0?`translateY(-${offset}px) translateZ(0)`:'translateZ(0)';
-  });
+      const nav=document.querySelector('.bottom-nav');
+      if(!nav) return;
+      if(window.visualViewport.offsetTop < 0) return;
+      const offset=window.innerHeight-window.visualViewport.height-window.visualViewport.offsetTop;
+      nav.style.transform=offset>0?`translateY(-${offset}px) translateZ(0)`:'translateZ(0)';
+    });
 }
 function setSyncStatus(s) {
   const el = document.getElementById('sync-dot');
@@ -4475,6 +4490,7 @@ function resetForm() {
       phInit();
       clInit();
       tsLoadFromFirestore();
+      syncProjectConfigFromCloud();
       checkNewDay();
       return;
     }
@@ -4499,18 +4515,21 @@ function resetForm() {
       phInit();
       clInit();
       tsLoadFromFirestore();
+      syncProjectConfigFromCloud();
       checkNewDay();
     } else if (localTs > cloudTs) {
       _fbReady = true;
       cloudSave();
       phInit();
       tsLoadFromFirestore();
+      syncProjectConfigFromCloud();
       checkNewDay();
     } else {
       _fbReady = true;
       setSyncStatus('synced');
       phInit();
       tsLoadFromFirestore();
+      syncProjectConfigFromCloud();
       checkNewDay();
     }
 
