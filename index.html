@@ -2773,9 +2773,9 @@ async function phHandleFiles(files){
 
     const { date, caption } = phParseFilename(file.name);
 
-    // Generate thumb (140px) and full (900px)
+    // Generate thumb (140px) and full (1200px at higher quality for report use)
     const thumb = await phCompress(file, 140, 105, 0.7);
-    const full  = await phCompress(file, 900, 675, 0.82);
+    const full  = await phCompress(file, 1200, 900, 0.92);
 
     const entry = {
       id: phGenId(),
@@ -4785,7 +4785,7 @@ async function rptBuildDocx(logData,polished,photos){
     ...sec2,spacer(80),...sec3,spacer(80),...sec4,spacer(80),...sec5,spacer(80),...sec6,
     ...certBlock
   ];
-  const doc=new Document({sections:[{properties:{page:{size:{width:12240,height:15840},margin:{top:1440,bottom:1080,left:1080,right:1080}}},headers:{default:wordHeader},footers:{default:footer},children}]});
+  const doc=new Document({sections:[{properties:{page:{size:{width:12240,height:15840},margin:{top:1800,bottom:1080,left:1080,right:1080},header:{value:720}}},headers:{default:wordHeader},footers:{default:footer},children}]});
   return Packer.toBlob(doc);
 }
 
