@@ -4297,11 +4297,16 @@ if (typeof firebase !== 'undefined') {
 // ── iPad/iOS keyboard nav fix — relock bottom nav when keyboard resizes viewport ──
 if(window.visualViewport){
   window.visualViewport.addEventListener('resize',function(){
-    const nav=document.querySelector('.bottom-nav');
-    if(!nav) return;
-    const offset=window.innerHeight-window.visualViewport.height-window.visualViewport.offsetTop;
-    nav.style.transform=offset>0?`translateY(-${offset}px) translateZ(0)`:'translateZ(0)';
-  });
+      const nav=document.querySelector('.bottom-nav');
+      if(!nav) return;
+      const offset=window.innerHeight-window.visualViewport.height-window.visualViewport.offsetTop;
+      nav.style.transform=offset>0?`translateY(-${offset}px) translateZ(0)`:'translateZ(0)';
+      // Scroll focused element into view after keyboard opens
+      const focused=document.activeElement;
+      if(focused && (focused.tagName==='INPUT'||focused.tagName==='TEXTAREA')){
+        setTimeout(()=>{ focused.scrollIntoView({block:'center',behavior:'smooth'}); },100);
+      }
+    });
   window.visualViewport.addEventListener('scroll',function(){
       const nav=document.querySelector('.bottom-nav');
       if(!nav) return;
