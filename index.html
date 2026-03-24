@@ -1913,18 +1913,22 @@ function addPreset(key){
   if(!presets[key])presets[key]=[];
   presets[key].push({text:t.value.trim(),phase:ph.value});
   ss('msf_presets',presets);t.value='';renderPresetList(key);renderAllChips();
+try{if(typeof db!=='undefined'&&db&&_fbReady){db.collection('settings').doc('presets').set({data:JSON.stringify(presets),_ts:Date.now()}).catch(()=>{});}}catch(e){}
 }
 function removePreset(key,idx){
   presets[key].splice(idx,1);ss('msf_presets',presets);renderPresetList(key);renderAllChips();
+try{if(typeof db!=='undefined'&&db&&_fbReady){db.collection('settings').doc('presets').set({data:JSON.stringify(presets),_ts:Date.now()}).catch(()=>{});}}catch(e){}
 }
 function addPhase(){
   const inp=document.getElementById('new-phase-text');const val=inp.value.trim();
   if(!val||phases.includes(val))return;
   phases.push(val);ss('msf_phases',phases);inp.value='';renderPhaseList();populateSelects();
+try{if(typeof db!=='undefined'&&db&&_fbReady){db.collection('settings').doc('phases').set({data:JSON.stringify(phases),_ts:Date.now()}).catch(()=>{});}}catch(e){}
 }
 function removePhase(idx){
   if(phases[idx]===activePhaseLabel){alert('Cannot remove the currently active phase.');return}
   phases.splice(idx,1);ss('msf_phases',phases);renderPhaseList();populateSelects();
+try{if(typeof db!=='undefined'&&db&&_fbReady){db.collection('settings').doc('phases').set({data:JSON.stringify(phases),_ts:Date.now()}).catch(()=>{});}}catch(e){}
 }
 
 // ── Preset reorder mode ──
@@ -2043,7 +2047,32 @@ function loadProjectConfig() {
     return saved ? Object.assign({}, PROJECT_CONFIG_DEFAULTS, JSON.parse(saved)) : PROJECT_CONFIG_DEFAULTS;
   } catch { return PROJECT_CONFIG_DEFAULTS; }
 }
-
+async function syncPresetsFromCloud() {
+  if(!db) return;
+  let waited=0;
+  while(!_fbReady && waited<5000){ await new Promise(r=>setTimeout(r,200)); waited+=200; }
+  if(!_fbReady) return;
+  try{
+    const [presetsDoc, phasesDoc] = await Promise.all([
+      db.collection('settings').doc('presets').get(),
+      db.collection('settings').doc('phases').get()
+    ]);
+    if(presetsDoc.exists){
+      const p = JSON.parse(presetsDoc.data().data);
+      presets = p;
+      ss('msf_presets', p);
+      renderPresetList();
+      renderAllChips();
+    }
+    if(phasesDoc.exists){
+      const p = JSON.parse(phasesDoc.data().data);
+      phases = p;
+      ss('msf_phases', p);
+      renderPhaseList();
+      populateSelects();
+    }
+  }catch(e){ console.warn('syncPresets failed:', e.message); }
+}
 async function syncProjectConfigFromCloud() {
   if(!db) return;
   let waited=0;
@@ -4509,6 +4538,7 @@ function resetForm() {
       clInit();
       tsLoadFromFirestore();
       syncProjectConfigFromCloud();
+      syncPresetsFromCloud();
       checkNewDay();
       return;
     }
@@ -4534,6 +4564,7 @@ function resetForm() {
       clInit();
       tsLoadFromFirestore();
       syncProjectConfigFromCloud();
+      syncPresetsFromCloud();
       checkNewDay();
     } else if (localTs > cloudTs) {
       _fbReady = true;
@@ -4541,6 +4572,7 @@ function resetForm() {
       phInit();
       tsLoadFromFirestore();
       syncProjectConfigFromCloud();
+      syncPresetsFromCloud();
       checkNewDay();
     } else {
       _fbReady = true;
@@ -4548,6 +4580,7 @@ function resetForm() {
       phInit();
       tsLoadFromFirestore();
       syncProjectConfigFromCloud();
+      syncPresetsFromCloud();
       checkNewDay();
     }
 
