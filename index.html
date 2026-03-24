@@ -2060,6 +2060,8 @@ async function syncProjectConfigFromCloud() {
           const el=document.getElementById('cfg-'+k);
           if(el) el.value=data[k]||'';
         });
+        const apInput=document.getElementById('activePhaseInput');
+        if(apInput && data.activePhase) apInput.value=data.activePhase;
     }
   } catch(e) { console.warn('syncProjectConfig failed:', e.message); }
 }
