@@ -1,14 +1,20 @@
 {
-  "name": "Phinest EI",
-  "short_name": "Phinest EI",
-  "description": "Moraine Solar Energy Center — EI Daily Field Log",
+  "name": "GroundLog",
+  "short_name": "GroundLog",
+  "description": "Field Compliance Platform — EI Daily Field Log",
   "start_url": "/Ts-daily-EI-log-MSolar/",
   "scope": "/Ts-daily-EI-log-MSolar/",
   "display": "standalone",
   "background_color": "#000000",
-  "theme_color": "#004C54",
+  "theme_color": "#006B75",
   "orientation": "portrait-primary",
   "icons": [
+    {
+      "src": "gl-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
     {
       "src": "icon-192.png",
       "sizes": "192x192",
