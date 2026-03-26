@@ -34,7 +34,7 @@
 .app-wm-ground{font-family:'Oswald','Barlow Condensed',sans-serif;font-weight:300;font-size:16px;letter-spacing:4px;text-transform:uppercase;color:var(--text)}
 .app-wm-bar{display:inline-block;width:2px;height:17px;background:var(--amber);margin:0 7px;flex-shrink:0}
 .app-wm-log{font-family:'Oswald','Barlow Condensed',sans-serif;font-weight:700;font-size:21px;letter-spacing:-0.5px;color:var(--s3);text-transform:uppercase}
-.app-wm-io{font-family:var(--mono);font-size:10px;color:var(--amber);margin-left:2px;align-self:flex-end;padding-bottom:3px}
+.app-wm-io{font-family:var(--mono);font-size:10px;color:var(--amber);margin-left:2px;align-self:flex-end;padding-bottom:1px}
 body{background:var(--bg);color:var(--text);font-family:var(--body);font-size:17px;line-height:1.5;min-height:100vh;padding-bottom:80px}
 body.theme-light{
   --bg:#F5F5F0;--s1:#ffffff;--s2:#dde8ea;--s3:#006B75;
@@ -44,7 +44,7 @@ body.theme-light{
   --green:#1e8449;--red:#e74c3c;
   --personal-border:#b8c8cc;--personal-bg:rgba(0,107,117,0.06);--personal-accent:#3a6a6a;--personal-accent2:#121212;
 }
-.bottom-nav{position:fixed;bottom:0;left:0;right:0;z-index:200;background:var(--s1);border-top:1px solid var(--border);display:flex;align-items:stretch;height:95px;padding-bottom:calc(env(safe-area-inset-bottom) + 25px);transform:translateZ(0);-webkit-transform:translateZ(0)}
+.bottom-nav{position:fixed;bottom:0;left:0;right:0;z-index:200;background:#000000;border-top:1px solid var(--border);display:flex;align-items:stretch;height:95px;padding-bottom:calc(env(safe-area-inset-bottom) + 25px);transform:translateZ(0);-webkit-transform:translateZ(0)}
 .nav-item{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding-top:14px;gap:3px;cursor:pointer;border:none;background:transparent;padding-bottom:0;transition:all .15s;border-top:2px solid transparent;user-select:none;-webkit-user-select:none;}
 .nav-item.active{background:rgba(0,76,84,0.2);border-top-color:var(--s3);margin-bottom:-1px}
 .nav-item .nav-icon{font-size:22px;line-height:1}
@@ -139,9 +139,9 @@ body.theme-light{
 .np-check{font-size:13px;color:var(--s3);font-weight:bold}
 
 /* APP BAR */
-.app-bar{position:sticky;top:0;z-index:300;background:var(--s1);border-bottom:2px solid var(--amber);padding:env(safe-area-inset-top) 20px 0;min-height:52px;display:flex;align-items:center;gap:12px}
+.app-bar{position:sticky;top:0;z-index:300;background:#000000;border-bottom:2px solid var(--amber);padding:env(safe-area-inset-top) 20px 0;min-height:52px;display:flex;align-items:center;gap:12px}
 .app-title{font-family:var(--cond);font-weight:800;font-size:21px;letter-spacing:.09em;text-transform:uppercase;color:var(--amber)}
-.app-sub{font-family:var(--mono);font-size:12px;color:var(--muted);letter-spacing:.04em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.app-sub{font-family:var(--mono);font-size:12px;color:var(--amber);letter-spacing:.04em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
 .bar-spacer{flex:1}
 .tab-btn{display:none}
 .icon-btn{background:transparent;border:1px solid var(--border2);color:var(--muted2);font-size:17px;padding:5px 10px;border-radius:5px;cursor:pointer;transition:all .15s}
