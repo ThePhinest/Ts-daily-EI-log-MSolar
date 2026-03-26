@@ -2,13 +2,13 @@
 <html lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
  
 <meta name="viewport" content="width=device-width, initial-scale=1.0, interactive-widget=resizes-visual">
-<meta name="theme-color" content="#004C54">
+<meta name="theme-color" content="#006B75">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Phinest EI">
+<meta name="apple-mobile-web-app-title" content="GroundLog">
 <link rel="apple-touch-icon" href="icon-192.png">
 <link rel="manifest" href="manifest.json">
-<title>Phinest EI — Field Log</title>
+<title>GroundLog — Field Log</title>
 <!-- Firebase SDKs — CDN (SW v6 passes external requests through untouched) -->
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
@@ -16,28 +16,33 @@
 <script src="https://unpkg.com/docx@8.5.0/build/index.umd.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@300;700&family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
 :root {
-  /* C2 — True Charcoal */
-  --bg:#1a1a1a;--s1:#252525;--s2:rgba(0,76,84,0.35);--s3:#004C54;
-  --border:#383838;--border2:rgba(0,76,84,0.5);
-  --amber:#A5ACAF;--amber2:#C8CDD0;--amber-bg:rgba(165,172,175,0.1);
-  --text:#d0d0d0;--muted:#5a8a8a;--muted2:#7aacac;
+  /* GroundLog — Dark */
+  --bg:#121212;--s1:#1a1a1a;--s2:rgba(0,107,117,0.2);--s3:#006B75;
+  --border:#2e2e2e;--border2:rgba(0,107,117,0.35);
+  --amber:#C9A84C;--amber2:#e0c070;--amber-bg:rgba(201,168,76,0.1);
+  --text:#F5F5F0;--muted:#5a8a8a;--muted2:#7aacac;
   --green:#27ae60;--red:#e74c3c;
-  --personal-border:#383838;--personal-bg:rgba(0,76,84,0.2);--personal-accent:#5a8a8a;--personal-accent2:#d0d0d0;
+  --personal-border:#2e2e2e;--personal-bg:rgba(0,107,117,0.15);--personal-accent:#5a8a8a;--personal-accent2:#F5F5F0;
   --mono:'IBM Plex Mono',monospace;--cond:'Barlow Condensed',sans-serif;--body:'Barlow',sans-serif;
   --r:7px;
 }
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+.app-wordmark{display:inline-flex;align-items:center;justify-content:center;white-space:nowrap;line-height:1}
+.app-wm-ground{font-family:'Oswald','Barlow Condensed',sans-serif;font-weight:300;font-size:16px;letter-spacing:4px;text-transform:uppercase;color:var(--text)}
+.app-wm-bar{display:inline-block;width:2px;height:17px;background:var(--amber);margin:0 7px;flex-shrink:0}
+.app-wm-log{font-family:'Oswald','Barlow Condensed',sans-serif;font-weight:700;font-size:21px;letter-spacing:-0.5px;color:var(--s3);text-transform:uppercase}
+.app-wm-io{font-family:var(--mono);font-size:10px;color:var(--amber);margin-left:2px}
 body{background:var(--bg);color:var(--text);font-family:var(--body);font-size:17px;line-height:1.5;min-height:100vh;padding-bottom:80px}
 body.theme-light{
-  --bg:#f5f7fa;--s1:#ffffff;--s2:#c8d4da;--s3:#004C54;
-  --border:#a8b8c2;--border2:#a8b8c2;
-  --amber:#003840;--amber2:#002830;--amber-bg:rgba(0,76,84,0.1);
-  --text:#1a1a1a;--muted:#3a6a6a;--muted2:#3a6a6a;
+  --bg:#F5F5F0;--s1:#ffffff;--s2:#dde8ea;--s3:#006B75;
+  --border:#b8c8cc;--border2:#b8c8cc;
+  --amber:#8B6914;--amber2:#6b5010;--amber-bg:rgba(139,105,20,0.1);
+  --text:#121212;--muted:#3a6a6a;--muted2:#3a6a6a;
   --green:#1e8449;--red:#e74c3c;
-  --personal-border:#a8b8c2;--personal-bg:rgba(0,76,84,0.06);--personal-accent:#3a6a6a;--personal-accent2:#003840;
+  --personal-border:#b8c8cc;--personal-bg:rgba(0,107,117,0.06);--personal-accent:#3a6a6a;--personal-accent2:#121212;
 }
 .bottom-nav{position:fixed;bottom:0;left:0;right:0;z-index:200;background:var(--s1);border-top:1px solid var(--border);display:flex;align-items:stretch;height:95px;padding-bottom:calc(env(safe-area-inset-bottom) + 25px);transform:translateZ(0);-webkit-transform:translateZ(0)}
 .nav-item{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding-top:14px;gap:3px;cursor:pointer;border:none;background:transparent;padding-bottom:0;transition:all .15s;border-top:2px solid transparent;user-select:none;-webkit-user-select:none;}
@@ -416,7 +421,12 @@ body.theme-light .preset-chip:hover{background:rgba(0,76,84,0.18);border-color:v
 <div class="app-bar" style="justify-content:space-between">
   <button class="icon-btn" title="Toggle theme" onclick="toggleTheme()" id="theme-btn">☀</button>
   <div style="text-align:center;flex:1">
-    <div class="app-title" id="app-bar-title">Phinest EI</div>
+    <div class="app-wordmark" id="app-bar-title">
+  <span class="app-wm-ground">GROUND</span>
+  <span class="app-wm-bar"></span>
+  <span class="app-wm-log">LOG</span>
+  <span class="app-wm-io">.io</span>
+</div>
     <div class="app-sub" id="app-bar-sub">Moraine Solar Energy Center</div>
   </div>
   <div style="display:flex;align-items:center;gap:6px">
