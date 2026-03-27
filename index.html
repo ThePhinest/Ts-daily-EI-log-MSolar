@@ -1425,6 +1425,42 @@ EI to conduct LOD walk prior to start of operations"></textarea>
     </div>
   </div>
 
+  <div class="config-section" id="cfg-checklist">
+    <div class="config-head" onclick="toggleSection('cfg-checklist')"><span class="config-title">Compliance Checklist</span><span class="config-sub">→ Card 05</span><span class="card-chevron">▾</span></div>
+    <div class="config-body">
+      <p class="config-hint">Manage checklist items for Card 05. Checked items with notes will be included in the report.</p>
+      <div class="field" style="margin-bottom:10px">
+        <label>Card Title</label>
+        <input type="text" id="cfg-checklist-title" placeholder="Compliance Checklist" style="background:var(--bg);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--body);font-size:17px;padding:8px 11px;width:100%">
+      </div>
+      <ul class="preset-list" id="list-checklist"></ul>
+      <div class="add-preset-row">
+        <input type="text" id="new-checklist-text" placeholder="New checklist item…">
+        <button class="btn-add-p" onclick="addChecklistItem()">+ Add</button>
+      </div>
+      <button class="btn btn-amber" style="font-size:11px;padding:7px 14px;margin-top:12px" onclick="saveChecklistConfig()">Save &amp; Apply</button>
+      <span id="cfg-checklist-status" style="font-family:var(--mono);font-size:11px;color:var(--green);margin-left:12px;opacity:0;transition:opacity .4s"></span>
+    </div>
+  </div>
+
+  <div class="config-section" id="cfg-flags">
+    <div class="config-head" onclick="toggleSection('cfg-flags')"><span class="config-title">Regulatory Flags</span><span class="config-sub">→ Card 06</span><span class="card-chevron">▾</span></div>
+    <div class="config-body">
+      <p class="config-hint">Manage regulatory flag items for Card 06. Checked items trigger a report warning.</p>
+      <div class="field" style="margin-bottom:10px">
+        <label>Card Title</label>
+        <input type="text" id="cfg-flags-title" placeholder="Regulatory &amp; Incident Flags" style="background:var(--bg);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--body);font-size:17px;padding:8px 11px;width:100%">
+      </div>
+      <ul class="preset-list" id="list-flags"></ul>
+      <div class="add-preset-row">
+        <input type="text" id="new-flags-text" placeholder="New flag item…">
+        <button class="btn-add-p" onclick="addFlagItem()">+ Add</button>
+      </div>
+      <button class="btn btn-amber" style="font-size:11px;padding:7px 14px;margin-top:12px" onclick="saveFlagsConfig()">Save &amp; Apply</button>
+      <span id="cfg-flags-status" style="font-family:var(--mono);font-size:11px;color:var(--green);margin-left:12px;opacity:0;transition:opacity .4s"></span>
+    </div>
+  </div>
+
   <div class="config-section" id="cfg-comms">
     <div class="config-head" onclick="toggleSection('cfg-comms')"><span class="config-title">General Comms Templates</span><span class="config-sub">→ General Communication</span><span class="card-chevron">▾</span></div>
     <div class="config-body">
@@ -1473,42 +1509,6 @@ EI to conduct LOD walk prior to start of operations"></textarea>
         <input type="text" id="activePhaseInput" style="max-width:320px;background:var(--bg);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--body);font-size:17px;padding:8px 11px" placeholder="Active phase label">
         <button class="btn btn-amber" style="font-size:11px;padding:7px 14px" onclick="savePhaseLabel()">Save &amp; Apply</button>
       </div>
-    </div>
-  </div>
-
-<div class="config-section" id="cfg-checklist">
-    <div class="config-head" onclick="toggleSection('cfg-checklist')"><span class="config-title">Compliance Checklist</span><span class="config-sub">→ Card 05</span><span class="card-chevron">▾</span></div>
-    <div class="config-body">
-      <p class="config-hint">Manage checklist items for Card 05. Checked items with notes will be included in the report.</p>
-      <div class="field" style="margin-bottom:10px">
-        <label>Card Title</label>
-        <input type="text" id="cfg-checklist-title" placeholder="Compliance Checklist" style="background:var(--bg);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--body);font-size:17px;padding:8px 11px;width:100%">
-      </div>
-      <ul class="preset-list" id="list-checklist"></ul>
-      <div class="add-preset-row">
-        <input type="text" id="new-checklist-text" placeholder="New checklist item…">
-        <button class="btn-add-p" onclick="addChecklistItem()">+ Add</button>
-      </div>
-      <button class="btn btn-amber" style="font-size:11px;padding:7px 14px;margin-top:12px" onclick="saveChecklistConfig()">Save &amp; Apply</button>
-      <span id="cfg-checklist-status" style="font-family:var(--mono);font-size:11px;color:var(--green);margin-left:12px;opacity:0;transition:opacity .4s"></span>
-    </div>
-  </div>
-
-  <div class="config-section" id="cfg-flags">
-    <div class="config-head" onclick="toggleSection('cfg-flags')"><span class="config-title">Regulatory Flags</span><span class="config-sub">→ Card 06</span><span class="card-chevron">▾</span></div>
-    <div class="config-body">
-      <p class="config-hint">Manage regulatory flag items for Card 06. Checked items trigger a report warning.</p>
-      <div class="field" style="margin-bottom:10px">
-        <label>Card Title</label>
-        <input type="text" id="cfg-flags-title" placeholder="Regulatory &amp; Incident Flags" style="background:var(--bg);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--body);font-size:17px;padding:8px 11px;width:100%">
-      </div>
-      <ul class="preset-list" id="list-flags"></ul>
-      <div class="add-preset-row">
-        <input type="text" id="new-flags-text" placeholder="New flag item…">
-        <button class="btn-add-p" onclick="addFlagItem()">+ Add</button>
-      </div>
-      <button class="btn btn-amber" style="font-size:11px;padding:7px 14px;margin-top:12px" onclick="saveFlagsConfig()">Save &amp; Apply</button>
-      <span id="cfg-flags-status" style="font-family:var(--mono);font-size:11px;color:var(--green);margin-left:12px;opacity:0;transition:opacity .4s"></span>
     </div>
   </div>
 
