@@ -1754,12 +1754,12 @@ const CFG_COLLAPSE_KEY='pei_collapsed_config';
 function _getCollapsedConfig(){try{return JSON.parse(localStorage.getItem(CFG_COLLAPSE_KEY)||'[]');}catch{return[];}}
 function _saveCollapsedConfig(arr){try{localStorage.setItem(CFG_COLLAPSE_KEY,JSON.stringify(arr));}catch{}}
 function collapseAllConfig(){
-  const ids=['cfg-nav','cfg-proj','cfg-ts','cfg-card-labels','cfg-obs','cfg-act','cfg-env','cfg-comms','cfg-look','cfg-phases','cfg-phase'];
+  const ids=['cfg-nav','cfg-proj','cfg-ts','cfg-card-labels','cfg-obs','cfg-act','cfg-env','cfg-comms','cfg-look','cfg-phases','cfg-phase','cfg-checklist','cfg-flags'];
   ids.forEach(id=>{const el=document.getElementById(id);if(el)el.classList.add('collapsed');});
   _saveCollapsedConfig(ids);
 }
 function expandAllConfig(){
-  const ids=['cfg-nav','cfg-proj','cfg-ts','cfg-card-labels','cfg-obs','cfg-act','cfg-env','cfg-comms','cfg-look','cfg-phases','cfg-phase'];
+  const ids=['cfg-nav','cfg-proj','cfg-ts','cfg-card-labels','cfg-obs','cfg-act','cfg-env','cfg-comms','cfg-look','cfg-phases','cfg-phase','cfg-checklist','cfg-flags'];
   ids.forEach(id=>{const el=document.getElementById(id);if(el)el.classList.remove('collapsed');});
   _saveCollapsedConfig([]);
 }
