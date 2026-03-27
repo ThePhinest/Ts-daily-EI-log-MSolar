@@ -237,7 +237,7 @@ body.theme-light .preset-chip:hover{background:rgba(0,76,84,0.18);border-color:v
 .tag-ew{border-color:#558855;color:#558855}.tag-lod{border-color:#5577aa;color:#5577aa}
 .tag-safety{border-color:#aa5544;color:#aa5544}.tag-env{border-color:#7755aa;color:#7755aa}.tag-ops{border-color:#557777;color:#557777}
 .check-note-wrap{margin-top:7px;margin-left:28px;display:none}.check-note-wrap.vis{display:block}
-.check-note{width:100%;background:var(--s2);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:var(--body);font-size:13px;padding:6px 10px;resize:vertical;min-height:48px;line-height:1.5;transition:border-color .15s}
+.check-note{width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:var(--body);font-size:13px;padding:6px 10px;resize:vertical;min-height:48px;line-height:1.5;transition:border-color .15s}
 .check-note:focus{outline:none;border-color:var(--amber)}
 
 /* FLAGS */
@@ -246,8 +246,10 @@ body.theme-light .preset-chip:hover{background:rgba(0,76,84,0.18);border-color:v
 .flag-row input[type=checkbox]{width:17px;height:17px;accent-color:var(--red);cursor:pointer;flex-shrink:0}
 .flag-text{flex:1;font-size:16px}
 .flag-note-wrap{margin-top:7px;margin-left:29px;display:none}.flag-note-wrap.vis{display:block}
-.flag-note{width:100%;background:var(--s2);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:var(--body);font-size:13px;padding:6px 10px;resize:vertical;min-height:48px;line-height:1.5;transition:border-color .15s}
+.flag-note{width:100%;background:var(--bg);border:1px solid var(--red);border-radius:4px;color:var(--text);font-family:var(--body);font-size:13px;padding:6px 10px;resize:vertical;min-height:48px;line-height:1.5;transition:border-color .15s}
 .flag-note:focus{outline:none;border-color:var(--red)}
+.card-hint{font-family:var(--mono);font-size:10.5px;color:var(--muted);padding:6px 17px 0;letter-spacing:.03em}
+.card-hint-red{font-family:var(--mono);font-size:10.5px;color:rgba(231,76,60,0.65);padding:6px 17px 0;letter-spacing:.03em}
 
 /* EXPORT PANEL */
 .export-panel{background:var(--s1);border:1px solid var(--border);border-radius:var(--r);padding:14px;margin-bottom:16px}
@@ -750,9 +752,10 @@ body.theme-light .preset-chip:hover{background:rgba(0,76,84,0.18);border-color:v
     </div>
   </div>
 
-  <!-- 05 PHASE 1 COMPLIANCE -->
+  <!-- 05 COMPLIANCE CHECKLIST -->
   <div class="card" id="sec-05">
-    <div class="card-head" onclick="toggleSection('sec-05')"><span class="card-num">05</span><span class="card-title">Phase 1 — Tree Felling Compliance Checklist</span><span class="card-chevron">▾</span></div>
+    <div class="card-head" onclick="toggleSection('sec-05')"><span class="card-num">05</span><span class="card-title" id="checklist-card-title">Compliance Checklist</span><span class="card-chevron">▾</span></div>
+    <div class="card-hint">Checked items with notes will be included in the report</div>
     <div class="card-body" id="checklistBody"><div class="check-item"><div class="check-row">
       <input type="checkbox" id="c1" onchange="toggleNote(&#39;c1&#39;)">
       <span class="check-text">Morning safety meeting / tailgate conducted at 6:30 AM prior to work start</span>
@@ -849,16 +852,9 @@ body.theme-light .preset-chip:hover{background:rgba(0,76,84,0.18);border-color:v
 
   <!-- 06 REGULATORY FLAGS -->
   <div class="card" id="sec-06">
-    <div class="card-head" onclick="toggleSection('sec-06')"><span class="card-num">06</span><span class="card-title">Regulatory &amp; Incident Flags</span><span class="card-chevron">▾</span></div>
-    <div class="card-body">
-      <div class="flag-row"><div class="flag-main"><input type="checkbox" id="flag-spdes" onchange="toggleFlagNote(&#39;spdes&#39;)"><span class="flag-text">Turbid discharge observed — potential SPDES exceedance</span><span class="check-tag tag-env">SPDES</span></div><div class="flag-note-wrap" id="flag-spdes-nw"><textarea class="flag-note" id="flag-spdes-note" placeholder="Note or deficiency detail…"></textarea></div></div>
-      <div class="flag-row"><div class="flag-main"><input type="checkbox" id="flag-storm" onchange="toggleFlagNote(&#39;storm&#39;)"><span class="flag-text">Precipitation event &gt;0.5 in. — post-storm inspection required</span><span class="check-tag tag-env">SPDES</span></div><div class="flag-note-wrap" id="flag-storm-nw"><textarea class="flag-note" id="flag-storm-note" placeholder="Note or deficiency detail…"></textarea></div></div>
-      <div class="flag-row"><div class="flag-main"><input type="checkbox" id="flag-buffer" onchange="toggleFlagNote(&#39;buffer&#39;)"><span class="flag-text">Work within 100 ft of regulated waterbody or wetland</span><span class="check-tag tag-ew">DEC</span></div><div class="flag-note-wrap" id="flag-buffer-nw"><textarea class="flag-note" id="flag-buffer-note" placeholder="Note or deficiency detail…"></textarea></div></div>
-      <div class="flag-row"><div class="flag-main"><input type="checkbox" id="flag-riparian" onchange="toggleFlagNote(&#39;riparian&#39;)"><span class="flag-text">Tree felling within riparian corridor or buffer zone</span><span class="check-tag tag-ew">DEC</span></div><div class="flag-note-wrap" id="flag-riparian-nw"><textarea class="flag-note" id="flag-riparian-note" placeholder="Note or deficiency detail…"></textarea></div></div>
-      <div class="flag-row"><div class="flag-main"><input type="checkbox" id="flag-discovery" onchange="toggleFlagNote(&#39;discovery&#39;)"><span class="flag-text">Unanticipated discovery — archaeological, cultural, or hazmat</span><span class="check-tag tag-env">SHPO</span></div><div class="flag-note-wrap" id="flag-discovery-nw"><textarea class="flag-note" id="flag-discovery-note" placeholder="Note or deficiency detail…"></textarea></div></div>
-      <div class="flag-row"><div class="flag-main"><input type="checkbox" id="flag-spill" onchange="toggleFlagNote(&#39;spill&#39;)"><span class="flag-text">Fuel or hydraulic fluid spill observed</span><span class="check-tag tag-safety">SAFETY</span></div><div class="flag-note-wrap" id="flag-spill-nw"><textarea class="flag-note" id="flag-spill-note" placeholder="Note or deficiency detail…"></textarea></div></div>
-      <div class="flag-row"><div class="flag-main"><input type="checkbox" id="flag-nci" onchange="toggleFlagNote(&#39;nci&#39;)"><span class="flag-text">Non-compliance notice issued (NCI)</span><span class="check-tag tag-lod">NCI</span></div><div class="flag-note-wrap" id="flag-nci-nw"><textarea class="flag-note" id="flag-nci-note" placeholder="Note or deficiency detail…"></textarea></div></div>
-      <div class="flag-row"><div class="flag-main"><input type="checkbox" id="flag-stop" onchange="toggleFlagNote(&#39;stop&#39;)"><span class="flag-text">Stop-work condition observed</span><span class="check-tag tag-safety">SAFETY</span></div><div class="flag-note-wrap" id="flag-stop-nw"><textarea class="flag-note" id="flag-stop-note" placeholder="Note or deficiency detail…"></textarea></div></div>
+    <div class="card-head" onclick="toggleSection('sec-06')"><span class="card-num">06</span><span class="card-title" id="flags-card-title">Regulatory &amp; Incident Flags</span><span class="card-chevron">▾</span></div>
+    <div class="card-hint-red">Checked items will trigger a report warning — description recommended</div>
+    <div class="card-body" id="flagsBody">
     </div>
   </div>
 
@@ -1477,6 +1473,42 @@ EI to conduct LOD walk prior to start of operations"></textarea>
         <input type="text" id="activePhaseInput" style="max-width:320px;background:var(--bg);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--body);font-size:17px;padding:8px 11px" placeholder="Active phase label">
         <button class="btn btn-amber" style="font-size:11px;padding:7px 14px" onclick="savePhaseLabel()">Save &amp; Apply</button>
       </div>
+    </div>
+  </div>
+
+<div class="config-section" id="cfg-checklist">
+    <div class="config-head" onclick="toggleSection('cfg-checklist')"><span class="config-title">Compliance Checklist</span><span class="config-sub">→ Card 05</span><span class="card-chevron">▾</span></div>
+    <div class="config-body">
+      <p class="config-hint">Manage checklist items for Card 05. Checked items with notes will be included in the report.</p>
+      <div class="field" style="margin-bottom:10px">
+        <label>Card Title</label>
+        <input type="text" id="cfg-checklist-title" placeholder="Compliance Checklist" style="background:var(--bg);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--body);font-size:17px;padding:8px 11px;width:100%">
+      </div>
+      <ul class="preset-list" id="list-checklist"></ul>
+      <div class="add-preset-row">
+        <input type="text" id="new-checklist-text" placeholder="New checklist item…">
+        <button class="btn-add-p" onclick="addChecklistItem()">+ Add</button>
+      </div>
+      <button class="btn btn-amber" style="font-size:11px;padding:7px 14px;margin-top:12px" onclick="saveChecklistConfig()">Save &amp; Apply</button>
+      <span id="cfg-checklist-status" style="font-family:var(--mono);font-size:11px;color:var(--green);margin-left:12px;opacity:0;transition:opacity .4s"></span>
+    </div>
+  </div>
+
+  <div class="config-section" id="cfg-flags">
+    <div class="config-head" onclick="toggleSection('cfg-flags')"><span class="config-title">Regulatory Flags</span><span class="config-sub">→ Card 06</span><span class="card-chevron">▾</span></div>
+    <div class="config-body">
+      <p class="config-hint">Manage regulatory flag items for Card 06. Checked items trigger a report warning.</p>
+      <div class="field" style="margin-bottom:10px">
+        <label>Card Title</label>
+        <input type="text" id="cfg-flags-title" placeholder="Regulatory &amp; Incident Flags" style="background:var(--bg);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--body);font-size:17px;padding:8px 11px;width:100%">
+      </div>
+      <ul class="preset-list" id="list-flags"></ul>
+      <div class="add-preset-row">
+        <input type="text" id="new-flags-text" placeholder="New flag item…">
+        <button class="btn-add-p" onclick="addFlagItem()">+ Add</button>
+      </div>
+      <button class="btn btn-amber" style="font-size:11px;padding:7px 14px;margin-top:12px" onclick="saveFlagsConfig()">Save &amp; Apply</button>
+      <span id="cfg-flags-status" style="font-family:var(--mono);font-size:11px;color:var(--green);margin-left:12px;opacity:0;transition:opacity .4s"></span>
     </div>
   </div>
 
