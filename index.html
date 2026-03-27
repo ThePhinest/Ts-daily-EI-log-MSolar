@@ -1659,12 +1659,12 @@ const CFG_COLLAPSE_KEY='pei_collapsed_config';
 function _getCollapsedConfig(){try{return JSON.parse(localStorage.getItem(CFG_COLLAPSE_KEY)||'[]');}catch{return[];}}
 function _saveCollapsedConfig(arr){try{localStorage.setItem(CFG_COLLAPSE_KEY,JSON.stringify(arr));}catch{}}
 function collapseAllConfig(){
-  const ids=['cfg-nav','cfg-proj','cfg-ts','cfg-obs','cfg-act','cfg-env','cfg-comms','cfg-look','cfg-phases','cfg-phase'];
+  const ids=['cfg-nav','cfg-proj','cfg-ts','cfg-obs','cfg-act','cfg-env','cfg-checklist','cfg-flags','cfg-comms','cfg-look','cfg-phases','cfg-phase'];
   ids.forEach(id=>{const el=document.getElementById(id);if(el)el.classList.add('collapsed');});
   _saveCollapsedConfig(ids);
 }
 function expandAllConfig(){
-  const ids=['cfg-nav','cfg-proj','cfg-ts','cfg-obs','cfg-act','cfg-env','cfg-comms','cfg-look','cfg-phases','cfg-phase'];
+  const ids=['cfg-nav','cfg-proj','cfg-ts','cfg-obs','cfg-act','cfg-env','cfg-checklist','cfg-flags','cfg-comms','cfg-look','cfg-phases','cfg-phase'];
   ids.forEach(id=>{const el=document.getElementById(id);if(el)el.classList.remove('collapsed');});
   _saveCollapsedConfig([]);
 }
@@ -1676,39 +1676,157 @@ function restoreCollapsedSections(){
 // ═══════════════════════════════════════════
 // CHECKLIST
 // ═══════════════════════════════════════════
-const CHECKS=[
-  {id:'c1', text:'Morning safety meeting / tailgate conducted at 6:30 AM prior to work start',tag:'ops',tl:'OPS'},
-  {id:'c2', text:'All active work areas within staked Limits of Disturbance (LOD)',tag:'lod',tl:'LOD'},
-  {id:'c3', text:'Directional felling — trees felled away from wetland and stream buffers and LOD boundaries',tag:'ops',tl:'OPS'},
-  {id:'c4', text:'Stump heights at or below 6 inches above ground level',tag:'ops',tl:'OPS'},
-  {id:'c5', text:'Slash and felled material managed within LOD — no encroachment beyond staked limits',tag:'lod',tl:'LOD'},
-  {id:'c6', text:'No tree felling within wetland buffer or stream riparian corridor',tag:'ew',tl:'WETLAND'},
-  {id:'c7', text:'Wetland and stream buffer markers intact, visible, and undisturbed',tag:'ew',tl:'WETLAND'},
-  {id:'c8', text:'Access routes and staging areas within approved footprint',tag:'lod',tl:'LOD'},
-  {id:'c9', text:'Equipment fueling and storage >100 ft from water resources — secondary containment in place',tag:'env',tl:'SPDES'},
-  {id:'c10',text:'No turbid discharge or sediment-laden runoff observed at site perimeter or water resources',tag:'env',tl:'SPDES'},
-  {id:'c11',text:'No unanticipated cultural, archaeological, or hazardous material discoveries',tag:'env',tl:'SHPO'},
-  {id:'c12',text:'No RTE / State-listed species or habitat disturbance observed during operations',tag:'env',tl:'RTE'},
-  {id:'c13',text:'Tree protection, invasive species controls, and buffer demarcation in place at designated limits',tag:'env',tl:'ENV'},
+const DEFAULT_CHECKLIST_ITEMS=[
+  {id:'c1', text:'Morning safety meeting / tailgate conducted at 6:30 AM prior to work start'},
+  {id:'c2', text:'All active work areas within staked Limits of Disturbance (LOD)'},
+  {id:'c3', text:'Directional felling — trees felled away from wetland and stream buffers and LOD boundaries'},
+  {id:'c4', text:'Stump heights at or below 6 inches above ground level'},
+  {id:'c5', text:'Slash and felled material managed within LOD — no encroachment beyond staked limits'},
+  {id:'c6', text:'No tree felling within wetland buffer or stream riparian corridor'},
+  {id:'c7', text:'Wetland and stream buffer markers intact, visible, and undisturbed'},
+  {id:'c8', text:'Access routes and staging areas within approved footprint'},
+  {id:'c9', text:'Equipment fueling and storage >100 ft from water resources — secondary containment in place'},
+  {id:'c10',text:'No turbid discharge or sediment-laden runoff observed at site perimeter or water resources'},
+  {id:'c11',text:'No unanticipated cultural, archaeological, or hazardous material discoveries'},
+  {id:'c12',text:'No RTE / State-listed species or habitat disturbance observed during operations'},
+  {id:'c13',text:'Tree protection, invasive species controls, and buffer demarcation in place at designated limits'},
 ];
-
+const DEFAULT_FLAG_ITEMS=[
+  {id:'flag-spdes',    text:'Turbid discharge observed — potential SPDES exceedance'},
+  {id:'flag-storm',    text:'Precipitation event >0.5 in. — post-storm inspection required'},
+  {id:'flag-buffer',   text:'Buffer encroachment observed'},
+  {id:'flag-riparian', text:'Riparian corridor disturbance observed'},
+  {id:'flag-discovery',text:'Unanticipated cultural, archaeological, or hazardous material discovery'},
+  {id:'flag-spill',    text:'Fuel or hydraulic fluid spill observed'},
+  {id:'flag-nci',      text:'Non-compliance notice issued (NCI)'},
+  {id:'flag-stop',     text:'Stop-work condition observed'},
+];
+let checklistItems=[...DEFAULT_CHECKLIST_ITEMS];
+let flagItems=[...DEFAULT_FLAG_ITEMS];
+let checklistTitle='Compliance Checklist';
+let flagsTitle='Regulatory & Incident Flags';
+// ═══════════════════════════════════════════
+// CHECKLIST + FLAGS CONFIG
+// ═══════════════════════════════════════════
+function loadChecklistConfig(){
+  try{const raw=localStorage.getItem('msf_checklist_config');if(raw){const d=JSON.parse(raw);checklistItems=d.items||DEFAULT_CHECKLIST_ITEMS;checklistTitle=d.title||'Compliance Checklist';}}catch{}
+}
+function saveChecklistLocal(){
+  try{localStorage.setItem('msf_checklist_config',JSON.stringify({title:checklistTitle,items:checklistItems}));}catch{}
+}
+async function saveChecklistCloud(){
+  if(!db||!_fbReady)return;
+  try{await db.collection('config').doc('checklist').set({title:checklistTitle,items:checklistItems});}catch(e){}
+}
+async function loadChecklistCloud(){
+  if(!db)return;
+  try{const doc=await db.collection('config').doc('checklist').get();if(doc.exists){const d=doc.data();checklistItems=d.items||DEFAULT_CHECKLIST_ITEMS;checklistTitle=d.title||'Compliance Checklist';saveChecklistLocal();buildChecklist();renderChecklistList();}}catch(e){}
+}
+function loadFlagsConfig(){
+  try{const raw=localStorage.getItem('msf_flags_config');if(raw){const d=JSON.parse(raw);flagItems=d.items||DEFAULT_FLAG_ITEMS;flagsTitle=d.title||'Regulatory & Incident Flags';}}catch{}
+}
+function saveFlagsLocal(){
+  try{localStorage.setItem('msf_flags_config',JSON.stringify({title:flagsTitle,items:flagItems}));}catch{}
+}
+async function saveFlagsCloud(){
+  if(!db||!_fbReady)return;
+  try{await db.collection('config').doc('flags').set({title:flagsTitle,items:flagItems});}catch(e){}
+}
+async function loadFlagsCloud(){
+  if(!db)return;
+  try{const doc=await db.collection('config').doc('flags').get();if(doc.exists){const d=doc.data();flagItems=d.items||DEFAULT_FLAG_ITEMS;flagsTitle=d.title||'Regulatory & Incident Flags';saveFlagsLocal();buildFlags();renderFlagsList();}}catch(e){}
+}
+function renderChecklistList(){
+  const ul=document.getElementById('list-checklist');if(!ul)return;
+  ul.innerHTML='';
+  checklistItems.forEach((item,i)=>{
+    const li=document.createElement('li');
+    li.innerHTML=`<span class="p-text">${item.text}</span><button class="del-p" onclick="removeChecklistItem(${i})">✕</button>`;
+    ul.appendChild(li);
+  });
+  const titleEl=document.getElementById('cfg-checklist-title');
+  if(titleEl)titleEl.value=checklistTitle;
+}
+function renderFlagsList(){
+  const ul=document.getElementById('list-flags');if(!ul)return;
+  ul.innerHTML='';
+  flagItems.forEach((item,i)=>{
+    const li=document.createElement('li');
+    li.innerHTML=`<span class="p-text">${item.text}</span><button class="del-p" onclick="removeFlagItem(${i})">✕</button>`;
+    ul.appendChild(li);
+  });
+  const titleEl=document.getElementById('cfg-flags-title');
+  if(titleEl)titleEl.value=flagsTitle;
+}
+function addChecklistItem(){
+  const t=document.getElementById('new-checklist-text');if(!t||!t.value.trim())return;
+  checklistItems.push({id:'c'+Date.now(),text:t.value.trim()});
+  t.value='';saveChecklistLocal();saveChecklistCloud();renderChecklistList();buildChecklist();
+}
+function removeChecklistItem(idx){
+  checklistItems.splice(idx,1);saveChecklistLocal();saveChecklistCloud();renderChecklistList();buildChecklist();
+}
+function addFlagItem(){
+  const t=document.getElementById('new-flags-text');if(!t||!t.value.trim())return;
+  flagItems.push({id:'flag-'+Date.now(),text:t.value.trim()});
+  t.value='';saveFlagsLocal();saveFlagsCloud();renderFlagsList();buildFlags();
+}
+function removeFlagItem(idx){
+  flagItems.splice(idx,1);saveFlagsLocal();saveFlagsCloud();renderFlagsList();buildFlags();
+}
+async function saveChecklistConfig(){
+  checklistTitle=document.getElementById('cfg-checklist-title')?.value.trim()||'Compliance Checklist';
+  saveChecklistLocal();await saveChecklistCloud();buildChecklist();
+  const s=document.getElementById('cfg-checklist-status');
+  if(s){s.textContent='Saved!';s.style.opacity='1';setTimeout(()=>s.style.opacity='0',2000);}
+}
+async function saveFlagsConfig(){
+  flagsTitle=document.getElementById('cfg-flags-title')?.value.trim()||'Regulatory & Incident Flags';
+  saveFlagsLocal();await saveFlagsCloud();buildFlags();
+  const s=document.getElementById('cfg-flags-status');
+  if(s){s.textContent='Saved!';s.style.opacity='1';setTimeout(()=>s.style.opacity='0',2000);}
+}
+ // ── Init checklist + flags on load ──
+loadChecklistConfig();
+loadFlagsConfig();
+// Cloud load deferred — called after Firebase ready (see initFirebaseLoad)
 function buildChecklist(){
-  const c=document.getElementById('checklistBody');c.innerHTML='';
-  CHECKS.forEach(ch=>{
+  const c=document.getElementById('checklistBody');if(!c)return;c.innerHTML='';
+  checklistItems.forEach(ch=>{
     const d=document.createElement('div');d.className='check-item';
     d.innerHTML=`<div class="check-row">
       <input type="checkbox" id="${ch.id}" onchange="toggleNote('${ch.id}')">
       <span class="check-text">${ch.text}</span>
-      <span class="check-tag tag-${ch.tag}">${ch.tl}</span>
     </div>
     <div class="check-note-wrap" id="${ch.id}-nw">
       <textarea class="check-note" id="${ch.id}-note" placeholder="Note or deficiency detail…"></textarea>
     </div>`;
     c.appendChild(d);
   });
+  const t=document.getElementById('checklist-card-title');
+  if(t)t.textContent=checklistTitle;
+}
+function buildFlags(){
+  const c=document.getElementById('flagsBody');if(!c)return;c.innerHTML='';
+  flagItems.forEach(fl=>{
+    const d=document.createElement('div');d.className='flag-row';
+    d.innerHTML=`<div class="flag-main">
+      <input type="checkbox" id="${fl.id}" onchange="toggleFlagNote('${fl.id}')">
+      <span class="flag-text">${fl.text}</span>
+    </div>
+    <div class="flag-note-wrap" id="${fl.id}-nw">
+      <textarea class="flag-note" id="${fl.id}-note" placeholder="Description required for report…"></textarea>
+    </div>`;
+    c.appendChild(d);
+  });
+  const t=document.getElementById('flags-card-title');
+  if(t)t.textContent=flagsTitle;
 }
 function toggleNote(id){document.getElementById(id+'-nw').classList.toggle('vis',document.getElementById(id).checked)}
-function toggleFlagNote(id){document.getElementById('flag-'+id+'-nw').classList.toggle('vis',document.getElementById('flag-'+id).checked)}
+function toggleFlagNote(id){
+  const fullId=id.startsWith('flag-')?id:'flag-'+id;
+  document.getElementById(fullId+'-nw').classList.toggle('vis',document.getElementById(fullId).checked);
+}
 
 // ═══════════════════════════════════════════
 // CREW BLOCKS
@@ -1922,6 +2040,8 @@ function renderConfig(){
   document.getElementById('activePhaseInput').value=activePhaseLabel;
   renderPhaseList();populateSelects();
   ['obs','act','env','comms','look'].forEach(k=>renderPresetList(k));
+  renderChecklistList();
+  renderFlagsList();
 }
 function renderPhaseList(){
   const ul=document.getElementById('list-phases');ul.innerHTML='';
@@ -2208,12 +2328,12 @@ function collectFormState(){
   // Sky — collect all checked
   state.sky=[...document.querySelectorAll('input[name="sky"]:checked')].map(el=>el.value);
   // Flags + flag notes
-  ['spdes','storm','buffer','riparian','discovery','spill','nci','stop'].forEach(f=>{
-    state.checkboxes['flag-'+f]=document.getElementById('flag-'+f)?.checked||false;
-    state.flagNotes[f]=document.getElementById('flag-'+f+'-note')?.value||'';
+  flagItems.forEach(f=>{
+    state.checkboxes[f.id]=document.getElementById(f.id)?.checked||false;
+    state.flagNotes[f.id.replace('flag-','')]=document.getElementById(f.id+'-note')?.value||'';
   });
   // Checklist
-  CHECKS.forEach(c=>{
+  checklistItems.forEach(c=>{
     state.checklist[c.id]={checked:document.getElementById(c.id)?.checked||false,note:document.getElementById(c.id+'-note')?.value||''};
   });
   // Crew blocks
@@ -2241,7 +2361,10 @@ function restoreFormState(state){
   Object.entries(state.checkboxes||{}).forEach(([id,val])=>{const el=document.getElementById(id);if(el)el.checked=val});
   Object.entries(state.flagNotes||{}).forEach(([f,val])=>{
     const el=document.getElementById('flag-'+f+'-note');if(el)el.value=val;
-    if(val&&document.getElementById('flag-'+f)?.checked){const nw=document.getElementById('flag-'+f+'-nw');if(nw)nw.classList.add('vis');}
+  });
+  // Show note wraps for all checked flags
+  flagItems.forEach(f=>{
+    if(document.getElementById(f.id)?.checked){const nw=document.getElementById(f.id+'-nw');if(nw)nw.classList.add('vis');}
   });
   // Checklist
   Object.entries(state.checklist||{}).forEach(([id,{checked,note}])=>{
@@ -2313,13 +2436,19 @@ document.addEventListener('change', _onInputEvent);
 // COPY JSON EXPORT (report fields only)
 // ═══════════════════════════════════════════
 function copyJSON(){
+  const flagsWithoutDesc=flagItems.filter(f=>document.getElementById(f.id)?.checked&&!document.getElementById(f.id+'-note')?.value.trim());
+  if(flagsWithoutDesc.length>0){
+    _confirmModal(`⚠ ${flagsWithoutDesc.length} regulatory flag(s) are checked without a description — they will appear in the report without detail. Export anyway?`,_buildAndCopyJSON);
+    return;
+  }
+  _buildAndCopyJSON();
+}
+function _buildAndCopyJSON(){
   const sky=[...document.querySelectorAll('input[name="sky"]:checked')].map(el=>el.value).join(', ')||'';
-  const checklist=CHECKS.map(c=>({item:c.text,checked:!!document.getElementById(c.id)?.checked,note:document.getElementById(c.id+'-note')?.value.trim()||''}));
-  const flagIds=['spdes','storm','buffer','riparian','discovery','spill','nci','stop'];
-  const flags=flagIds.filter(f=>document.getElementById('flag-'+f)?.checked).map(f=>{
-    const text=document.getElementById('flag-'+f).closest('.flag-row').querySelector('.flag-text').textContent.trim();
-    const note=document.getElementById('flag-'+f+'-note')?.value.trim()||'';
-    return note ? `${text} — ${note}` : text;
+  const checklist=checklistItems.map(c=>({item:c.text,checked:!!document.getElementById(c.id)?.checked,note:document.getElementById(c.id+'-note')?.value.trim()||''}));
+  const flags=flagItems.filter(f=>document.getElementById(f.id)?.checked).map(f=>{
+    const note=document.getElementById(f.id+'-note')?.value.trim()||'';
+    return note?`${f.text} — ${note}`:f.text;
   });
   const crew=crewIds.map(id=>({
     name:    document.getElementById(`crew-${id}-name`)?.value.trim()||'',
@@ -4589,6 +4718,8 @@ function resetForm() {
       syncProjectConfigFromCloud();
       syncPresetsFromCloud();
       checkNewDay();
+      loadChecklistCloud();
+      loadFlagsCloud();
       return;
     }
 
@@ -4615,6 +4746,8 @@ function resetForm() {
       syncProjectConfigFromCloud();
       syncPresetsFromCloud();
       checkNewDay();
+      loadChecklistCloud();
+      loadFlagsCloud();
     } else if (localTs > cloudTs) {
       _fbReady = true;
       cloudSave();
@@ -4623,6 +4756,8 @@ function resetForm() {
       syncProjectConfigFromCloud();
       syncPresetsFromCloud();
       checkNewDay();
+      loadChecklistCloud();
+      loadFlagsCloud();
     } else {
       _fbReady = true;
       setSyncStatus('synced');
@@ -4631,12 +4766,16 @@ function resetForm() {
       syncProjectConfigFromCloud();
       syncPresetsFromCloud();
       checkNewDay();
+      loadChecklistCloud();
+      loadFlagsCloud();
     }
 
   } catch(e) {
     setSyncStatus('offline');
-    console.warn('Phinest EI: Firebase init load failed —', e.message);
+    console.warn('GroundLog: Firebase init load failed —', e.message);
     checkNewDay(); // still check even if Firebase fails — local data may have previous day
+    loadChecklistCloud();
+    loadFlagsCloud();
   }
   _fbReady = true; // allow cloudSave from this point forward
 })();
