@@ -1512,6 +1512,27 @@ EI to conduct LOD walk prior to start of operations"></textarea>
     </div>
   </div>
 
+<div class="config-section" id="cfg-card-labels">
+    <div class="config-head" onclick="toggleSection('cfg-card-labels')"><span class="config-title">Card Labels</span><span class="config-sub">Rename daily log card headers</span><span class="card-chevron">▾</span></div>
+    <div class="config-body">
+      <p class="config-hint">Customize the title of each card in the daily log. Changes sync across devices and update the card header and any linked settings section instantly.</p>
+      <div class="g g2" style="margin-bottom:10px">
+        <div class="field"><label>Card 01</label><input type="text" id="cfg-ct-01" placeholder="Project &amp; Report Info"></div>
+        <div class="field"><label>Card TS</label><input type="text" id="cfg-ct-ts" placeholder="Daily Timesheet Entry"></div>
+        <div class="field"><label>Card 02</label><input type="text" id="cfg-ct-02" placeholder="Weather Conditions"></div>
+        <div class="field"><label>Card 03</label><input type="text" id="cfg-ct-03" placeholder="Inspection Summary"></div>
+        <div class="field"><label>Card 04</label><input type="text" id="cfg-ct-04" placeholder="Contractor Crew Observations"></div>
+        <div class="field"><label>Card 05</label><input type="text" id="cfg-ct-05" placeholder="Compliance Checklist"></div>
+        <div class="field"><label>Card 06</label><input type="text" id="cfg-ct-06" placeholder="Regulatory &amp; Incident Flags"></div>
+        <div class="field"><label>Card 07</label><input type="text" id="cfg-ct-07" placeholder="General Communication to Contractors"></div>
+        <div class="field"><label>Card 08</label><input type="text" id="cfg-ct-08" placeholder="24-Hour Look Ahead"></div>
+        <div class="field"><label>Personal Notes</label><input type="text" id="cfg-ct-notes" placeholder="Personal Notes"></div>
+      </div>
+      <button class="btn btn-amber" style="font-size:11px;padding:7px 14px" onclick="saveCardLabels()">Save &amp; Apply</button>
+      <span id="cfg-card-labels-status" style="font-family:var(--mono);font-size:11px;color:var(--green);margin-left:12px;opacity:0;transition:opacity .4s"></span>
+    </div>
+  </div>
+
 </div></div><!-- /page-config -->
 
 
@@ -1659,12 +1680,12 @@ const CFG_COLLAPSE_KEY='pei_collapsed_config';
 function _getCollapsedConfig(){try{return JSON.parse(localStorage.getItem(CFG_COLLAPSE_KEY)||'[]');}catch{return[];}}
 function _saveCollapsedConfig(arr){try{localStorage.setItem(CFG_COLLAPSE_KEY,JSON.stringify(arr));}catch{}}
 function collapseAllConfig(){
-  const ids=['cfg-nav','cfg-proj','cfg-ts','cfg-obs','cfg-act','cfg-env','cfg-checklist','cfg-flags','cfg-comms','cfg-look','cfg-phases','cfg-phase'];
+  const ids=['cfg-nav','cfg-proj','cfg-ts','cfg-card-labels','cfg-obs','cfg-act','cfg-env','cfg-comms','cfg-look','cfg-phases','cfg-phase'];
   ids.forEach(id=>{const el=document.getElementById(id);if(el)el.classList.add('collapsed');});
   _saveCollapsedConfig(ids);
 }
 function expandAllConfig(){
-  const ids=['cfg-nav','cfg-proj','cfg-ts','cfg-obs','cfg-act','cfg-env','cfg-checklist','cfg-flags','cfg-comms','cfg-look','cfg-phases','cfg-phase'];
+  const ids=['cfg-nav','cfg-proj','cfg-ts','cfg-card-labels','cfg-obs','cfg-act','cfg-env','cfg-comms','cfg-look','cfg-phases','cfg-phase'];
   ids.forEach(id=>{const el=document.getElementById(id);if(el)el.classList.remove('collapsed');});
   _saveCollapsedConfig([]);
 }
