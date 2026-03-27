@@ -2379,7 +2379,8 @@ function applyProjectConfig() {
   ['projectName','preparedBy','org','activePhase','contractor','location','reviewedBy'].forEach(k => {
     const el = document.getElementById('cfg-' + k);
     if (el) el.value = cfg[k];
-  });
+ });
+  initCardTitles();
 }
 
 function saveProjectConfig() {
