@@ -617,7 +617,7 @@ body.theme-light .preset-chip:hover{background:rgba(0,76,84,0.18);border-color:v
   <div class="card" id="sec-01">
     <div class="card-head" id="ch-01" onclick="toggleSection('sec-01')">
       <span class="card-num">01</span>
-      <span class="card-title">Project &amp; Report Info</span>
+      <span class="card-title" id="ctitle-01">Project &amp; Report Info</span>
       <span class="card-chevron">▾</span>
     </div>
     <div class="card-body">
@@ -644,7 +644,7 @@ body.theme-light .preset-chip:hover{background:rgba(0,76,84,0.18);border-color:v
   <div class="card" id="sec-ts">
     <div class="card-head" onclick="toggleSection('sec-ts')">
       <span class="card-num">⏱</span>
-      <span class="card-title">Daily Timesheet Entry</span>
+      <span class="card-title" id="ctitle-ts">Daily Timesheet Entry</span>
       <span class="card-chevron">▾</span>
     </div>
     <div class="card-body">
@@ -683,7 +683,7 @@ body.theme-light .preset-chip:hover{background:rgba(0,76,84,0.18);border-color:v
   <div class="card" id="sec-02">
     <div class="card-head" onclick="toggleSection('sec-02')">
       <span class="card-num">02</span>
-      <span class="card-title">Weather Conditions</span>
+      <span class="card-title" id="ctitle-02">Weather Conditions</span>
       <button class="btn btn-outline" id="wx-btn" onclick="event.stopPropagation();getMyWeather()" style="font-size:10px;padding:4px 10px;margin-left:auto;margin-right:8px">⛅ Get My Weather</button>
       <span class="card-chevron">▾</span>
     </div>
@@ -720,7 +720,7 @@ body.theme-light .preset-chip:hover{background:rgba(0,76,84,0.18);border-color:v
 
   <!-- 03 INSPECTION SUMMARY -->
   <div class="card" id="sec-03">
-    <div class="card-head" onclick="toggleSection('sec-03')"><span class="card-num">03</span><span class="card-title">Inspection Summary</span><span class="card-chevron">▾</span></div>
+    <div class="card-head" onclick="toggleSection('sec-03')"><span class="card-num">03</span><span class="card-title" id="ctitle-03">Inspection Summary</span><span class="card-chevron">▾</span></div>
     <div class="card-body">
       <div class="g">
         <div class="field">
@@ -742,7 +742,7 @@ body.theme-light .preset-chip:hover{background:rgba(0,76,84,0.18);border-color:v
   <div class="card" id="sec-04">
     <div class="card-head" onclick="toggleSection('sec-04')">
       <span class="card-num">04</span>
-      <span class="card-title">Contractor Crew Observations</span>
+      <span class="card-title" id="ctitle-04">Contractor Crew Observations</span>
       <span class="card-badge" id="crewBadge">0 blocks</span>
       <span class="card-chevron">▾</span>
     </div>
@@ -754,7 +754,7 @@ body.theme-light .preset-chip:hover{background:rgba(0,76,84,0.18);border-color:v
 
   <!-- 05 COMPLIANCE CHECKLIST -->
   <div class="card" id="sec-05">
-    <div class="card-head" onclick="toggleSection('sec-05')"><span class="card-num">05</span><span class="card-title" id="checklist-card-title">Compliance Checklist</span><span class="card-chevron">▾</span></div>
+    <div class="card-head" onclick="toggleSection('sec-05')"><span class="card-num">05</span><span class="card-title" id="ctitle-05">Compliance Checklist</span><span class="card-chevron">▾</span></div>
     <div class="card-hint">Checked items with notes will be included in the report</div>
     <div class="card-body" id="checklistBody"><div class="check-item"><div class="check-row">
       <input type="checkbox" id="c1" onchange="toggleNote(&#39;c1&#39;)">
@@ -852,7 +852,7 @@ body.theme-light .preset-chip:hover{background:rgba(0,76,84,0.18);border-color:v
 
   <!-- 06 REGULATORY FLAGS -->
   <div class="card" id="sec-06">
-    <div class="card-head" onclick="toggleSection('sec-06')"><span class="card-num">06</span><span class="card-title" id="flags-card-title">Regulatory &amp; Incident Flags</span><span class="card-chevron">▾</span></div>
+    <div class="card-head" onclick="toggleSection('sec-06')"><span class="card-num">06</span><span class="card-title" id="ctitle-06">Regulatory &amp; Incident Flags</span><span class="card-chevron">▾</span></div>
     <div class="card-hint-red">Checked items will trigger a report warning — description recommended</div>
     <div class="card-body" id="flagsBody">
     </div>
@@ -860,7 +860,7 @@ body.theme-light .preset-chip:hover{background:rgba(0,76,84,0.18);border-color:v
 
   <!-- 07 GENERAL COMMS -->
   <div class="card" id="sec-07">
-    <div class="card-head" onclick="toggleSection('sec-07')"><span class="card-num">07</span><span class="card-title">General Communication to Contractors</span><span class="card-chevron">▾</span></div>
+    <div class="card-head" onclick="toggleSection('sec-07')"><span class="card-num">07</span><span class="card-title" id="ctitle-07">General Communication to Contractors</span><span class="card-chevron">▾</span></div>
     <div class="card-body">
       <div class="field">
         <label>Directives, communications, and coordination notes</label>
@@ -872,7 +872,7 @@ body.theme-light .preset-chip:hover{background:rgba(0,76,84,0.18);border-color:v
 
   <!-- 08 24-HR LOOK AHEAD -->
   <div class="card" id="sec-08">
-    <div class="card-head" onclick="toggleSection('sec-08')"><span class="card-num">08</span><span class="card-title">24-Hour Look Ahead</span><span class="card-chevron">▾</span></div>
+    <div class="card-head" onclick="toggleSection('sec-08')"><span class="card-num">08</span><span class="card-title" id="ctitle-08">24-Hour Look Ahead</span><span class="card-chevron">▾</span></div>
     <div class="card-body">
       <div class="field" style="margin-bottom:12px">
         <label>Expected Weather Conditions</label>
@@ -892,7 +892,7 @@ EI to conduct LOD walk prior to start of operations"></textarea>
   <div class="card-personal" id="sec-notes">
     <div class="card-personal-head" onclick="toggleSection('sec-notes')">
       <span class="personal-icon">🔒</span>
-      <span class="personal-title">Personal Notes</span>
+      <span class="personal-title" id="ctitle-notes">Personal Notes</span>
       <span class="personal-badge">NOT INCLUDED IN REPORTS</span>
       <span class="card-chevron" style="margin-left:8px">▾</span>
     </div>
