@@ -1547,6 +1547,80 @@ const SAVED_DATA = null;
 // DEFAULTS & STATE
 // ═══════════════════════════════════════════
 const DEFAULT_PHASES = ['Phase 1 — Tree Felling','Phase 2 — Grading & Earthwork','Phase 3 — Construction','All Phases'];
+
+// ═══════════════════════════════════════════
+// CARD LABELS
+// ═══════════════════════════════════════════
+const CARD_REGISTRY = [
+  { id:'sec-01',  titleId:'ctitle-01',    cfgSubId:null,       inputId:'cfg-ct-01',    def:'Project & Report Info' },
+  { id:'sec-ts',  titleId:'ctitle-ts',    cfgSubId:null,       inputId:'cfg-ct-ts',    def:'Daily Timesheet Entry' },
+  { id:'sec-02',  titleId:'ctitle-02',    cfgSubId:null,       inputId:'cfg-ct-02',    def:'Weather Conditions' },
+  { id:'sec-03',  titleId:'ctitle-03',    cfgSubId:'csub-03',  inputId:'cfg-ct-03',    def:'Inspection Summary' },
+  { id:'sec-04',  titleId:'ctitle-04',    cfgSubId:null,       inputId:'cfg-ct-04',    def:'Contractor Crew Observations' },
+  { id:'sec-05',  titleId:'ctitle-05',    cfgSubId:null,       inputId:'cfg-ct-05',    def:'Compliance Checklist' },
+  { id:'sec-06',  titleId:'ctitle-06',    cfgSubId:null,       inputId:'cfg-ct-06',    def:'Regulatory & Incident Flags' },
+  { id:'sec-07',  titleId:'ctitle-07',    cfgSubId:'csub-07',  inputId:'cfg-ct-07',    def:'General Communication to Contractors' },
+  { id:'sec-08',  titleId:'ctitle-08',    cfgSubId:'csub-08',  inputId:'cfg-ct-08',    def:'24-Hour Look Ahead' },
+  { id:'sec-notes',titleId:'ctitle-notes',cfgSubId:null,       inputId:'cfg-ct-notes', def:'Personal Notes' },
+];
+
+let _cardTitles = {};
+
+function loadCardTitles(data){
+  CARD_REGISTRY.forEach(c=>{
+    const val = (data && data[c.id]) ? data[c.id] : c.def;
+    _cardTitles[c.id] = val;
+    // Update daily log card header
+    const titleEl = document.getElementById(c.titleId);
+    if(titleEl) titleEl.textContent = val;
+    // Update linked settings config-sub span
+    if(c.cfgSubId){
+      const subEl = document.getElementById(c.cfgSubId);
+      if(subEl) subEl.textContent = '→ ' + val;
+    }
+    // Populate input in Card Labels settings section
+    const inputEl = document.getElementById(c.inputId);
+    if(inputEl){ inputEl.value = (data && data[c.id]) ? val : ''; }
+  });
+}
+
+async function saveCardLabels(){
+  const titles = {};
+  CARD_REGISTRY.forEach(c=>{
+    const inputEl = document.getElementById(c.inputId);
+    const val = inputEl ? inputEl.value.trim() : '';
+    titles[c.id] = val || c.def;
+  });
+  // Update DOM immediately
+  loadCardTitles(titles);
+  // Save to Firestore
+  if(db && _fbReady){
+    try{
+      await db.collection('settings').doc('cardTitles').set(titles);
+    }catch(e){ console.warn('saveCardLabels failed:',e.message); }
+  }
+  // Also persist locally
+  try{ localStorage.setItem('gl_cardTitles', JSON.stringify(titles)); }catch{}
+  const s = document.getElementById('cfg-card-labels-status');
+  if(s){ s.textContent='Saved!'; s.style.opacity='1'; setTimeout(()=>s.style.opacity='0',2000); }
+}
+
+async function initCardTitles(){
+  // Try Firestore first
+  if(db && _fbReady){
+    try{
+      const doc = await db.collection('settings').doc('cardTitles').get();
+      if(doc.exists){ loadCardTitles(doc.data()); return; }
+    }catch(e){ console.warn('initCardTitles Firestore failed:',e.message); }
+  }
+  // Fall back to localStorage
+  try{
+    const raw = localStorage.getItem('gl_cardTitles');
+    if(raw){ loadCardTitles(JSON.parse(raw)); return; }
+  }catch{}
+  // Fall back to defaults
+  loadCardTitles({});
+}
 const DEFAULT_PRESETS = {
   obs:[
     {text:'EI attended the morning safety meeting/tailgate at 6:30 AM',phase:'Phase 1 — Tree Felling'},
@@ -2061,6 +2135,7 @@ function saveNavConfig(){
 // ═══════════════════════════════════════════
 function renderConfig(){
   document.getElementById('activePhaseInput').value=activePhaseLabel;
+  initCardTitles();
   renderPhaseList();populateSelects();
   ['obs','act','env','comms','look'].forEach(k=>renderPresetList(k));
   renderChecklistList();
