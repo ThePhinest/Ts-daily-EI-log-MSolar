@@ -5047,6 +5047,15 @@ async function rptBuildDocx(logData,polished,photos){
 // ── Main generateReport function ──
 async function generateReport(){
   if(!window.docx){_confirmModal('The report library is still loading. Please wait a moment and try again.',()=>{});return;}
+  const flagsWithoutDesc=flagItems.filter(f=>document.getElementById(f.id)?.checked&&!document.getElementById(f.id+'-note')?.value.trim());
+  if(flagsWithoutDesc.length>0){
+    _confirmModal(`⚠ ${flagsWithoutDesc.length} regulatory flag(s) are checked without a description. Generate report anyway?`,()=>_doGenerate());
+    return;
+  }
+  _confirmModal('Generate and download report for today\'s log?',()=>_doGenerate());
+}
+async function _doGenerate(){
+  if(!window.docx){return;}
   const btn=document.getElementById('btn-generate-report');
   const status=document.getElementById('rpt-status');
   const setStatus=(msg,color)=>{if(status){status.textContent=msg;status.style.color=color||'var(--green)';status.style.opacity='1';}};
