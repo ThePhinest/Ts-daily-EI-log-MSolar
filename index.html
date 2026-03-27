@@ -3586,8 +3586,8 @@ function _applyWeatherData(data){
   if(fcastEl) fcastEl.value=fcastStr;
 
   // Push forecast to look-ahead if empty
-  const lookaheadEl=document.getElementById('lookahead');
-  if(lookaheadEl && !lookaheadEl.value.trim()) lookaheadEl.value=`Expected Weather Conditions: ${fcastStr}`;
+  const lookaheadEl=document.getElementById('lookaheadWeather');
+  if(lookaheadEl && !lookaheadEl.value.trim()) lookaheadEl.value=fcastStr;
 
   // Trigger autosave
   debouncedAutoSave();
