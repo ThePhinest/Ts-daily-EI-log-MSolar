@@ -3582,7 +3582,12 @@ function _applyWeatherData(data){
   const tmrWspd=Math.round(d.windspeed_10m_max[1]);
   const tmrDesc=_wmoToDesc(tmrWmo);
   const fcastEl=document.getElementById('upcomingWeather');
-  if(fcastEl) fcastEl.value=`Tomorrow: ${tmrDesc}, High ${tmrHi}°F / Low ${tmrLo}°F, Winds up to ${tmrWspd} mph`;
+  const fcastStr=`Tomorrow: ${tmrDesc}, High ${tmrHi}°F / Low ${tmrLo}°F, Winds up to ${tmrWspd} mph`;
+  if(fcastEl) fcastEl.value=fcastStr;
+
+  // Push forecast to look-ahead if empty
+  const lookaheadEl=document.getElementById('lookahead');
+  if(lookaheadEl && !lookaheadEl.value.trim()) lookaheadEl.value=`Expected Weather Conditions: ${fcastStr}`;
 
   // Trigger autosave
   debouncedAutoSave();
