@@ -1789,6 +1789,8 @@ async function saveFlagsConfig(){
  // ── Init checklist + flags on load ──
 loadChecklistConfig();
 loadFlagsConfig();
+buildChecklist();
+buildFlags();
 // Cloud load deferred — called after Firebase ready (see initFirebaseLoad)
 function buildChecklist(){
   const c=document.getElementById('checklistBody');if(!c)return;c.innerHTML='';
