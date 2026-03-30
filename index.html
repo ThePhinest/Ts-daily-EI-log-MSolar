@@ -71,6 +71,16 @@ body.theme-light{
 .more-divider{height:1px;background:var(--border);margin:2px 0}
 .more-section-label{font-family:var(--mono);font-size:9px;color:var(--muted);letter-spacing:.1em;text-transform:uppercase;padding:10px 20px 4px}
 
+/* ── FIELD MAP ── */
+#page-map{padding:0!important;overflow:hidden}
+#mapbox-map{width:100%;height:calc(100dvh - 60px - env(safe-area-inset-bottom))}
+#map-loading,#map-no-token{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:var(--bg);z-index:20;padding:32px;text-align:center}
+#map-no-token{display:none}
+.map-controls{position:absolute;top:12px;left:12px;z-index:10;display:flex;gap:6px;flex-wrap:wrap}
+.map-style-btn{font-family:var(--mono);font-size:10px;padding:5px 10px;border-radius:20px;border:1px solid var(--border2);background:var(--s1);color:var(--muted);cursor:pointer;transition:all .15s;letter-spacing:.04em}
+.map-style-btn.active{background:var(--s3);color:#fff;border-color:var(--s3)}
+.map-locate-btn{position:absolute;bottom:90px;right:12px;z-index:10;font-size:22px;width:44px;height:44px;border-radius:50%;border:1px solid var(--border2);background:var(--s1);cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(0,0,0,.4)}
+
 /* CALENDAR GRID */
 .cal-view-toggle{display:flex;gap:6px;margin-bottom:14px}
 .cal-toggle-btn{flex:1;padding:7px 10px;border-radius:6px;border:1px solid var(--border2);background:transparent;color:var(--muted);font-family:var(--cond);font-weight:700;font-size:11px;letter-spacing:.08em;text-transform:uppercase;cursor:pointer;transition:all .15s}
@@ -562,6 +572,11 @@ body.theme-light .preset-chip:hover{background:rgba(0,76,84,0.18);border-color:v
   <div class="more-row" onclick="showPage('timesheet');closeMoreMenu()">
     <span class="more-row-icon">⏱</span>
     <div><div class="more-row-label">Timesheet</div><div class="more-row-sub">Hours, miles &amp; per diem</div></div>
+  </div>
+  <div class="more-divider"></div>
+  <div class="more-row" onclick="showPage('map');closeMoreMenu()">
+    <span class="more-row-icon">🗺️</span>
+    <div><div class="more-row-label">Field Map</div><div class="more-row-sub">GPS pins, KML layers, markers</div></div>
   </div>
   <div class="more-divider"></div>
   <div class="more-row" onclick="showPage('forms');closeMoreMenu()">
@@ -1101,6 +1116,39 @@ EI to conduct LOD walk prior to start of operations"></textarea>
   <div class="card-body" style="color:var(--muted);font-family:var(--mono);font-size:12px;">Coming soon — spill reports and other regulatory forms.</div></div>
 </div></div>
 
+<!-- ══════════════════════════════════
+     MAP PAGE
+══════════════════════════════════ -->
+<div class="page" id="page-map">
+  <div style="position:relative;width:100%">
+    <div id="mapbox-map"></div>
+
+    <!-- Style toggle controls -->
+    <div class="map-controls">
+      <button class="map-style-btn active" id="map-btn-satellite" onclick="mapSetStyle('satellite-streets-v12')">🛰 Satellite</button>
+      <button class="map-style-btn" id="map-btn-streets" onclick="mapSetStyle('streets-v12')">🗺 Streets</button>
+      <button class="map-style-btn" id="map-btn-outdoors" onclick="mapSetStyle('outdoors-v12')">🏔 Topo</button>
+    </div>
+
+    <!-- Locate me -->
+    <button class="map-locate-btn" onclick="mapLocateMe()" title="Locate me">🥾</button>
+
+    <!-- Loading state -->
+    <div id="map-loading">
+      <div style="font-size:40px;margin-bottom:14px">🗺️</div>
+      <div style="font-family:var(--mono);font-size:12px;color:var(--muted)">Loading map…</div>
+    </div>
+
+    <!-- No token state -->
+    <div id="map-no-token">
+      <div style="font-size:40px;margin-bottom:16px">🗺️</div>
+      <div style="font-family:var(--cond);font-weight:700;font-size:18px;letter-spacing:.06em;text-transform:uppercase;color:var(--text);margin-bottom:8px">Map Not Configured</div>
+      <div style="font-family:var(--mono);font-size:12px;color:var(--muted);margin-bottom:20px">Add your Mapbox token in Settings → Map Settings</div>
+      <button class="btn btn-amber" onclick="showPage('config');closeMoreMenu()">Open Settings</button>
+    </div>
+  </div>
+</div>
+
 <!-- DOCS PAGE (placeholder) -->
 <div class="page" id="page-docs"><div class="wrap">
   <div class="card"><div class="card-head"><span class="card-num">📁</span><span class="card-title">Docs</span></div>
@@ -1341,6 +1389,27 @@ EI to conduct LOD walk prior to start of operations"></textarea>
       </div>
       <button class="btn btn-amber" style="font-size:11px;padding:7px 14px" onclick="saveApiKey()">Save &amp; Encrypt</button>
       <span id="cfg-api-status" style="font-family:var(--mono);font-size:11px;color:var(--green);margin-left:12px;opacity:0;transition:opacity .4s"></span>
+    </div>
+  </div>
+
+  <div class="config-section" id="cfg-map">
+    <div class="config-head" onclick="toggleSection('cfg-map')"><span class="config-title">Map Settings</span><span class="card-chevron">▾</span></div>
+    <div class="config-body">
+      <p class="config-hint">Configure the Field Map. Paste your Mapbox public token below to enable the map.</p>
+      <div class="field" style="margin-bottom:10px">
+        <label>Mapbox Public Token</label>
+        <input type="text" id="cfg-map-token" placeholder="pk.eyJ1…" style="font-family:var(--mono);font-size:11px">
+      </div>
+      <div class="field" style="margin-bottom:12px">
+        <label>Default Map Style</label>
+        <select id="cfg-map-style" style="background:var(--bg);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--body);font-size:14px;padding:8px 11px;width:100%">
+          <option value="satellite-streets-v12">🛰 Satellite + Streets</option>
+          <option value="streets-v12">🗺 Streets</option>
+          <option value="outdoors-v12">🏔 Topo / Outdoors</option>
+        </select>
+      </div>
+      <button class="btn btn-amber" style="font-size:11px;padding:7px 14px" onclick="mapSaveSettings()">Save Map Settings</button>
+      <span id="cfg-map-status" style="font-family:var(--mono);font-size:11px;color:var(--green);margin-left:12px;opacity:0;transition:opacity .4s"></span>
     </div>
   </div>
 
@@ -1697,11 +1766,143 @@ function showPage(name){
     const moreBtn=document.getElementById('tab-more');
     if(moreBtn)moreBtn.classList.add('active');
   }
-  if(name==='config'){ renderConfig(); tsLoadConfigFields(); renderNavConfig(); }
+  if(name==='config'){ renderConfig(); tsLoadConfigFields(); renderNavConfig(); mapLoadSettingsFields(); }
+  if(name==='map'){ mapInit(); }
   if(name==='calendar'){ calRender(); }
   if(name==='timesheet'){ tsPushFromDailyLog(); tsRenderCurrentWeek(); tsCheckArchivePrompt(); }
   if(name==='compliance'){ clInit(); clAutoDetect(); }
   if(name==='photos'){ _phDaysShown=7; phRender(); }
+}
+
+// ═══════════════════════════════════════════
+// FIELD MAP — MAPBOX
+// ═══════════════════════════════════════════
+let _mapInstance=null, _mapGpsMarker=null, _mapGpsWatch=null;
+let _mapCurrentStyle=localStorage.getItem('gl_map_style')||'satellite-streets-v12';
+
+function mapInit(){
+  const token=(localStorage.getItem('gl_map_token')||'').trim();
+  if(!token){
+    document.getElementById('map-loading').style.display='none';
+    document.getElementById('map-no-token').style.display='flex';
+    return;
+  }
+  document.getElementById('map-no-token').style.display='none';
+  if(_mapInstance){ setTimeout(()=>_mapInstance.resize(),100); document.getElementById('map-loading').style.display='none'; return; }
+  document.getElementById('map-loading').style.display='flex';
+  if(typeof mapboxgl!=='undefined'){ mapSetup(token); return; }
+  if(!document.getElementById('mapbox-css')){
+    const css=document.createElement('link');
+    css.id='mapbox-css'; css.rel='stylesheet';
+    css.href='https://api.mapbox.com/mapbox-gl-js/v3.3.0/mapbox-gl.css';
+    document.head.appendChild(css);
+  }
+  const script=document.createElement('script');
+  script.id='mapbox-js';
+  script.src='https://api.mapbox.com/mapbox-gl-js/v3.3.0/mapbox-gl.js';
+  script.onload=()=>mapSetup(token);
+  script.onerror=()=>{
+    const el=document.getElementById('map-loading');
+    el.innerHTML='<div style="font-family:var(--mono);font-size:12px;color:var(--red);text-align:center;padding:20px">Failed to load map SDK.<br>Check your connection.</div>';
+    el.style.display='flex';
+  };
+  document.head.appendChild(script);
+}
+
+function mapSetup(token){
+  mapboxgl.accessToken=token;
+  _mapCurrentStyle=localStorage.getItem('gl_map_style')||'satellite-streets-v12';
+  const center=[
+    parseFloat(localStorage.getItem('gl_map_lng')||'-77.755'),
+    parseFloat(localStorage.getItem('gl_map_lat')||'42.448')
+  ];
+  const zoom=parseFloat(localStorage.getItem('gl_map_zoom')||'13');
+  _mapInstance=new mapboxgl.Map({
+    container:'mapbox-map',
+    style:`mapbox://styles/mapbox/${_mapCurrentStyle}`,
+    center, zoom,
+    attributionControl:false
+  });
+  _mapInstance.addControl(new mapboxgl.AttributionControl({compact:true}),'bottom-left');
+  _mapInstance.addControl(new mapboxgl.NavigationControl({showCompass:true}),'bottom-right');
+  _mapInstance.on('load',()=>{
+    document.getElementById('map-loading').style.display='none';
+    mapAddGPSDot();
+    mapUpdateStyleButtons();
+  });
+  _mapInstance.on('moveend',()=>{
+    const c=_mapInstance.getCenter();
+    localStorage.setItem('gl_map_lat',c.lat);
+    localStorage.setItem('gl_map_lng',c.lng);
+    localStorage.setItem('gl_map_zoom',_mapInstance.getZoom());
+  });
+}
+
+function mapAddGPSDot(){
+  if(!navigator.geolocation||!_mapInstance) return;
+  const el=document.createElement('div');
+  el.textContent='🥾';
+  el.style.cssText='font-size:28px;cursor:pointer;filter:drop-shadow(0 2px 4px rgba(0,0,0,.5));line-height:1';
+  el.title='Your location';
+  if(_mapGpsWatch) navigator.geolocation.clearWatch(_mapGpsWatch);
+  _mapGpsWatch=navigator.geolocation.watchPosition(
+    pos=>{
+      const {latitude:lat,longitude:lng}=pos.coords;
+      if(!_mapGpsMarker){
+        _mapGpsMarker=new mapboxgl.Marker({element:el,anchor:'bottom'}).setLngLat([lng,lat]).addTo(_mapInstance);
+      } else { _mapGpsMarker.setLngLat([lng,lat]); }
+    },
+    err=>console.warn('GPS:',err.message),
+    {enableHighAccuracy:true,maximumAge:5000}
+  );
+}
+
+function mapLocateMe(){
+  if(!_mapInstance||!navigator.geolocation) return;
+  navigator.geolocation.getCurrentPosition(
+    pos=>_mapInstance.flyTo({center:[pos.coords.longitude,pos.coords.latitude],zoom:16,duration:1200}),
+    err=>console.warn('Locate:',err.message),
+    {enableHighAccuracy:true}
+  );
+}
+
+function mapSetStyle(style){
+  if(!_mapInstance) return;
+  _mapCurrentStyle=style;
+  localStorage.setItem('gl_map_style',style);
+  _mapInstance.setStyle(`mapbox://styles/mapbox/${style}`);
+  mapUpdateStyleButtons();
+  _mapInstance.once('styledata',()=>{
+    if(_mapGpsMarker){_mapGpsMarker.remove();_mapGpsMarker=null;}
+    mapAddGPSDot();
+  });
+}
+
+function mapUpdateStyleButtons(){
+  const map={'satellite-streets-v12':'map-btn-satellite','streets-v12':'map-btn-streets','outdoors-v12':'map-btn-outdoors'};
+  Object.entries(map).forEach(([s,id])=>{
+    const btn=document.getElementById(id);
+    if(btn) btn.classList.toggle('active',s===_mapCurrentStyle);
+  });
+}
+
+function mapSaveSettings(){
+  const token=(document.getElementById('cfg-map-token')?.value||'').trim();
+  const style=document.getElementById('cfg-map-style')?.value||'satellite-streets-v12';
+  if(token) localStorage.setItem('gl_map_token',token);
+  localStorage.setItem('gl_map_style',style);
+  if(_mapInstance){_mapInstance.remove();_mapInstance=null;_mapGpsMarker=null;}
+  const s=document.getElementById('cfg-map-status');
+  if(s){s.textContent='Saved!';s.style.opacity='1';setTimeout(()=>s.style.opacity='0',2000);}
+}
+
+function mapLoadSettingsFields(){
+  const token=localStorage.getItem('gl_map_token')||'';
+  const style=localStorage.getItem('gl_map_style')||'satellite-streets-v12';
+  const tf=document.getElementById('cfg-map-token');
+  const sf=document.getElementById('cfg-map-style');
+  if(tf) tf.value=token;
+  if(sf) sf.value=style;
 }
 
 // ═══════════════════════════════════════════
@@ -1754,12 +1955,12 @@ const CFG_COLLAPSE_KEY='pei_collapsed_config';
 function _getCollapsedConfig(){try{return JSON.parse(localStorage.getItem(CFG_COLLAPSE_KEY)||'[]');}catch{return[];}}
 function _saveCollapsedConfig(arr){try{localStorage.setItem(CFG_COLLAPSE_KEY,JSON.stringify(arr));}catch{}}
 function collapseAllConfig(){
-  const ids=['cfg-nav','cfg-proj','cfg-ts','cfg-card-labels','cfg-obs','cfg-act','cfg-env','cfg-comms','cfg-look','cfg-phases','cfg-phase','cfg-checklist','cfg-flags'];
+  const ids=['cfg-nav','cfg-proj','cfg-ts','cfg-map','cfg-card-labels','cfg-obs','cfg-act','cfg-env','cfg-comms','cfg-look','cfg-phases','cfg-phase','cfg-checklist','cfg-flags'];
   ids.forEach(id=>{const el=document.getElementById(id);if(el)el.classList.add('collapsed');});
   _saveCollapsedConfig(ids);
 }
 function expandAllConfig(){
-  const ids=['cfg-nav','cfg-proj','cfg-ts','cfg-card-labels','cfg-obs','cfg-act','cfg-env','cfg-comms','cfg-look','cfg-phases','cfg-phase','cfg-checklist','cfg-flags'];
+  const ids=['cfg-nav','cfg-proj','cfg-ts','cfg-map','cfg-card-labels','cfg-obs','cfg-act','cfg-env','cfg-comms','cfg-look','cfg-phases','cfg-phase','cfg-checklist','cfg-flags'];
   ids.forEach(id=>{const el=document.getElementById(id);if(el)el.classList.remove('collapsed');});
   _saveCollapsedConfig([]);
 }
@@ -2002,6 +2203,7 @@ function renderAllChips(){
 const PAGE_REGISTRY = [
   { id:'log',        label:'Daily Log',   icon:'📋' },
   { id:'timesheet',  label:'Timesheet',   icon:'⏱'  },
+  { id:'map',        label:'Field Map',   icon:'🗺️' },
   { id:'compliance', label:'Compliance',  icon:'⚠'  },
   { id:'photos',     label:'Photos',      icon:'📸' },
   { id:'calendar',   label:'Calendar',    icon:'📅' },
