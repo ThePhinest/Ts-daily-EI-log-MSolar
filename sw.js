@@ -1,4 +1,4 @@
-const CACHE_NAME = 'phinest-ei-v11';
+const CACHE_NAME = 'phinest-ei-v12';
 // Domains to NEVER cache — always pass through to network
 const BYPASS_DOMAINS = [
   'gstatic.com',
@@ -10,6 +10,11 @@ const BYPASS_DOMAINS = [
   'fonts.gstatic.com',
   'api.mapbox.com',
   'events.mapbox.com'
+  'tiles.mapbox.com',
+  'a.tiles.mapbox.com',
+  'b.tiles.mapbox.com',
+  'c.tiles.mapbox.com',
+  'd.tiles.mapbox.com'
 ];
 self.addEventListener('install', event => {
   self.skipWaiting();
