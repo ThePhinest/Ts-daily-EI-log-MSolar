@@ -1785,7 +1785,7 @@ function showPage(name){
     if(moreBtn)moreBtn.classList.add('active');
   }
   if(name==='config'){ renderConfig(); tsLoadConfigFields(); renderNavConfig(); mapLoadSettingsFields(); }
-  if(name==='map'){ mapInit(); }
+  if(name==='map'){ mapInit(); setTimeout(()=>{ if(_mapInstance) _mapInstance.resize(); },200); }
   if(name==='calendar'){ calRender(); }
   if(name==='timesheet'){ tsPushFromDailyLog(); tsRenderCurrentWeek(); tsCheckArchivePrompt(); }
   if(name==='compliance'){ clInit(); clAutoDetect(); }
@@ -2006,10 +2006,8 @@ function mapRenderPhotoPins(){
   photos.forEach(p => {
     const el = document.createElement('div');
     el.textContent = '📸';
-    el.style.cssText = 'font-size:24px;cursor:pointer;filter:drop-shadow(0 2px 4px rgba(0,0,0,.6));line-height:1;transition:transform .15s;display:block;width:28px;height:28px;text-align:center';
+    el.style.cssText = 'font-size:26px;cursor:pointer;filter:drop-shadow(0 2px 4px rgba(0,0,0,.6));line-height:1;display:block;width:30px;height:30px;text-align:center;transform-origin:bottom center';
     el.title = p.caption || p.date;
-    el.addEventListener('mouseenter', () => el.style.transform = 'scale(1.3)');
-    el.addEventListener('mouseleave', () => el.style.transform = 'scale(1)');
 
     const dirLabel = p.direction !== undefined ? `${p.direction}° ${phBearingLabel(p.direction)}` : '';
     const popup = new mapboxgl.Popup({ offset:20, maxWidth:'220px', closeButton:true })
