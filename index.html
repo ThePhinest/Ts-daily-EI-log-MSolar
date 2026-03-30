@@ -1825,7 +1825,6 @@ async function mapInit(){
 }
 
 function mapSetup(token){
-  console.log('MAP TOKEN BEING USED:', JSON.stringify(token));
   if(!mapboxgl.supported()){
     const el=document.getElementById('map-loading');
     el.innerHTML='<div style="font-family:var(--mono);font-size:12px;color:var(--red);text-align:center;padding:20px">WebGL is not supported on this device/browser.<br><br>Try opening in Safari directly rather than as a PWA.</div>';
