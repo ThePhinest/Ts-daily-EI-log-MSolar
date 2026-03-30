@@ -1,4 +1,4 @@
-const CACHE_NAME = 'phinest-ei-v17';
+const CACHE_NAME = 'phinest-ei-v18';
 // Domains to NEVER cache — always pass through to network
 const BYPASS_DOMAINS = [
   'gstatic.com',
