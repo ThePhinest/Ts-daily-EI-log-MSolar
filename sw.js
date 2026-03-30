@@ -1,5 +1,4 @@
-const CACHE_NAME = 'phinest-ei-v9';
-
+const CACHE_NAME = 'phinest-ei-v10';
 // Domains to NEVER cache — always pass through to network
 const BYPASS_DOMAINS = [
   'gstatic.com',
@@ -8,15 +7,13 @@ const BYPASS_DOMAINS = [
   'firebaseapp.com',
   'firebasestorage.app',
   'fonts.googleapis.com',
-  'fonts.gstatic.com'
+  'fonts.gstatic.com',
   'api.mapbox.com',
   'events.mapbox.com'
 ];
-
 self.addEventListener('install', event => {
   self.skipWaiting();
 });
-
 self.addEventListener('activate', event => {
   event.waitUntil(
     caches.keys().then(keys =>
@@ -24,16 +21,13 @@ self.addEventListener('activate', event => {
     ).then(() => self.clients.claim())
   );
 });
-
 self.addEventListener('fetch', event => {
   const url = event.request.url;
-
   // Always bypass Firebase and Google CDN domains
   if (BYPASS_DOMAINS.some(domain => url.includes(domain))) {
     event.respondWith(fetch(event.request));
     return;
   }
-
   // Network-first for everything else
   event.respondWith(
     fetch(event.request)
@@ -48,3 +42,8 @@ self.addEventListener('fetch', event => {
       .catch(() => caches.match(event.request))
   );
 });
+```
+
+**And yes — also update your Mapbox token URL restriction.** Go to mapbox.com → Tokens → edit your token → change the allowed URL to:
+```
+https://thephinest.github.io/*
