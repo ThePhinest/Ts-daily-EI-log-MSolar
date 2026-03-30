@@ -2006,7 +2006,7 @@ function mapRenderPhotoPins(){
   photos.forEach(p => {
     const el = document.createElement('div');
     el.textContent = '📸';
-    el.style.cssText = 'font-size:24px;cursor:pointer;filter:drop-shadow(0 2px 4px rgba(0,0,0,.6));line-height:1;transition:transform .15s';
+    el.style.cssText = 'font-size:24px;cursor:pointer;filter:drop-shadow(0 2px 4px rgba(0,0,0,.6));line-height:1;transition:transform .15s;display:block;width:28px;height:28px;text-align:center';
     el.title = p.caption || p.date;
     el.addEventListener('mouseenter', () => el.style.transform = 'scale(1.3)');
     el.addEventListener('mouseleave', () => el.style.transform = 'scale(1)');
@@ -2015,7 +2015,7 @@ function mapRenderPhotoPins(){
     const popup = new mapboxgl.Popup({ offset:20, maxWidth:'220px', closeButton:true })
       .setHTML(`
         <div style="font-family:monospace;font-size:11px;color:#111">
-          <img src="${p.thumb}" style="width:100%;border-radius:4px;margin-bottom:8px;display:block">
+          <img src="${p.thumb}" style="width:100%;border-radius:4px;margin-bottom:8px;display:block;cursor:pointer" onclick="phOpenLightbox('${p.id}')">
           <div style="font-weight:600;margin-bottom:4px;font-size:12px">${p.caption||'No caption'}</div>
           <div style="color:#555;margin-bottom:2px">${p.date}</div>
           ${dirLabel ? `<div style="color:#555">📷 Facing ${dirLabel}</div>` : ''}
@@ -3444,8 +3444,11 @@ async function phParseExif(file){
     if(typeof uc === 'string' && uc.trim()){
       const descMatch = uc.match(/DESCRIPTION:\s*([^\n]+?)(?:\s*WATERMARK:|$)/i);
       const projMatch = uc.match(/PROJECT NAME:\s*([^\n]+?)(?:\s*DESCRIPTION:|$)/i);
-      if(descMatch && descMatch[1].trim()) result.exifCaption = descMatch[1].trim();
-      else if(projMatch && projMatch[1].trim()) result.exifCaption = projMatch[1].trim();
+      const desc = descMatch?.[1]?.trim();
+      const proj = projMatch?.[1]?.trim();
+      // Only use if not technical metadata (tilt/roll data)
+      if(desc && !/tilt_angle|roll_angle/i.test(desc)) result.exifCaption = desc;
+      else if(proj && !/tilt_angle|roll_angle/i.test(proj)) result.exifCaption = proj;
     }
     // Also check IPTC Caption-Abstract
     if(!result.exifCaption && exif.Caption) result.exifCaption = exif.Caption.trim();
