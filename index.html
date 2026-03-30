@@ -1785,7 +1785,11 @@ let _mapCurrentStyle=localStorage.getItem('gl_map_style')||'satellite-streets-v1
 async function mapInit(){
   document.getElementById('map-no-token').style.display='none';
   document.getElementById('map-loading').style.display='flex';
-  if(_mapInstance){ setTimeout(()=>_mapInstance.resize(),100); document.getElementById('map-loading').style.display='none'; return; }
+  if(_mapInstance){ 
+    document.getElementById('map-loading').style.display='none';
+    setTimeout(()=>{ _mapInstance.resize(); _mapInstance.triggerRepaint(); },150); 
+    return; 
+  }
   let token=(localStorage.getItem('gl_map_token')||'').trim();
   if(!token&&db){
     try{
@@ -1848,6 +1852,7 @@ function mapSetup(token){
   _mapInstance.addControl(new mapboxgl.NavigationControl({showCompass:true}),'bottom-right');
   _mapInstance.on('load',()=>{
     document.getElementById('map-loading').style.display='none';
+    setTimeout(()=>_mapInstance.resize(),100);
     mapAddGPSDot();
     mapUpdateStyleButtons();
   });
