@@ -19,6 +19,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@300;700&family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link href="https://api.mapbox.com/mapbox-gl-js/v3.3.0/mapbox-gl.css" rel="stylesheet">
 <script src="https://api.mapbox.com/mapbox-gl-js/v3.3.0/mapbox-gl.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/exifr@7.1.3/dist/lite.umd.js"></script>
 <style>
 :root {
   /* GroundLog — Dark */
@@ -1137,6 +1138,19 @@ EI to conduct LOD walk prior to start of operations"></textarea>
     <!-- Locate me -->
     <button class="map-locate-btn" onclick="mapLocateMe()" title="Locate me">🥾</button>
 
+    <!-- Photo pin filter bar -->
+    <div id="map-pin-bar" style="position:absolute;top:52px;left:12px;z-index:10;display:flex;gap:6px;flex-wrap:wrap">
+      <button class="map-style-btn active" id="map-pin-all" onclick="mapSetPinFilter('all')">📸 All</button>
+      <button class="map-style-btn" id="map-pin-today" onclick="mapSetPinFilter('today')">Today</button>
+      <button class="map-style-btn" id="map-pin-range" onclick="mapTogglePinDateRange()">Date Range</button>
+    </div>
+    <!-- Date range inputs (hidden by default) -->
+    <div id="map-pin-range-inputs" style="position:absolute;top:90px;left:12px;z-index:10;display:none;gap:6px;align-items:center;background:var(--s1);padding:8px 10px;border-radius:8px;border:1px solid var(--border2)">
+      <input type="date" id="map-pin-from" style="background:var(--bg);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--mono);font-size:11px;padding:5px 8px" onchange="mapRenderPhotoPins()">
+      <span style="font-family:var(--mono);font-size:10px;color:var(--muted)">to</span>
+      <input type="date" id="map-pin-to" style="background:var(--bg);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--mono);font-size:11px;padding:5px 8px" onchange="mapRenderPhotoPins()">
+    </div>
+
     <!-- Loading state -->
     <div id="map-loading">
       <div style="font-size:40px;margin-bottom:14px">🗺️</div>
@@ -1857,6 +1871,7 @@ function mapSetup(token){
     setTimeout(()=>_mapInstance.resize(),100);
     mapAddGPSDot();
     mapUpdateStyleButtons();
+    mapRenderPhotoPins();
   });
   _mapInstance.on('moveend',()=>{
     const c=_mapInstance.getCenter();
@@ -1940,6 +1955,81 @@ async function mapSaveSettings(){
   document.getElementById('map-no-token').style.display='none';
   const s=document.getElementById('cfg-map-status');
   if(s){s.textContent='Saved!';s.style.opacity='1';setTimeout(()=>s.style.opacity='0',2000);}
+}
+
+// ── Photo pins ──
+let _mapPhotoMarkers = [];
+let _mapPinFilter = 'all';
+
+function mapSetPinFilter(filter){
+  _mapPinFilter = filter;
+  document.getElementById('map-pin-range-inputs').style.display = 'none';
+  ['all','today','range'].forEach(f => {
+    const btn = document.getElementById('map-pin-'+f);
+    if(btn) btn.classList.toggle('active', f === filter);
+  });
+  mapRenderPhotoPins();
+}
+
+function mapTogglePinDateRange(){
+  _mapPinFilter = 'range';
+  ['all','today','range'].forEach(f => {
+    const btn = document.getElementById('map-pin-'+f);
+    if(btn) btn.classList.toggle('active', f === 'range');
+  });
+  const ri = document.getElementById('map-pin-range-inputs');
+  ri.style.display = ri.style.display === 'none' ? 'flex' : 'none';
+  mapRenderPhotoPins();
+}
+
+function mapRenderPhotoPins(){
+  if(!_mapInstance) return;
+
+  // Clear existing markers
+  _mapPhotoMarkers.forEach(m => m.remove());
+  _mapPhotoMarkers = [];
+
+  const today = new Date().toISOString().split('T')[0];
+  const fromDate = document.getElementById('map-pin-from')?.value || '';
+  const toDate   = document.getElementById('map-pin-to')?.value || '';
+
+  const photos = _phPhotos.filter(p => {
+    if(!p.lat || !p.lng) return false;
+    if(_mapPinFilter === 'today') return p.date === today;
+    if(_mapPinFilter === 'range'){
+      if(fromDate && p.date < fromDate) return false;
+      if(toDate && p.date > toDate) return false;
+    }
+    return true;
+  });
+
+  photos.forEach(p => {
+    const el = document.createElement('div');
+    el.textContent = '📸';
+    el.style.cssText = 'font-size:24px;cursor:pointer;filter:drop-shadow(0 2px 4px rgba(0,0,0,.6));line-height:1;transition:transform .15s';
+    el.title = p.caption || p.date;
+    el.addEventListener('mouseenter', () => el.style.transform = 'scale(1.3)');
+    el.addEventListener('mouseleave', () => el.style.transform = 'scale(1)');
+
+    const dirLabel = p.direction !== undefined ? `${p.direction}° ${phBearingLabel(p.direction)}` : '';
+    const popup = new mapboxgl.Popup({ offset:20, maxWidth:'220px', closeButton:true })
+      .setHTML(`
+        <div style="font-family:monospace;font-size:11px;color:#111">
+          <img src="${p.thumb}" style="width:100%;border-radius:4px;margin-bottom:8px;display:block">
+          <div style="font-weight:600;margin-bottom:4px;font-size:12px">${p.caption||'No caption'}</div>
+          <div style="color:#555;margin-bottom:2px">${p.date}</div>
+          ${dirLabel ? `<div style="color:#555">📷 Facing ${dirLabel}</div>` : ''}
+          ${p.software ? `<div style="color:#999;margin-top:2px;font-size:10px">${p.software}</div>` : ''}
+        </div>
+      `);
+
+    const marker = new mapboxgl.Marker({ element:el, anchor:'bottom' })
+      .setLngLat([p.lng, p.lat])
+      .setPopup(popup)
+      .addTo(_mapInstance);
+
+    _mapPhotoMarkers.push(marker);
+  });
 }
 
 async function mapLoadSettingsFields(){
@@ -3320,6 +3410,56 @@ function phParseFilename(name){
   return { date: new Date().toISOString().split('T')[0], caption: '' };
 }
 
+// ── Parse EXIF data from original file ──
+async function phParseExif(file){
+  const result = { lat:null, lng:null, direction:null, takenAt:null, software:null, exifCaption:null };
+  try{
+    if(typeof exifr === 'undefined') return result;
+    const exif = await exifr.parse(file, {
+      gps: true,
+      tiff: true,
+      exif: true,
+      iptc: true,
+      userComment: true
+    });
+    if(!exif) return result;
+
+    // GPS
+    if(exif.latitude)  result.lat = exif.latitude;
+    if(exif.longitude) result.lng = exif.longitude;
+
+    // Camera direction (compass bearing)
+    if(exif.GPSImgDirection) result.direction = Math.round(exif.GPSImgDirection);
+
+    // Timestamp
+    if(exif.DateTimeOriginal) result.takenAt = exif.DateTimeOriginal.getTime
+      ? exif.DateTimeOriginal.getTime()
+      : Date.parse(exif.DateTimeOriginal);
+
+    // Software tag (Solocator, etc.)
+    if(exif.Software) result.software = exif.Software.trim();
+
+    // Caption from Solocator UserComment — format: "PROJECT NAME: x DESCRIPTION: y WATERMARK: z"
+    const uc = exif.UserComment || exif.ImageDescription || '';
+    if(typeof uc === 'string' && uc.trim()){
+      const descMatch = uc.match(/DESCRIPTION:\s*([^\n]+?)(?:\s*WATERMARK:|$)/i);
+      const projMatch = uc.match(/PROJECT NAME:\s*([^\n]+?)(?:\s*DESCRIPTION:|$)/i);
+      if(descMatch && descMatch[1].trim()) result.exifCaption = descMatch[1].trim();
+      else if(projMatch && projMatch[1].trim()) result.exifCaption = projMatch[1].trim();
+    }
+    // Also check IPTC Caption-Abstract
+    if(!result.exifCaption && exif.Caption) result.exifCaption = exif.Caption.trim();
+  }catch(e){ console.warn('phParseExif failed:', e.message); }
+  return result;
+}
+
+// ── Compass bearing to label ──
+function phBearingLabel(deg){
+  if(deg===null||deg===undefined) return '';
+  const dirs=['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
+  return dirs[Math.round(deg/22.5)%16];
+}
+
 // ── Compress image to base64 ──
 function phCompress(file, maxW, maxH, quality){
   return new Promise((resolve) => {
@@ -3359,8 +3499,21 @@ async function phHandleFiles(files){
     progTxt.textContent = `Uploading photo ${i+1} of ${arr.length}…`;
     progBar.style.width = `${Math.round(((i)/arr.length)*100)}%`;
 
-    const { date, caption } = phParseFilename(file.name);
+    const { date, caption: filenameCaption } = phParseFilename(file.name);
     const id = phGenId();
+
+    // Read EXIF BEFORE compression (compression strips metadata)
+    const exif = await phParseExif(file);
+
+    // Caption priority: EXIF description → EXIF project name → filename parse
+    const caption = exif.exifCaption || filenameCaption || '';
+
+    // Use EXIF date if available and more precise
+    let photoDate = date;
+    if(exif.takenAt){
+      const d = new Date(exif.takenAt);
+      if(!isNaN(d)) photoDate = d.toISOString().split('T')[0];
+    }
 
     // Thumbnail only for in-app display
     const thumb = await phCompress(file, 140, 105, 0.7);
@@ -3375,12 +3528,16 @@ async function phHandleFiles(files){
 
     const entry = {
       id,
-      date,
+      date: photoDate,
       caption,
       filename: file.name,
       thumb,
       storageUrl,
-      uploadedAt: Date.now()
+      uploadedAt: Date.now(),
+      ...(exif.lat !== null && { lat: exif.lat, lng: exif.lng }),
+      ...(exif.direction !== null && { direction: exif.direction }),
+      ...(exif.takenAt && { takenAt: exif.takenAt }),
+      ...(exif.software && { software: exif.software })
     };
 
     _phPhotos.push(entry);
@@ -3414,11 +3571,15 @@ async function phSaveCloud(){
     const batch = db.batch();
     _phPhotos.forEach(p => {
       const ref = db.collection('photos').doc(p.id);
-      batch.set(ref, {
+      const doc = {
         id: p.id, date: p.date, caption: p.caption,
-        filename: p.filename, thumb: p.thumb,
-        storageUrl: p.storageUrl || '', uploadedAt: p.uploadedAt
-      });
+        filename: p.filename, thumb: p.thumb, uploadedAt: p.uploadedAt
+      };
+      if(p.lat !== undefined){ doc.lat = p.lat; doc.lng = p.lng; }
+      if(p.direction !== undefined) doc.direction = p.direction;
+      if(p.takenAt) doc.takenAt = p.takenAt;
+      if(p.software) doc.software = p.software;
+      batch.set(ref, doc);
     });
     await batch.commit();
   }catch(e){ console.warn('phSaveCloud failed:', e.message); }
