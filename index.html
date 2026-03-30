@@ -3449,8 +3449,11 @@ async function phParseExif(file){
       if(desc && !/tilt_angle|roll_angle/i.test(desc)) result.exifCaption = desc;
       else if(proj && !/tilt_angle|roll_angle/i.test(proj)) result.exifCaption = proj;
     }
-    // Also check IPTC Caption-Abstract
-    if(!result.exifCaption && exif.Caption) result.exifCaption = exif.Caption.trim();
+    // Also check IPTC Caption-Abstract — but skip tilt/roll technical data
+    if(!result.exifCaption && exif.Caption){
+      const cap = exif.Caption.trim();
+      if(!/tilt_angle|roll_angle/i.test(cap)) result.exifCaption = cap;
+    }
   }catch(e){ console.warn('phParseExif failed:', e.message); }
   return result;
 }
