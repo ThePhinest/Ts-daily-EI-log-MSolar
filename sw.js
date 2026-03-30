@@ -1,4 +1,4 @@
-const CACHE_NAME = 'phinest-ei-v12';
+const CACHE_NAME = 'phinest-ei-v13';
 // Domains to NEVER cache — always pass through to network
 const BYPASS_DOMAINS = [
   'gstatic.com',
@@ -28,16 +28,15 @@ self.addEventListener('activate', event => {
 });
 self.addEventListener('fetch', event => {
   const url = event.request.url;
-  // Always bypass Firebase and Google CDN domains
-  if (BYPASS_DOMAINS.some(domain => url.includes(domain))) {
+  // Only cache our own GitHub Pages app shell — let everything else go direct
+  if (!url.includes('thephinest.github.io')) {
     event.respondWith(fetch(event.request));
     return;
   }
-  // Network-first for everything else
+  // Network-first for our own app shell only
   event.respondWith(
     fetch(event.request)
       .then(response => {
-        // Cache successful GET responses for the app shell
         if (event.request.method === 'GET' && response.status === 200) {
           const clone = response.clone();
           caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
