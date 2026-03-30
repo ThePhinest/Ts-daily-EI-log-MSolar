@@ -1,4 +1,4 @@
-const CACHE_NAME = 'phinest-ei-v8';
+const CACHE_NAME = 'phinest-ei-v9';
 
 // Domains to NEVER cache — always pass through to network
 const BYPASS_DOMAINS = [
@@ -9,6 +9,8 @@ const BYPASS_DOMAINS = [
   'firebasestorage.app',
   'fonts.googleapis.com',
   'fonts.gstatic.com'
+  'api.mapbox.com',
+  'events.mapbox.com'
 ];
 
 self.addEventListener('install', event => {
