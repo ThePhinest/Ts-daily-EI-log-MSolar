@@ -1886,17 +1886,35 @@ function mapUpdateStyleButtons(){
   });
 }
 
-function mapSaveSettings(){
+async function mapSaveSettings(){
   const token=(document.getElementById('cfg-map-token')?.value||'').trim();
   const style=document.getElementById('cfg-map-style')?.value||'satellite-streets-v12';
   if(token) localStorage.setItem('gl_map_token',token);
   localStorage.setItem('gl_map_style',style);
+  if(db&&_fbReady){
+    try{
+      await db.collection('settings').doc('projectConfig').set(
+        {mapboxToken:token, mapStyle:style, _ts:Date.now()},
+        {merge:true}
+      );
+    }catch(e){console.warn('mapSaveSettings cloud failed:',e.message);}
+  }
   if(_mapInstance){_mapInstance.remove();_mapInstance=null;_mapGpsMarker=null;}
   const s=document.getElementById('cfg-map-status');
   if(s){s.textContent='Saved!';s.style.opacity='1';setTimeout(()=>s.style.opacity='0',2000);}
 }
 
-function mapLoadSettingsFields(){
+async function mapLoadSettingsFields(){
+  if(db&&_fbReady){
+    try{
+      const doc=await db.collection('settings').doc('projectConfig').get();
+      if(doc.exists){
+        const d=doc.data();
+        if(d.mapboxToken){ localStorage.setItem('gl_map_token',d.mapboxToken); }
+        if(d.mapStyle){ localStorage.setItem('gl_map_style',d.mapStyle); }
+      }
+    }catch(e){console.warn('mapLoadSettingsFields cloud failed:',e.message);}
+  }
   const token=localStorage.getItem('gl_map_token')||'';
   const style=localStorage.getItem('gl_map_style')||'satellite-streets-v12';
   const tf=document.getElementById('cfg-map-token');
