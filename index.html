@@ -1782,16 +1782,29 @@ function showPage(name){
 let _mapInstance=null, _mapGpsMarker=null, _mapGpsWatch=null;
 let _mapCurrentStyle=localStorage.getItem('gl_map_style')||'satellite-streets-v12';
 
-function mapInit(){
-  const token=(localStorage.getItem('gl_map_token')||'').trim();
+async function mapInit(){
+  document.getElementById('map-no-token').style.display='none';
+  document.getElementById('map-loading').style.display='flex';
+  if(_mapInstance){ setTimeout(()=>_mapInstance.resize(),100); document.getElementById('map-loading').style.display='none'; return; }
+  let token=(localStorage.getItem('gl_map_token')||'').trim();
+  if(!token&&db){
+    try{
+      let waited=0;
+      while(!_fbReady&&waited<5000){await new Promise(r=>setTimeout(r,200));waited+=200;}
+      const doc=await db.collection('settings').doc('projectConfig').get();
+      if(doc.exists&&doc.data().mapboxToken){
+        token=doc.data().mapboxToken.trim();
+        localStorage.setItem('gl_map_token',token);
+        const style=doc.data().mapStyle||'satellite-streets-v12';
+        localStorage.setItem('gl_map_style',style);
+      }
+    }catch(e){console.warn('mapInit Firestore fetch failed:',e.message);}
+  }
   if(!token){
     document.getElementById('map-loading').style.display='none';
     document.getElementById('map-no-token').style.display='flex';
     return;
   }
-  document.getElementById('map-no-token').style.display='none';
-  if(_mapInstance){ setTimeout(()=>_mapInstance.resize(),100); document.getElementById('map-loading').style.display='none'; return; }
-  document.getElementById('map-loading').style.display='flex';
   if(typeof mapboxgl!=='undefined'){ mapSetup(token); return; }
   if(!document.getElementById('mapbox-css')){
     const css=document.createElement('link');
