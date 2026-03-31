@@ -1,4 +1,4 @@
-const CACHE_NAME = 'phinest-ei-v19';
+const CACHE_NAME = 'phinest-ei-v20';
 // Domains to NEVER cache — always pass through to network
 const BYPASS_DOMAINS = [
   'gstatic.com',
@@ -47,8 +47,3 @@ self.addEventListener('fetch', event => {
       .catch(() => caches.match(event.request))
   );
 });
-```
-
-**And yes — also update your Mapbox token URL restriction.** Go to mapbox.com → Tokens → edit your token → change the allowed URL to:
-```
-https://thephinest.github.io/*
