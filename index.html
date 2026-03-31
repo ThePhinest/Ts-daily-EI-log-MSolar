@@ -2824,7 +2824,7 @@ function renderConfig(){
   renderFlagsList();
 }
 function renderPhaseList(){
-  const ul=document.getElementById('list-phases');ul.innerHTML='';
+  const ul=document.getElementById('list-phases');if(!ul)return;ul.innerHTML='';
   phases.forEach((ph,i)=>{
     const li=document.createElement('li');
     li.innerHTML=`<span class="p-text">${ph}</span>${ph===activePhaseLabel?'<span class="phase-badge">active</span>':''}<button class="del-p" onclick="removePhase(${i})">✕</button>`;
