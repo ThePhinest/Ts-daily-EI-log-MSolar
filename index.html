@@ -2194,7 +2194,7 @@ async function mapRenderFieldMarkers(){
   _mapFieldMarkers = [];
   _mapFieldMarkersData = [];
   if(!db || !_fbReady) return;
-  const projectName = localStorage.getItem('cfg_project_name') || '';
+  const projectName = (JSON.parse(localStorage.getItem('msf_projectconfig')||'{}').projectName) || '';
   try {
     const snap = await db.collection('fieldMarkers').get();
     snap.forEach(doc => {
@@ -2324,7 +2324,7 @@ function mapExportKml(){
   const incPhotos = document.getElementById('exp-photo-pins').checked;
   const incMarkers = document.getElementById('exp-field-markers').checked;
   const incKml = document.getElementById('exp-kml-layers').checked;
-  const projectName = localStorage.getItem('cfg_project_name') || 'Project';
+  const projectName = (JSON.parse(localStorage.getItem('msf_projectconfig')||'{}').projectName) || 'Project';
   const date = new Date().toISOString().split('T')[0];
   let placemarks = '';
   if(incPhotos){
