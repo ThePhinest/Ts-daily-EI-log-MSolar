@@ -2833,7 +2833,7 @@ function renderPhaseList(){
 }
 function renderPresetList(key){
   const ids={obs:'list-obs',act:'list-act',env:'list-env',comms:'list-comms',look:'list-look'};
-  const ul=document.getElementById(ids[key]);ul.innerHTML='';
+  const ul=document.getElementById(ids[key]);if(!ul)return;ul.innerHTML='';
   const isReordering=ul.classList.contains('reorder-mode');
   (presets[key]||[]).forEach((item,i)=>{
     const li=document.createElement('li');
