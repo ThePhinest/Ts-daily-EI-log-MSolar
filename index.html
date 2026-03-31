@@ -1921,6 +1921,30 @@ function mapSetup(token){
     mapAddGPSDot();
     mapUpdateStyleButtons();
     mapRenderPhotoPins();
+    mapRenderFieldMarkers();
+// Long press — desktop
+let _lpTimer = null, _lpStartPos = null;
+_mapInstance.on('mousedown', e => {
+  if(e.originalEvent.button !== 0) return;
+  const lngLat = e.lngLat;
+  _lpTimer = setTimeout(()=>{ mapShowMarkerModal(lngLat); }, 700);
+});
+_mapInstance.on('mousemove', ()=> clearTimeout(_lpTimer));
+_mapInstance.on('mouseup', ()=> clearTimeout(_lpTimer));
+// Long press — touch
+_mapInstance.on('touchstart', e => {
+  if(e.originalEvent.touches.length !== 1) return;
+  const t = e.originalEvent.touches[0];
+  _lpStartPos = {x:t.clientX, y:t.clientY};
+  const lngLat = e.lngLat;
+  _lpTimer = setTimeout(()=>{ mapShowMarkerModal(lngLat); }, 700);
+});
+_mapInstance.on('touchmove', e => {
+  if(!_lpStartPos) return;
+  const t = e.originalEvent.touches[0];
+  if(Math.abs(t.clientX-_lpStartPos.x)>10 || Math.abs(t.clientY-_lpStartPos.y)>10) clearTimeout(_lpTimer);
+});
+_mapInstance.on('touchend', ()=>{ clearTimeout(_lpTimer); _lpStartPos=null; });
   });
   _mapInstance.on('moveend',()=>{
     const c=_mapInstance.getCenter();
@@ -1968,6 +1992,8 @@ function mapSetStyle(style){
   _mapInstance.once('styledata',()=>{
     if(_mapGpsMarker){_mapGpsMarker.remove();_mapGpsMarker=null;}
     mapAddGPSDot();
+    mapRenderFieldMarkers();
+    _mapKmlLayers.forEach(layer => mapReaddKmlLayer(layer));
   });
 }
 
@@ -2009,6 +2035,25 @@ async function mapSaveSettings(){
 
 // ── Photo pins ──
 let _mapPhotoMarkers = [];
+let _mapFieldMarkers = [];
+let _mapFieldMarkersData = [];
+let _mapKmlLayers = [];
+let _layerPanelOpen = false;
+let _mapPendingMarkerLngLat = null;
+let _mapSelectedEmoji = null;
+let _mapMarkerScope = 'project';
+const _mapEmojiList = [
+  {emoji:'🌿', label:'Wetland'},
+  {emoji:'💧', label:'Stream / Water Feature'},
+  {emoji:'🛣️', label:'Road Crossing'},
+  {emoji:'🛑', label:'Compliance Issue'},
+  {emoji:'📍', label:'General Observation'},
+  {emoji:'⚠️', label:'BMP Concern'},
+  {emoji:'🌳', label:'Tree / Vegetation'},
+  {emoji:'🔵', label:'Drainage / Outlet'},
+  {emoji:'🏗️', label:'Active Work Area'},
+  {emoji:'🧱', label:'Erosion Control'}
+];
 let _mapPinFilter = 'all';
 
 function mapSetPinFilter(filter){
