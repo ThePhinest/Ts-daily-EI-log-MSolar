@@ -613,20 +613,20 @@ body.theme-light .preset-chip:hover{background:rgba(0,76,84,0.18);border-color:v
       </div>
     </div>
   <div class="more-section-label">Actions</div>
-  <div class="more-row more-row-sm" onclick="window.print();closeMoreMenu()">
-    <span class="more-row-icon">🖨️</span>
-    <div><div class="more-row-label">Print</div><div class="more-row-sub">Print current log view</div></div>
-  </div>
-  <div class="more-divider"></div>
-  <div class="more-row more-row-sm" onclick="downloadLog();closeMoreMenu()">
-    <span class="more-row-icon">⬇️</span>
-    <div><div class="more-row-label">Download Log</div><div class="more-row-sub">Save filled log as archive file</div></div>
-  </div>
-  <div class="more-divider"></div>
-  <div class="more-row more-row-sm" onclick="closeMoreMenu();resetForm()" style="color:var(--red)">
-    <span class="more-row-icon">🗑️</span>
-    <div><div class="more-row-label" style="color:var(--red)">Reset Log</div><div class="more-row-sub">Clear today's log only</div></div>
-  </div>
+  <div class="more-action-grid">
+      <div class="more-tile" onclick="window.print();closeMoreMenu()">
+        <span class="more-tile-icon">🖨️</span>
+        <span class="more-tile-label">Print</span>
+      </div>
+      <div class="more-tile" onclick="downloadLog();closeMoreMenu()">
+        <span class="more-tile-icon">⬇️</span>
+        <span class="more-tile-label">Download Log</span>
+      </div>
+      <div class="more-tile more-tile-red" onclick="closeMoreMenu();resetForm()">
+        <span class="more-tile-icon">🗑️</span>
+        <span class="more-tile-label">Reset Log</span>
+      </div>
+    </div>
   <div style="height:16px"></div>
 </div>
 
