@@ -74,6 +74,14 @@ body.theme-light{
 .more-row-sm{gap:14px;padding:11px 20px}
 .more-divider{height:1px;background:var(--border);margin:2px 0}
 .more-section-label{font-family:var(--mono);font-size:9px;color:var(--muted);letter-spacing:.1em;text-transform:uppercase;padding:10px 20px 4px}
+.more-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding:12px}
+.more-action-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;padding:0 12px 12px}
+.more-tile{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:14px 8px;background:var(--s1);border:1px solid var(--border);border-radius:10px;cursor:pointer;transition:background .12s;text-align:center}
+.more-tile:hover{background:rgba(165,172,175,0.08)}
+.more-tile-icon{font-size:26px;line-height:1}
+.more-tile-label{font-family:var(--cond);font-weight:700;font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--text)}
+.more-tile-red{border-color:var(--red)}
+.more-tile-red .more-tile-label{color:var(--red)}
 
 /* ── FIELD MAP ── */
 #page-map{padding:0!important;overflow:hidden;height:calc(100dvh - env(safe-area-inset-bottom));position:fixed;width:100%}
