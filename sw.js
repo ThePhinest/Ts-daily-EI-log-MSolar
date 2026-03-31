@@ -9,7 +9,7 @@ const BYPASS_DOMAINS = [
   'fonts.googleapis.com',
   'fonts.gstatic.com',
   'api.mapbox.com',
-  'events.mapbox.com'
+  'events.mapbox.com',
   'tiles.mapbox.com',
   'a.tiles.mapbox.com',
   'b.tiles.mapbox.com',
