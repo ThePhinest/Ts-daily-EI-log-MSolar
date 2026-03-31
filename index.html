@@ -573,51 +573,45 @@ body.theme-light .preset-chip:hover{background:rgba(0,76,84,0.18);border-color:v
 <div class="more-panel" id="more-panel">
   <div class="more-handle"></div>
   <div class="more-panel-title">More</div>
-  <div class="more-row" onclick="showPage('log');closeMoreMenu()">
-      <span class="more-row-icon">📋</span>
-      <div><div class="more-row-label">Daily Log</div><div class="more-row-sub">Today's field log</div></div>
+  <div class="more-section-label">Pages</div>
+    <div class="more-grid">
+      <div class="more-tile" onclick="showPage('log');closeMoreMenu()">
+        <span class="more-tile-icon">📋</span>
+        <span class="more-tile-label">Daily Log</span>
+      </div>
+      <div class="more-tile" onclick="showPage('calendar');closeMoreMenu()">
+        <span class="more-tile-icon">📅</span>
+        <span class="more-tile-label">Calendar</span>
+      </div>
+      <div class="more-tile" onclick="showPage('compliance');closeMoreMenu()">
+        <span class="more-tile-icon">❗</span>
+        <span class="more-tile-label">Compliance</span>
+      </div>
+      <div class="more-tile" onclick="showPage('timesheet');closeMoreMenu()">
+        <span class="more-tile-icon">⏱</span>
+        <span class="more-tile-label">Timesheet</span>
+      </div>
+      <div class="more-tile" onclick="showPage('map');closeMoreMenu()">
+        <span class="more-tile-icon">🗺️</span>
+        <span class="more-tile-label">Field Map</span>
+      </div>
+      <div class="more-tile" onclick="showPage('forms');closeMoreMenu()">
+        <span class="more-tile-icon">📄</span>
+        <span class="more-tile-label">Forms</span>
+      </div>
+      <div class="more-tile" onclick="showPage('photos');closeMoreMenu()">
+        <span class="more-tile-icon">📸</span>
+        <span class="more-tile-label">Photos</span>
+      </div>
+      <div class="more-tile" onclick="showPage('docs');closeMoreMenu()">
+        <span class="more-tile-icon">📁</span>
+        <span class="more-tile-label">Docs</span>
+      </div>
+      <div class="more-tile" onclick="showPage('config');closeMoreMenu()">
+        <span class="more-tile-icon">⚙️</span>
+        <span class="more-tile-label">Settings</span>
+      </div>
     </div>
-    <div class="more-divider"></div>
-  <div class="more-row" onclick="showPage('calendar');closeMoreMenu()">
-    <span class="more-row-icon">📅</span>
-    <div><div class="more-row-label">Calendar</div><div class="more-row-sub">History, daily notes</div></div>
-  </div>
-  <div class="more-divider"></div>
-  <div class="more-row" onclick="showPage('compliance');closeMoreMenu()">
-    <span class="more-row-icon">❗</span>
-    <div><div class="more-row-label">Compliance Log</div><div class="more-row-sub">Running compliance observations</div></div>
-  </div>
-  <div class="more-divider"></div>
-  <div class="more-row" onclick="showPage('timesheet');closeMoreMenu()">
-    <span class="more-row-icon">⏱</span>
-    <div><div class="more-row-label">Timesheet</div><div class="more-row-sub">Hours, miles &amp; per diem</div></div>
-  </div>
-  <div class="more-divider"></div>
-  <div class="more-row" onclick="showPage('map');closeMoreMenu()">
-    <span class="more-row-icon">🗺️</span>
-    <div><div class="more-row-label">Field Map</div><div class="more-row-sub">GPS pins, KML layers, markers</div></div>
-  </div>
-  <div class="more-divider"></div>
-  <div class="more-row" onclick="showPage('forms');closeMoreMenu()">
-    <span class="more-row-icon">📄</span>
-    <div><div class="more-row-label">Forms</div><div class="more-row-sub">Spill report, other docs</div></div>
-  </div>
-  <div class="more-divider"></div>
-  <div class="more-row" onclick="showPage('photos');closeMoreMenu()">
-    <span class="more-row-icon">📸</span>
-    <div><div class="more-row-label">Photos</div><div class="more-row-sub">Field photo management</div></div>
-  </div>
-  <div class="more-divider"></div>
-  <div class="more-row" onclick="showPage('docs');closeMoreMenu()">
-    <span class="more-row-icon">📁</span>
-    <div><div class="more-row-label">Docs</div><div class="more-row-sub">Project documents &amp; reference files</div></div>
-  </div>
-  <div class="more-divider"></div>
-  <div class="more-row" onclick="showPage('config');closeMoreMenu()">
-    <span class="more-row-icon">⚙️</span>
-    <div><div class="more-row-label">Settings</div><div class="more-row-sub">Preferences &amp; presets</div></div>
-  </div>
-  <div class="more-divider"></div>
   <div class="more-section-label">Actions</div>
   <div class="more-row more-row-sm" onclick="window.print();closeMoreMenu()">
     <span class="more-row-icon">🖨️</span>
