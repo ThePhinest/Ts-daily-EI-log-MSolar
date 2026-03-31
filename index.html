@@ -1935,6 +1935,7 @@ _mapInstance.on('mousedown', e => {
 });
 _mapInstance.on('mousemove', ()=> clearTimeout(_lpTimer));
 _mapInstance.on('mouseup', ()=> clearTimeout(_lpTimer));
+_mapInstance.on('dragstart', ()=>{ clearTimeout(_lpTimer); _lpStartPos=null; });
 // Long press — touch
 _mapInstance.on('touchstart', e => {
   if(e.originalEvent.touches.length !== 1) return;
