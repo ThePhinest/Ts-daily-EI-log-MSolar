@@ -75,7 +75,7 @@ body.theme-light{
 .more-section-label{font-family:var(--mono);font-size:9px;color:var(--muted);letter-spacing:.1em;text-transform:uppercase;padding:10px 20px 4px}
 
 /* ── FIELD MAP ── */
-#page-map{padding:0!important;overflow:hidden}
+#page-map{padding:0!important;overflow:hidden;height:calc(100dvh - env(safe-area-inset-bottom));position:fixed;width:100%}
 .mapboxgl-ctrl-bottom-right{bottom:calc(80px + env(safe-area-inset-bottom))!important}
 .mapboxgl-ctrl-bottom-left{bottom:calc(80px + env(safe-area-inset-bottom))!important}
 #mapbox-map{width:100%;height:calc(100dvh - 60px - env(safe-area-inset-bottom))}
