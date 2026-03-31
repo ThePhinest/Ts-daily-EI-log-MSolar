@@ -2265,8 +2265,8 @@ function mapImportKml(input){
     });
     const id = 'kml-'+Date.now();
     _mapInstance.addSource(id,{type:'geojson',data:{type:'FeatureCollection',features}});
-    _mapInstance.addLayer({id:id+'-fill',type:'fill',source:id,paint:{'fill-color':'#C9A84C','fill-opacity':0.15},filter:['==','$type','Polygon']});
-    _mapInstance.addLayer({id:id+'-line',type:'line',source:id,paint:{'line-color':'#C9A84C','line-width':2},filter:['in','$type','LineString','Polygon']});
+    _mapInstance.addLayer({id:id+'-fill',type:'fill',source:id,paint:{'fill-color':'#C9A84C','fill-opacity':0.15},filter:['==',['geometry-type'],'Polygon']});
+    _mapInstance.addLayer({id:id+'-line',type:'line',source:id,paint:{'line-color':'#C9A84C','line-width':2},filter:['any',['==',['geometry-type'],'LineString'],['==',['geometry-type'],'Polygon']]});
     _mapKmlLayers.push({id, name:layerName, visible:true, features});
     mapUpdateKmlLayerList();
     input.value='';
