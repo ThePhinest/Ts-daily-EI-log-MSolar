@@ -1130,9 +1130,9 @@ EI to conduct LOD walk prior to start of operations"></textarea>
 
     <!-- Style toggle controls -->
     <div class="map-controls">
-      <button class="map-style-btn active" id="map-btn-satellite" onclick="mapSetStyle('satellite-streets-v12')">🛰 Satellite</button>
-      <button class="map-style-btn" id="map-btn-streets" onclick="mapSetStyle('streets-v12')">🗺 Streets</button>
-      <button class="map-style-btn" id="map-btn-outdoors" onclick="mapSetStyle('outdoors-v12')">🏔 Topo</button>
+      <button class="map-style-btn active" id="map-btn-satellite" onclick="mapSetStyle('satellite-streets-v11')">🛰 Satellite</button>
+      <button class="map-style-btn" id="map-btn-streets" onclick="mapSetStyle('streets-v11')">🗺 Streets</button>
+      <button class="map-style-btn" id="map-btn-outdoors" onclick="mapSetStyle('outdoors-v11')">🏔 Topo</button>
     </div>
 
     <!-- Locate me -->
@@ -1421,9 +1421,9 @@ EI to conduct LOD walk prior to start of operations"></textarea>
       <div class="field" style="margin-bottom:12px">
         <label>Default Map Style</label>
         <select id="cfg-map-style" style="background:var(--bg);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--body);font-size:14px;padding:8px 11px;width:100%">
-          <option value="satellite-streets-v12">🛰 Satellite + Streets</option>
-          <option value="streets-v12">🗺 Streets</option>
-          <option value="outdoors-v12">🏔 Topo / Outdoors</option>
+          <option value="satellite-streets-v11">🛰 Satellite + Streets</option>
+          <option value="streets-v11">🗺 Streets</option>
+          <option value="outdoors-v11">🏔 Topo / Outdoors</option>
         </select>
       </div>
       <button class="btn btn-amber" style="font-size:11px;padding:7px 14px" onclick="mapSaveSettings()">Save Map Settings</button>
@@ -1796,7 +1796,7 @@ function showPage(name){
 // FIELD MAP — MAPBOX
 // ═══════════════════════════════════════════
 let _mapInstance=null, _mapGpsMarker=null, _mapGpsWatch=null;
-let _mapCurrentStyle=localStorage.getItem('gl_map_style')||'satellite-streets-v12';
+let _mapCurrentStyle=localStorage.getItem('gl_map_style')||'satellite-streets-v11';
 
 async function mapInit(){
   document.getElementById('map-no-token').style.display='none';
@@ -1815,7 +1815,7 @@ async function mapInit(){
       if(doc.exists&&doc.data().mapboxToken){
         token=doc.data().mapboxToken.trim();
         localStorage.setItem('gl_map_token',token);
-        const style=doc.data().mapStyle||'satellite-streets-v12';
+        const style=doc.data().mapStyle||'satellite-streets-v11';
         localStorage.setItem('gl_map_style',style);
       }
     }catch(e){console.warn('mapInit Firestore fetch failed:',e.message);}
@@ -1852,7 +1852,7 @@ function mapSetup(token){
     return;
   }
   mapboxgl.accessToken=token;
-  _mapCurrentStyle=localStorage.getItem('gl_map_style')||'satellite-streets-v12';
+  _mapCurrentStyle=localStorage.getItem('gl_map_style')||'satellite-streets-v11';
   const center=[
     parseFloat(localStorage.getItem('gl_map_lng')||'-77.755'),
     parseFloat(localStorage.getItem('gl_map_lat')||'42.448')
@@ -1913,6 +1913,7 @@ function mapSetStyle(style){
   if(!_mapInstance) return;
   _mapCurrentStyle=style;
   localStorage.setItem('gl_map_style',style);
+  mapboxgl.accessToken = localStorage.getItem('gl_map_token');
   _mapInstance.setStyle(`mapbox://styles/mapbox/${style}`);
   mapUpdateStyleButtons();
   _mapInstance.once('styledata',()=>{
@@ -1922,7 +1923,7 @@ function mapSetStyle(style){
 }
 
 function mapUpdateStyleButtons(){
-  const map={'satellite-streets-v12':'map-btn-satellite','streets-v12':'map-btn-streets','outdoors-v12':'map-btn-outdoors'};
+  const map={'satellite-streets-v11':'map-btn-satellite','streets-v11':'map-btn-streets','outdoors-v11':'map-btn-outdoors'};
   Object.entries(map).forEach(([s,id])=>{
     const btn=document.getElementById(id);
     if(btn) btn.classList.toggle('active',s===_mapCurrentStyle);
@@ -1931,7 +1932,7 @@ function mapUpdateStyleButtons(){
 
 async function mapSaveSettings(){
   const token=(document.getElementById('cfg-map-token')?.value||'').trim();
-  const style=document.getElementById('cfg-map-style')?.value||'satellite-streets-v12';
+  const style=document.getElementById('cfg-map-style')?.value||'satellite-streets-v11';
   if(token) localStorage.setItem('gl_map_token',token);
   localStorage.setItem('gl_map_style',style);
   if(db&&_fbReady){
@@ -2043,7 +2044,7 @@ async function mapLoadSettingsFields(){
     }catch(e){console.warn('mapLoadSettingsFields cloud failed:',e.message);}
   }
   const token=localStorage.getItem('gl_map_token')||'';
-  const style=localStorage.getItem('gl_map_style')||'satellite-streets-v12';
+  const style=localStorage.getItem('gl_map_style')||'satellite-streets-v11';
   const tf=document.getElementById('cfg-map-token');
   const sf=document.getElementById('cfg-map-style');
   if(tf) tf.value=token;
