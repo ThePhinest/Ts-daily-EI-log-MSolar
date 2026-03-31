@@ -63,15 +63,17 @@ body.theme-light{
 .more-panel.open{transform:translateY(0)}
 .more-handle{width:36px;height:4px;background:var(--border2);border-radius:2px;margin:10px auto 4px}
 .more-panel-title{font-family:var(--mono);font-size:10px;color:var(--muted);letter-spacing:.1em;text-transform:uppercase;padding:6px 20px 10px;border-bottom:1px solid var(--border)}
-.more-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding:12px}
-.more-action-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;padding:0 12px 12px}
-.more-tile{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:14px 8px;background:var(--s1);border:1px solid var(--border);border-radius:10px;cursor:pointer;transition:background .12s;text-align:center}
-.more-tile:hover{background:rgba(165,172,175,0.08)}
-.more-tile-icon{font-size:26px;line-height:1}
-.more-tile-label{font-family:var(--cond);font-weight:700;font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--text)}
-.more-tile-red{border-color:var(--red);color:var(--red)}
-.more-tile-red .more-tile-label{color:var(--red)}
-.more-section-label{font-family:var(--mono);font-size:9px;color:var(--muted);letter-spacing:.1em;text-transform:uppercase;padding:10px 12px 4px}
+.more-row{display:flex;align-items:center;gap:28px;padding:15px 20px;cursor:pointer;transition:background .12s}
+.more-row:hover{background:rgba(165,172,175,0.05)}
+.more-row-icon{font-size:26px;width:30px;text-align:center;line-height:1}
+.more-row-label{font-family:var(--cond);font-weight:700;font-size:17px;letter-spacing:.08em;text-transform:uppercase;color:var(--text)}
+.more-row-sub{font-family:var(--mono);font-size:12px;color:var(--muted);margin-top:2px}
+.more-row-sm .more-row-icon{font-size:16px;width:24px}
+.more-row-sm .more-row-label{font-size:12px}
+.more-row-sm .more-row-sub{font-size:10px}
+.more-row-sm{gap:14px;padding:11px 20px}
+.more-divider{height:1px;background:var(--border);margin:2px 0}
+.more-section-label{font-family:var(--mono);font-size:9px;color:var(--muted);letter-spacing:.1em;text-transform:uppercase;padding:10px 20px 4px}
 
 /* ── FIELD MAP ── */
 #page-map{padding:0!important;overflow:hidden;height:calc(100dvh - env(safe-area-inset-bottom));position:fixed;width:100%}
@@ -562,62 +564,61 @@ body.theme-light .preset-chip:hover{background:rgba(0,76,84,0.18);border-color:v
 <div class="more-overlay" id="more-overlay" onclick="closeMoreMenu()"></div>
 <div class="more-panel" id="more-panel">
   <div class="more-handle"></div>
-  <div class="more-panel" id="more-panel">
-  <div class="more-handle"></div>
   <div class="more-panel-title">More</div>
-  <div class="more-section-label">Pages</div>
-  <div class="more-grid">
-    <div class="more-tile" onclick="showPage('log');closeMoreMenu()">
-      <span class="more-tile-icon">📋</span>
-      <span class="more-tile-label">Daily Log</span>
-    </div>
-    <div class="more-tile" onclick="showPage('calendar');closeMoreMenu()">
-      <span class="more-tile-icon">📅</span>
-      <span class="more-tile-label">Calendar</span>
-    </div>
-    <div class="more-tile" onclick="showPage('compliance');closeMoreMenu()">
-      <span class="more-tile-icon">❗</span>
-      <span class="more-tile-label">Compliance</span>
-    </div>
-    <div class="more-tile" onclick="showPage('timesheet');closeMoreMenu()">
-      <span class="more-tile-icon">⏱</span>
-      <span class="more-tile-label">Timesheet</span>
-    </div>
-    <div class="more-tile" onclick="showPage('map');closeMoreMenu()">
-      <span class="more-tile-icon">🗺️</span>
-      <span class="more-tile-label">Field Map</span>
-    </div>
-    <div class="more-tile" onclick="showPage('forms');closeMoreMenu()">
-      <span class="more-tile-icon">📄</span>
-      <span class="more-tile-label">Forms</span>
-    </div>
-    <div class="more-tile" onclick="showPage('photos');closeMoreMenu()">
-      <span class="more-tile-icon">📸</span>
-      <span class="more-tile-label">Photos</span>
-    </div>
-    <div class="more-tile" onclick="showPage('docs');closeMoreMenu()">
-      <span class="more-tile-icon">📁</span>
-      <span class="more-tile-label">Docs</span>
-    </div>
-    <div class="more-tile" onclick="showPage('config');closeMoreMenu()">
-      <span class="more-tile-icon">⚙️</span>
-      <span class="more-tile-label">Settings</span>
-    </div>
+  <div class="more-row" onclick="showPage('calendar');closeMoreMenu()">
+    <span class="more-row-icon">📅</span>
+    <div><div class="more-row-label">Calendar</div><div class="more-row-sub">History, daily notes</div></div>
   </div>
+  <div class="more-divider"></div>
+  <div class="more-row" onclick="showPage('compliance');closeMoreMenu()">
+    <span class="more-row-icon">❗</span>
+    <div><div class="more-row-label">Compliance Log</div><div class="more-row-sub">Running compliance observations</div></div>
+  </div>
+  <div class="more-divider"></div>
+  <div class="more-row" onclick="showPage('timesheet');closeMoreMenu()">
+    <span class="more-row-icon">⏱</span>
+    <div><div class="more-row-label">Timesheet</div><div class="more-row-sub">Hours, miles &amp; per diem</div></div>
+  </div>
+  <div class="more-divider"></div>
+  <div class="more-row" onclick="showPage('map');closeMoreMenu()">
+    <span class="more-row-icon">🗺️</span>
+    <div><div class="more-row-label">Field Map</div><div class="more-row-sub">GPS pins, KML layers, markers</div></div>
+  </div>
+  <div class="more-divider"></div>
+  <div class="more-row" onclick="showPage('forms');closeMoreMenu()">
+    <span class="more-row-icon">📄</span>
+    <div><div class="more-row-label">Forms</div><div class="more-row-sub">Spill report, other docs</div></div>
+  </div>
+  <div class="more-divider"></div>
+  <div class="more-row" onclick="showPage('photos');closeMoreMenu()">
+    <span class="more-row-icon">📸</span>
+    <div><div class="more-row-label">Photos</div><div class="more-row-sub">Field photo management</div></div>
+  </div>
+  <div class="more-divider"></div>
+  <div class="more-row" onclick="showPage('docs');closeMoreMenu()">
+    <span class="more-row-icon">📁</span>
+    <div><div class="more-row-label">Docs</div><div class="more-row-sub">Project documents &amp; reference files</div></div>
+  </div>
+  <div class="more-divider"></div>
+  <div class="more-row" onclick="showPage('config');closeMoreMenu()">
+    <span class="more-row-icon">⚙️</span>
+    <div><div class="more-row-label">Settings</div><div class="more-row-sub">Preferences &amp; presets</div></div>
+  </div>
+  <div class="more-divider"></div>
   <div class="more-section-label">Actions</div>
-  <div class="more-action-grid">
-    <div class="more-tile" onclick="window.print();closeMoreMenu()">
-      <span class="more-tile-icon">🖨️</span>
-      <span class="more-tile-label">Print</span>
-    </div>
-    <div class="more-tile" onclick="downloadLog();closeMoreMenu()">
-      <span class="more-tile-icon">⬇️</span>
-      <span class="more-tile-label">Download Log</span>
-    </div>
-    <div class="more-tile more-tile-red" onclick="closeMoreMenu();resetForm()">
-      <span class="more-tile-icon">🗑️</span>
-      <span class="more-tile-label">Reset Log</span>
-    </div>
+  <div class="more-row more-row-sm" onclick="window.print();closeMoreMenu()">
+    <span class="more-row-icon">🖨️</span>
+    <div><div class="more-row-label">Print</div><div class="more-row-sub">Print current log view</div></div>
+  </div>
+  <div class="more-divider"></div>
+  <div class="more-row more-row-sm" onclick="downloadLog();closeMoreMenu()">
+    <span class="more-row-icon">⬇️</span>
+    <div><div class="more-row-label">Download Log</div><div class="more-row-sub">Save filled log as archive file</div></div>
+  </div>
+  <div class="more-divider"></div>
+  <div class="more-row more-row-sm" onclick="closeMoreMenu();resetForm()" style="color:var(--red)">
+    <span class="more-row-icon">🗑️</span>
+    <div><div class="more-row-label" style="color:var(--red)">Reset Log</div><div class="more-row-sub">Clear today's log only</div></div>
   </div>
   <div style="height:16px"></div>
 </div>
