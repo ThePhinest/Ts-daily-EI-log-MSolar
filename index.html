@@ -2125,6 +2125,243 @@ function mapRenderPhotoPins(){
     _mapPhotoMarkers.push(marker);
   });
 }
+  
+function mapToggleLayerPanel(){
+  _layerPanelOpen = !_layerPanelOpen;
+  document.getElementById('map-layer-panel').style.transform = _layerPanelOpen ? 'translateX(0%)' : 'translateX(100%)';
+}
+
+function mapShowMarkerModal(lngLat){
+  _mapPendingMarkerLngLat = lngLat;
+  _mapSelectedEmoji = null;
+  _mapMarkerScope = 'project';
+  document.getElementById('map-marker-label').value = '';
+  document.getElementById('map-marker-modal-err').style.display = 'none';
+  document.getElementById('map-marker-scope-project').classList.add('active');
+  document.getElementById('map-marker-scope-global').classList.remove('active');
+  const list = document.getElementById('map-marker-emoji-list');
+  list.innerHTML = '';
+  _mapEmojiList.forEach(item => {
+    const btn = document.createElement('button');
+    btn.style.cssText = 'display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:6px;border:1px solid var(--border);background:var(--s1);cursor:pointer;width:100%;text-align:left;font-family:var(--mono);font-size:12px;color:var(--text);box-sizing:border-box;';
+    btn.innerHTML = `<span style="font-size:20px">${item.emoji}</span><span>${item.label}</span>`;
+    btn.onclick = () => {
+      list.querySelectorAll('button').forEach(b => b.style.borderColor = 'var(--border)');
+      btn.style.borderColor = '#006B75';
+      _mapSelectedEmoji = item.emoji;
+      document.getElementById('map-marker-modal-err').style.display = 'none';
+    };
+    list.appendChild(btn);
+  });
+  document.getElementById('map-marker-modal').style.display = 'block';
+}
+
+function mapMarkerSetScope(scope){
+  _mapMarkerScope = scope;
+  document.getElementById('map-marker-scope-project').classList.toggle('active', scope === 'project');
+  document.getElementById('map-marker-scope-global').classList.toggle('active', scope === 'global');
+}
+
+function mapCancelMarker(){
+  document.getElementById('map-marker-modal').style.display = 'none';
+  _mapPendingMarkerLngLat = null;
+  _mapSelectedEmoji = null;
+}
+
+async function mapConfirmMarker(){
+  if(!_mapSelectedEmoji){
+    document.getElementById('map-marker-modal-err').style.display = 'block';
+    return;
+  }
+  const label = document.getElementById('map-marker-label').value.trim();
+  const projectName = localStorage.getItem('cfg_project_name') || 'Unknown Project';
+  const markerData = {
+    emoji: _mapSelectedEmoji, label, lat: _mapPendingMarkerLngLat.lat,
+    lng: _mapPendingMarkerLngLat.lng, scope: _mapMarkerScope,
+    projectName, createdAt: Date.now()
+  };
+  document.getElementById('map-marker-modal').style.display = 'none';
+  if(db && _fbReady){
+    try { await db.collection('fieldMarkers').add(markerData); }
+    catch(e){ console.error('Marker save failed:', e); }
+  }
+  mapRenderFieldMarkers();
+}
+
+async function mapRenderFieldMarkers(){
+  if(!_mapInstance) return;
+  _mapFieldMarkers.forEach(m => m.remove());
+  _mapFieldMarkers = [];
+  _mapFieldMarkersData = [];
+  if(!db || !_fbReady) return;
+  const projectName = localStorage.getItem('cfg_project_name') || '';
+  try {
+    const snap = await db.collection('fieldMarkers').get();
+    snap.forEach(doc => {
+      const m = doc.data();
+      if(m.scope !== 'global' && m.projectName !== projectName) return;
+      _mapFieldMarkersData.push({...m, id: doc.id});
+      const el = document.createElement('div');
+      el.textContent = m.emoji;
+      el.style.cssText = 'font-size:26px;cursor:pointer;filter:drop-shadow(0 2px 4px rgba(0,0,0,.6));line-height:1;width:30px;height:30px;text-align:center;transform-origin:bottom center;';
+      const popup = new mapboxgl.Popup({ offset:20, maxWidth:'200px', closeButton:true })
+        .setHTML(`<div style="font-family:monospace;font-size:11px;color:#111">
+          <div style="font-size:22px;margin-bottom:4px">${m.emoji}</div>
+          ${m.label ? `<div style="font-weight:600;margin-bottom:4px">${m.label}</div>` : ''}
+          <div style="color:#555;margin-bottom:6px">${m.scope==='global'?'🌐 Global':'📌 This Project'}</div>
+          <button onclick="mapDeleteFieldMarker('${doc.id}')" style="background:#c00;color:#fff;border:none;padding:3px 8px;border-radius:4px;font-size:10px;cursor:pointer;">Delete</button>
+        </div>`);
+      const marker = new mapboxgl.Marker({ element:el, anchor:'bottom' })
+        .setLngLat([m.lng, m.lat]).setPopup(popup).addTo(_mapInstance);
+      _mapFieldMarkers.push(marker);
+    });
+  } catch(e){ console.error('Render field markers failed:', e); }
+  mapUpdateFieldMarkerList();
+}
+
+async function mapDeleteFieldMarker(id){
+  if(!db || !_fbReady) return;
+  try { await db.collection('fieldMarkers').doc(id).delete(); }
+  catch(e){ console.error('Delete marker failed:', e); }
+  mapRenderFieldMarkers();
+}
+
+function mapUpdateFieldMarkerList(){
+  const list = document.getElementById('map-field-marker-list');
+  if(!list) return;
+  if(!_mapFieldMarkersData.length){ list.innerHTML = '<span>No markers placed.</span>'; return; }
+  list.innerHTML = '';
+  _mapFieldMarkersData.forEach(m => {
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;align-items:center;gap:6px;padding:5px 8px;background:var(--s1);border-radius:6px;margin-bottom:4px;font-family:var(--mono);font-size:11px;color:var(--text);';
+    row.innerHTML = `<span style="font-size:16px">${m.emoji}</span><span style="flex:1">${m.label||m.emoji}</span><span style="color:var(--muted)">${m.scope==='global'?'🌐':'📌'}</span>`;
+    list.appendChild(row);
+  });
+}
+
+function mapImportKml(input){
+  const file = input.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    const kml = new DOMParser().parseFromString(e.target.result, 'text/xml');
+    const layerName = kml.querySelector('Document > name')?.textContent || file.name.replace('.kml','');
+    const features = [];
+    kml.querySelectorAll('Placemark').forEach(pm => {
+      const name = pm.querySelector('name')?.textContent || '';
+      const poly = pm.querySelector('Polygon outerBoundaryIs coordinates') || pm.querySelector('Polygon coordinates');
+      const line = pm.querySelector('LineString coordinates');
+      const pt = pm.querySelector('Point coordinates');
+      if(poly){
+        const c = poly.textContent.trim().split(/\s+/).map(s=>s.split(',').map(Number).slice(0,2));
+        features.push({type:'Feature',properties:{name},geometry:{type:'Polygon',coordinates:[c]}});
+      } else if(line){
+        const c = line.textContent.trim().split(/\s+/).map(s=>s.split(',').map(Number).slice(0,2));
+        features.push({type:'Feature',properties:{name},geometry:{type:'LineString',coordinates:c}});
+      } else if(pt){
+        const [lng,lat] = pt.textContent.trim().split(',').map(Number);
+        features.push({type:'Feature',properties:{name},geometry:{type:'Point',coordinates:[lng,lat]}});
+      }
+    });
+    const id = 'kml-'+Date.now();
+    _mapInstance.addSource(id,{type:'geojson',data:{type:'FeatureCollection',features}});
+    _mapInstance.addLayer({id:id+'-fill',type:'fill',source:id,paint:{'fill-color':'#C9A84C','fill-opacity':0.15},filter:['==','$type','Polygon']});
+    _mapInstance.addLayer({id:id+'-line',type:'line',source:id,paint:{'line-color':'#C9A84C','line-width':2},filter:['in','$type','LineString','Polygon']});
+    _mapKmlLayers.push({id, name:layerName, visible:true, features});
+    mapUpdateKmlLayerList();
+    input.value='';
+  };
+  reader.readAsText(file);
+}
+
+function mapReaddKmlLayer(layer){
+  if(!_mapInstance) return;
+  if(_mapInstance.getSource(layer.id)) return;
+  _mapInstance.addSource(layer.id,{type:'geojson',data:{type:'FeatureCollection',features:layer.features}});
+  _mapInstance.addLayer({id:layer.id+'-fill',type:'fill',source:layer.id,paint:{'fill-color':'#C9A84C','fill-opacity':0.15},filter:['==','$type','Polygon']});
+  _mapInstance.addLayer({id:layer.id+'-line',type:'line',source:layer.id,paint:{'line-color':'#C9A84C','line-width':2},filter:['in','$type','LineString','Polygon']});
+  if(!layer.visible){ ['fill','line'].forEach(t=>{ if(_mapInstance.getLayer(layer.id+'-'+t)) _mapInstance.setLayoutProperty(layer.id+'-'+t,'visibility','none'); }); }
+}
+
+function mapUpdateKmlLayerList(){
+  const list = document.getElementById('map-kml-layer-list');
+  if(!list) return;
+  if(!_mapKmlLayers.length){ list.innerHTML = '<span>No layers imported.</span>'; return; }
+  list.innerHTML = '';
+  _mapKmlLayers.forEach((layer,i)=>{
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;align-items:center;gap:6px;padding:5px 8px;background:var(--s1);border-radius:6px;margin-bottom:4px;';
+    row.innerHTML = `<label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-family:var(--mono);font-size:11px;color:var(--text);flex:1;min-width:0;">
+      <input type="checkbox" ${layer.visible?'checked':''} onchange="mapToggleKmlLayer(${i},this.checked)">
+      <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${layer.name}</span>
+    </label>
+    <button onclick="mapRemoveKmlLayer(${i})" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;padding:0;">✕</button>`;
+    list.appendChild(row);
+  });
+}
+
+function mapToggleKmlLayer(i, visible){
+  _mapKmlLayers[i].visible = visible;
+  ['fill','line'].forEach(t=>{
+    const id = _mapKmlLayers[i].id+'-'+t;
+    if(_mapInstance.getLayer(id)) _mapInstance.setLayoutProperty(id,'visibility',visible?'visible':'none');
+  });
+}
+
+function mapRemoveKmlLayer(i){
+  const layer = _mapKmlLayers[i];
+  ['fill','line'].forEach(t=>{ if(_mapInstance.getLayer(layer.id+'-'+t)) _mapInstance.removeLayer(layer.id+'-'+t); });
+  if(_mapInstance.getSource(layer.id)) _mapInstance.removeSource(layer.id);
+  _mapKmlLayers.splice(i,1);
+  mapUpdateKmlLayerList();
+}
+
+function mapShowExportModal(){
+  document.getElementById('map-export-modal').style.display='block';
+}
+
+function mapExportKml(){
+  const incPhotos = document.getElementById('exp-photo-pins').checked;
+  const incMarkers = document.getElementById('exp-field-markers').checked;
+  const incKml = document.getElementById('exp-kml-layers').checked;
+  const projectName = localStorage.getItem('cfg_project_name') || 'Project';
+  const date = new Date().toISOString().split('T')[0];
+  let placemarks = '';
+  if(incPhotos){
+    _phPhotos.filter(p=>p.lat&&p.lng).forEach(p=>{
+      placemarks += `  <Placemark><name>${(p.caption||p.date||'Photo').replace(/&/g,'&amp;')}</name><Point><coordinates>${p.lng},${p.lat},0</coordinates></Point></Placemark>\n`;
+    });
+  }
+  if(incMarkers){
+    _mapFieldMarkersData.forEach(m=>{
+      const name = (m.label||m.emoji).replace(/&/g,'&amp;');
+      placemarks += `  <Placemark><name>${m.emoji} ${name}</name><Point><coordinates>${m.lng},${m.lat},0</coordinates></Point></Placemark>\n`;
+    });
+  }
+  if(incKml){
+    _mapKmlLayers.forEach(layer=>{
+      layer.features.forEach(f=>{
+        const name = (f.properties.name||'').replace(/&/g,'&amp;');
+        if(f.geometry.type==='Point'){
+          const [lng,lat]=f.geometry.coordinates;
+          placemarks += `  <Placemark><name>${name}</name><Point><coordinates>${lng},${lat},0</coordinates></Point></Placemark>\n`;
+        } else if(f.geometry.type==='LineString'){
+          const coords=f.geometry.coordinates.map(c=>c.join(',')+',0').join(' ');
+          placemarks += `  <Placemark><name>${name}</name><LineString><coordinates>${coords}</coordinates></LineString></Placemark>\n`;
+        } else if(f.geometry.type==='Polygon'){
+          const coords=f.geometry.coordinates[0].map(c=>c.join(',')+',0').join(' ');
+          placemarks += `  <Placemark><name>${name}</name><Polygon><outerBoundaryIs><LinearRing><coordinates>${coords}</coordinates></LinearRing></outerBoundaryIs></Polygon></Placemark>\n`;
+        }
+      });
+    });
+  }
+  const kml = `<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2">\n<Document>\n<name>${projectName} GL ${date}</name>\n${placemarks}</Document>\n</kml>`;
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([kml],{type:'application/vnd.google-earth.kml+xml'}));
+  a.download = `${projectName}_GL_${date}.kml`;
+  a.click();
+  document.getElementById('map-export-modal').style.display='none';
+}
 
 async function mapLoadSettingsFields(){
   if(db&&_fbReady){
