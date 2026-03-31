@@ -2179,7 +2179,7 @@ async function mapConfirmMarker(){
     return;
   }
   const label = document.getElementById('map-marker-label').value.trim();
-  const projectName = localStorage.getItem('cfg_project_name') || 'Unknown Project';
+  const projectName = (JSON.parse(localStorage.getItem('msf_projectconfig'))||{}).projectName || '';
   const markerData = {
     emoji: _mapSelectedEmoji, label, lat: _mapPendingMarkerLngLat.lat,
     lng: _mapPendingMarkerLngLat.lng, scope: _mapMarkerScope,
