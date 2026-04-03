@@ -2290,25 +2290,6 @@ function mapImportKml(input){
       return features;
     }
 
-    // Serialize features back to minimal KML text for Storage
-    function featuresToKml(features, name){
-      let pm = '';
-      features.forEach(f=>{
-        const n = (f.properties.name||'').replace(/&/g,'&amp;');
-        if(f.geometry.type==='Point'){
-          const [lng,lat]=f.geometry.coordinates;
-          pm+=`<Placemark><name>${n}</name><Point><coordinates>${lng},${lat},0</coordinates></Point></Placemark>\n`;
-        } else if(f.geometry.type==='LineString'){
-          const c=f.geometry.coordinates.map(c=>c.join(',')+',0').join(' ');
-          pm+=`<Placemark><name>${n}</name><LineString><coordinates>${c}</coordinates></LineString></Placemark>\n`;
-        } else if(f.geometry.type==='Polygon'){
-          const c=f.geometry.coordinates[0].map(c=>c.join(',')+',0').join(' ');
-          pm+=`<Placemark><name>${n}</name><Polygon><outerBoundaryIs><LinearRing><coordinates>${c}</coordinates></LinearRing></outerBoundaryIs></Polygon></Placemark>\n`;
-        }
-      });
-      return `<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2">\n<Document>\n<name>${name}</name>\n${pm}</Document>\n</kml>`;
-    }
-
     // Build layer list — one per Folder, fallback to whole file
     const layersToAdd = [];
     const folders = doc ? Array.from(doc.children).filter(c=>c.tagName==='Folder') : [];
@@ -2333,26 +2314,23 @@ function mapImportKml(input){
 
     if(layersToAdd.length === 0){ input.value=''; return; }
 
-    // Add each layer to map, upload to Storage, save metadata
-    for(const {name, features} of layersToAdd){
-      const id = 'kml-'+Date.now()+'-'+Math.random().toString(36).slice(2,6);
-      const storagePath = `kml/${id}.kml`;
+    // Upload original file to Storage once — shared across all layers from this file
+    const fileId = 'kml-'+Date.now()+'-'+Math.random().toString(36).slice(2,6);
+    const storagePath = `kml/${fileId}.kml`;
+    if(storage){
+      try{
+        await storage.ref(storagePath).put(file);
+      }catch(err){ console.warn('KML Storage upload failed:', err.message); }
+    }
 
-      // Add to map
+    // Add each layer to map and state
+    layersToAdd.forEach(({name, features})=>{
+      const id = 'kml-'+Date.now()+'-'+Math.random().toString(36).slice(2,6);
       _mapInstance.addSource(id,{type:'geojson',data:{type:'FeatureCollection',features}});
       _mapInstance.addLayer({id:id+'-fill',type:'fill',source:id,paint:{'fill-color':'#C9A84C','fill-opacity':0.15},filter:['==',['geometry-type'],'Polygon']});
       _mapInstance.addLayer({id:id+'-line',type:'line',source:id,paint:{'line-color':'#C9A84C','line-width':2},filter:['any',['==',['geometry-type'],'LineString'],['==',['geometry-type'],'Polygon']]});
-
-      // Upload KML text to Storage
-      if(storage){
-        try{
-          const kmlBlob = new Blob([featuresToKml(features, name)], {type:'application/vnd.google-earth.kml+xml'});
-          await storage.ref(storagePath).put(kmlBlob);
-        }catch(err){ console.warn('KML Storage upload failed:', err.message); }
-      }
-
       _mapKmlLayers.push({id, name, visible:true, features, storagePath});
-    }
+    });
 
     kmlSaveLayers();
     mapUpdateKmlLayerList();
