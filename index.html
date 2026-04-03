@@ -2263,16 +2263,20 @@ function mapImportKml(input){
   reader.onload = async e => {
     const kmlText = e.target.result;
     const kml = new DOMParser().parseFromString(kmlText, 'text/xml');
-    const doc = kml.querySelector('Document');
-    const docName = doc ? Array.from(doc.children).find(c=>c.tagName==='name')?.textContent : null;
+
+    // Support both <name> and <n> tags — non-standard but common in exported KMLs
+    function getName(node){
+      return node.querySelector('name')?.textContent?.trim() ||
+             node.querySelector('n')?.textContent?.trim() || '';
+    }
+
     const fileName = file.name.replace(/\.kml$/i,'');
-    const baseName = docName || fileName;
 
     // Parse all Placemarks within a node into GeoJSON features
     function parsePlacemarks(node){
       const features = [];
       node.querySelectorAll('Placemark').forEach(pm=>{
-        const name = pm.querySelector('name')?.textContent || '';
+        const name = getName(pm);
         const poly = pm.querySelector('Polygon outerBoundaryIs coordinates') || pm.querySelector('Polygon coordinates');
         const line = pm.querySelector('LineString coordinates');
         const pt = pm.querySelector('Point coordinates');
@@ -2290,31 +2294,35 @@ function mapImportKml(input){
       return features;
     }
 
-    // Build layer list — one per Folder, fallback to whole file
+    // Build layer list — try Documents first, then Folders, then flat
     const layersToAdd = [];
-    const folders = doc ? Array.from(doc.children).filter(c=>c.tagName==='Folder') : [];
-    if(folders.length > 0){
-      folders.forEach(folder=>{
-        const folderName = folder.querySelector('name')?.textContent || baseName;
-        const features = parsePlacemarks(folder);
-        if(features.length > 0) layersToAdd.push({name:folderName, features});
+    const topFolder = kml.querySelector('Folder');
+    const documents = topFolder ? Array.from(topFolder.children).filter(c=>c.tagName==='Document') : [];
+    const folders   = topFolder ? Array.from(topFolder.children).filter(c=>c.tagName==='Folder')   : [];
+
+    if(documents.length > 0){
+      // Structure: Folder > Document* — each Document is a named layer
+      documents.forEach(docEl=>{
+        const layerName = getName(docEl) || fileName;
+        const features = parsePlacemarks(docEl);
+        if(features.length > 0) layersToAdd.push({name:layerName, features});
       });
-      // Root-level placemarks outside folders
-      const rootPms = Array.from(doc.children).filter(c=>c.tagName==='Placemark');
-      if(rootPms.length > 0){
-        const tmpDoc = document.createElementNS('','doc');
-        rootPms.forEach(p=>tmpDoc.appendChild(p.cloneNode(true)));
-        const features = parsePlacemarks(tmpDoc);
-        if(features.length > 0) layersToAdd.push({name:baseName, features});
-      }
+    } else if(folders.length > 0){
+      // Structure: Document > Folder* — each Folder is a named layer
+      folders.forEach(folder=>{
+        const layerName = getName(folder) || fileName;
+        const features = parsePlacemarks(folder);
+        if(features.length > 0) layersToAdd.push({name:layerName, features});
+      });
     } else {
-      const features = doc ? parsePlacemarks(doc) : [];
-      if(features.length > 0) layersToAdd.push({name:baseName, features});
+      // Flat — whole file is one layer
+      const features = parsePlacemarks(kml);
+      if(features.length > 0) layersToAdd.push({name:fileName, features});
     }
 
     if(layersToAdd.length === 0){ input.value=''; return; }
 
-    // Upload original file to Storage once — shared across all layers from this file
+    // Upload original file to Storage once — shared storagePath across all layers
     const fileId = 'kml-'+Date.now()+'-'+Math.random().toString(36).slice(2,6);
     const storagePath = `kml/${fileId}.kml`;
     if(storage){
