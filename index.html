@@ -1937,6 +1937,7 @@ function mapSetup(token){
     mapUpdateStyleButtons();
     mapRenderPhotoPins();
     mapRenderFieldMarkers();
+    kmlLoadLayers();
 // Long press — desktop
 let _lpTimer = null, _lpStartPos = null;
 _mapInstance.on('mousedown', e => {
@@ -2261,29 +2262,60 @@ function mapImportKml(input){
   const reader = new FileReader();
   reader.onload = e => {
     const kml = new DOMParser().parseFromString(e.target.result, 'text/xml');
-    const layerName = kml.querySelector('Document > name')?.textContent || file.name.replace('.kml','');
-    const features = [];
-    kml.querySelectorAll('Placemark').forEach(pm => {
-      const name = pm.querySelector('name')?.textContent || '';
-      const poly = pm.querySelector('Polygon outerBoundaryIs coordinates') || pm.querySelector('Polygon coordinates');
-      const line = pm.querySelector('LineString coordinates');
-      const pt = pm.querySelector('Point coordinates');
-      if(poly){
-        const c = poly.textContent.trim().split(/\s+/).map(s=>s.split(',').map(Number).slice(0,2));
-        features.push({type:'Feature',properties:{name},geometry:{type:'Polygon',coordinates:[c]}});
-      } else if(line){
-        const c = line.textContent.trim().split(/\s+/).map(s=>s.split(',').map(Number).slice(0,2));
-        features.push({type:'Feature',properties:{name},geometry:{type:'LineString',coordinates:c}});
-      } else if(pt){
-        const [lng,lat] = pt.textContent.trim().split(',').map(Number);
-        features.push({type:'Feature',properties:{name},geometry:{type:'Point',coordinates:[lng,lat]}});
-      }
+    const doc = kml.querySelector('Document');
+    const docName = doc ? Array.from(doc.children).find(c=>c.tagName==='name')?.textContent : null;
+    const fileName = file.name.replace(/\.kml$/i,'');
+    const baseName = docName || fileName;
+
+    // Parse direct-child Placemarks from a node into GeoJSON features
+    function parsePlacemarks(node){
+      const features = [];
+      Array.from(node.children).filter(c=>c.tagName==='Placemark').forEach(pm=>{
+        const name = Array.from(pm.children).find(c=>c.tagName==='name')?.textContent || '';
+        const poly = pm.querySelector('Polygon outerBoundaryIs coordinates') || pm.querySelector('Polygon coordinates');
+        const line = pm.querySelector('LineString coordinates');
+        const pt = pm.querySelector('Point coordinates');
+        if(poly){
+          const c = poly.textContent.trim().split(/\s+/).map(s=>s.split(',').map(Number).slice(0,2));
+          features.push({type:'Feature',properties:{name},geometry:{type:'Polygon',coordinates:[c]}});
+        } else if(line){
+          const c = line.textContent.trim().split(/\s+/).map(s=>s.split(',').map(Number).slice(0,2));
+          features.push({type:'Feature',properties:{name},geometry:{type:'LineString',coordinates:c}});
+        } else if(pt){
+          const [lng,lat] = pt.textContent.trim().split(',').map(Number);
+          features.push({type:'Feature',properties:{name},geometry:{type:'Point',coordinates:[lng,lat]}});
+        }
+      });
+      return features;
+    }
+
+    // Build layer list: one per Folder, plus root-level placemarks if any
+    const layersToAdd = [];
+    const folders = doc ? Array.from(doc.children).filter(c=>c.tagName==='Folder') : [];
+    if(folders.length > 0){
+      folders.forEach(folder=>{
+        const folderName = Array.from(folder.children).find(c=>c.tagName==='name')?.textContent || baseName;
+        const features = parsePlacemarks(folder);
+        if(features.length > 0) layersToAdd.push({name:folderName, features});
+      });
+      // Root-level placemarks outside any folder
+      if(doc){ const rf = parsePlacemarks(doc); if(rf.length > 0) layersToAdd.push({name:baseName, features:rf}); }
+    } else {
+      // No folders — whole file is one layer
+      const features = doc ? parsePlacemarks(doc) : [];
+      if(features.length > 0) layersToAdd.push({name:baseName, features});
+    }
+
+    // Add each layer to map and state
+    layersToAdd.forEach(({name, features})=>{
+      const id = 'kml-'+Date.now()+'-'+Math.random().toString(36).slice(2,6);
+      _mapInstance.addSource(id,{type:'geojson',data:{type:'FeatureCollection',features}});
+      _mapInstance.addLayer({id:id+'-fill',type:'fill',source:id,paint:{'fill-color':'#C9A84C','fill-opacity':0.15},filter:['==',['geometry-type'],'Polygon']});
+      _mapInstance.addLayer({id:id+'-line',type:'line',source:id,paint:{'line-color':'#C9A84C','line-width':2},filter:['any',['==',['geometry-type'],'LineString'],['==',['geometry-type'],'Polygon']]});
+      _mapKmlLayers.push({id, name, visible:true, features});
     });
-    const id = 'kml-'+Date.now();
-    _mapInstance.addSource(id,{type:'geojson',data:{type:'FeatureCollection',features}});
-    _mapInstance.addLayer({id:id+'-fill',type:'fill',source:id,paint:{'fill-color':'#C9A84C','fill-opacity':0.15},filter:['==',['geometry-type'],'Polygon']});
-    _mapInstance.addLayer({id:id+'-line',type:'line',source:id,paint:{'line-color':'#C9A84C','line-width':2},filter:['any',['==',['geometry-type'],'LineString'],['==',['geometry-type'],'Polygon']]});
-    _mapKmlLayers.push({id, name:layerName, visible:true, features});
+
+    kmlSaveLayers();
     mapUpdateKmlLayerList();
     input.value='';
   };
@@ -2294,9 +2326,36 @@ function mapReaddKmlLayer(layer){
   if(!_mapInstance) return;
   if(_mapInstance.getSource(layer.id)) return;
   _mapInstance.addSource(layer.id,{type:'geojson',data:{type:'FeatureCollection',features:layer.features}});
-  _mapInstance.addLayer({id:layer.id+'-fill',type:'fill',source:layer.id,paint:{'fill-color':'#C9A84C','fill-opacity':0.15},filter:['==','$type','Polygon']});
-  _mapInstance.addLayer({id:layer.id+'-line',type:'line',source:layer.id,paint:{'line-color':'#C9A84C','line-width':2},filter:['in','$type','LineString','Polygon']});
+  _mapInstance.addLayer({id:layer.id+'-fill',type:'fill',source:layer.id,paint:{'fill-color':'#C9A84C','fill-opacity':0.15},filter:['==',['geometry-type'],'Polygon']});
+  _mapInstance.addLayer({id:layer.id+'-line',type:'line',source:layer.id,paint:{'line-color':'#C9A84C','line-width':2},filter:['any',['==',['geometry-type'],'LineString'],['==',['geometry-type'],'Polygon']]});
   if(!layer.visible){ ['fill','line'].forEach(t=>{ if(_mapInstance.getLayer(layer.id+'-'+t)) _mapInstance.setLayoutProperty(layer.id+'-'+t,'visibility','none'); }); }
+}
+
+function kmlSaveLayers(){
+  const data = _mapKmlLayers.map(l=>({id:l.id, name:l.name, visible:l.visible, features:l.features}));
+  try{ localStorage.setItem('gl_kml_layers', JSON.stringify(data)); }catch{}
+  if(db&&_fbReady){
+    db.collection('kml').doc('layers').set({data, _ts:Date.now()}).catch(e=>console.warn('kmlSaveLayers:',e.message));
+  }
+}
+
+async function kmlLoadLayers(){
+  let data = null;
+  if(db&&_fbReady){
+    try{
+      const doc = await db.collection('kml').doc('layers').get();
+      if(doc.exists) data = doc.data().data;
+    }catch(e){ console.warn('kmlLoadLayers cloud:', e.message); }
+  }
+  if(!data){ try{ const raw=localStorage.getItem('gl_kml_layers'); if(raw) data=JSON.parse(raw); }catch{} }
+  if(!data||!data.length) return;
+  data.forEach(layer=>{
+    if(!_mapKmlLayers.find(l=>l.id===layer.id)){
+      _mapKmlLayers.push(layer);
+      mapReaddKmlLayer(layer);
+    }
+  });
+  mapUpdateKmlLayerList();
 }
 
 function mapUpdateKmlLayerList(){
@@ -2322,6 +2381,7 @@ function mapToggleKmlLayer(i, visible){
     const id = _mapKmlLayers[i].id+'-'+t;
     if(_mapInstance.getLayer(id)) _mapInstance.setLayoutProperty(id,'visibility',visible?'visible':'none');
   });
+  kmlSaveLayers();
 }
 
 function mapRemoveKmlLayer(i){
@@ -2329,6 +2389,7 @@ function mapRemoveKmlLayer(i){
   ['fill','line'].forEach(t=>{ if(_mapInstance.getLayer(layer.id+'-'+t)) _mapInstance.removeLayer(layer.id+'-'+t); });
   if(_mapInstance.getSource(layer.id)) _mapInstance.removeSource(layer.id);
   _mapKmlLayers.splice(i,1);
+  kmlSaveLayers();
   mapUpdateKmlLayerList();
 }
 
