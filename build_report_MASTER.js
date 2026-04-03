@@ -462,7 +462,18 @@ function normalizeLog(app){
     genComms,
     lookahead:      app.lookahead                || '',
     activePhase:    app.activePhase              || 'Phase 1 — Tree Felling',
-    contractor:     app.contractor               || 'Supreme Industries',
+    contractor:     (function()
+                    {const base = app.contractor || 'Supreme Industries';
+                      function norm(s){ return s.toLowerCase().replace(/\b(inc|llc|industries|corp|co|ltd|contractors?)\b/g,'').replace(/[^a-z0-9]/g,'').trim(); }
+                      function firstWord(s){ return s.split(/\s+/)[0]; }
+                      const extras = (app.crewBlocks||[]).map(c=>c.name||'').filter(n=>{
+                      if(!n) return false;
+                      const nb=norm(n), bb=norm(base);
+                      return nb && !nb.includes(bb) && !bb.includes(nb) && firstWord(nb)!==firstWord(bb);
+});
+  const unique=[...new Set(extras)];
+  return unique.length ? base+', '+unique.join(', ') : base;
+})(),
   };
 }
 // ── HEADER FIX — overwrite header1.xml with known-good navy borders ──
