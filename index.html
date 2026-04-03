@@ -222,7 +222,7 @@ input[type=time]{min-height:44px;box-sizing:border-box}
 input:focus,select:focus,textarea:focus{outline:none;border-color:var(--amber)}
 input[readonly]{color:var(--muted2);cursor:default}
 textarea{resize:vertical;min-height:88px;line-height:1.6}
-textarea.short{min-height:56px}textarea.tall{min-height:120px}
+textarea.short{min-height:56px}textarea.tall{min-height:120px;font-size:16px;touch-action:manipulation}
 select{cursor:pointer}
 
 /* PRESET CHIPS */
@@ -5508,15 +5508,17 @@ function showCloudBanner(msg) {
 }
 
 // ── Custom confirm modal (replaces confirm() which is unreliable in iOS PWA) ──
-function _confirmModal(msg, onConfirm) {
+function _confirmModal(msg, onConfirm, title, confirmLabel) {
+  title = title || '⚠ Confirm Reset';
+  confirmLabel = confirmLabel || 'Reset';
   var ov = document.createElement('div');
   ov.className = 'modal-overlay';
   ov.innerHTML = '<div class="modal-box">' +
-    '<div class="modal-title">⚠ Confirm Reset</div>' +
+    '<div class="modal-title">' + title + '</div>' +
     '<div class="modal-msg">' + msg + '</div>' +
     '<div class="modal-btns">' +
       '<button class="modal-cancel" id="_mc">Cancel</button>' +
-      '<button class="modal-confirm" id="_mok">Reset</button>' +
+      '<button class="modal-confirm" id="_mok">' + confirmLabel + '</button>' +
     '</div></div>';
   document.body.appendChild(ov);
   document.getElementById('_mc').onclick = function() { ov.remove(); };
@@ -5916,13 +5918,13 @@ async function rptBuildDocx(logData,polished,photos){
 
 // ── Main generateReport function ──
 async function generateReport(){
-  if(!window.docx){_confirmModal('The report library is still loading. Please wait a moment and try again.',()=>{});return;}
+  if(!window.docx){_confirmModal('The report library is still loading. Please wait a moment and try again.',()=>{}, 'One Moment\u2026', 'OK');return;}
   const flagsWithoutDesc=flagItems.filter(f=>document.getElementById(f.id)?.checked&&!document.getElementById(f.id+'-note')?.value.trim());
   if(flagsWithoutDesc.length>0){
-    _confirmModal(`⚠ ${flagsWithoutDesc.length} regulatory flag(s) are checked without a description. Generate report anyway?`,()=>_doGenerate());
+    _confirmModal(`${flagsWithoutDesc.length} regulatory flag(s) are checked without a description. Generate report anyway?`,()=>_doGenerate(), '⚠ Regulatory Flags', 'Generate Anyway');
     return;
   }
-  _confirmModal('Generate and download report for today\'s log?',()=>_doGenerate());
+  _confirmModal('Boots to Boardroom — turn today\'s field log into a formal compliance report?',()=>_doGenerate(), '✦ Generate Report', 'Generate Report');
 }
 async function _doGenerate(){
   if(!window.docx){return;}
