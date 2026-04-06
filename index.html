@@ -2010,7 +2010,7 @@ function mapSetStyle(style){
     if(_mapGpsMarker){_mapGpsMarker.remove();_mapGpsMarker=null;}
     mapAddGPSDot();
     mapRenderFieldMarkers();
-    _mapKmlLayers.forEach(layer => mapReaddKmlLayer(layer));
+    _mapKmlLayers.filter(l=>l.visible).forEach(layer => mapToggleKmlLayerById(layer.id, true));
   });
 }
 
