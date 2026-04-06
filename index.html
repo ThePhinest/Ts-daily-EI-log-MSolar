@@ -2463,16 +2463,80 @@ function mapUpdateKmlLayerList(){
   if(!list) return;
   if(!_mapKmlLayers.length){ list.innerHTML = '<span>No layers imported.</span>'; return; }
   list.innerHTML = '';
-  _mapKmlLayers.forEach((layer,i)=>{
+  function makeLayerRow(layer){
     const row = document.createElement('div');
     row.style.cssText = 'display:flex;align-items:center;gap:6px;padding:5px 8px;background:var(--s1);border-radius:6px;margin-bottom:4px;';
     row.innerHTML = `<label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-family:var(--mono);font-size:11px;color:var(--text);flex:1;min-width:0;">
-      <input type="checkbox" ${layer.visible?'checked':''} onchange="mapToggleKmlLayer(${i},this.checked)">
+      <input type="checkbox" ${layer.visible?'checked':''} onchange="mapToggleKmlLayerById('${layer.id}',this.checked)">
       <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${layer.name}</span>
     </label>
-    <button onclick="mapRemoveKmlLayer(${i})" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;padding:0;">✕</button>`;
-    list.appendChild(row);
+    <button onclick="mapRemoveKmlLayerById('${layer.id}')" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;padding:0;">✕</button>`;
+    return row;
+  }
+  const folders = {};
+  const noFolder = [];
+  _mapKmlLayers.forEach(layer=>{
+    if(layer.folderName){ if(!folders[layer.folderName]) folders[layer.folderName]=[]; folders[layer.folderName].push(layer); }
+    else noFolder.push(layer);
   });
+  Object.entries(folders).forEach(([folderName, layers])=>{
+    const folderId = 'kml-folder-'+folderName.replace(/[^a-z0-9]/gi,'_');
+    const allVisible = layers.every(l=>l.visible);
+    const someVisible = layers.some(l=>l.visible);
+    const folderWrap = document.createElement('div');
+    folderWrap.style.cssText = 'margin-bottom:6px;border:1px solid var(--border2);border-radius:6px;overflow:hidden;';
+    const header = document.createElement('div');
+    header.style.cssText = 'display:flex;align-items:center;gap:6px;padding:6px 8px;background:var(--s2);cursor:pointer;';
+    header.innerHTML = `
+      <span id="${folderId}-chev" style="font-size:10px;color:var(--muted2);">▾</span>
+      <input type="checkbox" ${allVisible?'checked':someVisible?'':''}
+        style="accent-color:var(--amber);width:14px;height:14px;flex-shrink:0;"
+        id="${folderId}-cb">
+      <span style="font-family:var(--mono);font-size:11px;color:var(--amber2);font-weight:600;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">📁 ${folderName}</span>
+      <span style="font-family:var(--mono);font-size:9px;color:var(--muted);">${layers.length}</span>`;
+    const children = document.createElement('div');
+    children.id = folderId+'-children';
+    children.style.cssText = 'padding:4px 6px 4px 16px;';
+    layers.forEach(layer => children.appendChild(makeLayerRow(layer)));
+    // Collapse toggle
+    header.addEventListener('click', function(e){
+      if(e.target.type==='checkbox') return;
+      const collapsed = children.style.display==='none';
+      children.style.display = collapsed ? '' : 'none';
+      document.getElementById(folderId+'-chev').textContent = collapsed ? '▾' : '▸';
+    });
+    // Folder-level checkbox
+    header.querySelector(`#${folderId}-cb`).addEventListener('click', function(e){
+      e.stopPropagation();
+      kmlToggleFolderVisibility(folderName, this.checked);
+    });
+    folderWrap.appendChild(header);
+    folderWrap.appendChild(children);
+    list.appendChild(folderWrap);
+  });
+  noFolder.forEach(layer => list.appendChild(makeLayerRow(layer)));
+}
+async function kmlToggleFolderVisibility(folderName, visible){
+  const layers = _mapKmlLayers.filter(l=>l.folderName===folderName);
+  for(const layer of layers){
+    layer.visible = visible;
+    if(!visible){
+      ['fill','line'].forEach(t=>{ if(_mapInstance.getLayer(layer.id+'-'+t)) _mapInstance.removeLayer(layer.id+'-'+t); });
+      if(_mapInstance.getSource(layer.id)) _mapInstance.removeSource(layer.id);
+    } else {
+      if(!_mapInstance.getSource(layer.id) && layer.storagePath && storage){
+        try{
+          const url = await storage.ref(layer.storagePath).getDownloadURL();
+          const res = await fetch(url);
+          const kmlText = await res.text();
+          const features = kmlParseLayerById(kmlText, layer.name);
+          mapReaddKmlLayer(layer, features);
+        }catch(err){ console.warn('kmlToggleFolderVisibility:', err.message); }
+      }
+    }
+  }
+  kmlSaveLayers();
+  mapUpdateKmlLayerList();
 }
 
 async function mapToggleKmlLayer(i, visible){
