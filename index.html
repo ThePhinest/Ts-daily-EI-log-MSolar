@@ -2263,11 +2263,14 @@ function mapImportKml(input){
   reader.onload = async e => {
     const kmlText = e.target.result;
     const kml = new DOMParser().parseFromString(kmlText, 'text/xml');
+
     function getName(node){
-      return node.querySelector(':scope > name')?.textContent?.trim() ||
-             node.querySelector(':scope > n')?.textContent?.trim() || '';
+      return node.querySelector('name')?.textContent?.trim() ||
+             node.querySelector('n')?.textContent?.trim() || '';
     }
+
     const fileName = file.name.replace(/\.kml$/i,'');
+
     function parsePlacemarks(node){
       const features = [];
       node.querySelectorAll('Placemark').forEach(pm=>{
@@ -2288,39 +2291,29 @@ function mapImportKml(input){
       });
       return features;
     }
-    // Recursively walk KML tree — build flat layerDefs with folderName captured
+
+    // Build layer name list only — no features yet
     const layerDefs = [];
-    let autoCount = 0;
-    function walkNode(node, parentFolderName){
-      const tag = node.tagName;
-      if(tag === 'Document' || tag === 'Folder'){
-        const nodeName = getName(node) || fileName;
-        // Check if this node has direct Placemark children
-        const directPlacemarks = Array.from(node.children).filter(c=>c.tagName==='Placemark');
-        // Check if this node has sub-Folder or sub-Document children
-        const subContainers = Array.from(node.children).filter(c=>c.tagName==='Folder'||c.tagName==='Document');
-        if(directPlacemarks.length > 0 || subContainers.length === 0){
-          // Leaf node — treat as a layer
-          const autoLoad = autoCount < 2;
-          if(autoLoad) autoCount++;
-          layerDefs.push({name:nodeName, folderName:parentFolderName||'', docEl:node, autoLoad});
-        } else {
-          // Container node — recurse into children, passing this node's name as folder
-          subContainers.forEach(child => walkNode(child, nodeName));
-        }
-      }
-    }
-    // Find root container — could be <Folder> or <Document>
-    const root = kml.querySelector('Folder') || kml.querySelector('Document');
-    if(!root){ input.value=''; return; }
-    const rootChildren = Array.from(root.children).filter(c=>c.tagName==='Folder'||c.tagName==='Document');
-    if(rootChildren.length > 0){
-      rootChildren.forEach(child => walkNode(child, ''));
+    const topFolder = kml.querySelector('Folder');
+    const documents = topFolder ? Array.from(topFolder.children).filter(c=>c.tagName==='Document') : [];
+    const folders   = topFolder ? Array.from(topFolder.children).filter(c=>c.tagName==='Folder')   : [];
+
+    if(documents.length > 0){
+      documents.forEach((docEl,i)=>{
+        const layerName = getName(docEl) || fileName;
+        layerDefs.push({name:layerName, docEl, autoLoad: i < 2});
+      });
+    } else if(folders.length > 0){
+      folders.forEach((folder,i)=>{
+        const layerName = getName(folder) || fileName;
+        layerDefs.push({name:layerName, docEl:folder, autoLoad: i < 2});
+      });
     } else {
-      // Flat file — single layer
-      layerDefs.push({name:getName(root)||fileName, folderName:'', docEl:root, autoLoad:true});
+      layerDefs.push({name:fileName, docEl:kml, autoLoad:true});
     }
+
     if(layerDefs.length === 0){ input.value=''; return; }
+
     // Upload original file to Storage once
     const fileId = 'kml-'+Date.now()+'-'+Math.random().toString(36).slice(2,6);
     const storagePath = `kml/${fileId}.kml`;
@@ -2329,10 +2322,12 @@ function mapImportKml(input){
         await storage.ref(storagePath).put(file);
       }catch(err){ console.warn('KML Storage upload failed:', err.message); }
     }
+
     // Register all layers — only auto-load first 2
-    layerDefs.forEach(({name, folderName, docEl, autoLoad})=>{
+    layerDefs.forEach(({name, docEl, autoLoad})=>{
       const id = 'kml-'+Date.now()+'-'+Math.random().toString(36).slice(2,6);
       const visible = autoLoad;
+
       if(autoLoad){
         const features = parsePlacemarks(docEl);
         if(features.length > 0){
@@ -2341,8 +2336,10 @@ function mapImportKml(input){
           _mapInstance.addLayer({id:id+'-line',type:'line',source:id,paint:{'line-color':'#C9A84C','line-width':2},filter:['any',['==',['geometry-type'],'LineString'],['==',['geometry-type'],'Polygon']]});
         }
       }
-      _mapKmlLayers.push({id, name, folderName, visible, storagePath});
+
+      _mapKmlLayers.push({id, name, visible, storagePath});
     });
+
     kmlSaveLayers();
     mapUpdateKmlLayerList();
     input.value='';
@@ -2360,7 +2357,7 @@ function mapReaddKmlLayer(layer, features){
 
 function kmlSaveLayers(){
   // Store metadata only — features stay in memory, KML text in Storage
-  const data = _mapKmlLayers.map(l=>({id:l.id, name:l.name, folderName:l.folderName||'', visible:l.visible, storagePath:l.storagePath||''}));
+  const data = _mapKmlLayers.map(l=>({id:l.id, name:l.name, visible:l.visible, storagePath:l.storagePath||''}));
   try{ localStorage.setItem('gl_kml_layers', JSON.stringify(data)); }catch{}
   if(db&&_fbReady){
     db.collection('kml').doc('layers').set({data, _ts:Date.now()}).catch(e=>console.warn('kmlSaveLayers:',e.message));
@@ -2447,88 +2444,18 @@ function mapUpdateKmlLayerList(){
   if(!list) return;
   if(!_mapKmlLayers.length){ list.innerHTML = '<span>No layers imported.</span>'; return; }
   list.innerHTML = '';
-  // Group layers by folderName
-  const folders = {};
-  const noFolder = [];
-  _mapKmlLayers.forEach(layer=>{
-    if(layer.folderName){
-      if(!folders[layer.folderName]) folders[layer.folderName] = [];
-      folders[layer.folderName].push(layer);
-    } else {
-      noFolder.push(layer);
-    }
-  });
-  function makeLayerRow(layer){
+  _mapKmlLayers.forEach((layer,i)=>{
     const row = document.createElement('div');
     row.style.cssText = 'display:flex;align-items:center;gap:6px;padding:5px 8px;background:var(--s1);border-radius:6px;margin-bottom:4px;';
     row.innerHTML = `<label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-family:var(--mono);font-size:11px;color:var(--text);flex:1;min-width:0;">
-      <input type="checkbox" ${layer.visible?'checked':''} onchange="mapToggleKmlLayerById('${layer.id}',this.checked)">
+      <input type="checkbox" ${layer.visible?'checked':''} onchange="mapToggleKmlLayer(${i},this.checked)">
       <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${layer.name}</span>
     </label>
-    <button onclick="mapRemoveKmlLayerById('${layer.id}')" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;padding:0;">✕</button>`;
-    return row;
-  }
-  // Render folder groups
-  Object.entries(folders).forEach(([folderName, layers])=>{
-    const folderId = 'kml-folder-'+folderName.replace(/\s+/g,'_');
-    const allVisible = layers.every(l=>l.visible);
-    const someVisible = layers.some(l=>l.visible);
-    const folderRow = document.createElement('div');
-    folderRow.style.cssText = 'margin-bottom:6px;border:1px solid var(--border2);border-radius:6px;overflow:hidden;';
-    folderRow.innerHTML = `
-      <div style="display:flex;align-items:center;gap:6px;padding:6px 8px;background:var(--s2);cursor:pointer;" onclick="kmlToggleFolderCollapse('${folderId}')">
-        <span id="${folderId}-chevron" style="font-size:10px;color:var(--muted2);transition:transform .2s;">▾</span>
-        <input type="checkbox" ${allVisible?'checked':someVisible?'':''}
-          style="accent-color:var(--amber);width:14px;height:14px;"
-          onclick="event.stopPropagation();kmlToggleFolderVisibility('${folderName}',this.checked)"
-          ${someVisible&&!allVisible?'style="opacity:0.6;"':''}>
-        <span style="font-family:var(--mono);font-size:11px;color:var(--amber2);font-weight:600;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">📁 ${folderName}</span>
-        <span style="font-family:var(--mono);font-size:9px;color:var(--muted);">${layers.length}</span>
-      </div>
-      <div id="${folderId}-children" style="padding:4px 6px 4px 16px;"></div>`;
-    const childContainer = folderRow.querySelector(`#${folderId}-children`);
-    layers.forEach(layer => childContainer.appendChild(makeLayerRow(layer)));
-    list.appendChild(folderRow);
+    <button onclick="mapRemoveKmlLayer(${i})" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;padding:0;">✕</button>`;
+    list.appendChild(row);
   });
-  // Render ungrouped layers flat
-  noFolder.forEach(layer => list.appendChild(makeLayerRow(layer)));
-}
-function kmlToggleFolderCollapse(folderId){
-  const children = document.getElementById(folderId+'-children');
-  const chevron = document.getElementById(folderId+'-chevron');
-  if(!children) return;
-  const collapsed = children.style.display === 'none';
-  children.style.display = collapsed ? '' : 'none';
-  if(chevron) chevron.style.transform = collapsed ? '' : 'rotate(-90deg)';
-}
-async function kmlToggleFolderVisibility(folderName, visible){
-  const layers = _mapKmlLayers.filter(l=>l.folderName===folderName);
-  for(const layer of layers){
-    layer.visible = visible;
-    if(!visible){
-      ['fill','line'].forEach(t=>{
-        if(_mapInstance.getLayer(layer.id+'-'+t)) _mapInstance.removeLayer(layer.id+'-'+t);
-      });
-      if(_mapInstance.getSource(layer.id)) _mapInstance.removeSource(layer.id);
-    } else {
-      if(!_mapInstance.getSource(layer.id) && layer.storagePath && storage){
-        try{
-          const url = await storage.ref(layer.storagePath).getDownloadURL();
-          const res = await fetch(url);
-          const kmlText = await res.text();
-          const features = kmlParseLayerById(kmlText, layer.name);
-          mapReaddKmlLayer(layer, features);
-        }catch(err){ console.warn('kmlToggleFolderVisibility fetch failed:', err.message); }
-      }
-    }
-  }
-  kmlSaveLayers();
-  mapUpdateKmlLayerList();
 }
 
-async function mapToggleKmlLayerById(id, visible){
-  const layer = _mapKmlLayers.find(l=>l.id===id);
-  if(!layer) return;
 async function mapToggleKmlLayer(i, visible){
   const layer = _mapKmlLayers[i];
   layer.visible = visible;
@@ -2565,16 +2492,6 @@ function mapRemoveKmlLayer(i){
   ['fill','line'].forEach(t=>{ if(_mapInstance.getLayer(layer.id+'-'+t)) _mapInstance.removeLayer(layer.id+'-'+t); });
   if(_mapInstance.getSource(layer.id)) _mapInstance.removeSource(layer.id);
   _mapKmlLayers.splice(i,1);
-  kmlSaveLayers();
-  mapUpdateKmlLayerList();
-}
-function mapRemoveKmlLayerById(id){
-  const idx = _mapKmlLayers.findIndex(l=>l.id===id);
-  if(idx === -1) return;
-  const layer = _mapKmlLayers[idx];
-  ['fill','line'].forEach(t=>{ if(_mapInstance.getLayer(layer.id+'-'+t)) _mapInstance.removeLayer(layer.id+'-'+t); });
-  if(_mapInstance.getSource(layer.id)) _mapInstance.removeSource(layer.id);
-  _mapKmlLayers.splice(idx,1);
   kmlSaveLayers();
   mapUpdateKmlLayerList();
 }
