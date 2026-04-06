@@ -2343,7 +2343,7 @@ function mapImportKml(input){
     }
 
     // Register all layers — only auto-load first 2
-    layerDefs.forEach(({name, docEl, autoLoad})=>{
+    layerDefs.forEach(({name, folderName, docEl, autoLoad})=>{
       const id = 'kml-'+Date.now()+'-'+Math.random().toString(36).slice(2,6);
       const visible = autoLoad;
 
