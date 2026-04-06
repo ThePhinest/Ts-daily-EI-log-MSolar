@@ -2578,6 +2578,36 @@ function mapRemoveKmlLayer(i){
   kmlSaveLayers();
   mapUpdateKmlLayerList();
 }
+function mapRemoveKmlLayerById(id){
+  const idx = _mapKmlLayers.findIndex(l=>l.id===id);
+  if(idx===-1) return;
+  const layer = _mapKmlLayers[idx];
+  ['fill','line'].forEach(t=>{ if(_mapInstance.getLayer(layer.id+'-'+t)) _mapInstance.removeLayer(layer.id+'-'+t); });
+  if(_mapInstance.getSource(layer.id)) _mapInstance.removeSource(layer.id);
+  _mapKmlLayers.splice(idx,1);
+  kmlSaveLayers();
+  mapUpdateKmlLayerList();
+}
+async function mapToggleKmlLayerById(id, visible){
+  const layer = _mapKmlLayers.find(l=>l.id===id);
+  if(!layer) return;
+  layer.visible = visible;
+  if(!visible){
+    ['fill','line'].forEach(t=>{ if(_mapInstance.getLayer(layer.id+'-'+t)) _mapInstance.removeLayer(layer.id+'-'+t); });
+    if(_mapInstance.getSource(layer.id)) _mapInstance.removeSource(layer.id);
+  } else {
+    if(!_mapInstance.getSource(layer.id) && layer.storagePath && storage){
+      try{
+        const url = await storage.ref(layer.storagePath).getDownloadURL();
+        const res = await fetch(url);
+        const kmlText = await res.text();
+        const features = kmlParseLayerById(kmlText, layer.name);
+        mapReaddKmlLayer(layer, features);
+      }catch(err){ console.warn('mapToggleKmlLayerById:', err.message); }
+    }
+  }
+  kmlSaveLayers();
+}
 
 function mapShowExportModal(){
   document.getElementById('map-export-modal').style.display='block';
