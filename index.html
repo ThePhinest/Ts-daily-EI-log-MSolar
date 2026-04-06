@@ -2297,16 +2297,29 @@ function mapImportKml(input){
     let autoCount = 0;
     function walkNode(node, parentFolderName){
       const tag = node.tagName;
-      if(tag === 'Document' || tag === 'Folder'){
+      if(tag === 'Document'){
+        // Documents are always leaf layers — never recurse into them
         const nodeName = getName(node) || fileName;
+        const autoLoad = autoCount < 2;
+        if(autoLoad) autoCount++;
+        layerDefs.push({name:nodeName, folderName:parentFolderName||'', docEl:node, autoLoad});
+      } else if(tag === 'Folder'){
+        const nodeName = getName(node) || fileName;
+        const subFolders = Array.from(node.children).filter(c=>c.tagName==='Folder');
+        const subDocs = Array.from(node.children).filter(c=>c.tagName==='Document');
         const directPlacemarks = Array.from(node.children).filter(c=>c.tagName==='Placemark');
-        const subContainers = Array.from(node.children).filter(c=>c.tagName==='Folder'||c.tagName==='Document');
-        if(directPlacemarks.length > 0 || subContainers.length === 0){
+        if(subDocs.length > 0){
+          // Folder contains Documents — each Document is a layer, this Folder is the group
+          subDocs.forEach(doc => walkNode(doc, nodeName));
+          subFolders.forEach(f => walkNode(f, nodeName));
+        } else if(subFolders.length > 0 && directPlacemarks.length === 0){
+          // Folder contains only sub-Folders — recurse, this Folder is a group
+          subFolders.forEach(f => walkNode(f, nodeName));
+        } else {
+          // Folder has direct Placemarks — it's a leaf layer
           const autoLoad = autoCount < 2;
           if(autoLoad) autoCount++;
           layerDefs.push({name:nodeName, folderName:parentFolderName||'', docEl:node, autoLoad});
-        } else {
-          subContainers.forEach(child => walkNode(child, nodeName));
         }
       }
     }
