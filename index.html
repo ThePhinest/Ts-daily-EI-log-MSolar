@@ -2292,26 +2292,32 @@ function mapImportKml(input){
       return features;
     }
 
-    // Build layer name list only — no features yet
+    // Recursively walk KML tree — build flat layerDefs with folderName captured
     const layerDefs = [];
-    const topFolder = kml.querySelector('Folder');
-    const documents = topFolder ? Array.from(topFolder.children).filter(c=>c.tagName==='Document') : [];
-    const folders   = topFolder ? Array.from(topFolder.children).filter(c=>c.tagName==='Folder')   : [];
-
-    if(documents.length > 0){
-      documents.forEach((docEl,i)=>{
-        const layerName = getName(docEl) || fileName;
-        layerDefs.push({name:layerName, docEl, autoLoad: i < 2});
-      });
-    } else if(folders.length > 0){
-      folders.forEach((folder,i)=>{
-        const layerName = getName(folder) || fileName;
-        layerDefs.push({name:layerName, docEl:folder, autoLoad: i < 2});
-      });
-    } else {
-      layerDefs.push({name:fileName, docEl:kml, autoLoad:true});
+    let autoCount = 0;
+    function walkNode(node, parentFolderName){
+      const tag = node.tagName;
+      if(tag === 'Document' || tag === 'Folder'){
+        const nodeName = getName(node) || fileName;
+        const directPlacemarks = Array.from(node.children).filter(c=>c.tagName==='Placemark');
+        const subContainers = Array.from(node.children).filter(c=>c.tagName==='Folder'||c.tagName==='Document');
+        if(directPlacemarks.length > 0 || subContainers.length === 0){
+          const autoLoad = autoCount < 2;
+          if(autoLoad) autoCount++;
+          layerDefs.push({name:nodeName, folderName:parentFolderName||'', docEl:node, autoLoad});
+        } else {
+          subContainers.forEach(child => walkNode(child, nodeName));
+        }
+      }
     }
-
+    const root = kml.querySelector('Folder') || kml.querySelector('Document');
+    if(!root){ input.value=''; return; }
+    const rootChildren = Array.from(root.children).filter(c=>c.tagName==='Folder'||c.tagName==='Document');
+    if(rootChildren.length > 0){
+      rootChildren.forEach(child => walkNode(child, ''));
+    } else {
+      layerDefs.push({name:getName(root)||fileName, folderName:'', docEl:root, autoLoad:true});
+    }
     if(layerDefs.length === 0){ input.value=''; return; }
 
     // Upload original file to Storage once
@@ -2337,7 +2343,7 @@ function mapImportKml(input){
         }
       }
 
-      _mapKmlLayers.push({id, name, visible, storagePath});
+      _mapKmlLayers.push({id, name, folderName, visible, storagePath});
     });
 
     kmlSaveLayers();
