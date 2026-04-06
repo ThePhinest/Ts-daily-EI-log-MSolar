@@ -2357,7 +2357,7 @@ function mapReaddKmlLayer(layer, features){
 
 function kmlSaveLayers(){
   // Store metadata only — features stay in memory, KML text in Storage
-  const data = _mapKmlLayers.map(l=>({id:l.id, name:l.name, visible:l.visible, storagePath:l.storagePath||''}));
+  const data = _mapKmlLayers.map(l=>({id:l.id, name:l.name, folderName:l.folderName||'', visible:l.visible, storagePath:l.storagePath||''}));
   try{ localStorage.setItem('gl_kml_layers', JSON.stringify(data)); }catch{}
   if(db&&_fbReady){
     db.collection('kml').doc('layers').set({data, _ts:Date.now()}).catch(e=>console.warn('kmlSaveLayers:',e.message));
