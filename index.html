@@ -4813,12 +4813,15 @@ function getMyWeather(){
           `&hourly=precipitation&current_weather=true`+
           `&temperature_unit=fahrenheit&windspeed_unit=mph&precipitation_unit=inch&timezone=auto&forecast_days=3`;
         const res=await fetch(url);
+        if(!res.ok) throw new Error('HTTP '+res.status);
         const data=await res.json();
         _applyWeatherData(data);
         if(btn){btn.textContent='✓ Weather filled';btn.style.color='var(--green)';
           setTimeout(()=>{btn.textContent='⛅ Get My Weather';btn.style.color='';btn.disabled=false;},3000);}
       }catch(e){
-        alert('Weather fetch failed. Check your connection and try again.');
+        let msg='Weather service is temporarily unavailable. Try again in a moment.';
+        if(!navigator.onLine) msg='No internet connection. Connect and try again.';
+        alert(msg);
         if(btn){btn.textContent='⛅ Get My Weather';btn.disabled=false;}
       }
     },
