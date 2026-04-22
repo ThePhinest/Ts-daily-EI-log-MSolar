@@ -1826,7 +1826,7 @@ async function saveCardLabels(){
   // Save to Firestore
   if(db && _fbReady){
     try{
-      await db.collection('settings').doc('cardTitles').set(titles);
+      await _udb().collection('settings').doc('cardTitles').set(titles);
     }catch(e){ console.warn('saveCardLabels failed:',e.message); }
   }
   // Also persist locally
@@ -1839,7 +1839,7 @@ async function initCardTitles(){
   // Try Firestore first
   if(db && _fbReady){
     try{
-      const doc = await db.collection('settings').doc('cardTitles').get();
+      const doc = await _udb().collection('settings').doc('cardTitles').get();
       if(doc.exists){ loadCardTitles(doc.data()); return; }
     }catch(e){ console.warn('initCardTitles Firestore failed:',e.message); }
   }
@@ -1954,7 +1954,7 @@ async function mapInit(){
     try{
       let waited=0;
       while(!_fbReady&&waited<5000){await new Promise(r=>setTimeout(r,200));waited+=200;}
-      const doc=await db.collection('settings').doc('projectConfig').get();
+      const doc=await _udb().collection('settings').doc('projectConfig').get();
       if(doc.exists&&doc.data().mapboxToken){
         token=doc.data().mapboxToken.trim();
         localStorage.setItem('gl_map_token',token);
@@ -2108,7 +2108,7 @@ async function mapSaveSettings(){
   localStorage.setItem('gl_map_style',style);
   if(db&&_fbReady){
     try{
-      await db.collection('settings').doc('projectConfig').set(
+      await _udb().collection('settings').doc('projectConfig').set(
         {mapboxToken:token, mapStyle:style, _ts:Date.now()},
         {merge:true}
       );
@@ -2278,7 +2278,7 @@ async function mapConfirmMarker(){
   };
   document.getElementById('map-marker-modal').style.display = 'none';
   if(db && _fbReady){
-    try { await db.collection('fieldMarkers').add(markerData); }
+    try { await _udb().collection('fieldMarkers').add(markerData); }
     catch(e){ console.error('Marker save failed:', e); }
   }
   mapRenderFieldMarkers();
@@ -2292,7 +2292,7 @@ async function mapRenderFieldMarkers(){
   if(!db || !_fbReady) return;
   const projectName = (JSON.parse(localStorage.getItem('msf_projectconfig')||'{}').projectName) || '';
   try {
-    const snap = await db.collection('fieldMarkers').get();
+    const snap = await _udb().collection('fieldMarkers').get();
     snap.forEach(doc => {
       const m = doc.data();
       if(m.scope !== 'global' && m.projectName !== projectName) return;
@@ -2317,7 +2317,7 @@ async function mapRenderFieldMarkers(){
 
 async function mapDeleteFieldMarker(id){
   if(!db || !_fbReady) return;
-  try { await db.collection('fieldMarkers').doc(id).delete(); }
+  try { await _udb().collection('fieldMarkers').doc(id).delete(); }
   catch(e){ console.error('Delete marker failed:', e); }
   mapRenderFieldMarkers();
 }
@@ -2458,7 +2458,7 @@ function kmlSaveLayers(){
   const data = _mapKmlLayers.map(l=>({id:l.id, name:l.name, folderName:l.folderName||'', visible:l.visible, storagePath:l.storagePath||''}));
   try{ localStorage.setItem('gl_kml_layers', JSON.stringify(data)); }catch{}
   if(db&&_fbReady){
-    db.collection('kml').doc('layers').set({data, _ts:Date.now()}).catch(e=>console.warn('kmlSaveLayers:',e.message));
+    _udb().collection('kml').doc('layers').set({data, _ts:Date.now()}).catch(e=>console.warn('kmlSaveLayers:',e.message));
   }
 }
   
@@ -2495,7 +2495,7 @@ async function kmlLoadLayers(){
   let data = null;
   if(db&&_fbReady){
     try{
-      const doc = await db.collection('kml').doc('layers').get();
+      const doc = await _udb().collection('kml').doc('layers').get();
       if(doc.exists) data = doc.data().data;
     }catch(e){ console.warn('kmlLoadLayers cloud:', e.message); }
   }
@@ -2738,7 +2738,7 @@ function mapExportKml(){
 async function mapLoadSettingsFields(){
   if(db&&_fbReady){
     try{
-      const doc=await db.collection('settings').doc('projectConfig').get();
+      const doc=await _udb().collection('settings').doc('projectConfig').get();
       if(doc.exists){
         const d=doc.data();
         if(d.mapboxToken){ localStorage.setItem('gl_map_token',d.mapboxToken); }
@@ -2861,11 +2861,11 @@ function saveChecklistLocal(){
 }
 async function saveChecklistCloud(){
   if(!db||!_fbReady)return;
-  try{await db.collection('config').doc('checklist').set({title:checklistTitle,items:checklistItems});}catch(e){}
+  try{await _udb().collection('config').doc('checklist').set({title:checklistTitle,items:checklistItems});}catch(e){}
 }
 async function loadChecklistCloud(){
   if(!db)return;
-  try{const doc=await db.collection('config').doc('checklist').get();if(doc.exists){const d=doc.data();checklistItems=d.items||DEFAULT_CHECKLIST_ITEMS;checklistTitle=d.title||'Compliance Checklist';saveChecklistLocal();buildChecklist();renderChecklistList();}}catch(e){}
+  try{const doc=await _udb().collection('config').doc('checklist').get();if(doc.exists){const d=doc.data();checklistItems=d.items||DEFAULT_CHECKLIST_ITEMS;checklistTitle=d.title||'Compliance Checklist';saveChecklistLocal();buildChecklist();renderChecklistList();}}catch(e){}
 }
 function loadFlagsConfig(){
   try{const raw=localStorage.getItem('msf_flags_config');if(raw){const d=JSON.parse(raw);flagItems=d.items||DEFAULT_FLAG_ITEMS;flagsTitle=d.title||'Regulatory & Incident Flags';}}catch{}
@@ -2875,11 +2875,11 @@ function saveFlagsLocal(){
 }
 async function saveFlagsCloud(){
   if(!db||!_fbReady)return;
-  try{await db.collection('config').doc('flags').set({title:flagsTitle,items:flagItems});}catch(e){}
+  try{await _udb().collection('config').doc('flags').set({title:flagsTitle,items:flagItems});}catch(e){}
 }
 async function loadFlagsCloud(){
   if(!db)return;
-  try{const doc=await db.collection('config').doc('flags').get();if(doc.exists){const d=doc.data();flagItems=d.items||DEFAULT_FLAG_ITEMS;flagsTitle=d.title||'Regulatory & Incident Flags';saveFlagsLocal();buildFlags();renderFlagsList();}}catch(e){}
+  try{const doc=await _udb().collection('config').doc('flags').get();if(doc.exists){const d=doc.data();flagItems=d.items||DEFAULT_FLAG_ITEMS;flagsTitle=d.title||'Regulatory & Incident Flags';saveFlagsLocal();buildFlags();renderFlagsList();}}catch(e){}
 }
 function renderChecklistList(){
   const ul=document.getElementById('list-checklist');if(!ul)return;
@@ -3226,22 +3226,22 @@ function addPreset(key){
   if(!presets[key])presets[key]=[];
   presets[key].push({text:t.value.trim(),phase:ph.value});
   ss('msf_presets',presets);t.value='';renderPresetList(key);renderAllChips();
-try{if(typeof db!=='undefined'&&db&&_fbReady){db.collection('settings').doc('presets').set({data:JSON.stringify(presets),_ts:Date.now()}).catch(()=>{});}}catch(e){}
+try{if(typeof db!=='undefined'&&db&&_fbReady){_udb().collection('settings').doc('presets').set({data:JSON.stringify(presets),_ts:Date.now()}).catch(()=>{});}}catch(e){}
 }
 function removePreset(key,idx){
   presets[key].splice(idx,1);ss('msf_presets',presets);renderPresetList(key);renderAllChips();
-try{if(typeof db!=='undefined'&&db&&_fbReady){db.collection('settings').doc('presets').set({data:JSON.stringify(presets),_ts:Date.now()}).catch(()=>{});}}catch(e){}
+try{if(typeof db!=='undefined'&&db&&_fbReady){_udb().collection('settings').doc('presets').set({data:JSON.stringify(presets),_ts:Date.now()}).catch(()=>{});}}catch(e){}
 }
 function addPhase(){
   const inp=document.getElementById('new-phase-text');const val=inp.value.trim();
   if(!val||phases.includes(val))return;
   phases.push(val);ss('msf_phases',phases);inp.value='';renderPhaseList();populateSelects();
-try{if(typeof db!=='undefined'&&db&&_fbReady){db.collection('settings').doc('phases').set({data:JSON.stringify(phases),_ts:Date.now()}).catch(()=>{});}}catch(e){}
+try{if(typeof db!=='undefined'&&db&&_fbReady){_udb().collection('settings').doc('phases').set({data:JSON.stringify(phases),_ts:Date.now()}).catch(()=>{});}}catch(e){}
 }
 function removePhase(idx){
   if(phases[idx]===activePhaseLabel){alert('Cannot remove the currently active phase.');return}
   phases.splice(idx,1);ss('msf_phases',phases);renderPhaseList();populateSelects();
-try{if(typeof db!=='undefined'&&db&&_fbReady){db.collection('settings').doc('phases').set({data:JSON.stringify(phases),_ts:Date.now()}).catch(()=>{});}}catch(e){}
+try{if(typeof db!=='undefined'&&db&&_fbReady){_udb().collection('settings').doc('phases').set({data:JSON.stringify(phases),_ts:Date.now()}).catch(()=>{});}}catch(e){}
 }
 
 // ── Preset reorder mode ──
@@ -3367,8 +3367,8 @@ async function syncPresetsFromCloud() {
   if(!_fbReady) return;
   try{
     const [presetsDoc, phasesDoc] = await Promise.all([
-      db.collection('settings').doc('presets').get(),
-      db.collection('settings').doc('phases').get()
+      _udb().collection('settings').doc('presets').get(),
+      _udb().collection('settings').doc('phases').get()
     ]);
     if(presetsDoc.exists){
       const p = JSON.parse(presetsDoc.data().data);
@@ -3392,7 +3392,7 @@ async function syncProjectConfigFromCloud() {
   while(!_fbReady && waited<5000){ await new Promise(r=>setTimeout(r,200)); waited+=200; }
   if(!_fbReady) return;
   try {
-    const doc = await db.collection('settings').doc('projectConfig').get();
+    const doc = await _udb().collection('settings').doc('projectConfig').get();
     if(doc.exists) {
       const data = doc.data();
       delete data._ts;
@@ -3445,7 +3445,7 @@ function saveProjectConfig() {
     reviewedBy:  document.getElementById('cfg-reviewedBy').value.trim()  || PROJECT_CONFIG_DEFAULTS.reviewedBy
   };
   localStorage.setItem('msf_projectconfig', JSON.stringify(cfg));
-  try{if(typeof db!=='undefined'&&db&&_fbReady){db.collection('settings').doc('projectConfig').set(Object.assign({},cfg,{_ts:Date.now()})).catch(()=>{});}}catch(e){}
+  try{if(typeof db!=='undefined'&&db&&_fbReady){_udb().collection('settings').doc('projectConfig').set(Object.assign({},cfg,{_ts:Date.now()})).catch(()=>{});}}catch(e){}
   applyProjectConfig();
   // Also update activePhaseLabel for chip rendering
   activePhaseLabel = cfg.activePhase;
@@ -3704,19 +3704,19 @@ function tsDisplayDate(d){const days=['Sun','Mon','Tue','Wed','Thu','Fri','Sat']
 function tsWeekLabel(s,e){const mo=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];return mo[s.getMonth()]+' '+s.getDate()+' \u2013 '+mo[e.getMonth()]+' '+e.getDate()+', '+e.getFullYear();}
 function tsGetAllEntries(){try{return JSON.parse(localStorage.getItem('msf_ts_entries')||'{}');}catch{return{};}}
 function tsGetEntry(ds){return tsGetAllEntries()[ds]||null;}
-function tsSaveEntry(ds,data){const entries=tsGetAllEntries();entries[ds]=Object.assign(entries[ds]||{},data);localStorage.setItem('msf_ts_entries',JSON.stringify(entries));try{if(typeof db!=='undefined'&&db&&_fbReady){db.collection('timesheetEntries').doc(ds).set(entries[ds]).catch(()=>{});}}catch(e){}}
+function tsSaveEntry(ds,data){const entries=tsGetAllEntries();entries[ds]=Object.assign(entries[ds]||{},data);localStorage.setItem('msf_ts_entries',JSON.stringify(entries));try{if(typeof db!=='undefined'&&db&&_fbReady){_udb().collection('timesheetEntries').doc(ds).set(entries[ds]).catch(()=>{});}}catch(e){}}
 function tsGetArchivedWeeks(){try{return JSON.parse(localStorage.getItem('msf_ts_weeks')||'[]');}catch{return[];}}
 function tsSaveArchivedWeeks(w){
   localStorage.setItem('msf_ts_weeks',JSON.stringify(w));
   // Mirror full weeks array to Firestore so other devices stay in sync
   if(typeof db!=='undefined'&&db&&_fbReady){
-    db.collection('timesheetMeta').doc('archivedWeeks').set({weeks:w,_ts:Date.now()}).catch(()=>{});
+    _udb().collection('timesheetMeta').doc('archivedWeeks').set({weeks:w,_ts:Date.now()}).catch(()=>{});
   }
 }
 function tsSaveConfig(c){
   localStorage.setItem('msf_ts_config',JSON.stringify(c));
   if(typeof db!=='undefined'&&db&&_fbReady){
-    db.collection('timesheetMeta').doc('config').set(Object.assign({},c,{_ts:Date.now()})).catch(()=>{});
+    _udb().collection('timesheetMeta').doc('config').set(Object.assign({},c,{_ts:Date.now()})).catch(()=>{});
   }
 }
 
@@ -3725,7 +3725,7 @@ async function tsLoadFromFirestore(){
   if(!db) return;
   try{
     // 1. Archived weeks
-    const weeksDoc=await db.collection('timesheetMeta').doc('archivedWeeks').get();
+    const weeksDoc=await _udb().collection('timesheetMeta').doc('archivedWeeks').get();
     if(weeksDoc.exists){
       const data=weeksDoc.data();
       const remoteWeeks=data.weeks||[];
@@ -3742,10 +3742,10 @@ async function tsLoadFromFirestore(){
         },{})
       ).sort((a,b)=>a.weekStart>b.weekStart?1:-1);
       localStorage.setItem('msf_ts_weeks',JSON.stringify(merged));
-      db.collection('timesheetMeta').doc('archivedWeeks').set({weeks:merged,_ts:Date.now()}).catch(()=>{});
+      _udb().collection('timesheetMeta').doc('archivedWeeks').set({weeks:merged,_ts:Date.now()}).catch(()=>{});
     }
     // 2. Config
-    const cfgDoc=await db.collection('timesheetMeta').doc('config').get();
+    const cfgDoc=await _udb().collection('timesheetMeta').doc('config').get();
     if(cfgDoc.exists){
       const remote=cfgDoc.data();
       let localCfg={};
@@ -3758,7 +3758,7 @@ async function tsLoadFromFirestore(){
       }
     }
     // 3. Individual day entries — merge any remote entries not in local
-    const entriesSnap=await db.collection('timesheetEntries').get();
+    const entriesSnap=await _udb().collection('timesheetEntries').get();
     if(!entriesSnap.empty){
       const local=tsGetAllEntries();
       let changed=false;
@@ -3961,7 +3961,7 @@ function _tsDoArchive(start,end){
   dates.forEach(d=>delete entries[tsFormatDate(d)]);
   localStorage.setItem('msf_ts_entries',JSON.stringify(entries));
   localStorage.removeItem('msf_ts_snooze');
-  if(db&&_fbReady)db.collection('timesheetWeeks').doc(week.weekStart).set(week).catch(()=>{});
+  if(db&&_fbReady)_udb().collection('timesheetWeeks').doc(week.weekStart).set(week).catch(()=>{});
   const banner=document.getElementById('ts-archive-banner');if(banner)banner.remove();
   tsRenderCurrentWeek();tsRenderHistory();tsRenderCumulative();
 }
@@ -4280,7 +4280,7 @@ async function phSaveCloud(){
   try{
     const batch = db.batch();
     _phPhotos.forEach(p => {
-      const ref = db.collection('photos').doc(p.id);
+      const ref = _udb().collection('photos').doc(p.id);
       const doc = {
         id: p.id, date: p.date, caption: p.caption,
         filename: p.filename, thumb: p.thumb, uploadedAt: p.uploadedAt
@@ -4304,7 +4304,7 @@ async function phLoadCloud(){
     waited += 200;
   }
   try{
-    const snap = await db.collection('photos').get();
+    const snap = await _udb().collection('photos').get();
     if(!snap.empty){
       _phPhotos = snap.docs.map(d => d.data());
       phSaveLocal();
@@ -4452,7 +4452,7 @@ function phConfirmDelete(id){
     phSaveLocal();
     if(db){
       try{
-        await db.collection('photos').doc(id).delete();
+        await _udb().collection('photos').doc(id).delete();
       }catch(e){ console.warn('phDelete Firestore failed:', e.message); }
     }
     if(p && p.storageUrl && storage){
@@ -4554,7 +4554,7 @@ async function clSaveCloud(){
   try{
     const batch = db.batch();
     // Save entire array as single doc for simplicity
-    batch.set(db.collection('compliance').doc('entries'), { list: _clEntries, _ts: Date.now() });
+    batch.set(_udb().collection('compliance').doc('entries'), { list: _clEntries, _ts: Date.now() });
     await batch.commit();
   }catch(e){ console.warn('clSaveCloud failed:', e.message); }
 }
@@ -4562,7 +4562,7 @@ async function clSaveCloud(){
 async function clLoadCloud(){
   if(!db || !_fbReady) return false;
   try{
-    const doc = await db.collection('compliance').doc('entries').get();
+    const doc = await _udb().collection('compliance').doc('entries').get();
     if(doc.exists){
       const data = doc.data();
       _clEntries = data.list || [];
@@ -4821,14 +4821,14 @@ function dnSaveLocal(date,note){const all=dnGetAll();if(note){all[date]={note,_t
 async function dnSaveCloud(date,note){
   if(!db||!_fbReady)return;
   try{
-    if(note){await db.collection('dayNotes').doc(date).set({note,_ts:Date.now()});}
-    else{await db.collection('dayNotes').doc(date).delete();}
+    if(note){await _udb().collection('dayNotes').doc(date).set({note,_ts:Date.now()});}
+    else{await _udb().collection('dayNotes').doc(date).delete();}
   }catch(e){}
 }
 async function dnLoadCloud(){
   if(!db||!_fbReady)return;
   try{
-    const snap=await db.collection('dayNotes').get();
+    const snap=await _udb().collection('dayNotes').get();
     if(snap.empty)return;
     const all=dnGetAll();
     snap.forEach(doc=>{all[doc.id]=doc.data();});
@@ -5032,7 +5032,7 @@ async function dlArchive(date){
   dlSaveLocal(date, record);
   try{
     if(typeof db!=='undefined'&&db&&_fbReady){
-      await db.collection('dailyLogs').doc(date).set(record);
+      await _udb().collection('dailyLogs').doc(date).set(record);
     }
   }catch(e){}
   // ── Auto-push hours & miles to timesheet on archive (manual overrides preserved) ──
@@ -5183,7 +5183,7 @@ async function newDayStartFresh(){
   localStorage.setItem('pei_newday_suppress',today);
   // Reset form — _resetFormCore sets today's date automatically
   if(typeof db!=='undefined'&&db&&_fbReady){
-    try{ await db.collection('sessions').doc('active').delete(); }catch{}
+    try{ await _udb().collection('sessions').doc('active').delete(); }catch{}
   }
   _resetFormCore();
   setSyncStatus&&setSyncStatus('synced');
@@ -5245,7 +5245,7 @@ async function dlConfirmLoad(){
   restoreFormState(record);
   try{ localStorage.setItem('msf_autosave', JSON.stringify(record)); }catch{}
   if(typeof db!=='undefined'&&db&&_fbReady){
-    try{ await db.collection('sessions').doc('active').set(record); }catch{}
+    try{ await _udb().collection('sessions').doc('active').set(record); }catch{}
   }
   _ldPending=null;
   showPage('log');
@@ -5295,7 +5295,7 @@ function calGetIndicators(record){
 async function calLoadCloud(){
   try{
     if(typeof db==='undefined'||!db||!_fbReady) return;
-    const snap=await db.collection('dailyLogs').get();
+    const snap=await _udb().collection('dailyLogs').get();
     if(snap.empty) return;
     const all=dlGetAll();
     snap.forEach(doc=>{ if(!all[doc.id]) all[doc.id]=doc.data(); });
@@ -5847,7 +5847,7 @@ async function cloudSave() {
     setSyncStatus('syncing');
     const state = collectFormState();
     state._ts = Date.now();
-    await db.collection('sessions').doc('active').set(state);
+    await _udb().collection('sessions').doc('active').set(state);
     try { localStorage.setItem('msf_autosave', JSON.stringify(state)); } catch {}
     setSyncStatus('synced');
   } catch(e) {
@@ -5872,7 +5872,7 @@ function debouncedAutoSave() {
           record._editLog.push({ at: Date.now(), by: editor, action: 'Edited after archive' });
           dlSaveLocal(_editingArchivedDate, record);
           if (typeof db!=='undefined'&&db&&_fbReady){
-            db.collection('dailyLogs').doc(_editingArchivedDate).set(record).catch(()=>{});
+            _udb().collection('dailyLogs').doc(_editingArchivedDate).set(record).catch(()=>{});
           }
         }
       } catch(e) {}
@@ -5938,7 +5938,7 @@ function resetForm() {
     return;
   }
   _confirmModal('Reset the daily log? All entries will be cleared. Config and presets are preserved.', function() {
-    if (db) db.collection('sessions').doc('active').delete().catch(function(e){});
+    if (db) _udb().collection('sessions').doc('active').delete().catch(function(e){});
     _resetFormCore();
     setSyncStatus('idle');
   });
@@ -5955,7 +5955,7 @@ async function initFirebaseLoad() {
   }
 
   try {
-    const doc = await db.collection('sessions').doc('active').get();
+    const doc = await _udb().collection('sessions').doc('active').get();
 
     if (!doc.exists) {
       // Cloud doc missing — either first use OR reset was triggered on another device
@@ -6247,7 +6247,7 @@ async function rptDecryptKey(ciphertext){
 }
 async function rptGetApiKey(){
   let enc=null;
-  try{if(db&&_fbReady){const doc=await db.collection('appConfig').doc('reportSettings').get();if(doc.exists)enc=doc.data().encApiKey;}}catch(e){}
+  try{if(db&&_fbReady){const doc=await _udb().collection('appConfig').doc('reportSettings').get();if(doc.exists)enc=doc.data().encApiKey;}}catch(e){}
   if(!enc) enc=localStorage.getItem('pei_enc_api_key');
   if(!enc) return null;
   return rptDecryptKey(enc);
@@ -6258,7 +6258,7 @@ async function saveApiKey(){
   try{
     const encrypted=await rptEncryptKey(val);
     localStorage.setItem('pei_enc_api_key',encrypted);
-    if(db&&_fbReady) await db.collection('appConfig').doc('reportSettings').set({encApiKey:encrypted,_ts:Date.now()});
+    if(db&&_fbReady) await _udb().collection('appConfig').doc('reportSettings').set({encApiKey:encrypted,_ts:Date.now()});
     document.getElementById('cfg-api-key').value='';
     document.getElementById('cfg-api-key').placeholder='✓ Key saved securely';
     const st=document.getElementById('cfg-api-status');
