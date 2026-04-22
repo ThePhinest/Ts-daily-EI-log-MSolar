@@ -5911,7 +5911,7 @@ function _confirmModal(msg, onConfirm, title, confirmLabel) {
     '</div></div>';
   document.body.appendChild(ov);
   document.getElementById('_mc').onclick = function() { ov.remove(); };
-  document.getElementById('_mok').onclick = function() { ov.remove(); onConfirm(); };
+  document.getElementById('_mok').onclick = function() { ov.remove(); if (typeof onConfirm === 'function') onConfirm(); };
 }
 
 // ── resetForm: clears cloud + form — only permitted on today's log ──
@@ -6173,7 +6173,7 @@ function glRunMigration() {
         const log = await glMigrateData();
         setSyncStatus('synced');
         if (el) { el.disabled = false; el.textContent = 'Migrate Data'; }
-        _confirmModal('Migration complete:\n\n' + log.join('\n'), null, { title: '✓ Migration Complete', confirmLabel: 'Done' });
+        _confirmModal('Migration complete:\n\n' + log.join('\n'), function(){}, '✓ Migration Complete', 'Done');
       } catch(e) {
         setSyncStatus('offline');
         if (el) { el.disabled = false; el.textContent = 'Migrate Data'; }
