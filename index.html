@@ -1752,8 +1752,10 @@ EI to conduct LOD walk prior to start of operations"></textarea>
       <div style="font-family:var(--mono);font-size:11px;color:var(--muted2);margin-bottom:14px">
         Signed in as <span id="cfg-account-email" style="color:var(--text)">—</span>
       </div>
-      <button id="cfg-migrate-btn" class="btn btn-amber" style="font-size:11px;padding:7px 14px;margin-bottom:10px" onclick="glRunMigration()">Migrate Data</button>
+      <button id="cfg-migrate-btn" class="btn btn-amber" style="font-size:11px;padding:7px 14px;margin-bottom:4px" onclick="glRunMigration()">Migrate Data</button>
       <p style="font-family:var(--mono);font-size:10px;color:var(--muted2);margin:0 0 14px">Copies existing Firestore data to your user account. Run once after signing in for the first time.</p>
+      <button id="cfg-migrate-storage-btn" class="btn btn-amber" style="font-size:11px;padding:7px 14px;margin-bottom:4px" onclick="glRunStorageMigration()">Migrate Storage</button>
+      <p style="font-family:var(--mono);font-size:10px;color:var(--muted2);margin:0 0 14px">Copies existing photos and KML files to your user folder in Storage. Run once after Migrate Data.</p>
       <button class="btn" style="border-color:var(--red,#e05);color:var(--red,#e05);font-size:11px;padding:7px 14px" onclick="glSignOut()">Sign Out</button>
     </div>
   </div>
@@ -2414,7 +2416,7 @@ function mapImportKml(input){
 
     // Upload original file to Storage once
     const fileId = 'kml-'+Date.now()+'-'+Math.random().toString(36).slice(2,6);
-    const storagePath = `kml/${fileId}.kml`;
+    const storagePath = `kml/${_currentUser.uid}/${fileId}.kml`;
     if(storage){
       try{
         await storage.ref(storagePath).put(file);
@@ -4230,7 +4232,7 @@ async function phHandleFiles(files){
     // Upload original to Firebase Storage at full quality
     let storageUrl = '';
     try{
-      const storageRef = storage.ref(`photos/${id}/${file.name}`);
+      const storageRef = storage.ref(`photos/${_currentUser.uid}/${id}/${file.name}`);
       const snapshot = await storageRef.put(file);
       storageUrl = await snapshot.ref.getDownloadURL();
     }catch(e){ console.warn('Storage upload failed:', e.message); }
@@ -4328,7 +4330,7 @@ async function phRecoverStorageUrls(){
   let fixed = 0;
   for(const p of missing){
     try{
-      const url = await storage.ref(`photos/${p.id}/${p.filename}`).getDownloadURL();
+      const url = await storage.ref(`photos/${_currentUser.uid}/${p.id}/${p.filename}`).getDownloadURL();
       p.storageUrl = url;
       fixed++;
     }catch(e){}
@@ -6202,6 +6204,88 @@ function glRunMigration() {
       }
     },
     { title: 'Migrate Data', confirmLabel: 'Migrate' }
+  );
+}
+
+async function glMigrateStorage() {
+  if (!_currentUser || !storage || !_udb()) return [];
+  const uid = _currentUser.uid;
+  const log = [];
+
+  // ── Photos ──
+  let photosSaved = false;
+  for (const p of _phPhotos) {
+    if (!p.storageUrl || !p.filename) { log.push('— photos/' + p.id + ' (no storageUrl)'); continue; }
+    if (p.storageUrl.includes(`photos%2F${uid}%2F`)) { log.push('— photos/' + p.id + ' (already migrated)'); continue; }
+    try {
+      const resp = await fetch(p.storageUrl);
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      const blob = await resp.blob();
+      const snapshot = await storage.ref(`photos/${uid}/${p.id}/${p.filename}`).put(blob);
+      p.storageUrl = await snapshot.ref.getDownloadURL();
+      await _udb().collection('photos').doc(p.id).update({ storageUrl: p.storageUrl });
+      log.push('✓ photos/' + p.id);
+      photosSaved = true;
+    } catch(e) { log.push('✗ photos/' + p.id + ': ' + e.message); }
+  }
+  if (photosSaved) phSaveLocal();
+
+  // ── KML ──
+  try {
+    const doc = await _udb().collection('kml').doc('layers').get();
+    if (!doc.exists) { log.push('— kml/layers (empty)'); }
+    else {
+      const layers = doc.data().data || [];
+      const seenPaths = {};
+      const updatedLayers = [];
+      for (const layer of layers) {
+        if (!layer.storagePath) { updatedLayers.push(layer); continue; }
+        const oldPath = layer.storagePath;
+        if (oldPath.startsWith(`kml/${uid}/`)) { updatedLayers.push(layer); log.push('— ' + oldPath + ' (already migrated)'); continue; }
+        if (seenPaths[oldPath] !== undefined) { updatedLayers.push({...layer, storagePath: seenPaths[oldPath]}); continue; }
+        const newPath = `kml/${uid}/${oldPath.replace('kml/', '')}`;
+        try {
+          const url = await storage.ref(oldPath).getDownloadURL();
+          const resp = await fetch(url);
+          if (!resp.ok) throw new Error('HTTP ' + resp.status);
+          await storage.ref(newPath).put(await resp.blob());
+          seenPaths[oldPath] = newPath;
+          updatedLayers.push({...layer, storagePath: newPath});
+          log.push('✓ ' + oldPath + ' → kml/' + uid.slice(0,8) + '/...');
+        } catch(e) { seenPaths[oldPath] = oldPath; updatedLayers.push(layer); log.push('✗ ' + oldPath + ': ' + e.message); }
+      }
+      const anyMoved = layers.some((l,i) => updatedLayers[i] && l.storagePath !== updatedLayers[i].storagePath);
+      if (anyMoved) {
+        await _udb().collection('kml').doc('layers').set({data: updatedLayers, _ts: Date.now()});
+        _mapKmlLayers.forEach(l => { const u = updatedLayers.find(x=>x.id===l.id); if(u) l.storagePath = u.storagePath; });
+        localStorage.setItem('gl_kml_layers', JSON.stringify(updatedLayers));
+        log.push('✓ KML metadata updated');
+      }
+    }
+  } catch(e) { log.push('✗ KML: ' + e.message); }
+
+  return log;
+}
+
+function glRunStorageMigration() {
+  _confirmModal(
+    'This will copy your photos and KML files to your user folder in Storage. Original files are not deleted — verify in Firebase console before removing them.',
+    async function() {
+      setSyncStatus('syncing');
+      const el = document.getElementById('cfg-migrate-storage-btn');
+      if (el) { el.disabled = true; el.textContent = 'Migrating…'; }
+      try {
+        const log = await glMigrateStorage();
+        setSyncStatus('synced');
+        if (el) { el.disabled = false; el.textContent = 'Migrate Storage'; }
+        _confirmModal('Storage migration complete:\n\n' + log.join('\n'), function(){}, '✓ Storage Migration Complete', 'Done');
+      } catch(e) {
+        setSyncStatus('offline');
+        if (el) { el.disabled = false; el.textContent = 'Migrate Storage'; }
+        _confirmModal('Migration failed: ' + e.message, function(){}, '✗ Migration Failed', 'Close');
+      }
+    },
+    { title: 'Migrate Storage', confirmLabel: 'Migrate' }
   );
 }
 
