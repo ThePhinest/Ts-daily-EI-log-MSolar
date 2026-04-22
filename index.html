@@ -6045,6 +6045,13 @@ async function initFirebaseLoad() {
 // AUTH — SIGN IN / REGISTER / SIGN OUT
 // ═══════════════════════════════════════════
 
+// Hide Google sign-in on iOS PWA — OAuth redirect breaks in that context
+if (window.navigator.standalone === true) {
+  document.querySelectorAll('.si-btn-google, .si-divider').forEach(function(el) {
+    el.style.display = 'none';
+  });
+}
+
 function siShowTab(tab) {
   document.getElementById('si-panel-signin').style.display = tab === 'signin' ? '' : 'none';
   document.getElementById('si-panel-register').style.display = tab === 'register' ? '' : 'none';
