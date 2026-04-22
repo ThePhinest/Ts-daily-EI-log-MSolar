@@ -12,6 +12,7 @@
 <title>GroundLog — Field Log</title>
 <!-- Firebase SDKs — CDN (SW v6 passes external requests through untouched) -->
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-storage-compat.js"></script>
 <script src="https://unpkg.com/docx@8.5.0/build/index.umd.js"></script>
@@ -180,6 +181,26 @@ body.theme-light{
 /* PAGES */
 .page{display:none}.page.active{display:block}
 .wrap{max-width:880px;margin:0 auto;padding:22px 16px}
+
+/* SIGN-IN PAGE */
+#page-signin{position:fixed;inset:0;z-index:9999;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:28px 24px;overflow-y:auto}
+#page-signin .si-wordmark{margin-bottom:32px}
+.si-card{width:100%;max-width:400px;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:28px 24px}
+.si-tabs{display:flex;gap:0;margin-bottom:24px;border-bottom:1px solid var(--border)}
+.si-tab{flex:1;background:transparent;border:none;color:var(--muted2);font-family:var(--mono);font-size:12px;letter-spacing:.08em;padding:10px 0;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;transition:all .15s}
+.si-tab.active{color:var(--amber);border-bottom-color:var(--amber)}
+.si-field{width:100%;background:var(--input,var(--bg));border:1px solid var(--border2);border-radius:7px;color:var(--text);font-size:16px;padding:11px 14px;margin-bottom:12px;box-sizing:border-box;outline:none;transition:border-color .15s}
+.si-field:focus{border-color:var(--amber)}
+.si-btn{width:100%;padding:12px;border-radius:7px;font-size:14px;font-weight:600;cursor:pointer;border:none;margin-bottom:10px;transition:all .15s}
+.si-btn-primary{background:var(--amber);color:#000}
+.si-btn-primary:hover{opacity:.88}
+.si-btn-google{background:transparent;border:1px solid var(--border2);color:var(--text)}
+.si-btn-google:hover{border-color:var(--amber)}
+.si-forgot{display:block;text-align:center;font-family:var(--mono);font-size:11px;color:var(--muted2);margin-top:4px;cursor:pointer;background:none;border:none;width:100%}
+.si-forgot:hover{color:var(--amber)}
+.si-error{color:var(--red,#e05);font-family:var(--mono);font-size:11px;margin-top:12px;min-height:16px;text-align:center}
+.si-divider{display:flex;align-items:center;gap:10px;margin:14px 0;color:var(--muted2);font-family:var(--mono);font-size:10px}
+.si-divider::before,.si-divider::after{content:'';flex:1;height:1px;background:var(--border)}
 
 /* CARD */
 .card{background:var(--s1);border:1px solid var(--border);border-radius:var(--r);margin-bottom:16px;overflow:hidden}
@@ -632,6 +653,49 @@ body.theme-light .preset-chip:hover{background:rgba(0,76,84,0.18);border-color:v
       </div>
     </div>
   <div style="height:16px"></div>
+</div>
+
+<!-- ══════════════════════════════════
+     SIGN-IN PAGE
+══════════════════════════════════ -->
+<div id="page-signin" style="display:none">
+  <div class="si-wordmark">
+    <div class="app-wordmark" style="transform:scale(1.4);transform-origin:center">
+      <span class="app-wm-ground">GROUND</span>
+      <div class="app-wm-bar"></div>
+      <span class="app-wm-log">LOG</span>
+      <span class="app-wm-io">.io</span>
+    </div>
+  </div>
+  <div class="si-card">
+    <div class="si-tabs">
+      <button class="si-tab active" id="si-tab-signin" onclick="siShowTab('signin')">Sign In</button>
+      <button class="si-tab" id="si-tab-register" onclick="siShowTab('register')">Create Account</button>
+    </div>
+
+    <!-- SIGN IN PANEL -->
+    <div id="si-panel-signin">
+      <input class="si-field" id="si-email" type="email" placeholder="Email" autocomplete="email">
+      <input class="si-field" id="si-password" type="password" placeholder="Password" autocomplete="current-password">
+      <button class="si-btn si-btn-primary" onclick="siSignIn()">Sign In</button>
+      <button class="si-forgot" onclick="siForgotPassword()">Forgot password?</button>
+      <div class="si-divider">or</div>
+      <button class="si-btn si-btn-google" onclick="siGoogleSignIn()">Continue with Google</button>
+    </div>
+
+    <!-- CREATE ACCOUNT PANEL -->
+    <div id="si-panel-register" style="display:none">
+      <input class="si-field" id="si-reg-name" type="text" placeholder="Full Name" autocomplete="name">
+      <input class="si-field" id="si-reg-email" type="email" placeholder="Email" autocomplete="email">
+      <input class="si-field" id="si-reg-password" type="password" placeholder="Password" autocomplete="new-password">
+      <input class="si-field" id="si-reg-confirm" type="password" placeholder="Confirm Password" autocomplete="new-password">
+      <button class="si-btn si-btn-primary" onclick="siCreateAccount()">Create Account</button>
+      <div class="si-divider">or</div>
+      <button class="si-btn si-btn-google" onclick="siGoogleSignIn()">Continue with Google</button>
+    </div>
+
+    <div class="si-error" id="si-error"></div>
+  </div>
 </div>
 
 <!-- ══════════════════════════════════
@@ -1681,12 +1745,25 @@ EI to conduct LOD walk prior to start of operations"></textarea>
     </div>
   </div>
 
+  <!-- ACCOUNT -->
+  <div class="config-section" id="cfg-account">
+    <div class="config-head" onclick="toggleSection('cfg-account')"><span class="config-title">Account</span><span class="card-chevron">▾</span></div>
+    <div class="config-body">
+      <div style="font-family:var(--mono);font-size:11px;color:var(--muted2);margin-bottom:14px">
+        Signed in as <span id="cfg-account-email" style="color:var(--text)">—</span>
+      </div>
+      <button class="btn" style="border-color:var(--red,#e05);color:var(--red,#e05);font-size:11px;padding:7px 14px" onclick="glSignOut()">Sign Out</button>
+    </div>
+  </div>
+
 </div></div><!-- /page-config -->
 
 
 <script>
 var db = null;
 var storage = null;
+var auth = null;
+var _currentUser = null;
 var _fbReady = false;
 // ═══════════════════════════════════════════
 // SAVED DATA RESTORE POINT
@@ -5642,18 +5719,41 @@ const _fbConfig = {
 // Firebase init — check for existing app to avoid duplicate init error on reload
 var db = null;
 var storage = null;
+var auth = null;
+var _currentUser = null;
 var _fbReady = false;
 if (typeof firebase !== 'undefined') {
   try {
     const _fbApp = firebase.apps.length ? firebase.apps[0] : firebase.initializeApp(_fbConfig);
     db = _fbApp.firestore();
     storage = _fbApp.storage();
+    auth = _fbApp.auth();
     console.log('Phinest EI: Firebase initialized OK');
   } catch(e) {
     console.error('Phinest EI: Firebase init failed —', e.message);
   }
 } else {
   console.error('Phinest EI: firebase global not defined');
+}
+
+// ── Auth state gate — show sign-in page until user is confirmed ──
+if (auth) {
+  document.getElementById('page-signin').style.display = 'flex';
+  auth.onAuthStateChanged(function(user) {
+    if (user) {
+      _currentUser = user;
+      document.getElementById('page-signin').style.display = 'none';
+      const emailEl = document.getElementById('cfg-account-email');
+      if (emailEl) emailEl.textContent = user.email || user.displayName || 'Signed in';
+      initFirebaseLoad();
+    } else {
+      _currentUser = null;
+      document.getElementById('page-signin').style.display = 'flex';
+    }
+  });
+} else {
+  // Auth unavailable — proceed without gate (fallback)
+  initFirebaseLoad();
 }
 
 // ── Inject sync status indicator into app bar ──
@@ -5836,7 +5936,7 @@ function resetForm() {
 }
 
 // ── Firebase init load — runs async after page restores from localStorage ──
-(async function initFirebaseLoad() {
+async function initFirebaseLoad() {
   if (!db) { setSyncStatus('offline');  return; }
   
   // If this is an archived file being re-opened, push its state to cloud and exit
@@ -5932,7 +6032,96 @@ function resetForm() {
     loadFlagsCloud();
   }
   _fbReady = true; // allow cloudSave from this point forward
-})();
+}
+
+// ═══════════════════════════════════════════
+// AUTH — SIGN IN / REGISTER / SIGN OUT
+// ═══════════════════════════════════════════
+
+function siShowTab(tab) {
+  document.getElementById('si-panel-signin').style.display = tab === 'signin' ? '' : 'none';
+  document.getElementById('si-panel-register').style.display = tab === 'register' ? '' : 'none';
+  document.getElementById('si-tab-signin').classList.toggle('active', tab === 'signin');
+  document.getElementById('si-tab-register').classList.toggle('active', tab === 'register');
+  document.getElementById('si-error').textContent = '';
+}
+
+function siSetError(msg) {
+  document.getElementById('si-error').textContent = msg;
+}
+
+function siSignIn() {
+  if (!auth) return siSetError('Auth not available.');
+  const email = document.getElementById('si-email').value.trim();
+  const pw = document.getElementById('si-password').value;
+  if (!email || !pw) return siSetError('Please enter your email and password.');
+  siSetError('');
+  auth.signInWithEmailAndPassword(email, pw)
+    .catch(function(e) { siSetError(_siAuthError(e.code)); });
+}
+
+function siCreateAccount() {
+  if (!auth) return siSetError('Auth not available.');
+  const name = document.getElementById('si-reg-name').value.trim();
+  const email = document.getElementById('si-reg-email').value.trim();
+  const pw = document.getElementById('si-reg-password').value;
+  const confirm = document.getElementById('si-reg-confirm').value;
+  if (!name) return siSetError('Please enter your name.');
+  if (!email) return siSetError('Please enter your email.');
+  if (pw.length < 6) return siSetError('Password must be at least 6 characters.');
+  if (pw !== confirm) return siSetError('Passwords do not match.');
+  siSetError('');
+  auth.createUserWithEmailAndPassword(email, pw)
+    .then(function(cred) {
+      return Promise.all([
+        cred.user.updateProfile({ displayName: name }),
+        db ? db.collection('users').doc(cred.user.uid).collection('profile').doc('info').set({
+          displayName: name, email: email, createdAt: Date.now()
+        }) : Promise.resolve()
+      ]);
+    })
+    .catch(function(e) { siSetError(_siAuthError(e.code)); });
+}
+
+function siGoogleSignIn() {
+  if (!auth) return siSetError('Auth not available.');
+  siSetError('');
+  const provider = new firebase.auth.GoogleAuthProvider();
+  auth.signInWithPopup(provider)
+    .catch(function(e) {
+      if (e.code !== 'auth/popup-closed-by-user') siSetError(_siAuthError(e.code));
+    });
+}
+
+function siForgotPassword() {
+  if (!auth) return siSetError('Auth not available.');
+  const email = document.getElementById('si-email').value.trim();
+  if (!email) return siSetError('Enter your email above first.');
+  auth.sendPasswordResetEmail(email)
+    .then(function() { siSetError('Password reset email sent — check your inbox.'); })
+    .catch(function(e) { siSetError(_siAuthError(e.code)); });
+}
+
+function glSignOut() {
+  if (!auth) return;
+  _confirmModal('Sign out of GroundLog on this device?', function() {
+    auth.signOut();
+  }, { title: 'Sign Out', confirmLabel: 'Sign Out' });
+}
+
+function _siAuthError(code) {
+  const map = {
+    'auth/user-not-found': 'No account found with that email.',
+    'auth/wrong-password': 'Incorrect password.',
+    'auth/invalid-email': 'Invalid email address.',
+    'auth/email-already-in-use': 'An account with that email already exists.',
+    'auth/weak-password': 'Password must be at least 6 characters.',
+    'auth/too-many-requests': 'Too many attempts — try again later.',
+    'auth/network-request-failed': 'Network error — check your connection.',
+    'auth/invalid-credential': 'Incorrect email or password.'
+  };
+  return map[code] || 'Something went wrong. Please try again.';
+}
 
 // ═══════════════════════════════════════════
 // REPORT GENERATION
