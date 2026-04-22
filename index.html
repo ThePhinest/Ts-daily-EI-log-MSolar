@@ -5739,6 +5739,13 @@ if (typeof firebase !== 'undefined') {
 // ── Auth state gate — show sign-in page until user is confirmed ──
 if (auth) {
   document.getElementById('page-signin').style.display = 'flex';
+  // Handle Google redirect result on page load (iOS PWA requires redirect flow, not popup)
+  auth.getRedirectResult().catch(function(e) {
+    if (e.code && e.code !== 'auth/no-current-user') {
+      const errEl = document.getElementById('si-error');
+      if (errEl) errEl.textContent = _siAuthError ? _siAuthError(e.code) : 'Sign-in failed. Please try again.';
+    }
+  });
   auth.onAuthStateChanged(function(user) {
     if (user) {
       _currentUser = user;
@@ -6087,10 +6094,10 @@ function siGoogleSignIn() {
   if (!auth) return siSetError('Auth not available.');
   siSetError('');
   const provider = new firebase.auth.GoogleAuthProvider();
-  auth.signInWithPopup(provider)
-    .catch(function(e) {
-      if (e.code !== 'auth/popup-closed-by-user') siSetError(_siAuthError(e.code));
-    });
+  // Use redirect (not popup) — popup breaks in iOS Safari PWA mode
+  auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL)
+    .then(function() { return auth.signInWithRedirect(provider); })
+    .catch(function(e) { siSetError(_siAuthError(e.code)); });
 }
 
 function siForgotPassword() {
