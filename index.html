@@ -466,6 +466,44 @@ body.theme-light .preset-chip:hover{background:rgba(0,76,84,0.18);border-color:v
 .ts-hist-meta{font-family:var(--mono);font-size:12px;color:var(--muted);margin-top:2px}
 .ts-hist-chevron{color:var(--muted2);font-size:16px;transition:transform .2s}
 .ts-hist-body{padding:0 12px 10px;border-top:1px solid var(--border)}
+
+/* ── Onboarding Overlay ── */
+#ob-overlay{position:fixed;inset:0;z-index:9500;background:var(--bg);display:none;flex-direction:column;align-items:center;justify-content:center}
+#ob-overlay.ob-active{display:flex}
+/* ToS phase */
+#ob-tos{width:100%;max-width:400px;height:100%;padding:40px 24px 32px;display:flex;flex-direction:column}
+.ob-wm{margin-bottom:20px;text-align:center}
+.ob-section-label{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted2);margin-bottom:6px}
+.ob-heading{font-family:'Oswald',sans-serif;font-weight:700;font-size:20px;letter-spacing:.04em;text-transform:uppercase;color:var(--amber);margin-bottom:14px}
+.ob-tos-scroll{flex:1;overflow-y:auto;background:var(--s1);border:1px solid var(--border);border-radius:8px;padding:16px;font-size:13px;color:var(--text);line-height:1.75;margin-bottom:14px}
+.ob-tos-scroll h3{font-family:var(--cond);font-weight:700;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--amber);margin:14px 0 5px}
+.ob-tos-scroll h3:first-child{margin-top:0}
+.ob-tos-scroll p{margin-bottom:10px}
+.ob-tos-scroll ul{padding-left:18px;margin-bottom:10px}
+.ob-tos-scroll ul li{margin-bottom:4px}
+.ob-tos-check{display:flex;align-items:flex-start;gap:10px;color:var(--muted2);font-size:13px;line-height:1.5;margin-bottom:14px;cursor:pointer}
+.ob-tos-check input[type=checkbox]{margin-top:2px;accent-color:var(--s3);width:16px;height:16px;flex-shrink:0;cursor:pointer}
+.ob-agree-btn{width:100%;font-family:var(--cond);font-weight:700;font-size:13px;letter-spacing:.08em;text-transform:uppercase;background:var(--s3);border:1px solid var(--s3);color:#fff;padding:13px;border-radius:7px;cursor:pointer;transition:opacity .2s}
+.ob-agree-btn:disabled{opacity:.35;cursor:not-allowed}
+/* Carousel phase */
+#ob-carousel{width:100%;max-width:400px;height:100%;padding:32px 0 28px;display:none;flex-direction:column;align-items:center}
+.ob-slides-track{flex:1;width:100%;overflow:hidden;position:relative}
+.ob-slides{display:flex;height:100%;transition:transform .38s cubic-bezier(.4,0,.2,1);will-change:transform}
+.ob-slide{min-width:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:0 28px;text-align:center}
+.ob-slide-icon{font-size:52px;line-height:1;margin-bottom:20px}
+.ob-slide-title{font-family:'Oswald',sans-serif;font-weight:700;font-size:22px;letter-spacing:.06em;text-transform:uppercase;color:var(--amber);margin-bottom:12px}
+.ob-slide-desc{font-size:15px;color:var(--text);line-height:1.65;max-width:300px}
+.ob-slide-desc strong{color:var(--amber2)}
+.ob-slide-final .ob-slide-title{color:var(--s3);font-size:25px}
+/* Dots */
+.ob-dots{display:flex;gap:7px;margin:18px 0 14px;align-items:center}
+.ob-dot{width:7px;height:7px;border-radius:50%;background:var(--border);border:none;padding:0;cursor:pointer;transition:all .25s}
+.ob-dot.ob-dot-active{background:var(--amber);width:22px;border-radius:3px}
+/* Nav buttons */
+.ob-nav{display:flex;gap:10px;width:100%;padding:0 24px;align-items:center}
+.ob-btn-back{font-family:var(--cond);font-weight:700;font-size:12px;letter-spacing:.08em;text-transform:uppercase;background:transparent;border:1px solid var(--border);color:var(--muted2);padding:10px 18px;border-radius:6px;cursor:pointer}
+.ob-btn-next{font-family:var(--cond);font-weight:700;font-size:13px;letter-spacing:.08em;text-transform:uppercase;background:var(--s3);border:1px solid var(--s3);color:#fff;padding:10px 0;border-radius:6px;cursor:pointer;flex:1;transition:background .2s,color .2s,border-color .2s}
+.ob-btn-skip{font-family:var(--mono);font-size:11px;color:var(--muted);background:transparent;border:none;cursor:pointer;padding:6px 8px;text-decoration:underline;white-space:nowrap}
 </style>
 </head>
 <body>
@@ -665,6 +703,109 @@ body.theme-light .preset-chip:hover{background:rgba(0,76,84,0.18);border-color:v
     <span class="app-wm-log">LOG</span>
     <span class="app-wm-io">.io</span>
   </div>
+</div>
+
+<!-- ══════════════════════════════════
+     ONBOARDING OVERLAY
+══════════════════════════════════ -->
+<div id="ob-overlay">
+
+  <!-- PHASE 1: Terms of Use -->
+  <div id="ob-tos">
+    <div class="ob-wm">
+      <div class="app-wordmark" style="transform:scale(1.2);transform-origin:center">
+        <span class="app-wm-ground">GROUND</span>
+        <span class="app-wm-bar"></span>
+        <span class="app-wm-log">LOG</span>
+        <span class="app-wm-io">.io</span>
+      </div>
+    </div>
+    <div class="ob-section-label">Before you begin</div>
+    <div class="ob-heading">Terms of Use &amp; Privacy</div>
+    <div class="ob-tos-scroll">
+      <p style="color:var(--muted2);font-style:italic;margin-bottom:14px">Pilot Version — By Invitation Only</p>
+      <h3>What GroundLog is</h3>
+      <p>GroundLog is a field compliance logging tool for environmental inspection work. It is currently in beta and available by invitation only. It is not a commercial product and is provided as-is for pilot testing.</p>
+      <h3>What data we collect</h3>
+      <p>When you use GroundLog, we collect and store:</p>
+      <ul>
+        <li>Your email address and account credentials (via Google Firebase Authentication)</li>
+        <li>Field log entries you create (daily logs, compliance notes, timesheet records)</li>
+        <li>Photos you upload, including GPS coordinates embedded in photo metadata</li>
+        <li>Field map markers and KML layers you import</li>
+        <li>Project configuration you enter (project name, organization, contractor)</li>
+      </ul>
+      <p>All data is stored on Google Firebase infrastructure under your individual account. No data is shared between users.</p>
+      <h3>How we use your data</h3>
+      <p>Your data is used only to operate the app for you. We do not share your data with third parties, use it for advertising, sell or license it in any form, or train AI models on it.</p>
+      <p>AI report generation uses the Anthropic Claude API. Field log content is sent to the API to generate your report and is not retained by Anthropic after the response is returned, per Anthropic's API data policy.</p>
+      <h3>Your data, your responsibility</h3>
+      <p>GroundLog is a logging and documentation tool. You are responsible for the accuracy and completeness of what you enter. GroundLog-generated reports are drafts — always review before submitting to any agency or client.</p>
+      <h3>No warranty</h3>
+      <p>GroundLog is provided as-is during this pilot period. There are no guarantees of uptime, data retention, or fitness for any particular purpose. Do not use GroundLog as your only record of compliance-critical information.</p>
+      <h3>Changes and termination</h3>
+      <p>This is a pilot. Features will change. Access may be revoked at any time. You will be notified of any significant changes to these terms.</p>
+      <h3>Contact</h3>
+      <p>Questions or concerns: <a href="mailto:support@groundlog.io" style="color:var(--amber)">support@groundlog.io</a></p>
+      <h3>Governing law</h3>
+      <p>These terms are governed by the laws of the State of Pennsylvania.</p>
+    </div>
+    <label class="ob-tos-check">
+      <input type="checkbox" id="ob-tos-cb" onchange="document.getElementById('ob-agree-btn').disabled=!this.checked">
+      I have read and agree to the Terms of Use and Privacy Notice.
+    </label>
+    <button class="ob-agree-btn" id="ob-agree-btn" disabled onclick="obStartTour()">I Agree — Continue →</button>
+  </div>
+
+  <!-- PHASE 2: Feature Tour Carousel -->
+  <div id="ob-carousel">
+    <div class="ob-slides-track">
+      <div class="ob-slides" id="ob-slides">
+        <div class="ob-slide">
+          <div class="ob-slide-icon">✦</div>
+          <div class="ob-slide-title">Welcome to GroundLog</div>
+          <div class="ob-slide-desc">The field compliance platform built for Environmental Inspectors. <strong>Log smarter. Report faster.</strong> Always ready.</div>
+        </div>
+        <div class="ob-slide">
+          <div class="ob-slide-icon">📋</div>
+          <div class="ob-slide-title">Daily Log</div>
+          <div class="ob-slide-desc">Your digital field notebook. Log <strong>contractor activities</strong>, <strong>compliance observations</strong>, crew, weather, and field notes — structured and ready to report.</div>
+        </div>
+        <div class="ob-slide">
+          <div class="ob-slide-icon">🗺️</div>
+          <div class="ob-slide-title">Field Map</div>
+          <div class="ob-slide-desc">Drop <strong>GPS markers</strong> anywhere on-site, import <strong>KML layers</strong> from any project file, and see your photo locations pinned in real time.</div>
+        </div>
+        <div class="ob-slide">
+          <div class="ob-slide-icon">📸</div>
+          <div class="ob-slide-title">Photos</div>
+          <div class="ob-slide-desc">Upload GPS-tagged photos from <strong>Solocator</strong>. Captions, bearing, and location are captured automatically and synced across all your devices.</div>
+        </div>
+        <div class="ob-slide">
+          <div class="ob-slide-icon">⏱️</div>
+          <div class="ob-slide-title">Timesheet</div>
+          <div class="ob-slide-desc">Track <strong>hours</strong>, <strong>per diem</strong>, and <strong>mileage</strong> — automatically populated from your daily log. Weekly archive keeps your history organized.</div>
+        </div>
+        <div class="ob-slide">
+          <div class="ob-slide-icon">⚙️</div>
+          <div class="ob-slide-title">Make It Yours</div>
+          <div class="ob-slide-desc">Set your <strong>project info</strong>, customize your <strong>nav tabs</strong>, and configure your compliance checklist. Head to <strong>Settings</strong> first to get set up.</div>
+        </div>
+        <div class="ob-slide ob-slide-final">
+          <div class="ob-slide-icon">📄</div>
+          <div class="ob-slide-title">Boots to Boardroom</div>
+          <div class="ob-slide-desc">One button. Your field log becomes a <strong>professional compliance report</strong> — polished, formatted, and ready to file. From field to office in seconds.</div>
+        </div>
+      </div>
+    </div>
+    <div class="ob-dots" id="ob-dots"></div>
+    <div class="ob-nav">
+      <button class="ob-btn-back" id="ob-btn-back" onclick="obSlide(-1)" style="display:none">← Back</button>
+      <button class="ob-btn-next" id="ob-btn-next" onclick="obSlide(1)">Next →</button>
+      <button class="ob-btn-skip" id="ob-btn-skip" onclick="obComplete()">Skip tour</button>
+    </div>
+  </div>
+
 </div>
 
 <div id="page-signin" style="display:none">
@@ -5766,6 +5907,112 @@ if (typeof firebase !== 'undefined') {
   console.error('Phinest EI: firebase global not defined');
 }
 
+// ── Onboarding ──
+var _obSlideIndex = 0;
+var _obTotalSlides = 7;
+
+async function obCheck() {
+  try {
+    const udb = _udb();
+    if (udb) {
+      const doc = await udb.collection('profile').doc('onboarding').get();
+      if (doc.exists && doc.data().complete) {
+        initFirebaseLoad();
+        return;
+      }
+    }
+  } catch(e) {}
+  obShow();
+}
+
+function obShow() {
+  document.getElementById('ob-overlay').classList.add('ob-active');
+  document.getElementById('ob-tos').style.display = 'flex';
+  document.getElementById('ob-carousel').style.display = 'none';
+}
+
+function obStartTour() {
+  document.getElementById('ob-tos').style.display = 'none';
+  const car = document.getElementById('ob-carousel');
+  car.style.display = 'flex';
+  _obSlideIndex = 0;
+  _obRenderDots();
+  _obUpdateSlide();
+  _obInitSwipe();
+}
+
+function _obRenderDots() {
+  const wrap = document.getElementById('ob-dots');
+  wrap.innerHTML = '';
+  for (var i = 0; i < _obTotalSlides; i++) {
+    var d = document.createElement('button');
+    d.className = 'ob-dot' + (i === 0 ? ' ob-dot-active' : '');
+    d.setAttribute('aria-label', 'Slide ' + (i + 1));
+    (function(idx){ d.onclick = function(){ _obGoTo(idx); }; })(i);
+    wrap.appendChild(d);
+  }
+}
+
+function _obGoTo(idx) {
+  _obSlideIndex = idx;
+  _obUpdateSlide();
+}
+
+function _obUpdateSlide() {
+  document.getElementById('ob-slides').style.transform = 'translateX(-' + (_obSlideIndex * 100) + '%)';
+  document.querySelectorAll('.ob-dot').forEach(function(d, i) {
+    d.classList.toggle('ob-dot-active', i === _obSlideIndex);
+  });
+  var back = document.getElementById('ob-btn-back');
+  var next = document.getElementById('ob-btn-next');
+  var skip = document.getElementById('ob-btn-skip');
+  back.style.display = _obSlideIndex > 0 ? '' : 'none';
+  var isLast = _obSlideIndex === _obTotalSlides - 1;
+  if (isLast) {
+    next.textContent = "Let's Go →";
+    next.style.background = 'var(--amber)';
+    next.style.borderColor = 'var(--amber)';
+    next.style.color = '#121212';
+    skip.style.display = 'none';
+  } else {
+    next.textContent = 'Next →';
+    next.style.background = 'var(--s3)';
+    next.style.borderColor = 'var(--s3)';
+    next.style.color = '#fff';
+    skip.style.display = '';
+  }
+}
+
+function obSlide(dir) {
+  if (dir === 1 && _obSlideIndex === _obTotalSlides - 1) {
+    obComplete();
+    return;
+  }
+  _obSlideIndex = Math.max(0, Math.min(_obTotalSlides - 1, _obSlideIndex + dir));
+  _obUpdateSlide();
+}
+
+async function obComplete() {
+  document.getElementById('ob-overlay').classList.remove('ob-active');
+  try {
+    var udb = _udb();
+    if (udb) {
+      await udb.collection('profile').doc('onboarding').set({ complete: true, completedAt: Date.now() });
+    }
+  } catch(e) {}
+  initFirebaseLoad();
+}
+
+function _obInitSwipe() {
+  var startX = 0;
+  var track = document.getElementById('ob-slides').parentElement;
+  track.addEventListener('touchstart', function(e){ startX = e.touches[0].clientX; }, { passive: true });
+  track.addEventListener('touchend', function(e){
+    var dx = e.changedTouches[0].clientX - startX;
+    if (Math.abs(dx) > 50) obSlide(dx < 0 ? 1 : -1);
+  }, { passive: true });
+}
+
 // ── Auth state gate — show sign-in page until user is confirmed ──
 if (auth) {
   // Handle Google redirect result on page load (iOS PWA requires redirect flow, not popup)
@@ -5782,7 +6029,7 @@ if (auth) {
       document.getElementById('page-signin').style.display = 'none';
       const emailEl = document.getElementById('cfg-account-email');
       if (emailEl) emailEl.textContent = user.email || user.displayName || 'Signed in';
-      initFirebaseLoad();
+      obCheck();
     } else {
       _currentUser = null;
       document.getElementById('page-signin').style.display = 'flex';
