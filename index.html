@@ -4285,6 +4285,7 @@ async function phSaveCloud(){
         id: p.id, date: p.date, caption: p.caption,
         filename: p.filename, thumb: p.thumb, uploadedAt: p.uploadedAt
       };
+      if(p.storageUrl) doc.storageUrl = p.storageUrl;
       if(p.lat !== undefined){ doc.lat = p.lat; doc.lng = p.lng; }
       if(p.direction !== undefined) doc.direction = p.direction;
       if(p.takenAt) doc.takenAt = p.takenAt;
