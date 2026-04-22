@@ -658,6 +658,15 @@ body.theme-light .preset-chip:hover{background:rgba(0,76,84,0.18);border-color:v
 <!-- ══════════════════════════════════
      SIGN-IN PAGE
 ══════════════════════════════════ -->
+<div id="page-auth-loading" style="position:fixed;inset:0;z-index:10000;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px">
+  <div class="app-wordmark" style="transform:scale(1.4);transform-origin:center">
+    <span class="app-wm-ground">GROUND</span>
+    <span class="app-wm-bar"></span>
+    <span class="app-wm-log">LOG</span>
+    <span class="app-wm-io">.io</span>
+  </div>
+</div>
+
 <div id="page-signin" style="display:none">
   <div class="si-wordmark">
     <div class="app-wordmark" style="transform:scale(1.4);transform-origin:center">
@@ -5759,7 +5768,6 @@ if (typeof firebase !== 'undefined') {
 
 // ── Auth state gate — show sign-in page until user is confirmed ──
 if (auth) {
-  document.getElementById('page-signin').style.display = 'flex';
   // Handle Google redirect result on page load (iOS PWA requires redirect flow, not popup)
   auth.getRedirectResult().catch(function(e) {
     if (e.code && e.code !== 'auth/no-current-user') {
@@ -5768,6 +5776,7 @@ if (auth) {
     }
   });
   auth.onAuthStateChanged(function(user) {
+    document.getElementById('page-auth-loading').style.display = 'none';
     if (user) {
       _currentUser = user;
       document.getElementById('page-signin').style.display = 'none';
