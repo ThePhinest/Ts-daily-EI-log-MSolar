@@ -4320,6 +4320,25 @@ function phSave(){
   phSaveCloud();
 }
 
+// ── One-time recovery: re-fetch storageUrl for photos missing it ──
+async function phRecoverStorageUrls(){
+  if(!storage || !_udb()) return;
+  const missing = _phPhotos.filter(p => !p.storageUrl && p.filename);
+  if(!missing.length) return;
+  let fixed = 0;
+  for(const p of missing){
+    try{
+      const url = await storage.ref(`photos/${p.id}/${p.filename}`).getDownloadURL();
+      p.storageUrl = url;
+      fixed++;
+    }catch(e){}
+  }
+  if(fixed > 0){
+    phSave();
+    console.log('phRecoverStorageUrls: recovered ' + fixed + ' photos');
+  }
+}
+
 // ── Load full image for lightbox ──
 async function phGetFull(id){
   const p = _phPhotos.find(x=>x.id===id);
@@ -4475,6 +4494,7 @@ async function phInit(){
   phRender();
   const fromCloud = await phLoadCloud();
   phRender();
+  phRecoverStorageUrls();
 }
 
 function tsInit(){
