@@ -1752,6 +1752,8 @@ EI to conduct LOD walk prior to start of operations"></textarea>
       <div style="font-family:var(--mono);font-size:11px;color:var(--muted2);margin-bottom:14px">
         Signed in as <span id="cfg-account-email" style="color:var(--text)">—</span>
       </div>
+      <button id="cfg-migrate-btn" class="btn btn-amber" style="font-size:11px;padding:7px 14px;margin-bottom:10px" onclick="glRunMigration()">Migrate Data</button>
+      <p style="font-family:var(--mono);font-size:10px;color:var(--muted2);margin:0 0 14px">Copies existing Firestore data to your user account. Run once after signing in for the first time.</p>
       <button class="btn" style="border-color:var(--red,#e05);color:var(--red,#e05);font-size:11px;padding:7px 14px" onclick="glSignOut()">Sign Out</button>
     </div>
   </div>
@@ -6114,6 +6116,72 @@ function siForgotPassword() {
   auth.sendPasswordResetEmail(email)
     .then(function() { siSetError('Password reset email sent — check your inbox.'); })
     .catch(function(e) { siSetError(_siAuthError(e.code)); });
+}
+
+// ── User namespace helper — all post-migration paths use this ──
+function _udb() {
+  if (!db || !_currentUser) return null;
+  return db.collection('users').doc(_currentUser.uid);
+}
+
+async function glMigrateData() {
+  if (!_currentUser || !db) return;
+  const uref = db.collection('users').doc(_currentUser.uid);
+  const log = [];
+
+  // Single documents
+  const singles = [
+    ['sessions','active'],['timesheetMeta','archivedWeeks'],['timesheetMeta','config'],
+    ['settings','projectConfig'],['settings','presets'],['settings','phases'],['settings','cardTitles'],
+    ['config','checklist'],['config','flags'],['kml','layers'],
+    ['compliance','entries'],['appConfig','reportSettings'],
+  ];
+  for (const [col, docId] of singles) {
+    try {
+      const snap = await db.collection(col).doc(docId).get();
+      if (snap.exists) {
+        await uref.collection(col).doc(docId).set(snap.data());
+        log.push('✓ ' + col + '/' + docId);
+      } else {
+        log.push('— ' + col + '/' + docId + ' (empty)');
+      }
+    } catch(e) { log.push('✗ ' + col + '/' + docId + ': ' + e.message); }
+  }
+
+  // Collections with multiple docs
+  const cols = ['timesheetEntries','timesheetWeeks','photos','dailyLogs','fieldMarkers','dayNotes'];
+  for (const col of cols) {
+    try {
+      const snap = await db.collection(col).get();
+      for (const doc of snap.docs) {
+        await uref.collection(col).doc(doc.id).set(doc.data());
+      }
+      log.push('✓ ' + col + ' (' + snap.size + ' docs)');
+    } catch(e) { log.push('✗ ' + col + ': ' + e.message); }
+  }
+  return log;
+}
+
+function glRunMigration() {
+  _confirmModal(
+    'This will copy all existing data to your user account. Original data is not deleted — you can verify before removing it from Firebase console.',
+    async function() {
+      setSyncStatus('syncing');
+      const el = document.getElementById('cfg-migrate-btn');
+      if (el) { el.disabled = true; el.textContent = 'Migrating…'; }
+      try {
+        const log = await glMigrateData();
+        setSyncStatus('synced');
+        if (el) { el.disabled = false; el.textContent = 'Migrate Data'; }
+        _confirmModal('Migration complete:\n\n' + log.join('\n'), null, { title: '✓ Migration Complete', confirmLabel: 'Done' });
+      } catch(e) {
+        setSyncStatus('offline');
+        if (el) { el.disabled = false; el.textContent = 'Migrate Data'; }
+        _confirmModal('Migration failed: ' + e.message, null, { title: '✗ Migration Failed', confirmLabel: 'Close' });
+      }
+    },
+    { title: 'Migrate Data', confirmLabel: 'Migrate' }
+  );
 }
 
 function glSignOut() {
