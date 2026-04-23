@@ -3849,8 +3849,9 @@ function saveProjectConfig() {
     // Tag all untagged timesheet entries with the old project name before switching
     const entries=tsGetAllEntries();
     let eChanged=false;
-    Object.keys(entries).forEach(ds=>{if(!entries[ds].projectName){entries[ds].projectName=oldCfg.projectName;eChanged=true;}});
-    if(eChanged) localStorage.setItem('msf_ts_entries',JSON.stringify(entries));
+    const taggedDs=[];Object.keys(entries).forEach(ds=>{if(!entries[ds].projectName){entries[ds].projectName=oldCfg.projectName;eChanged=true;taggedDs.push(ds);}});
+    if(eChanged){localStorage.setItem('msf_ts_entries',JSON.stringify(entries));if(typeof db!=='undefined'&&db&&_fbReady){taggedDs.forEach(ds=>_udb().collection('timesheetEntries').doc(ds).set(entries[ds]).catch(()=>{}));}}
+
     // Tag all untagged archived weeks with the old project name
     const allWeeks=tsGetAllArchivedWeeks();
     let wChanged=false;
@@ -4181,7 +4182,7 @@ async function tsLoadFromFirestore(){
       let changed=false;
       entriesSnap.forEach(doc=>{
         const ds=doc.id;
-        if(!local[ds]){local[ds]=doc.data();changed=true;}
+        const rd=doc.data();if(!local[ds]){local[ds]=rd;changed=true;}else if(!local[ds].projectName&&rd.projectName){local[ds].projectName=rd.projectName;changed=true;}
       });
       if(changed) localStorage.setItem('msf_ts_entries',JSON.stringify(local));
     }
