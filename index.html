@@ -1881,7 +1881,7 @@ EI to conduct LOD walk prior to start of operations"></textarea>
     <div class="config-body">
       <p class="config-hint">These values populate Section 01 on the daily log and persist through resets. Active Contractor sets the default — you can clear or change it per day directly on the log (e.g. for remote days with no crew on site).</p>
       <div class="g g2" style="margin-bottom:10px">
-        <div class="field"><label>Project Name</label><input type="text" id="cfg-projectName" placeholder="Moraine Solar Energy Center"></div>
+        <div class="field"><label>Project Name</label><input type="text" id="cfg-projectName" placeholder="Moraine Solar Energy Center" list="known-projects-list" oninput="onProjectNameInput(this.value)"><datalist id="known-projects-list"></datalist></div>
         <div class="field"><label>Prepared By</label><input type="text" id="cfg-preparedBy" placeholder="Tim Shortz"></div>
         <div class="field"><label>Organization</label><input type="text" id="cfg-org" placeholder="London Environmental LLC"></div>
         <div class="field"><label>Active Phase</label><input type="text" id="cfg-activePhase" placeholder="Phase 1 — Tree Felling"></div>
@@ -3566,6 +3566,7 @@ function renderConfig(){
   ['obs','act','env','comms','look'].forEach(k=>renderPresetList(k));
   renderChecklistList();
   renderFlagsList();
+  renderKnownProjectsDatalist();
 }
 function renderPhaseList(){
   const ul=document.getElementById('list-phases');if(!ul)return;ul.innerHTML='';
@@ -3735,6 +3736,28 @@ function loadProjectConfig() {
     return saved ? Object.assign({}, PROJECT_CONFIG_DEFAULTS, JSON.parse(saved)) : PROJECT_CONFIG_DEFAULTS;
   } catch { return PROJECT_CONFIG_DEFAULTS; }
 }
+function knownProjectsGet(){try{return JSON.parse(localStorage.getItem('gl_known_projects')||'[]');}catch{return[];}}
+function knownProjectsUpsert(cfg){
+  const list=knownProjectsGet();
+  const idx=list.findIndex(p=>p.projectName===cfg.projectName);
+  const entry={projectName:cfg.projectName,preparedBy:cfg.preparedBy,org:cfg.org,activePhase:cfg.activePhase,contractor:cfg.contractor,location:cfg.location,reviewedBy:cfg.reviewedBy};
+  if(idx>=0) list[idx]=entry; else list.push(entry);
+  localStorage.setItem('gl_known_projects',JSON.stringify(list));
+}
+function renderKnownProjectsDatalist(){
+  const dl=document.getElementById('known-projects-list');
+  if(!dl) return;
+  dl.innerHTML='';
+  knownProjectsGet().forEach(p=>{const o=document.createElement('option');o.value=p.projectName;dl.appendChild(o);});
+}
+function onProjectNameInput(val){
+  const match=knownProjectsGet().find(p=>p.projectName===val);
+  if(!match) return;
+  ['preparedBy','org','activePhase','contractor','location','reviewedBy'].forEach(k=>{
+    const el=document.getElementById('cfg-'+k);
+    if(el) el.value=match[k]||'';
+  });
+}
 async function syncPresetsFromCloud() {
   if(!db) return;
   let waited=0;
@@ -3810,6 +3833,7 @@ function applyProjectConfig() {
 }
 
 function saveProjectConfig() {
+  const oldCfg = loadProjectConfig();
   const cfg = {
     projectName: document.getElementById('cfg-projectName').value.trim() || PROJECT_CONFIG_DEFAULTS.projectName,
     preparedBy:  document.getElementById('cfg-preparedBy').value.trim()  || PROJECT_CONFIG_DEFAULTS.preparedBy,
@@ -3819,8 +3843,22 @@ function saveProjectConfig() {
     location:    document.getElementById('cfg-location').value.trim()    || PROJECT_CONFIG_DEFAULTS.location,
     reviewedBy:  document.getElementById('cfg-reviewedBy').value.trim()  || PROJECT_CONFIG_DEFAULTS.reviewedBy
   };
+  if(cfg.projectName !== oldCfg.projectName){
+    // Tag all untagged timesheet entries with the old project name before switching
+    const entries=tsGetAllEntries();
+    let eChanged=false;
+    Object.keys(entries).forEach(ds=>{if(!entries[ds].projectName){entries[ds].projectName=oldCfg.projectName;eChanged=true;}});
+    if(eChanged) localStorage.setItem('msf_ts_entries',JSON.stringify(entries));
+    // Tag all untagged archived weeks with the old project name
+    const allWeeks=tsGetAllArchivedWeeks();
+    let wChanged=false;
+    allWeeks.forEach(w=>{if(!w.projectName){w.projectName=oldCfg.projectName;wChanged=true;}});
+    if(wChanged) tsSaveArchivedWeeks(allWeeks);
+  }
   localStorage.setItem('msf_projectconfig', JSON.stringify(cfg));
   try{if(typeof db!=='undefined'&&db&&_fbReady){_udb().collection('settings').doc('projectConfig').set(Object.assign({},cfg,{_ts:Date.now()})).catch(()=>{});}}catch(e){}
+  knownProjectsUpsert(cfg);
+  renderKnownProjectsDatalist();
   applyProjectConfig();
   // Also update activePhaseLabel for chip rendering
   activePhaseLabel = cfg.activePhase;
@@ -4078,9 +4116,11 @@ function tsWeekDates(start){const dates=[];for(let i=0;i<7;i++){const d=new Date
 function tsDisplayDate(d){const days=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];return days[d.getDay()]+' '+(d.getMonth()+1)+'/'+d.getDate();}
 function tsWeekLabel(s,e){const mo=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];return mo[s.getMonth()]+' '+s.getDate()+' \u2013 '+mo[e.getMonth()]+' '+e.getDate()+', '+e.getFullYear();}
 function tsGetAllEntries(){try{return JSON.parse(localStorage.getItem('msf_ts_entries')||'{}');}catch{return{};}}
-function tsGetEntry(ds){return tsGetAllEntries()[ds]||null;}
-function tsSaveEntry(ds,data){const entries=tsGetAllEntries();entries[ds]=Object.assign(entries[ds]||{},data);localStorage.setItem('msf_ts_entries',JSON.stringify(entries));try{if(typeof db!=='undefined'&&db&&_fbReady){_udb().collection('timesheetEntries').doc(ds).set(entries[ds]).catch(()=>{});}}catch(e){}}
-function tsGetArchivedWeeks(){try{return JSON.parse(localStorage.getItem('msf_ts_weeks')||'[]');}catch{return[];}}
+function tsGetProjectEntries(){const pn=(JSON.parse(localStorage.getItem('msf_projectconfig')||'{}').projectName)||'';const all=tsGetAllEntries();return Object.fromEntries(Object.entries(all).filter(([,v])=>!v.projectName||v.projectName===pn));}
+function tsGetEntry(ds){const entry=tsGetAllEntries()[ds]||null;if(!entry)return null;const pn=(JSON.parse(localStorage.getItem('msf_projectconfig')||'{}').projectName)||'';if(entry.projectName&&entry.projectName!==pn)return null;return entry;}
+function tsSaveEntry(ds,data){const entries=tsGetAllEntries();const pn=(JSON.parse(localStorage.getItem('msf_projectconfig')||'{}').projectName)||'';if(!entries[ds])entries[ds]={projectName:pn};else if(!entries[ds].projectName)entries[ds].projectName=pn;entries[ds]=Object.assign(entries[ds],data);localStorage.setItem('msf_ts_entries',JSON.stringify(entries));try{if(typeof db!=='undefined'&&db&&_fbReady){_udb().collection('timesheetEntries').doc(ds).set(entries[ds]).catch(()=>{});}}catch(e){}}
+function tsGetAllArchivedWeeks(){try{return JSON.parse(localStorage.getItem('msf_ts_weeks')||'[]');}catch{return[];}}
+function tsGetArchivedWeeks(){const pn=(JSON.parse(localStorage.getItem('msf_projectconfig')||'{}').projectName)||'';return tsGetAllArchivedWeeks().filter(w=>!w.projectName||w.projectName===pn);}
 function tsSaveArchivedWeeks(w){
   localStorage.setItem('msf_ts_weeks',JSON.stringify(w));
   // Mirror full weeks array to Firestore so other devices stay in sync
@@ -4108,7 +4148,7 @@ async function tsLoadFromFirestore(){
       let localTs=0;
       try{const lw=JSON.parse(localStorage.getItem('msf_ts_weeks')||'[]');localTs=lw._ts||0;}catch{}
       // Merge: remote wins for any week not in local; local wins for current
-      const localWeeks=tsGetArchivedWeeks();
+      const localWeeks=tsGetAllArchivedWeeks();
       const merged=Object.values(
         [...localWeeks,...remoteWeeks].reduce((acc,w)=>{
           const key=w.weekStart;
@@ -4251,7 +4291,7 @@ function tsToggleHist(i){
 
 function tsRenderCumulative(){
   const weeks=tsGetArchivedWeeks();
-  const entries=tsGetAllEntries();
+  const entries=tsGetProjectEntries();
   const cfg=tsLoadConfig();
   let totH=0,totM=0,totMil=0,totPD=0,days=0;
   weeks.forEach(w=>{const t=w.totals||{};totH+=Number(t.hours||0);totM+=Number(t.miles||0);totMil+=parseFloat(t.mileage||0);totPD+=Number(t.perDiem||0);days+=(w.days||[]).filter(d=>Number(d.hours)>0).length;});
@@ -4318,6 +4358,7 @@ function tsArchiveCurrentWeek(){
 
 function _tsDoArchive(start,end){
   const cfg=tsLoadConfig();
+  const pn=(JSON.parse(localStorage.getItem('msf_projectconfig')||'{}').projectName)||'';
   const dates=tsWeekDates(start);
   let totH=0,totM=0,totMil=0,totPD=0;
   const days=dates.map(d=>{
@@ -4328,10 +4369,10 @@ function _tsDoArchive(start,end){
     totH+=hours;totM+=miles;totMil+=mileage;totPD+=perDiem;
     return{date:ds,display:tsDisplayDate(d),hours,miles,perDiem,mileage:mileage.toFixed(2),activitySummary:entry.activitySummary||'',expenses:entry.expenses||''};
   });
-  const week={weekStart:tsFormatDate(start),weekEnd:tsFormatDate(end),archivedAt:Date.now(),days,totals:{hours:totH.toFixed(1),miles:totM,mileage:totMil.toFixed(2),perDiem:totPD.toFixed(0)}};
-  const weeks=tsGetArchivedWeeks().filter(w=>w.weekStart!==week.weekStart);
-  weeks.push(week);
-  tsSaveArchivedWeeks(weeks);
+  const week={weekStart:tsFormatDate(start),weekEnd:tsFormatDate(end),projectName:pn,archivedAt:Date.now(),days,totals:{hours:totH.toFixed(1),miles:totM,mileage:totMil.toFixed(2),perDiem:totPD.toFixed(0)}};
+  const allWeeks=tsGetAllArchivedWeeks().filter(w=>w.weekStart!==week.weekStart);
+  allWeeks.push(week);
+  tsSaveArchivedWeeks(allWeeks);
   const entries=tsGetAllEntries();
   dates.forEach(d=>delete entries[tsFormatDate(d)]);
   localStorage.setItem('msf_ts_entries',JSON.stringify(entries));
@@ -5504,10 +5545,11 @@ function tsBackfillWeekFromLogs(date){
   if(!hasData) return;
   const weekStart=tsFormatDate(start);
   const weekEnd=tsFormatDate(end);
-  const existing=tsGetArchivedWeeks();
+  const existing=tsGetAllArchivedWeeks();
   const idx=existing.findIndex(w=>w.weekStart===weekStart);
   const week={
     weekStart,weekEnd,
+    projectName:(JSON.parse(localStorage.getItem('msf_projectconfig')||'{}').projectName)||'',
     archivedAt: idx>=0 ? existing[idx].archivedAt : Date.now(),
     _backfilled: true,
     days,
