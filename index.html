@@ -2503,6 +2503,7 @@ async function mapSaveSettings(){
   document.getElementById('map-no-token').style.display='none';
   const s=document.getElementById('cfg-map-status');
   if(s){s.textContent='Saved!';s.style.opacity='1';setTimeout(()=>s.style.opacity='0',2000);}
+  setTimeout(()=>mapInit(),200);
 }
 
 // ── Photo pins ──
@@ -3857,7 +3858,7 @@ function saveProjectConfig() {
     if(wChanged) tsSaveArchivedWeeks(allWeeks);
   }
   localStorage.setItem('msf_projectconfig', JSON.stringify(cfg));
-  try{if(typeof db!=='undefined'&&db&&_fbReady){_udb().collection('settings').doc('projectConfig').set(Object.assign({},cfg,{_ts:Date.now()})).catch(()=>{});}}catch(e){}
+  try{if(typeof db!=='undefined'&&db&&_fbReady){_udb().collection('settings').doc('projectConfig').set(Object.assign({},cfg,{_ts:Date.now()}),{merge:true}).catch(()=>{});}}catch(e){}
   knownProjectsUpsert(cfg);
   renderKnownProjectsDatalist();
   applyProjectConfig();
