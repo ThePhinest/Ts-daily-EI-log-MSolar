@@ -1,4 +1,4 @@
-const CACHE_NAME = 'phinest-ei-v21';
+const CACHE_NAME = 'phinest-ei-v22';
 // Domains to NEVER cache — always pass through to network
 const BYPASS_DOMAINS = [
   'gstatic.com',
@@ -30,7 +30,7 @@ self.addEventListener('activate', event => {
 self.addEventListener('fetch', event => {
   const url = event.request.url;
   // Only cache our own GitHub Pages app shell — let everything else go direct
-  if (!url.includes('thephinest.github.io')) {
+  if (!url.includes('app.groundlog.io')) {
     event.respondWith(fetch(event.request));
     return;
   }
