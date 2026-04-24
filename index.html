@@ -1382,6 +1382,8 @@ EI to conduct LOD walk prior to start of operations"></textarea>
   <div class="export-panel">
     <div class="export-title">Export &amp; Save</div>
     <div class="action-row">
+      <button class="btn btn-outline" id="btn-formalize-log" onclick="polishLog()" style="font-size:12px;padding:10px 16px;width:100%;justify-content:center;margin-bottom:4px">✦ Formalize Log</button>
+      <div class="export-hint" style="margin-bottom:12px">AI rewrites selected fields in professional language — in place, no report generated.</div>
       <button class="btn btn-export" id="btn-generate-report" onclick="generateReport()" style="font-size:15px;padding:15px 20px;letter-spacing:.1em">✦ Generate Report</button>
       <div id="rpt-status" style="font-family:var(--mono);font-size:11px;color:var(--green);text-align:center;min-height:18px;margin-top:6px;opacity:0;transition:opacity .3s"></div>
       <div class="export-hint">AI polishes your log and downloads a complete .docx report in one tap.</div>
@@ -2143,6 +2145,7 @@ var storage = null;
 var auth = null;
 var _currentUser = null;
 var _fbReady = false;
+var _logFormalized = false;
 // ═══════════════════════════════════════════
 // SAVED DATA RESTORE POINT
 // (replaced by downloadLog() when saving)
@@ -5473,6 +5476,7 @@ async function dlArchive(date){
     _editLog: existing._editLog||[]
   });
   dlSaveLocal(date, record);
+  localStorage.removeItem('gl_formalized_date'); _logFormalized = false;
   try{
     if(typeof db!=='undefined'&&db&&_fbReady){
       await _udb().collection('dailyLogs').doc(date).set(record);
@@ -6903,6 +6907,123 @@ function toggleApiKeyVisibility(){
   f.type=f.type==='password'?'text':'password';
 }
 
+// ── Formalize Log — flag helpers ──
+function _setFormalized(){
+  localStorage.setItem('gl_formalized_date', localToday());
+  _logFormalized = true;
+}
+function _isFormalized(){
+  if(_logFormalized) return true;
+  return localStorage.getItem('gl_formalized_date') === localToday();
+}
+
+// ── Formalize Log — field-select modal ──
+function _polishSelectModal(fields, onConfirm){
+  var ov=document.createElement('div');
+  ov.className='modal-overlay';
+  var checkboxes=fields.map(function(f,i){
+    return '<label style="display:flex;align-items:flex-start;gap:8px;margin-bottom:10px;font-size:13px;color:var(--text);cursor:pointer">'+
+      '<input type="checkbox" id="_pf'+i+'" checked style="margin-top:2px;accent-color:var(--amber)">'+
+      '<span>'+f.label+'</span></label>';
+  }).join('');
+  ov.innerHTML='<div class="modal-box">'+
+    '<div class="modal-title">✦ Formalize Log</div>'+
+    '<div class="modal-msg" style="margin-bottom:14px">Select fields to rewrite in professional language:</div>'+
+    '<div style="margin-bottom:18px">'+checkboxes+'</div>'+
+    '<div class="modal-btns">'+
+      '<button class="modal-cancel" id="_pmc">Cancel</button>'+
+      '<button class="modal-confirm" id="_pmok" style="background:var(--amber);border-color:var(--amber);color:#111">✦ Polish</button>'+
+    '</div></div>';
+  document.body.appendChild(ov);
+  document.getElementById('_pmc').onclick=function(){ov.remove();};
+  document.getElementById('_pmok').onclick=function(){
+    var selected=fields.filter(function(f,i){
+      var cb=document.getElementById('_pf'+i);
+      return cb&&cb.checked;
+    });
+    ov.remove();
+    if(selected.length) onConfirm(selected);
+  };
+}
+
+// ── Formalize Log — two-option choice modal ──
+function _polishChoiceModal(msg, labelA, labelB, onChoice){
+  var ov=document.createElement('div');
+  ov.className='modal-overlay';
+  ov.innerHTML='<div class="modal-box">'+
+    '<div class="modal-title">✦ Formalize Log</div>'+
+    '<div class="modal-msg">'+msg+'</div>'+
+    '<div class="modal-btns">'+
+      '<button class="modal-cancel" id="_pcA">'+labelA+'</button>'+
+      '<button class="modal-confirm" id="_pcB" style="background:var(--amber);border-color:var(--amber);color:#111">'+labelB+'</button>'+
+    '</div></div>';
+  document.body.appendChild(ov);
+  document.getElementById('_pcA').onclick=function(){ov.remove();onChoice(true);};
+  document.getElementById('_pcB').onclick=function(){ov.remove();onChoice(false);};
+}
+
+// ── Formalize Log — gate ──
+async function polishLog(){
+  const apiKey=await rptGetApiKey();
+  if(!apiKey){_confirmModal('No API key configured. Add your Anthropic API key in Settings → Report Generation.',()=>{});return;}
+  const STATIC_FIELDS=[
+    {id:'inspSummary',  label:'Field Observations'},
+    {id:'nonCompliance',label:'Non-Compliance Note'},
+    {id:'genComms',     label:'General Communications'},
+    {id:'agencyInsp',   label:'Agency Inspection'},
+    {id:'landowner',    label:'Landowner Contact'},
+    {id:'rte',          label:'RTE Species Observation'},
+    {id:'lookahead',    label:'24-Hour Look Ahead'},
+  ];
+  const fields=[];
+  STATIC_FIELDS.forEach(function(f){
+    const el=document.getElementById(f.id);
+    if(el&&el.value.trim()) fields.push({id:f.id,label:f.label,value:el.value.trim()});
+  });
+  crewIds.forEach(function(cid){
+    [['acts','Activities Observed'],['envcomp','Env. Compliance Obs.'],['issues','Issues / Non-Compliance']].forEach(function(pair){
+      const el=document.getElementById('crew-'+cid+'-'+pair[0]);
+      if(el&&el.value.trim()) fields.push({id:'crew-'+cid+'-'+pair[0],label:'Crew '+cid+' — '+pair[1],value:el.value.trim()});
+    });
+  });
+  if(!fields.length){_confirmModal('Nothing to formalize — fill in some fields first.',()=>{},'✦ Formalize Log','OK');return;}
+  _polishSelectModal(fields,function(selected){_doPolish(selected,apiKey);});
+}
+
+// ── Formalize Log — Claude API call + field update ──
+async function _doPolish(selectedFields, apiKey){
+  const btn=document.getElementById('btn-formalize-log');
+  const status=document.getElementById('rpt-status');
+  const setStatus=function(msg,color){if(status){status.textContent=msg;status.style.color=color||'var(--green)';status.style.opacity='1';}};
+  if(btn){btn.disabled=true;btn.textContent='Formalizing…';}
+  try{
+    const payload=Object.fromEntries(selectedFields.map(function(f){return[f.id,f.value];}));
+    const systemPrompt='You are a professional field inspector writing assistant. Rewrite the provided field log text into clean, professional language suitable for a regulatory compliance report. Rules: use "conducting" not "performing"; use definitive language ("will" not "anticipated to"); contractor compliance language must be collaborative in tone; do not use first person; preserve all specific facts, measurements, locations, and compliance levels exactly as entered; do not add information not present in the original; do not remove relevant observations. Return a JSON object with the same keys as provided, containing the rewritten text for each field. Return ONLY the JSON object — no preamble, no markdown, no code fences.';
+    const userPrompt='Rewrite these daily log fields:\n'+JSON.stringify(payload);
+    const resp=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:2000,system:systemPrompt,messages:[{role:'user',content:userPrompt}]})});
+    if(!resp.ok){const err=await resp.text();throw new Error('Claude API error '+resp.status+': '+err);}
+    const data=await resp.json();
+    const text=data.content[0].text;
+    const clean=text.replace(/```json\n?/g,'').replace(/```\n?/g,'').trim();
+    const polished=JSON.parse(clean);
+    selectedFields.forEach(function(f){
+      if(polished[f.id]!=null){
+        const el=document.getElementById(f.id);
+        if(el) el.value=polished[f.id];
+      }
+    });
+    if(typeof debouncedAutoSave==='function') debouncedAutoSave();
+    _setFormalized();
+    setStatus('✓ Log formalized');
+    setTimeout(function(){if(status)status.style.opacity='0';},3000);
+  }catch(e){
+    setStatus('✗ Formalize failed — try again','var(--red)');
+    setTimeout(function(){if(status)status.style.opacity='0';},4000);
+  }finally{
+    if(btn){btn.disabled=false;btn.textContent='✦ Formalize Log';}
+  }
+}
+
 // ── Claude API polish call ──
 // ── Convert HH:MM (24hr) to H:MM AM/PM ──
 function _rptFmtTime(t){
@@ -6922,7 +7043,8 @@ async function rptCallClaude(apiKey,logData,compEntries){
   const timeIn=_rptFmtTime(logData['p-timeIn'])||'6:30 AM';
   const userPrompt=`REPORT DATE: ${logData.reportDate}\nACTIVE PHASE: ${logData.activePhase}\nCONTRACTOR: ${logData.contractor}\nTIME IN: ${timeIn}\n\nCREW BLOCKS:\n${crewSummary}\n\nINSPECTION SUMMARY:\n${logData.inspectionSummary||''}\n\nAGENCY INSPECTION:\n${logData.agencyInspection||''}\n\nCOMPLIANCE ISSUES:\n${compSummary}\n\nLANDOWNER/PUBLIC:\n${logData.landownerContact||''}\n\nT&E/RTE:\n${logData.rteObservation||''}\n\nGENERAL COMMS:\n${logData.generalComms||''}\n\n24-HOUR LOOK AHEAD:\n${logData.lookahead||''}\n\nReturn ONLY valid JSON — no markdown, no preamble:\n{"contractorActivities":"...","fieldObservationsOpening":"...","fieldObservationsBullets":["..."],"fieldObservationsClosing":"...","agencyInspection":"...","complianceIssues":[{"level":"...","description":"...","corrective":"...","status":"...","dateResolved":""}],"landownerContact":"...","rteObservation":"...","generalComms":"...","lookaheadBullets":["..."]}`;
   const systemPrompt=`You are an Environmental Inspector (EI) report writer for the Moraine Solar Energy Center, a 94 MW AC PV solar facility in the Town of Burns, Allegany County, NY. Polish raw field notes into professional Daily Environmental Compliance Report language.\n\nSTYLE RULES:\n- Use "conducting" not "performing"\n- Use definitive language — "will" not "is anticipated to"\n- Refer to the Environmental Inspector as "EI" — never first person\n- Contractor language should be collaborative in tone\n- Keep language tight and direct — no filler\n- Do not mention residential proximity unless explicitly flagged\n\nCONTRACTOR ACTIVITIES:\n- ALWAYS begin with attending the morning safety meeting/tailgate — e.g. "[Contractor] personnel attended the morning safety meeting/tailgate at [TIME], then conducted..."\n- Follow with description of work activities from crew block data\n\nFIELD OBSERVATIONS:\n- Opening must use the time from TIME IN field and detect work type from crew activities\n- Opening MUST end with the exact phrase: "The following activities were observed:"\n- Include 3-5 specific observation bullets based on crew block data\n- Standard Phase 1 Tree Felling bullets: felling method/equipment, directional felling practices, slash/material management, access/staging\n- Closing must reference LOD compliance and buffer integrity\n\nGENERAL COMMUNICATIONS:\n- Frame as a documented field discussion with the contractor — professional record of what was communicated on site\n- Phrasing should reflect: "EI discussed [topic] with [contractor/foreman]..." or "EI communicated to contractor..." \n- Collaborative tone — not directive or accusatory\n- If blank, return "No general communications to report."\n\nAGENCY INSPECTION:\n- Polish into a single professional sentence describing who inspected, what was checked, and outcome\n- If no inspection, return "No agency inspections conducted today."\n\nLANDOWNER / PUBLIC INTERACTIONS:\n- Polish into one or two professional sentences — who, why they were on site, what was discussed\n- Collaborative, neutral tone\n- If none, return "No landowner or public interactions occurred today."\n\nT&E / UNANTICIPATED DISCOVERIES:\n- Polish into professional observation language\n- Reference species, location, and whether work was occurring nearby\n- If none, return "No rare, threatened, or endangered species were observed. No unanticipated archaeological or cultural resource discoveries were encountered."\n\nCOMPLIANCE:\n- Polish description and corrective action text\n- Keep Level and Status exactly as provided\n- If no issues: [{"level":"No issues identified","description":"All areas inspected — no compliance concerns observed.","corrective":"N/A","status":"Compliant","dateResolved":""}]\n\nReturn ONLY valid JSON — no code fences, no explanation.`;
-  const resp=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:4000,system:systemPrompt,messages:[{role:'user',content:userPrompt}]})});
+  const finalSystemPrompt=(window._rptSkipPolish===true)?systemPrompt+'\n\nIMPORTANT: The user has already professionally formalized the narrative text fields. Include ALL narrative content VERBATIM — do NOT rephrase, restructure, or alter any provided text.':systemPrompt;
+  const resp=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:4000,system:finalSystemPrompt,messages:[{role:'user',content:userPrompt}]})});
   if(!resp.ok){const err=await resp.text();throw new Error('Claude API error '+resp.status+': '+err);}
   const data=await resp.json();
   const text=data.content[0].text;
@@ -7102,7 +7224,25 @@ async function rptBuildDocx(logData,polished,photos){
 
 // ── Main generateReport function ──
 async function generateReport(){
-  if(!window.docx){_confirmModal('The report library is still loading. Please wait a moment and try again.',()=>{}, 'One Moment\u2026', 'OK');return;}
+  if(!window.docx){_confirmModal('The report library is still loading. Please wait a moment and try again.',()=>{}, 'One Moment…', 'OK');return;}
+  if(_isFormalized()){
+    _polishChoiceModal(
+      'You\'ve already formalized today\'s log language. Use your text as-is, or re-polish during report generation?',
+      'Use As-Is',
+      'Re-Polish',
+      function(useAsIs){
+        window._rptSkipPolish=useAsIs;
+        const flagsND=flagItems.filter(f=>document.getElementById(f.id)?.checked&&!document.getElementById(f.id+'-note')?.value.trim());
+        if(flagsND.length>0){
+          _confirmModal(`${flagsND.length} regulatory flag(s) are checked without a description. Generate report anyway?`,()=>_doGenerate(),'⚠ Regulatory Flags','Generate Anyway');
+          return;
+        }
+        _confirmModal('Boots to Boardroom — turn today\'s field log into a formal compliance report?',()=>_doGenerate(),'✦ Generate Report','Generate Report');
+      }
+    );
+    return;
+  }
+  window._rptSkipPolish=false;
   const flagsWithoutDesc=flagItems.filter(f=>document.getElementById(f.id)?.checked&&!document.getElementById(f.id+'-note')?.value.trim());
   if(flagsWithoutDesc.length>0){
     _confirmModal(`${flagsWithoutDesc.length} regulatory flag(s) are checked without a description. Generate report anyway?`,()=>_doGenerate(), '⚠ Regulatory Flags', 'Generate Anyway');
