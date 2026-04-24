@@ -7000,12 +7000,13 @@ async function _doPolish(selectedFields, apiKey){
     const payload=Object.fromEntries(selectedFields.map(function(f){return[f.id,f.value];}));
     const systemPrompt='You are a professional field inspector writing assistant. Rewrite the provided field log text into clean, professional language suitable for a regulatory compliance report. Rules: use "conducting" not "performing"; use definitive language ("will" not "anticipated to"); contractor compliance language must be collaborative in tone; do not use first person; preserve all specific facts, measurements, locations, and compliance levels exactly as entered; do not add information not present in the original; do not remove relevant observations. Return a JSON object with the same keys as provided, containing the rewritten text for each field. Return ONLY the JSON object — no preamble, no markdown, no code fences.';
     const userPrompt='Rewrite these daily log fields:\n'+JSON.stringify(payload);
-    const resp=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:2000,system:systemPrompt,messages:[{role:'user',content:userPrompt}]})});
-    if(!resp.ok){const err=await resp.text();throw new Error('Claude API error '+resp.status+': '+err);}
+    const resp=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:4000,system:systemPrompt,messages:[{role:'user',content:userPrompt}]})});
+    if(!resp.ok){const err=await resp.text();throw new Error('API '+resp.status+': '+err);}
     const data=await resp.json();
     const text=data.content[0].text;
-    const clean=text.replace(/```json\n?/g,'').replace(/```\n?/g,'').trim();
-    const polished=JSON.parse(clean);
+    const j0=text.indexOf('{'),j1=text.lastIndexOf('}');
+    if(j0===-1||j1===-1) throw new Error('No JSON in response');
+    const polished=JSON.parse(text.slice(j0,j1+1));
     selectedFields.forEach(function(f){
       if(polished[f.id]!=null){
         const el=document.getElementById(f.id);
@@ -7017,8 +7018,9 @@ async function _doPolish(selectedFields, apiKey){
     setStatus('✓ Log formalized');
     setTimeout(function(){if(status)status.style.opacity='0';},3000);
   }catch(e){
-    setStatus('✗ Formalize failed — try again','var(--red)');
-    setTimeout(function(){if(status)status.style.opacity='0';},4000);
+    console.error('Formalize Log error:',e);
+    setStatus('✗ '+e.message.slice(0,60),'var(--red)');
+    setTimeout(function(){if(status)status.style.opacity='0';},6000);
   }finally{
     if(btn){btn.disabled=false;btn.textContent='✦ Formalize Log';}
   }
