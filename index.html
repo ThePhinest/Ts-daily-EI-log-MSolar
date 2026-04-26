@@ -4206,6 +4206,7 @@ async function tsLoadFromFirestore(){
   }catch(e){console.warn('Phinest EI: tsLoadFromFirestore failed —',e.message);}
   if(document.getElementById('page-timesheet')?.classList.contains('active')){
     tsRenderCurrentWeek();tsRenderHistory();tsRenderCumulative();
+    tsCheckArchivePrompt(); // re-run now that Firestore weeks are in localStorage
   }
 }
 function tsCalcMileage(miles){return(miles*tsLoadConfig().mileageRate).toFixed(2);}
@@ -4406,6 +4407,7 @@ function _tsDoArchive(start,end){
 }
 
 function tsCheckArchivePrompt(){
+  if(!_fbReady) return; // wait for Firestore data before checking — prevents spurious prompts on cold open
   const today=new Date();today.setHours(0,0,0,0);
   const{start}=tsGetWeekBounds(today);
   const prevEnd=new Date(start);prevEnd.setDate(start.getDate()-1);
