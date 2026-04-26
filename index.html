@@ -243,6 +243,8 @@ input[type=text],input[type=date],input[type=number],input[type=time],select,tex
 input[type=time]{min-height:44px;box-sizing:border-box}
 input:focus,select:focus,textarea:focus{outline:none;border-color:var(--amber)}
 input[readonly]{color:var(--muted2);cursor:default}
+input:-webkit-autofill,input:-webkit-autofill:hover,input:-webkit-autofill:focus{-webkit-text-fill-color:var(--text);-webkit-box-shadow:0 0 0 1000px var(--bg) inset;transition:background-color 5000s ease-in-out 0s}
+body.theme-light input:-webkit-autofill,body.theme-light input:-webkit-autofill:hover,body.theme-light input:-webkit-autofill:focus{-webkit-text-fill-color:var(--text);-webkit-box-shadow:0 0 0 1000px var(--bg) inset}
 textarea{resize:vertical;min-height:88px;line-height:1.6}
 textarea.short{min-height:56px}textarea.tall{min-height:120px;font-size:16px;touch-action:manipulation}
 textarea.auto-expand{overflow-y:hidden;resize:none}
