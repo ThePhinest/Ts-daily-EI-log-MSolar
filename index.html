@@ -3924,24 +3924,28 @@ function saveProjectConfig() {
 // Project configs stored in settings/{projectId} docs (uses existing allowed collection).
 async function _glMigrateToProjects() {
   if (localStorage.getItem('gl_active_project_id')) return; // already migrated
-  if (!db) return;
+  if (!_udb()) { console.warn('GroundLog: migration skipped — user not ready'); return; }
+  console.log('GroundLog: starting multi-project migration...');
   try {
-    // Pull active config from Firestore (source of truth)
-    const cfgDoc = await db.collection('settings').doc('projectConfig').get();
+    // Pull active config from user-scoped Firestore path
+    const cfgDoc = await _udb().collection('settings').doc('projectConfig').get();
     const activeCfg = cfgDoc.exists ? Object.assign({}, cfgDoc.data()) : loadProjectConfig();
     delete activeCfg._ts;
+    console.log('GroundLog: active project config found:', activeCfg.projectName);
 
-    // Also try to pull the full known-projects list from Firestore (cross-device)
+    // Pull full known-projects list from Firestore (cross-device, includes both projects)
     let known = knownProjectsGet();
     try {
-      const knownDoc = await db.collection('settings').doc('knownProjects').get();
-      if (knownDoc.exists && knownDoc.data().projects && knownDoc.data().projects.length > known.length) {
+      const knownDoc = await _udb().collection('settings').doc('knownProjects').get();
+      if (knownDoc.exists && (knownDoc.data().projects || []).length > known.length) {
         known = knownDoc.data().projects;
+        console.log('GroundLog: loaded', known.length, 'known projects from Firestore');
       }
     } catch(e) {}
 
     // Ensure active project is in the list
     if (!known.some(p => p.projectName === activeCfg.projectName)) known.push(activeCfg);
+    console.log('GroundLog: migrating', known.length, 'projects:', known.map(p => p.projectName).join(', '));
 
     const projectIndex = [];
     let activeProjectId = null;
@@ -3963,27 +3967,29 @@ async function _glMigrateToProjects() {
         lastUsed:    isActive ? now : 0,
         _ts:         now
       };
-      // Store in settings/{projectId} — uses existing allowed Firestore collection
-      await db.collection('settings').doc(projectId).set(projDoc);
+      // Use _udb() — all app data lives under users/{uid}/
+      await _udb().collection('settings').doc(projectId).set(projDoc);
+      console.log('GroundLog: created project doc', projectId, 'for', p.projectName);
       if (isActive) activeProjectId = projectId;
       projectIndex.push({ projectId, projectName: p.projectName, location: p.location || '', lastUsed: projDoc.lastUsed });
     }
 
     // Migrate current session: sessions/active → sessions/{activeProjectId}
-    const sessionDoc = await db.collection('sessions').doc('active').get();
+    const sessionDoc = await _udb().collection('sessions').doc('active').get();
     if (sessionDoc.exists) {
-      await db.collection('sessions').doc(activeProjectId).set(sessionDoc.data());
+      await _udb().collection('sessions').doc(activeProjectId).set(sessionDoc.data());
+      console.log('GroundLog: migrated session to', activeProjectId);
     }
 
     // Write project tracking docs
-    await db.collection('settings').doc('activeProject').set({ projectId: activeProjectId, _ts: now });
-    await db.collection('settings').doc('knownProjects').set({ projects: projectIndex, _ts: now });
+    await _udb().collection('settings').doc('activeProject').set({ projectId: activeProjectId, _ts: now });
+    await _udb().collection('settings').doc('knownProjects').set({ projects: projectIndex, _ts: now });
 
     localStorage.setItem('gl_active_project_id', activeProjectId);
     localStorage.setItem('gl_known_projects', JSON.stringify(projectIndex));
-    console.log('GroundLog: migrated to multi-project. Active:', activeProjectId);
+    console.log('GroundLog: migration complete. Active:', activeProjectId, '| Projects:', projectIndex.length);
   } catch(e) {
-    console.warn('GroundLog: project migration failed —', e.message);
+    console.warn('GroundLog: project migration failed —', e.message, e);
     // Safe fallback: use 'active' as projectId so sessions/active path still works
     localStorage.setItem('gl_active_project_id', 'active');
   }
