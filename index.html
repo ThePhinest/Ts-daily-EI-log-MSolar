@@ -2034,6 +2034,7 @@ EI to conduct LOD walk prior to start of operations"></textarea>
       <div class="add-preset-row">
         <input type="text" id="new-checklist-text" placeholder="New checklist item…">
         <button class="btn-add-p" onclick="addChecklistItem()">+ Add</button>
+        <button class="btn-reorder" id="reorder-btn-checklist" onclick="toggleReorderMode('checklist')">⇅ Reorder</button>
       </div>
       <button class="btn btn-amber" style="font-size:11px;padding:7px 14px;margin-top:12px" onclick="saveChecklistConfig()">Save &amp; Apply</button>
       <span id="cfg-checklist-status" style="font-family:var(--mono);font-size:11px;color:var(--green);margin-left:12px;opacity:0;transition:opacity .4s"></span>
@@ -2052,6 +2053,7 @@ EI to conduct LOD walk prior to start of operations"></textarea>
       <div class="add-preset-row">
         <input type="text" id="new-flags-text" placeholder="New flag item…">
         <button class="btn-add-p" onclick="addFlagItem()">+ Add</button>
+        <button class="btn-reorder" id="reorder-btn-flags" onclick="toggleReorderMode('flags')">⇅ Reorder</button>
       </div>
       <button class="btn btn-amber" style="font-size:11px;padding:7px 14px;margin-top:12px" onclick="saveFlagsConfig()">Save &amp; Apply</button>
       <span id="cfg-flags-status" style="font-family:var(--mono);font-size:11px;color:var(--green);margin-left:12px;opacity:0;transition:opacity .4s"></span>
@@ -3271,7 +3273,8 @@ function renderChecklistList(){
   ul.innerHTML='';
   checklistItems.forEach((item,i)=>{
     const li=document.createElement('li');
-    li.innerHTML=`<span class="p-text">${item.text}</span><button class="del-p" onclick="removeChecklistItem(${i})">✕</button>`;
+    li.dataset.idx=i;li.dataset.origIdx=i;li.dataset.key='checklist';
+    li.innerHTML=`<span class="drag-handle" title="Drag to reorder">≡</span><span class="p-text">${item.text}</span><button class="del-p" onclick="removeChecklistItem(${i})">✕</button>`;
     ul.appendChild(li);
   });
   const titleEl=document.getElementById('cfg-checklist-title');
@@ -3282,7 +3285,8 @@ function renderFlagsList(){
   ul.innerHTML='';
   flagItems.forEach((item,i)=>{
     const li=document.createElement('li');
-    li.innerHTML=`<span class="p-text">${item.text}</span><button class="del-p" onclick="removeFlagItem(${i})">✕</button>`;
+    li.dataset.idx=i;li.dataset.origIdx=i;li.dataset.key='flags';
+    li.innerHTML=`<span class="drag-handle" title="Drag to reorder">≡</span><span class="p-text">${item.text}</span><button class="del-p" onclick="removeFlagItem(${i})">✕</button>`;
     ul.appendChild(li);
   });
   const titleEl=document.getElementById('cfg-flags-title');
@@ -3632,7 +3636,7 @@ try{if(typeof db!=='undefined'&&db&&_fbReady){_udb().collection('settings').doc(
 
 // ── Preset reorder mode ──
 function toggleReorderMode(key){
-  const ids={obs:'list-obs',act:'list-act',env:'list-env',comms:'list-comms',look:'list-look'};
+  const ids={obs:'list-obs',act:'list-act',env:'list-env',comms:'list-comms',look:'list-look',checklist:'list-checklist',flags:'list-flags'};
   const ul=document.getElementById(ids[key]);
   const btn=document.getElementById('reorder-btn-'+key);
   if(!ul||!btn)return;
@@ -3643,20 +3647,20 @@ function toggleReorderMode(key){
     btn.textContent='⇅ Reorder';
     // Save new order based on current DOM order
     const domItems=[...ul.querySelectorAll('li')];
+    const srcArr=key==='checklist'?checklistItems:key==='flags'?flagItems:presets[key];
     const newOrder=domItems.map(li=>{
       const origIdx=parseInt(li.dataset.origIdx!==undefined?li.dataset.origIdx:li.dataset.idx);
-      return presets[key][origIdx];
+      return srcArr[origIdx];
     }).filter(Boolean);
-    presets[key]=newOrder;
-    ss('msf_presets',presets);
+    if(key==='checklist'){checklistItems=newOrder;saveChecklistLocal();saveChecklistCloud();renderChecklistList();buildChecklist();}
+    else if(key==='flags'){flagItems=newOrder;saveFlagsLocal();saveFlagsCloud();renderFlagsList();buildFlags();}
+    else{presets[key]=newOrder;ss('msf_presets',presets);renderPresetList(key);renderAllChips();}
     // Clean up event listeners using stored refs
     ul.onmouseover=null;
     if(ul._touchMove) ul.removeEventListener('touchmove',ul._touchMove);
     if(ul._touchEnd) ul.removeEventListener('touchend',ul._touchEnd);
     if(ul._mouseUp) document.removeEventListener('mouseup',ul._mouseUp);
     ul._touchMove=null;ul._touchEnd=null;ul._mouseUp=null;
-    renderPresetList(key);
-    renderAllChips();
   } else {
     ul.classList.add('reorder-mode');
     btn.classList.add('active');
