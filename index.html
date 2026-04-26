@@ -261,6 +261,7 @@ body.theme-light .preset-chip:hover{background:rgba(0,76,84,0.18);border-color:v
 .btn{font-family:var(--cond);font-weight:700;font-size:14px;letter-spacing:.1em;text-transform:uppercase;border:none;border-radius:5px;padding:8px 16px;cursor:pointer;transition:all .15s;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
 .btn-amber{background:var(--amber);color:#0d1018}.btn-amber:hover{background:var(--amber2)}
 .btn-outline{background:transparent;border:1px solid var(--border2);color:var(--text)}.btn-outline:hover{border-color:var(--amber);color:var(--amber)}
+.btn-proj-active{border-color:var(--amber)!important;color:var(--amber)!important}
 .btn-ghost{background:transparent;border:1px solid var(--border);color:var(--muted2);font-size:11px;padding:5px 10px}.btn-ghost:hover{border-color:var(--red);color:var(--red)}
 .btn-add{background:transparent;border:1px dashed var(--border2);color:var(--muted2);width:100%;justify-content:center;padding:9px;margin-top:10px;border-radius:var(--r)}.btn-add:hover{border-color:var(--amber);color:var(--amber)}
 .btn-export{background:linear-gradient(135deg,#002b2e,#001a1c);border:1px solid #006A75;color:#7ab5b8;padding:12px 20px;font-size:13.5px;width:100%;justify-content:center;border-radius:var(--r)}.btn-export:hover{border-color:#A5ACAF;color:#C8CDD0}
@@ -1531,6 +1532,7 @@ EI to conduct LOD walk prior to start of operations"></textarea>
   <div class="cal-view-toggle" id="cal-view-toggle">
     <button class="cal-toggle-btn active" id="cal-toggle-grid" onclick="calSetView('grid')">📅 Grid</button>
     <button class="cal-toggle-btn" id="cal-toggle-list" onclick="calSetView('list')">☰ List</button>
+    <button class="btn btn-outline btn-proj-active" id="cal-proj-filter-btn" style="font-size:11px;padding:5px 12px" onclick="_toggleProjectFilter()">🏗️ Active Project</button>
   </div>
 
   <!-- Day view (hidden by default) -->
@@ -1748,6 +1750,7 @@ EI to conduct LOD walk prior to start of operations"></textarea>
     <label style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em">To</label>
     <input type="date" id="ph-filter-to" onchange="phRender()">
     <button class="btn btn-outline" style="font-size:11px;padding:5px 12px" onclick="phClearFilters()">Clear</button>
+    <button class="btn btn-outline btn-proj-active" id="ph-proj-filter-btn" style="font-size:11px;padding:5px 12px" onclick="_toggleProjectFilter()">🏗️ Active Project</button>
   </div>
 
   <!-- Photo library -->
@@ -1815,6 +1818,7 @@ EI to conduct LOD walk prior to start of operations"></textarea>
       <option value="In Progress">In Progress</option>
       <option value="Resolved">Resolved</option>
     </select>
+    <button class="btn btn-outline btn-proj-active" id="cl-proj-filter-btn" style="font-size:11px;padding:5px 12px" onclick="_toggleProjectFilter()">🏗️ Active Project</button>
   </div>
 
   <!-- Entry list -->
@@ -4108,6 +4112,33 @@ async function _glMigratePhaseC() {
   } catch(e) { console.warn('GroundLog Phase C: migration error —', e.message); }
 }
 
+// ── Phase D: one-time migration — tag existing photos with active projectId ──
+async function _glMigratePhaseD() {
+  if (localStorage.getItem('gl_phaseD_photos_migrated')) return;
+  if (!_fbReady) return;
+  const pid = _activeProjectId();
+  if (!pid || pid === 'default') return;
+  let changed = false;
+  _phPhotos.forEach(p => { if (!p.projectId) { p.projectId = pid; changed = true; } });
+  if (changed) {
+    phSaveLocal();
+    await phSaveCloud();
+  }
+  localStorage.setItem('gl_phaseD_photos_migrated', '1');
+}
+
+// ── Phase D: one-time migration — tag existing compliance entries with active projectId ──
+async function _glMigrateCompliancePhaseD() {
+  if (localStorage.getItem('gl_phaseD_cl_migrated')) return;
+  if (!_fbReady) return;
+  const pid = _activeProjectId();
+  if (!pid || pid === 'default') return;
+  let changed = false;
+  _clEntries.forEach(e => { if (!e.projectId) { e.projectId = pid; changed = true; } });
+  if (changed) clSave();
+  localStorage.setItem('gl_phaseD_cl_migrated', '1');
+}
+
 // ── Phase C: merge any data into the active project's settings doc ──
 function _saveProjectSettings(mergeData) {
   const pid = _activeProjectId();
@@ -5157,6 +5188,7 @@ async function phHandleFiles(files){
       thumb,
       storageUrl,
       uploadedAt: Date.now(),
+      projectId: _activeProjectId(),
       ...(exif.lat !== null && { lat: exif.lat, lng: exif.lng }),
       ...(exif.direction !== null && { direction: exif.direction }),
       ...(exif.takenAt && { takenAt: exif.takenAt }),
@@ -5204,6 +5236,7 @@ async function phSaveCloud(){
       if(p.direction !== undefined) doc.direction = p.direction;
       if(p.takenAt) doc.takenAt = p.takenAt;
       if(p.software) doc.software = p.software;
+      if(p.projectId) doc.projectId = p.projectId;
       batch.set(ref, doc);
     });
     await batch.commit();
@@ -5268,6 +5301,7 @@ function phRender(){
 
   let photos = [..._phPhotos].sort((a,b)=> b.date > a.date ? 1 : b.date < a.date ? -1 : b.uploadedAt - a.uploadedAt);
 
+  if(_projectFilterActive) photos = photos.filter(p => !p.projectId || p.projectId === _activeProjectId());
   if(fromDate) photos = photos.filter(p=>p.date >= fromDate);
   if(toDate)   photos = photos.filter(p=>p.date <= toDate);
 
@@ -5409,6 +5443,7 @@ async function phInit(){
   const fromCloud = await phLoadCloud();
   phRender();
   phRecoverStorageUrls();
+  _glMigratePhaseD();
 }
 
 function tsInit(){
@@ -5521,6 +5556,7 @@ function clRender(){
 
   let entries = [..._clEntries].sort((a,b)=> b.date > a.date ? 1 : -1);
 
+  if(_projectFilterActive) entries = entries.filter(e => !e.projectId || e.projectId === _activeProjectId());
   if(filterLevel) entries = entries.filter(e=>String(e.level)===filterLevel);
   if(filterStatus) entries = entries.filter(e=>e.status===filterStatus);
   if(search) entries = entries.filter(e=>
@@ -5649,7 +5685,8 @@ function clSubmitForm(){
     status: document.getElementById('cl-f-status').value,
     dateResolved: document.getElementById('cl-f-status').value==='Resolved' ? document.getElementById('cl-f-resolved').value : '',
     sourceReport: document.getElementById('cl-f-source').value,
-    addedBy: _clEditId ? (_clEntries.find(x=>x.id===_clEditId)?.addedBy||'manual') : 'manual'
+    addedBy: _clEditId ? (_clEntries.find(x=>x.id===_clEditId)?.addedBy||'manual') : 'manual',
+    projectId: _clEditId ? (_clEntries.find(x=>x.id===_clEditId)?.projectId||_activeProjectId()) : _activeProjectId()
   };
 
   if(_clEditId){
@@ -5731,7 +5768,7 @@ function clAutoImport(){
   const banner = document.getElementById('cl-auto-banner');
   const pending = banner?._pending||[];
   pending.forEach(d=>{
-    _clEntries.push({ id:clGenId(), date:d.date, level:d.level, location:d.location, corrective:d.corrective, status:'Open', dateResolved:'', sourceReport:d.source, addedBy:'auto' });
+    _clEntries.push({ id:clGenId(), date:d.date, level:d.level, location:d.location, corrective:d.corrective, status:'Open', dateResolved:'', sourceReport:d.source, addedBy:'auto', projectId:_activeProjectId() });
   });
   clSave();
   banner.style.display = 'none';
@@ -5744,6 +5781,7 @@ async function clInit(){
   const fromCloud = await clLoadCloud();
   if(!fromCloud) clLoadLocal(); // fallback
   clRender();
+  _glMigrateCompliancePhaseD();
 }
 
 // ═══════════════════════════════════════════
@@ -5962,7 +6000,8 @@ async function dlArchive(date){
     _archivedAt: existing._archivedAt||Date.now(),
     _archivedDate: date,
     _edited: existing._edited||false,
-    _editLog: existing._editLog||[]
+    _editLog: existing._editLog||[],
+    projectId: _activeProjectId()
   });
   dlSaveLocal(date, record);
   localStorage.removeItem('gl_formalized_date'); _logFormalized = false;
@@ -6402,6 +6441,23 @@ function calOpenDay(date){
     </button>`;
   calRenderDayViewGrid();
 }
+// ── Project filter state (Phase E) ──
+let _projectFilterActive = true; // true = show active project only; false = all projects
+
+function _toggleProjectFilter() {
+  _projectFilterActive = !_projectFilterActive;
+  const label = _projectFilterActive ? '🏗️ Active Project' : '🌐 All Projects';
+  ['ph-proj-filter-btn','cal-proj-filter-btn','cl-proj-filter-btn'].forEach(function(id){
+    const btn = document.getElementById(id);
+    if(!btn) return;
+    btn.textContent = label;
+    btn.classList.toggle('btn-proj-active', _projectFilterActive);
+  });
+  phRender();
+  clRender();
+  calSetView(_calView);
+}
+
 // ── Calendar view state ──
 let _calView = 'grid'; // 'grid' or 'list'
 let _calYear = new Date().getFullYear();
@@ -6499,7 +6555,10 @@ function calRenderGrid(){
   if(label) label.textContent=months[_calMonth]+' '+_calYear;
   const body=document.getElementById('cal-grid-body');
   if(!body) return;
-  const all=dlGetAll();
+  const _allLogs=dlGetAll();
+  const all=_projectFilterActive
+    ? Object.fromEntries(Object.entries(_allLogs).filter(([,v])=> !v.projectId || v.projectId===_activeProjectId()))
+    : _allLogs;
   const today=new Date().toISOString().split('T')[0];
   // First day of month and total days
   const firstDay=new Date(_calYear,_calMonth,1).getDay(); // 0=Sun
@@ -6542,7 +6601,10 @@ function calRenderGrid(){
 }
 
 function calRenderList(){
-  const all=dlGetAll();
+  const _allLogsL=dlGetAll();
+  const all=_projectFilterActive
+    ? Object.fromEntries(Object.entries(_allLogsL).filter(([,v])=> !v.projectId || v.projectId===_activeProjectId()))
+    : _allLogsL;
   const dates=Object.keys(all).sort((a,b)=>b.localeCompare(a));
   const list=document.getElementById('cal-list');
   const empty=document.getElementById('cal-empty');
