@@ -439,6 +439,31 @@ body.theme-light .preset-chip:hover{background:rgba(0,76,84,0.18);border-color:v
   input,select,textarea{border:none;background:transparent;color:black}
 }
 
+/* PROJECT SWITCHER MODAL */
+.proj-switcher-overlay{position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,.6);display:flex;align-items:flex-end;justify-content:center}
+.proj-switcher-sheet{background:var(--s1);border:1px solid var(--border2);border-radius:12px 12px 0 0;width:100%;max-width:480px;padding:20px 20px calc(20px + env(safe-area-inset-bottom));max-height:80vh;overflow-y:auto}
+.proj-switcher-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
+.proj-switcher-title{font-family:var(--cond);font-weight:700;font-size:14px;letter-spacing:.08em;text-transform:uppercase;color:var(--amber)}
+.proj-switcher-close{background:none;border:none;color:var(--muted2);font-size:20px;cursor:pointer;line-height:1;padding:2px 6px}
+.proj-row{display:flex;align-items:center;gap:12px;padding:12px 10px;border-radius:8px;cursor:pointer;border:1px solid transparent;transition:border-color .15s,background .15s}
+.proj-row:hover,.proj-row:active{background:var(--s2);border-color:var(--border2)}
+.proj-row.active{border-color:var(--amber2)}
+.proj-dot{width:10px;height:10px;border-radius:50%;border:2px solid var(--border2);flex-shrink:0}
+.proj-dot.active{background:var(--amber);border-color:var(--amber)}
+.proj-row-info{flex:1;min-width:0}
+.proj-row-name{font-family:var(--cond);font-weight:700;font-size:14px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.proj-row.active .proj-row-name{color:var(--amber)}
+.proj-row-meta{font-family:var(--mono);font-size:11px;color:var(--muted2);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.proj-divider{border:none;border-top:1px solid var(--border2);margin:14px 0}
+.proj-new-btn{width:100%;padding:11px;background:transparent;border:1px dashed var(--border2);border-radius:8px;color:var(--amber);font-family:var(--cond);font-weight:700;font-size:13px;letter-spacing:.06em;cursor:pointer;text-transform:uppercase;transition:border-color .15s,background .15s}
+.proj-new-btn:hover,.proj-new-btn:active{border-color:var(--amber);background:var(--s2)}
+.proj-new-form{display:flex;flex-direction:column;gap:12px}
+.proj-new-form label{font-family:var(--mono);font-size:11px;color:var(--muted2);margin-bottom:3px;display:block}
+.proj-new-form input{width:100%;padding:9px 11px;background:var(--s2);border:1px solid var(--border2);border-radius:6px;color:var(--text);font-size:14px;font-family:var(--sans)}
+.proj-new-form input:focus{outline:none;border-color:var(--amber2)}
+.proj-new-hint{font-family:var(--mono);font-size:11px;color:var(--muted2);line-height:1.5}
+.proj-new-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:4px}
+
 /* CUSTOM CONFIRM MODAL */
 .modal-overlay{position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;padding:20px}
 .modal-box{background:var(--s1);border:1px solid var(--border2);border-radius:10px;padding:24px 22px;max-width:340px;width:100%}
@@ -543,7 +568,7 @@ body.theme-light .preset-chip:hover{background:rgba(0,76,84,0.18);border-color:v
   <span class="app-wm-log">LOG</span>
   <span class="app-wm-io">.io</span>
 </div>
-    <div class="app-sub" id="app-bar-sub">Moraine Solar Energy Center</div>
+    <div class="app-sub" id="app-bar-sub" onclick="showProjectSwitcher()" title="Switch project" style="cursor:pointer">Moraine Solar Energy Center</div>
   </div>
   <div style="display:flex;align-items:center;gap:6px">
     <button class="icon-btn" title="Reload app" onclick="location.reload()">⟳</button>
@@ -1883,7 +1908,7 @@ EI to conduct LOD walk prior to start of operations"></textarea>
   <div class="config-section" id="cfg-proj">
     <div class="config-head" onclick="toggleSection('cfg-proj')"><span class="config-title">Project &amp; Report Info</span><span class="card-chevron">▾</span></div>
     <div class="config-body">
-      <p class="config-hint">These values populate Section 01 on the daily log and persist through resets. Active Contractor sets the default — you can clear or change it per day directly on the log (e.g. for remote days with no crew on site).</p>
+      <p class="config-hint">Tap the project name in the app bar to switch projects or create a new one. Edit this project's details below — changes save across all devices. Active Contractor sets the default; you can clear or change it per day directly on the log.</p>
       <div class="g g2" style="margin-bottom:10px">
         <div class="field"><label>Project Name</label><input type="text" id="cfg-projectName" placeholder="Moraine Solar Energy Center" list="known-projects-list" oninput="onProjectNameInput(this.value)"><datalist id="known-projects-list"></datalist></div>
         <div class="field"><label>Prepared By</label><input type="text" id="cfg-preparedBy" placeholder="Tim Shortz"></div>
@@ -3878,8 +3903,12 @@ function saveProjectConfig() {
     if(wChanged) tsSaveArchivedWeeks(allWeeks);
   }
   localStorage.setItem('msf_projectconfig', JSON.stringify(cfg));
-  try{if(typeof db!=='undefined'&&db&&_fbReady){_udb().collection('settings').doc('projectConfig').set(Object.assign({},cfg,{_ts:Date.now()}),{merge:true}).catch(()=>{});}}catch(e){}
-  knownProjectsUpsert(cfg);
+  const _pid = _activeProjectId();
+  try{if(typeof db!=='undefined'&&db&&_fbReady){
+    _udb().collection('settings').doc('projectConfig').set(Object.assign({},cfg,{_ts:Date.now()}),{merge:true}).catch(()=>{});
+    _udb().collection('projects').doc(_pid).set(Object.assign({},cfg,{lastUsed:Date.now(),_ts:Date.now()}),{merge:true}).catch(()=>{});
+  }}catch(e){}
+  knownProjectsUpsert(cfg, _pid);
   renderKnownProjectsDatalist();
   applyProjectConfig();
   // Also update activePhaseLabel for chip rendering
@@ -4016,6 +4045,102 @@ async function createProject(name, location, contractor) {
     }, 350);
     showCloudBanner('↳ New project created — fill in your details in Settings.');
   } catch(e) { console.warn('createProject failed:', e.message); }
+}
+
+// ── Project Switcher Modal ──
+function showProjectSwitcher() {
+  if (document.getElementById('_proj-switcher')) return;
+  const activeProjId = _activeProjectId();
+  const known = knownProjectsGet();
+
+  const ov = document.createElement('div');
+  ov.className = 'proj-switcher-overlay';
+  ov.id = '_proj-switcher';
+  ov.onclick = function(e) { if (e.target === ov) ov.remove(); };
+
+  function renderList() {
+    const sorted = [...known].sort((a, b) => (b.lastUsed || 0) - (a.lastUsed || 0));
+    return sorted.map(p => {
+      const isActive = p.projectId === activeProjId;
+      const lastUsedStr = p.lastUsed ? _projRelativeDate(p.lastUsed) : '';
+      return `<div class="proj-row${isActive?' active':''}" onclick="_projSwitcherSelect('${p.projectId}')">
+        <div class="proj-dot${isActive?' active':''}"></div>
+        <div class="proj-row-info">
+          <div class="proj-row-name">${p.projectName||'Unnamed Project'}</div>
+          <div class="proj-row-meta">${[p.location,lastUsedStr].filter(Boolean).join(' · ')}</div>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  function buildSheet(showForm) {
+    return `<div class="proj-switcher-sheet">
+      <div class="proj-switcher-header">
+        <span class="proj-switcher-title">${showForm ? 'New Project' : 'Projects'}</span>
+        <button class="proj-switcher-close" onclick="document.getElementById('_proj-switcher').remove()">✕</button>
+      </div>
+      ${showForm ? `
+        <div class="proj-new-form">
+          <div><label>Project Name *</label><input id="_pnf-name" type="text" placeholder="e.g. Sunrise Wind Phase 2" autofocus></div>
+          <div><label>Location (optional)</label><input id="_pnf-loc" type="text" placeholder="e.g. Long Island, NY"></div>
+          <div><label>Starting Contractor (optional)</label><input id="_pnf-con" type="text" placeholder="e.g. Jones Excavating"></div>
+          <p class="proj-new-hint">Starts fresh — fill in remaining details in Settings after creating.</p>
+          <div class="proj-new-actions">
+            <button class="modal-cancel" onclick="_projSwitcherShowList()">Cancel</button>
+            <button class="btn btn-amber" style="font-size:12px;padding:8px 18px" onclick="_projSwitcherCreate()">Create Project</button>
+          </div>
+        </div>
+      ` : `
+        ${renderList()}
+        <hr class="proj-divider">
+        <button class="proj-new-btn" onclick="_projSwitcherShowForm()">+ New Project</button>
+      `}
+    </div>`;
+  }
+
+  ov.innerHTML = buildSheet(false);
+  document.body.appendChild(ov);
+
+  window._projSwitcherShowForm = function() {
+    ov.querySelector('.proj-switcher-sheet').outerHTML; // trigger reflow
+    ov.innerHTML = buildSheet(true);
+    setTimeout(() => { const n = document.getElementById('_pnf-name'); if(n) n.focus(); }, 50);
+  };
+  window._projSwitcherShowList = function() {
+    ov.innerHTML = buildSheet(false);
+  };
+  window._projSwitcherSelect = async function(projectId) {
+    if (projectId === activeProjId) { ov.remove(); return; }
+    const proj = known.find(p => p.projectId === projectId);
+    const name = proj ? proj.projectName : 'this project';
+    _confirmModal('Switch to ' + name + '? Your current log will be saved.', async function() {
+      ov.remove();
+      await loadProject(projectId);
+    }, 'Switch Project', 'Switch');
+  };
+  window._projSwitcherCreate = async function() {
+    const name = (document.getElementById('_pnf-name')||{}).value || '';
+    if (!name.trim()) {
+      const el = document.getElementById('_pnf-name');
+      if (el) { el.style.borderColor = 'var(--red)'; el.focus(); }
+      return;
+    }
+    const loc = (document.getElementById('_pnf-loc')||{}).value || '';
+    const con = (document.getElementById('_pnf-con')||{}).value || '';
+    ov.remove();
+    await createProject(name, loc, con);
+  };
+}
+
+function _projRelativeDate(ts) {
+  if (!ts) return '';
+  const diff = Date.now() - ts;
+  const days = Math.floor(diff / 86400000);
+  if (days === 0) return 'today';
+  if (days === 1) return 'yesterday';
+  if (days < 7) return days + 'd ago';
+  const d = new Date(ts);
+  return (d.getMonth()+1) + '/' + d.getDate();
 }
 
 function savePhaseLabel(){
