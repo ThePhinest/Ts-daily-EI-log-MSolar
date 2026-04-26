@@ -3750,13 +3750,20 @@ function loadProjectConfig() {
     return saved ? Object.assign({}, PROJECT_CONFIG_DEFAULTS, JSON.parse(saved)) : PROJECT_CONFIG_DEFAULTS;
   } catch { return PROJECT_CONFIG_DEFAULTS; }
 }
+function _activeProjectId() {
+  return localStorage.getItem('gl_active_project_id') || 'default';
+}
 function knownProjectsGet(){try{return JSON.parse(localStorage.getItem('gl_known_projects')||'[]');}catch{return[];}}
-function knownProjectsUpsert(cfg){
+function knownProjectsUpsert(cfg, projectId){
   const list=knownProjectsGet();
-  const idx=list.findIndex(p=>p.projectName===cfg.projectName);
-  const entry={projectName:cfg.projectName,preparedBy:cfg.preparedBy,org:cfg.org,activePhase:cfg.activePhase,contractor:cfg.contractor,location:cfg.location,reviewedBy:cfg.reviewedBy};
+  const idx=list.findIndex(p=>p.projectId ? p.projectId===(projectId||null) : p.projectName===cfg.projectName);
+  const entry={projectId:projectId||null,projectName:cfg.projectName,preparedBy:cfg.preparedBy,org:cfg.org,activePhase:cfg.activePhase,contractor:cfg.contractor,location:cfg.location,reviewedBy:cfg.reviewedBy,lastUsed:Date.now()};
   if(idx>=0) list[idx]=entry; else list.push(entry);
   localStorage.setItem('gl_known_projects',JSON.stringify(list));
+  // Mirror to Firestore so all devices share the project list
+  if(typeof db!=='undefined'&&db&&_fbReady){
+    _udb().collection('settings').doc('knownProjects').set({projects:list,_ts:Date.now()}).catch(()=>{});
+  }
 }
 function renderKnownProjectsDatalist(){
   const dl=document.getElementById('known-projects-list');
@@ -3882,6 +3889,133 @@ function saveProjectConfig() {
   const st = document.getElementById('cfg-proj-status');
   st.textContent = '✓ Saved'; st.style.opacity = '1';
   setTimeout(() => st.style.opacity = '0', 2500);
+}
+
+// ── One-time migration: convert single-project structure → multi-project ──
+async function _glMigrateToProjects() {
+  if (localStorage.getItem('gl_active_project_id')) return; // already migrated
+  if (!db) return;
+  try {
+    // Pull active config from Firestore (source of truth)
+    const cfgDoc = await db.collection('settings').doc('projectConfig').get();
+    const activeCfg = cfgDoc.exists ? Object.assign({}, cfgDoc.data()) : loadProjectConfig();
+    delete activeCfg._ts;
+
+    // Build list of known projects — start from localStorage, ensure active is included
+    let known = knownProjectsGet();
+    if (!known.some(p => p.projectName === activeCfg.projectName)) known.push(activeCfg);
+
+    const projectIndex = [];
+    let activeProjectId = null;
+    const now = Date.now();
+
+    for (let i = 0; i < known.length; i++) {
+      const p = known[i];
+      const isActive = (p.projectName === activeCfg.projectName);
+      const projectId = 'proj_' + (now + i);
+      const projDoc = {
+        projectName: p.projectName || '',
+        preparedBy:  p.preparedBy  || '',
+        org:         p.org         || '',
+        activePhase: p.activePhase || '',
+        contractor:  p.contractor  || '',
+        location:    p.location    || '',
+        reviewedBy:  p.reviewedBy  || '',
+        createdAt:   now,
+        lastUsed:    isActive ? now : 0,
+        _ts:         now
+      };
+      await db.collection('projects').doc(projectId).set(projDoc);
+      if (isActive) activeProjectId = projectId;
+      projectIndex.push({ projectId, projectName: p.projectName, location: p.location || '', lastUsed: projDoc.lastUsed });
+    }
+
+    // Migrate current session: sessions/active → sessions/{activeProjectId}
+    const sessionDoc = await db.collection('sessions').doc('active').get();
+    if (sessionDoc.exists) {
+      await db.collection('sessions').doc(activeProjectId).set(sessionDoc.data());
+    }
+
+    // Write project tracking docs
+    await db.collection('settings').doc('activeProject').set({ projectId: activeProjectId, _ts: now });
+    await db.collection('settings').doc('knownProjects').set({ projects: projectIndex, _ts: now });
+
+    localStorage.setItem('gl_active_project_id', activeProjectId);
+    localStorage.setItem('gl_known_projects', JSON.stringify(projectIndex));
+    console.log('GroundLog: migrated to multi-project. Active:', activeProjectId);
+  } catch(e) {
+    console.warn('GroundLog: project migration failed —', e.message);
+  }
+}
+
+// ── Load (switch to) an existing project ──
+async function loadProject(projectId, projDataOverride) {
+  if (!db || !_fbReady) return;
+  try {
+    await cloudSave(); // preserve current session before switching
+    const projDoc = projDataOverride ? { data: () => projDataOverride, exists: true }
+      : await _udb().collection('projects').doc(projectId).get();
+    if (!projDoc.exists) return;
+    const projData = projDoc.data ? projDoc.data() : projDataOverride;
+
+    // Switch active project
+    localStorage.setItem('gl_active_project_id', projectId);
+    _udb().collection('settings').doc('activeProject').set({ projectId, _ts: Date.now() }).catch(() => {});
+
+    // Apply project config
+    const cfg = { projectName:projData.projectName||'', preparedBy:projData.preparedBy||'',
+      org:projData.org||'', activePhase:projData.activePhase||'',
+      contractor:projData.contractor||'', location:projData.location||'', reviewedBy:projData.reviewedBy||'' };
+    localStorage.setItem('msf_projectconfig', JSON.stringify(cfg));
+    applyProjectConfig();
+
+    // Update lastUsed
+    _udb().collection('projects').doc(projectId).set({ lastUsed: Date.now() }, { merge: true }).catch(() => {});
+
+    // Load this project's session
+    const sessionDoc = await _udb().collection('sessions').doc(projectId).get();
+    document.getElementById('crewContainer').innerHTML = '';
+    crewIds = []; crewSeq = 0;
+    if (sessionDoc.exists) {
+      restoreFormState(sessionDoc.data());
+      try { localStorage.setItem('msf_autosave', JSON.stringify(sessionDoc.data())); } catch {}
+    } else {
+      _resetFormCore();
+      try { localStorage.removeItem('msf_autosave'); } catch {}
+    }
+    showCloudBanner('↳ Switched to ' + (projData.projectName || 'project'));
+  } catch(e) { console.warn('loadProject failed:', e.message); }
+}
+
+// ── Create a brand-new project ──
+async function createProject(name, location, contractor) {
+  if (!name || !name.trim() || !db || !_fbReady) return;
+  name = name.trim();
+  const activeCfg = loadProjectConfig();
+  const projectId = 'proj_' + Date.now();
+  const projData = {
+    projectName: name,
+    preparedBy:  activeCfg.preparedBy  || '',
+    org:         activeCfg.org         || '',
+    activePhase: '',
+    contractor:  (contractor || '').trim(),
+    location:    (location   || '').trim(),
+    reviewedBy:  activeCfg.reviewedBy  || '',
+    createdAt:   Date.now(),
+    lastUsed:    Date.now(),
+    _ts:         Date.now()
+  };
+  try {
+    await _udb().collection('projects').doc(projectId).set(projData);
+    knownProjectsUpsert(projData, projectId);
+    await loadProject(projectId, projData);
+    showPage('config');
+    setTimeout(() => {
+      const s = document.getElementById('cfg-proj');
+      if (s) s.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 350);
+    showCloudBanner('↳ New project created — fill in your details in Settings.');
+  } catch(e) { console.warn('createProject failed:', e.message); }
 }
 
 function savePhaseLabel(){
@@ -5647,7 +5781,7 @@ async function newDayStartFresh(){
   localStorage.setItem('pei_newday_suppress',today);
   // Reset form — _resetFormCore sets today's date automatically
   if(typeof db!=='undefined'&&db&&_fbReady){
-    try{ await _udb().collection('sessions').doc('active').delete(); }catch{}
+    try{ await _udb().collection('sessions').doc(_activeProjectId()).delete(); }catch{}
   }
   _resetFormCore();
   setSyncStatus&&setSyncStatus('synced');
@@ -5709,7 +5843,7 @@ async function dlConfirmLoad(){
   restoreFormState(record);
   try{ localStorage.setItem('msf_autosave', JSON.stringify(record)); }catch{}
   if(typeof db!=='undefined'&&db&&_fbReady){
-    try{ await _udb().collection('sessions').doc('active').set(record); }catch{}
+    try{ await _udb().collection('sessions').doc(_activeProjectId()).set(record); }catch{}
   }
   _ldPending=null;
   showPage('log');
@@ -6396,7 +6530,7 @@ function _reconnectFirebase() {
   }
   db.enableNetwork().then(function() {
     setSyncStatus('syncing');
-    _udb().collection('sessions').doc('active').get().then(function(doc) {
+    _udb().collection('sessions').doc(_activeProjectId()).get().then(function(doc) {
       const cloudTs = doc.exists ? (doc.data()._ts || 0) : 0;
       let localTs = 0;
       try { localTs = JSON.parse(localStorage.getItem('msf_autosave') || '{}')._ts || 0; } catch {}
@@ -6429,7 +6563,7 @@ window.addEventListener('offline', function() {
 document.addEventListener('visibilitychange', function() {
   if (document.visibilityState !== 'visible') return;
   if (!db || !_fbReady) return;
-  _udb().collection('sessions').doc('active').get().then(function(doc) {
+  _udb().collection('sessions').doc(_activeProjectId()).get().then(function(doc) {
     if (!doc.exists) return;
     const cloudState = doc.data();
     const cloudTs = cloudState._ts || 0;
@@ -6453,7 +6587,7 @@ async function cloudSave() {
     setSyncStatus('syncing');
     const state = collectFormState();
     state._ts = Date.now();
-    await _udb().collection('sessions').doc('active').set(state);
+    await _udb().collection('sessions').doc(_activeProjectId()).set(state);
     try { localStorage.setItem('msf_autosave', JSON.stringify(state)); } catch {}
     setSyncStatus('synced');
   } catch(e) {
@@ -6544,7 +6678,7 @@ function resetForm() {
     return;
   }
   _confirmModal('Reset the daily log? All entries will be cleared. Config and presets are preserved.', function() {
-    if (db) _udb().collection('sessions').doc('active').delete().catch(function(e){});
+    if (db) _udb().collection('sessions').doc(_activeProjectId()).delete().catch(function(e){});
     _resetFormCore();
     setSyncStatus('idle');
   });
@@ -6553,15 +6687,18 @@ function resetForm() {
 // ── Firebase init load — runs async after page restores from localStorage ──
 async function initFirebaseLoad() {
   if (!db) { setSyncStatus('offline');  return; }
-  
+
   // If this is an archived file being re-opened, push its state to cloud and exit
   if (typeof SAVED_DATA !== 'undefined' && SAVED_DATA !== null) {
     cloudSave();
     return;
   }
 
+  // One-time migration from single-project to multi-project structure
+  await _glMigrateToProjects();
+
   try {
-    const doc = await _udb().collection('sessions').doc('active').get();
+    const doc = await _udb().collection('sessions').doc(_activeProjectId()).get();
 
     if (!doc.exists) {
       // Cloud doc missing — either first use OR reset was triggered on another device
