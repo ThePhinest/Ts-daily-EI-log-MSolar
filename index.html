@@ -3923,7 +3923,8 @@ function saveProjectConfig() {
 // ── One-time migration: convert single-project structure → multi-project ──
 // Project configs stored in settings/{projectId} docs (uses existing allowed collection).
 async function _glMigrateToProjects() {
-  if (localStorage.getItem('gl_active_project_id')) return; // already migrated
+  const _existingPid = localStorage.getItem('gl_active_project_id');
+  if (_existingPid && _existingPid !== 'active') return; // real proj_ ID = already migrated
   if (!_udb()) { console.warn('GroundLog: migration skipped — user not ready'); return; }
   console.log('GroundLog: starting multi-project migration...');
   try {
@@ -3990,8 +3991,7 @@ async function _glMigrateToProjects() {
     console.log('GroundLog: migration complete. Active:', activeProjectId, '| Projects:', projectIndex.length);
   } catch(e) {
     console.warn('GroundLog: project migration failed —', e.message, e);
-    // Safe fallback: use 'active' as projectId so sessions/active path still works
-    localStorage.setItem('gl_active_project_id', 'active');
+    // Do NOT set gl_active_project_id — initFirebaseLoad sessions/active fallback handles it
   }
 }
 
