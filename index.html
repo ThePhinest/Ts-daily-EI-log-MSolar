@@ -2236,12 +2236,8 @@ async function saveCardLabels(){
   });
   // Update DOM immediately
   loadCardTitles(titles);
-  // Save to Firestore
-  if(db && _fbReady){
-    try{
-      await _udb().collection('settings').doc('cardTitles').set(titles);
-    }catch(e){ console.warn('saveCardLabels failed:',e.message); }
-  }
+  // Save to Firestore (per-project)
+  _saveProjectSettings({cardTitles: titles});
   // Also persist locally
   try{ localStorage.setItem('gl_cardTitles', JSON.stringify(titles)); }catch{}
   const s = document.getElementById('cfg-card-labels-status');
@@ -3274,12 +3270,24 @@ function saveChecklistLocal(){
   try{localStorage.setItem('msf_checklist_config',JSON.stringify({title:checklistTitle,items:checklistItems}));}catch{}
 }
 async function saveChecklistCloud(){
-  if(!db||!_fbReady)return;
-  try{await _udb().collection('config').doc('checklist').set({title:checklistTitle,items:checklistItems});}catch(e){}
+  _saveProjectSettings({checklistItems, checklistTitle});
 }
 async function loadChecklistCloud(){
   if(!db)return;
-  try{const doc=await _udb().collection('config').doc('checklist').get();if(doc.exists){const d=doc.data();checklistItems=d.items||DEFAULT_CHECKLIST_ITEMS;checklistTitle=d.title||'Compliance Checklist';saveChecklistLocal();buildChecklist();renderChecklistList();try{const s=JSON.parse(localStorage.getItem('msf_autosave')||'{}');Object.entries(s.checklist||{}).forEach(([id,{checked,note}])=>{const cb=document.getElementById(id);if(cb){cb.checked=checked;if(checked){const nw=document.getElementById(id+'-nw');if(nw)nw.classList.add('vis')}}const nt=document.getElementById(id+'-note');if(nt)nt.value=note;});}catch{}}}catch(e){}
+  function _restoreChecklistAutosave(){try{const s=JSON.parse(localStorage.getItem('msf_autosave')||'{}');Object.entries(s.checklist||{}).forEach(([id,{checked,note}])=>{const cb=document.getElementById(id);if(cb){cb.checked=checked;if(checked){const nw=document.getElementById(id+'-nw');if(nw)nw.classList.add('vis')}}const nt=document.getElementById(id+'-note');if(nt)nt.value=note;});}catch{}}
+  try{
+    const pid=_activeProjectId();
+    if(pid&&pid!=='active'&&pid!=='default'){
+      const projDoc=await _udb().collection('settings').doc(pid).get();
+      if(projDoc.exists&&projDoc.data().checklistItems){
+        const d=projDoc.data();checklistItems=d.checklistItems;checklistTitle=d.checklistTitle||'Compliance Checklist';
+        saveChecklistLocal();buildChecklist();renderChecklistList();_restoreChecklistAutosave();return;
+      }
+    }
+    // Fallback: global path (pre-Phase C migration)
+    const doc=await _udb().collection('config').doc('checklist').get();
+    if(doc.exists){const d=doc.data();checklistItems=d.items||DEFAULT_CHECKLIST_ITEMS;checklistTitle=d.title||'Compliance Checklist';saveChecklistLocal();buildChecklist();renderChecklistList();_restoreChecklistAutosave();}
+  }catch(e){}
 }
 function loadFlagsConfig(){
   try{const raw=localStorage.getItem('msf_flags_config');if(raw){const d=JSON.parse(raw);flagItems=d.items||DEFAULT_FLAG_ITEMS;flagsTitle=d.title||'Regulatory & Incident Flags';}}catch{}
@@ -3288,12 +3296,24 @@ function saveFlagsLocal(){
   try{localStorage.setItem('msf_flags_config',JSON.stringify({title:flagsTitle,items:flagItems}));}catch{}
 }
 async function saveFlagsCloud(){
-  if(!db||!_fbReady)return;
-  try{await _udb().collection('config').doc('flags').set({title:flagsTitle,items:flagItems});}catch(e){}
+  _saveProjectSettings({flagItems, flagsTitle});
 }
 async function loadFlagsCloud(){
   if(!db)return;
-  try{const doc=await _udb().collection('config').doc('flags').get();if(doc.exists){const d=doc.data();flagItems=d.items||DEFAULT_FLAG_ITEMS;flagsTitle=d.title||'Regulatory & Incident Flags';saveFlagsLocal();buildFlags();renderFlagsList();try{const s=JSON.parse(localStorage.getItem('msf_autosave')||'{}');Object.entries(s.checkboxes||{}).forEach(([id,val])=>{const el=document.getElementById(id);if(el)el.checked=val});Object.entries(s.flagNotes||{}).forEach(([f,val])=>{const el=document.getElementById('flag-'+f+'-note');if(el)el.value=val;});flagItems.forEach(f=>{if(document.getElementById(f.id)?.checked){const nw=document.getElementById(f.id+'-nw');if(nw)nw.classList.add('vis');}});}catch{}}}catch(e){}
+  function _restoreFlagsAutosave(){try{const s=JSON.parse(localStorage.getItem('msf_autosave')||'{}');Object.entries(s.checkboxes||{}).forEach(([id,val])=>{const el=document.getElementById(id);if(el)el.checked=val});Object.entries(s.flagNotes||{}).forEach(([f,val])=>{const el=document.getElementById('flag-'+f+'-note');if(el)el.value=val;});flagItems.forEach(f=>{if(document.getElementById(f.id)?.checked){const nw=document.getElementById(f.id+'-nw');if(nw)nw.classList.add('vis');}});}catch{}}
+  try{
+    const pid=_activeProjectId();
+    if(pid&&pid!=='active'&&pid!=='default'){
+      const projDoc=await _udb().collection('settings').doc(pid).get();
+      if(projDoc.exists&&projDoc.data().flagItems){
+        const d=projDoc.data();flagItems=d.flagItems;flagsTitle=d.flagsTitle||'Regulatory & Incident Flags';
+        saveFlagsLocal();buildFlags();renderFlagsList();_restoreFlagsAutosave();return;
+      }
+    }
+    // Fallback: global path (pre-Phase C migration)
+    const doc=await _udb().collection('config').doc('flags').get();
+    if(doc.exists){const d=doc.data();flagItems=d.items||DEFAULT_FLAG_ITEMS;flagsTitle=d.title||'Regulatory & Incident Flags';saveFlagsLocal();buildFlags();renderFlagsList();_restoreFlagsAutosave();}
+  }catch(e){}
 }
 function renderChecklistList(){
   const ul=document.getElementById('list-checklist');if(!ul)return;
@@ -3643,22 +3663,22 @@ function addPreset(key){
   if(!presets[key])presets[key]=[];
   presets[key].push({text:t.value.trim(),phase:ph.value});
   ss('msf_presets',presets);t.value='';renderPresetList(key);renderAllChips();
-try{if(typeof db!=='undefined'&&db&&_fbReady){_udb().collection('settings').doc('presets').set({data:JSON.stringify(presets),_ts:Date.now()}).catch(()=>{});}}catch(e){}
+  _saveProjectSettings({presets});
 }
 function removePreset(key,idx){
   presets[key].splice(idx,1);ss('msf_presets',presets);renderPresetList(key);renderAllChips();
-try{if(typeof db!=='undefined'&&db&&_fbReady){_udb().collection('settings').doc('presets').set({data:JSON.stringify(presets),_ts:Date.now()}).catch(()=>{});}}catch(e){}
+  _saveProjectSettings({presets});
 }
 function addPhase(){
   const inp=document.getElementById('new-phase-text');const val=inp.value.trim();
   if(!val||phases.includes(val))return;
   phases.push(val);ss('msf_phases',phases);inp.value='';renderPhaseList();populateSelects();
-try{if(typeof db!=='undefined'&&db&&_fbReady){_udb().collection('settings').doc('phases').set({data:JSON.stringify(phases),_ts:Date.now()}).catch(()=>{});}}catch(e){}
+  _saveProjectSettings({phases});
 }
 function removePhase(idx){
   if(phases[idx]===activePhaseLabel){alert('Cannot remove the currently active phase.');return}
   phases.splice(idx,1);ss('msf_phases',phases);renderPhaseList();populateSelects();
-try{if(typeof db!=='undefined'&&db&&_fbReady){_udb().collection('settings').doc('phases').set({data:JSON.stringify(phases),_ts:Date.now()}).catch(()=>{});}}catch(e){}
+  _saveProjectSettings({phases});
 }
 
 // ── Preset reorder mode ──
@@ -3681,7 +3701,7 @@ function toggleReorderMode(key){
     }).filter(Boolean);
     if(key==='checklist'){checklistItems=newOrder;saveChecklistLocal();saveChecklistCloud();renderChecklistList();buildChecklist();}
     else if(key==='flags'){flagItems=newOrder;saveFlagsLocal();saveFlagsCloud();renderFlagsList();buildFlags();}
-    else{presets[key]=newOrder;ss('msf_presets',presets);renderPresetList(key);renderAllChips();}
+    else{presets[key]=newOrder;ss('msf_presets',presets);renderPresetList(key);renderAllChips();_saveProjectSettings({presets});}
     // Clean up event listeners using stored refs
     ul.onmouseover=null;
     if(ul._touchMove) ul.removeEventListener('touchmove',ul._touchMove);
@@ -3812,23 +3832,41 @@ async function syncPresetsFromCloud() {
   while(!_fbReady && waited<5000){ await new Promise(r=>setTimeout(r,200)); waited+=200; }
   if(!_fbReady) return;
   try{
-    const [presetsDoc, phasesDoc] = await Promise.all([
+    // Phase C: read from project doc first
+    const pid = _activeProjectId();
+    if(pid && pid!=='active' && pid!=='default'){
+      const projDoc = await _udb().collection('settings').doc(pid).get();
+      if(projDoc.exists && projDoc.data().phaseC_migrated){
+        const d = projDoc.data();
+        if(d.presets){presets=d.presets;ss('msf_presets',presets);renderPresetList();renderAllChips();}
+        if(d.phases){phases=d.phases;ss('msf_phases',phases);renderPhaseList();populateSelects();}
+        if(d.cardTitles&&Object.keys(d.cardTitles).length){
+          loadCardTitles(d.cardTitles);
+          try{localStorage.setItem('gl_cardTitles',JSON.stringify(d.cardTitles));}catch{}
+        }
+        if(d.tsConfig){
+          const cfg=Object.assign({},TS_DEFAULTS,d.tsConfig);
+          try{localStorage.setItem('msf_ts_config',JSON.stringify(cfg));}catch{}
+          tsLoadConfigFields();
+        }
+        return;
+      }
+    }
+    // Fallback: global paths (pre-Phase C or migration not yet run on this device)
+    const [presetsDoc, phasesDoc, cardTitlesDoc] = await Promise.all([
       _udb().collection('settings').doc('presets').get(),
-      _udb().collection('settings').doc('phases').get()
+      _udb().collection('settings').doc('phases').get(),
+      _udb().collection('settings').doc('cardTitles').get()
     ]);
     if(presetsDoc.exists){
-      const p = JSON.parse(presetsDoc.data().data);
-      presets = p;
-      ss('msf_presets', p);
-      renderPresetList();
-      renderAllChips();
+      try{const p=JSON.parse(presetsDoc.data().data);presets=p;ss('msf_presets',p);renderPresetList();renderAllChips();}catch{}
     }
     if(phasesDoc.exists){
-      const p = JSON.parse(phasesDoc.data().data);
-      phases = p;
-      ss('msf_phases', p);
-      renderPhaseList();
-      populateSelects();
+      try{const p=JSON.parse(phasesDoc.data().data);phases=p;ss('msf_phases',p);renderPhaseList();populateSelects();}catch{}
+    }
+    if(cardTitlesDoc.exists){
+      const d=cardTitlesDoc.data();loadCardTitles(d);
+      try{localStorage.setItem('gl_cardTitles',JSON.stringify(d));}catch{}
     }
   }catch(e){ console.warn('syncPresets failed:', e.message); }
 }
@@ -3848,8 +3886,16 @@ async function syncProjectConfigFromCloud() {
       doc = await _udb().collection('settings').doc('projectConfig').get();
     }
     if(doc && doc.exists) {
-      const data = Object.assign({}, doc.data());
-      delete data.lastUsed; delete data.createdAt; delete data._ts;
+      const raw = doc.data();
+      const data = {
+        projectName: raw.projectName || '',
+        preparedBy:  raw.preparedBy  || '',
+        org:         raw.org         || '',
+        activePhase: raw.activePhase || '',
+        contractor:  raw.contractor  || '',
+        location:    raw.location    || '',
+        reviewedBy:  raw.reviewedBy  || ''
+      };
       localStorage.setItem('msf_projectconfig', JSON.stringify(data));
         applyProjectConfig();
         ['projectName','preparedBy','org','activePhase','contractor','location','reviewedBy'].forEach(k=>{
@@ -4005,6 +4051,107 @@ async function _glMigrateToProjects() {
   }
 }
 
+// ── Phase C migration: copy global settings into all per-project docs ──
+async function _glMigratePhaseC() {
+  if (!_udb()) return;
+  const known = knownProjectsGet().filter(p => p.projectId);
+  if (!known.length) return;
+  // Early-out if every project is already migrated
+  let anyNeedsMigration = false;
+  for (const proj of known) {
+    try {
+      const d = await _udb().collection('settings').doc(proj.projectId).get();
+      if (!d.exists || !d.data().phaseC_migrated) { anyNeedsMigration = true; break; }
+    } catch(e) {}
+  }
+  if (!anyNeedsMigration) return;
+  console.log('GroundLog Phase C: starting settings migration...');
+  try {
+    const [presetsDoc, phasesDoc, cardTitlesDoc, checklistDoc, flagsDoc, tsCfgDoc] = await Promise.all([
+      _udb().collection('settings').doc('presets').get(),
+      _udb().collection('settings').doc('phases').get(),
+      _udb().collection('settings').doc('cardTitles').get(),
+      _udb().collection('config').doc('checklist').get(),
+      _udb().collection('config').doc('flags').get(),
+      _udb().collection('timesheetMeta').doc('config').get()
+    ]);
+    let globalPresets = Object.assign({}, DEFAULT_PRESETS);
+    try { if (presetsDoc.exists) globalPresets = JSON.parse(presetsDoc.data().data || '{}'); } catch {}
+    let globalPhases = [...DEFAULT_PHASES];
+    try { if (phasesDoc.exists) globalPhases = JSON.parse(phasesDoc.data().data || '[]'); } catch {}
+    const globalCardTitles = cardTitlesDoc.exists ? cardTitlesDoc.data() : {};
+    const globalChecklist  = checklistDoc.exists  ? checklistDoc.data()  : {};
+    const globalFlags      = flagsDoc.exists       ? flagsDoc.data()       : {};
+    const rawTsCfg         = tsCfgDoc.exists       ? tsCfgDoc.data()       : {};
+    delete rawTsCfg._ts;
+    const globalTsConfig   = Object.assign({}, TS_DEFAULTS, rawTsCfg);
+    for (const proj of known) {
+      try {
+        const doc = await _udb().collection('settings').doc(proj.projectId).get();
+        if (doc.exists && doc.data().phaseC_migrated) continue;
+        await _udb().collection('settings').doc(proj.projectId).set({
+          checklistItems:  globalChecklist.items || DEFAULT_CHECKLIST_ITEMS,
+          checklistTitle:  globalChecklist.title || 'Compliance Checklist',
+          flagItems:       globalFlags.items     || DEFAULT_FLAG_ITEMS,
+          flagsTitle:      globalFlags.title     || 'Regulatory & Incident Flags',
+          presets:         globalPresets,
+          phases:          globalPhases,
+          cardTitles:      globalCardTitles,
+          tsConfig:        globalTsConfig,
+          phaseC_migrated: true,
+          _ts:             Date.now()
+        }, {merge: true});
+        console.log('GroundLog Phase C: migrated', proj.projectName);
+      } catch(e) { console.warn('GroundLog Phase C: failed for', proj.projectName, '—', e.message); }
+    }
+    console.log('GroundLog Phase C: migration complete.');
+  } catch(e) { console.warn('GroundLog Phase C: migration error —', e.message); }
+}
+
+// ── Phase C: merge any data into the active project's settings doc ──
+function _saveProjectSettings(mergeData) {
+  const pid = _activeProjectId();
+  if (!pid || pid === 'active' || !db || !_fbReady) return;
+  _udb().collection('settings').doc(pid).set(
+    Object.assign({}, mergeData, {_ts: Date.now()}),
+    {merge: true}
+  ).catch(() => {});
+}
+
+// ── Phase C: apply all project-scoped settings from a loaded project doc ──
+function _applyProjectSettings(data) {
+  if (!data) return;
+  if (data.checklistItems) {
+    checklistItems = data.checklistItems;
+    checklistTitle = data.checklistTitle || 'Compliance Checklist';
+    saveChecklistLocal(); buildChecklist(); renderChecklistList();
+  }
+  if (data.flagItems) {
+    flagItems = data.flagItems;
+    flagsTitle = data.flagsTitle || 'Regulatory & Incident Flags';
+    saveFlagsLocal(); buildFlags(); renderFlagsList();
+  }
+  if (data.presets) {
+    presets = data.presets;
+    ss('msf_presets', presets);
+    renderPresetList(); renderAllChips();
+  }
+  if (data.phases) {
+    phases = data.phases;
+    ss('msf_phases', phases);
+    renderPhaseList(); populateSelects();
+  }
+  if (data.cardTitles && Object.keys(data.cardTitles).length) {
+    loadCardTitles(data.cardTitles);
+    try { localStorage.setItem('gl_cardTitles', JSON.stringify(data.cardTitles)); } catch {}
+  }
+  if (data.tsConfig) {
+    const cfg = Object.assign({}, TS_DEFAULTS, data.tsConfig);
+    try { localStorage.setItem('msf_ts_config', JSON.stringify(cfg)); } catch {}
+    tsLoadConfigFields();
+  }
+}
+
 // ── Sync known-projects list from Firestore → localStorage (cross-device) ──
 async function _syncProjectListFromCloud() {
   if (!db || !_fbReady) return;
@@ -4052,6 +4199,9 @@ async function loadProject(projectId, projDataOverride) {
     if (_apInput) _apInput.value = activePhaseLabel;
     renderAllChips();
 
+    // Apply project-scoped settings (Phase C) — must run before restoreFormState
+    _applyProjectSettings(projData);
+
     // Update lastUsed
     _udb().collection('settings').doc(projectId).set({ lastUsed: Date.now() }, { merge: true }).catch(() => {});
 
@@ -4077,16 +4227,25 @@ async function createProject(name, location, contractor) {
   const activeCfg = loadProjectConfig();
   const projectId = 'proj_' + Date.now();
   const projData = {
-    projectName: name,
-    preparedBy:  activeCfg.preparedBy  || '',
-    org:         activeCfg.org         || '',
-    activePhase: '',
-    contractor:  (contractor || '').trim(),
-    location:    (location   || '').trim(),
-    reviewedBy:  activeCfg.reviewedBy  || '',
-    createdAt:   Date.now(),
-    lastUsed:    Date.now(),
-    _ts:         Date.now()
+    projectName:     name,
+    preparedBy:      activeCfg.preparedBy  || '',
+    org:             activeCfg.org         || '',
+    activePhase:     '',
+    contractor:      (contractor || '').trim(),
+    location:        (location   || '').trim(),
+    reviewedBy:      activeCfg.reviewedBy  || '',
+    createdAt:       Date.now(),
+    lastUsed:        Date.now(),
+    _ts:             Date.now(),
+    checklistItems:  [...DEFAULT_CHECKLIST_ITEMS],
+    checklistTitle:  'Compliance Checklist',
+    flagItems:       [...DEFAULT_FLAG_ITEMS],
+    flagsTitle:      'Regulatory & Incident Flags',
+    presets:         Object.assign({}, DEFAULT_PRESETS),
+    phases:          [...DEFAULT_PHASES],
+    cardTitles:      {},
+    tsConfig:        Object.assign({}, TS_DEFAULTS),
+    phaseC_migrated: true
   };
   try {
     await _udb().collection('settings').doc(projectId).set(projData);
@@ -4466,6 +4625,7 @@ function tsSaveConfig(c){
   if(typeof db!=='undefined'&&db&&_fbReady){
     _udb().collection('timesheetMeta').doc('config').set(Object.assign({},c,{_ts:Date.now()})).catch(()=>{});
   }
+  _saveProjectSettings({tsConfig: c});
 }
 
 // ── Pull timesheet data from Firestore on init (runs once after Firebase ready) ──
@@ -6873,8 +7033,9 @@ async function initFirebaseLoad() {
     return;
   }
 
-  // One-time migration from single-project to multi-project structure
+  // One-time migrations
   await _glMigrateToProjects();
+  await _glMigratePhaseC();
 
   try {
     const doc = await _udb().collection('sessions').doc(_activeProjectId()).get();
