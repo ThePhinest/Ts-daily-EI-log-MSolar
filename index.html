@@ -4159,6 +4159,29 @@ async function _glMigrateDailyLogsPhaseD() {
   localStorage.setItem('gl_phaseD_logs_migrated', '1');
 }
 
+// ── Phase D fix: re-tag pre-2026-04-23 daily logs as Moraine Solar Energy Center ──
+async function _fixDailyLogProjectsByDate() {
+  if (localStorage.getItem('gl_phaseD_logs_date_fixed')) return;
+  if (!_fbReady) return;
+  const known = knownProjectsGet();
+  const morainePid = (known.find(p => /moraine/i.test(p.projectName || '')) || {}).projectId;
+  if (!morainePid) return;
+  const cutoff = '2026-04-23';
+  const all = dlGetAll();
+  const toUpdate = [];
+  Object.entries(all).forEach(([date, record]) => {
+    if (date < cutoff) {
+      record.projectId = morainePid;
+      dlSaveLocal(date, record);
+      toUpdate.push(date);
+    }
+  });
+  toUpdate.forEach(date => {
+    try { _udb().collection('dailyLogs').doc(date).set({ projectId: morainePid }, { merge: true }).catch(() => {}); } catch(e) {}
+  });
+  localStorage.setItem('gl_phaseD_logs_date_fixed', '1');
+}
+
 // ── Phase C: merge any data into the active project's settings doc ──
 function _saveProjectSettings(mergeData) {
   const pid = _activeProjectId();
@@ -6302,6 +6325,7 @@ async function calLoadCloud(){
 async function calRender(){
   await calLoadCloud();
   await _glMigrateDailyLogsPhaseD();
+  await _fixDailyLogProjectsByDate();
   await dnLoadCloud();
   // Always close day view and reset to grid/list on tab activation
   document.getElementById('cal-day-view').style.display='none';
