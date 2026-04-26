@@ -245,6 +245,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--amber)}
 input[readonly]{color:var(--muted2);cursor:default}
 textarea{resize:vertical;min-height:88px;line-height:1.6}
 textarea.short{min-height:56px}textarea.tall{min-height:120px;font-size:16px;touch-action:manipulation}
+textarea.auto-expand{overflow-y:hidden;resize:none}
 select{cursor:pointer}
 
 /* PRESET CHIPS */
@@ -630,7 +631,7 @@ body.theme-light .preset-chip:hover{background:rgba(0,76,84,0.18);border-color:v
     </div>
     <div class="nd-body">
       <div class="nd-msg" style="font-size:12px;margin-bottom:10px">Add a reminder or note for this day. It will show up when the day arrives.</div>
-      <textarea id="daynote-text" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--body);font-size:14px;padding:10px;resize:vertical;min-height:100px;line-height:1.5;margin-bottom:12px" placeholder="e.g. Crew mobilization expected, pre-inspection walkthrough scheduled…"></textarea>
+      <textarea id="daynote-text" class="auto-expand" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--body);font-size:14px;padding:10px;min-height:100px;line-height:1.5;margin-bottom:12px" placeholder="e.g. Crew mobilization expected, pre-inspection walkthrough scheduled…"></textarea>
       <div class="nd-btns">
         <button class="nd-btn nd-btn-primary" onclick="dayNoteSave()">
           <span class="nd-btn-icon">💾</span> Save Note
@@ -1104,7 +1105,7 @@ body.theme-light .preset-chip:hover{background:rgba(0,76,84,0.18);border-color:v
         <div class="field span2"><label>Town / County</label><input type="text" id="location" value="Town of Burns, Allegany County, NY" readonly=""></div>
         <div class="field"><label>Active Contractor</label>
           <div style="display:flex;gap:6px;align-items:center">
-            <input type="text" id="contractor" value="Supreme Industries" placeholder="— none on site —" style="flex:1">
+            <input type="text" id="contractor" placeholder="— none on site —" style="flex:1">
             <button class="btn btn-outline" style="font-size:11px;padding:6px 10px;white-space:nowrap" onclick="document.getElementById('contractor').value='';cloudSave&&cloudSave()" title="Clear contractor">✕ Clear</button>
           </div>
         </div>
@@ -1200,7 +1201,7 @@ body.theme-light .preset-chip:hover{background:rgba(0,76,84,0.18);border-color:v
         <div class="field">
           <label>Field Observations / Inspection Notes</label>
           <div class="preset-strip" id="chips-inspSummary"><button class="preset-chip" type="button" title="EI attended the morning safety meeting/tailgate at 6:30 AM">EI attended the morning safety meeting/tailgate at 6:30 AM</button><button class="preset-chip" type="button" title="EI conducted walkthrough inspection of all active felling areas">EI conducted walkthrough inspection of all active fellin…</button><button class="preset-chip" type="button" title="Directional felling observed — trees felled away from wetland buffers and LOD boundaries">Directional felling observed — trees felled away from we…</button><button class="preset-chip" type="button" title="Stump heights observed at or below 6 inches above grade">Stump heights observed at or below 6 inches above grade</button><button class="preset-chip" type="button" title="Slash and felled material managed within LOD">Slash and felled material managed within LOD</button><button class="preset-chip" type="button" title="All work observed within staked Limits of Disturbance (LOD)">All work observed within staked Limits of Disturbance (L…</button><button class="preset-chip" type="button" title="Wetland and stream buffer boundaries remained intact and undisturbed">Wetland and stream buffer boundaries remained intact and…</button><button class="preset-chip" type="button" title="Access routes and staging areas within approved footprint">Access routes and staging areas within approved footprint</button><button class="preset-chip" type="button" title="No turbid discharge or sediment-laden runoff observed at site perimeter">No turbid discharge or sediment-laden runoff observed at…</button></div>
-          <textarea class="tall" id="inspSummary" placeholder="Describe areas inspected, notable observations, work conducted, and relevant field conditions…"></textarea>
+          <textarea class="tall auto-expand" id="inspSummary" placeholder="Describe areas inspected, notable observations, work conducted, and relevant field conditions…"></textarea>
         </div>
         <div class="g g3">
           <div class="field"><label>Agency Inspection</label><input type="text" id="agencyInsp" placeholder="Agency, name, notes — or leave blank"></div>
@@ -1339,7 +1340,7 @@ body.theme-light .preset-chip:hover{background:rgba(0,76,84,0.18);border-color:v
       <div class="field">
         <label>Directives, communications, and coordination notes</label>
         <div class="preset-strip" id="chips-genComms"><button class="preset-chip" type="button" title="Reminded crew of LOD limits and buffer no-entry zones prior to start of operations">Reminded crew of LOD limits and buffer no-entry zones pr…</button><button class="preset-chip" type="button" title="Directed contractor to verify LOD flagging before expanding into new areas">Directed contractor to verify LOD flagging before expand…</button><button class="preset-chip" type="button" title="Discussed stump height requirements with crew foreman">Discussed stump height requirements with crew foreman</button><button class="preset-chip" type="button" title="Coordinator notified of anticipated change in work area for tomorrow">Coordinator notified of anticipated change in work area …</button><button class="preset-chip" type="button" title="Confirmed post-storm inspection required prior to resuming work">Confirmed post-storm inspection required prior to resumi…</button><button class="preset-chip" type="button" title="Environmental management notified of access route condition concern">Environmental management notified of access route condit…</button></div>
-        <textarea class="tall" id="genComms" placeholder="Document directives issued, field coordination, supervisor communications, or items discussed that don&#39;t rise to a formal compliance level…"></textarea>
+        <textarea class="tall auto-expand" id="genComms" placeholder="Document directives issued, field coordination, supervisor communications, or items discussed that don&#39;t rise to a formal compliance level…"></textarea>
       </div>
     </div>
   </div>
@@ -1355,7 +1356,7 @@ body.theme-light .preset-chip:hover{background:rgba(0,76,84,0.18);border-color:v
       <div class="field">
         <label>Anticipated work items for tomorrow — one item per line</label>
         <div class="preset-strip" id="chips-lookahead"><button class="preset-chip" type="button" title="Continue tree felling operations in active areas">Continue tree felling operations in active areas</button><button class="preset-chip" type="button" title="Expand felling into adjacent area per approved plan">Expand felling into adjacent area per approved plan</button><button class="preset-chip" type="button" title="EI to conduct LOD walk prior to start of operations">EI to conduct LOD walk prior to start of operations</button><button class="preset-chip" type="button" title="Equipment delivery / crew mobilization expected on site">Equipment delivery / crew mobilization expected on site</button><button class="preset-chip" type="button" title="Anticipated weather event — monitor forecast, standby for stop-work directive">Anticipated weather event — monitor forecast, standby fo…</button><button class="preset-chip" type="button" title="Post-storm inspection required prior to resuming work">Post-storm inspection required prior to resuming work</button><button class="preset-chip" type="button" title="No work anticipated — weather or crew constraint">No work anticipated — weather or crew constraint</button></div>
-        <textarea class="tall" id="lookahead" placeholder="Continue tree felling operations in Area 4
+        <textarea class="tall auto-expand" id="lookahead" placeholder="Continue tree felling operations in Area 4
 Equipment delivery — additional chainsaw crews expected
 EI to conduct LOD walk prior to start of operations"></textarea>
       </div>
@@ -3249,7 +3250,7 @@ async function saveChecklistCloud(){
 }
 async function loadChecklistCloud(){
   if(!db)return;
-  try{const doc=await _udb().collection('config').doc('checklist').get();if(doc.exists){const d=doc.data();checklistItems=d.items||DEFAULT_CHECKLIST_ITEMS;checklistTitle=d.title||'Compliance Checklist';saveChecklistLocal();buildChecklist();renderChecklistList();}}catch(e){}
+  try{const doc=await _udb().collection('config').doc('checklist').get();if(doc.exists){const d=doc.data();checklistItems=d.items||DEFAULT_CHECKLIST_ITEMS;checklistTitle=d.title||'Compliance Checklist';saveChecklistLocal();buildChecklist();renderChecklistList();try{const s=JSON.parse(localStorage.getItem('msf_autosave')||'{}');Object.entries(s.checklist||{}).forEach(([id,{checked,note}])=>{const cb=document.getElementById(id);if(cb){cb.checked=checked;if(checked){const nw=document.getElementById(id+'-nw');if(nw)nw.classList.add('vis')}}const nt=document.getElementById(id+'-note');if(nt)nt.value=note;});}catch{}}}catch(e){}
 }
 function loadFlagsConfig(){
   try{const raw=localStorage.getItem('msf_flags_config');if(raw){const d=JSON.parse(raw);flagItems=d.items||DEFAULT_FLAG_ITEMS;flagsTitle=d.title||'Regulatory & Incident Flags';}}catch{}
@@ -3263,7 +3264,7 @@ async function saveFlagsCloud(){
 }
 async function loadFlagsCloud(){
   if(!db)return;
-  try{const doc=await _udb().collection('config').doc('flags').get();if(doc.exists){const d=doc.data();flagItems=d.items||DEFAULT_FLAG_ITEMS;flagsTitle=d.title||'Regulatory & Incident Flags';saveFlagsLocal();buildFlags();renderFlagsList();}}catch(e){}
+  try{const doc=await _udb().collection('config').doc('flags').get();if(doc.exists){const d=doc.data();flagItems=d.items||DEFAULT_FLAG_ITEMS;flagsTitle=d.title||'Regulatory & Incident Flags';saveFlagsLocal();buildFlags();renderFlagsList();try{const s=JSON.parse(localStorage.getItem('msf_autosave')||'{}');Object.entries(s.checkboxes||{}).forEach(([id,val])=>{const el=document.getElementById(id);if(el)el.checked=val});Object.entries(s.flagNotes||{}).forEach(([f,val])=>{const el=document.getElementById('flag-'+f+'-note');if(el)el.value=val;});flagItems.forEach(f=>{if(document.getElementById(f.id)?.checked){const nw=document.getElementById(f.id+'-nw');if(nw)nw.classList.add('vis');}});}catch{}}}catch(e){}
 }
 function renderChecklistList(){
   const ul=document.getElementById('list-checklist');if(!ul)return;
@@ -3379,16 +3380,16 @@ function addCrew(){
       <div class="field" style="margin-bottom:10px">
         <label>Activities Observed</label>
         <div class="preset-strip" id="chips-crew-${id}-acts"></div>
-        <textarea class="short" id="crew-${id}-acts" placeholder="Describe contractor activities observed…"></textarea>
+        <textarea class="short auto-expand" id="crew-${id}-acts" placeholder="Describe contractor activities observed…"></textarea>
       </div>
       <div class="field" style="margin-bottom:10px">
         <label>Env. Compliance Observations</label>
         <div class="preset-strip" id="chips-crew-${id}-envcomp"></div>
-        <textarea class="short" id="crew-${id}-envcomp" placeholder="Note compliance or any deficiency observed for this crew…"></textarea>
+        <textarea class="short auto-expand" id="crew-${id}-envcomp" placeholder="Note compliance or any deficiency observed for this crew…"></textarea>
       </div>
       <div class="g g2">
-        <div class="field"><label>Issues / Non-Compliance (Level 1–4 if known)</label><textarea class="short" id="crew-${id}-issues" placeholder="e.g. Level 2 — slash material observed 3 ft beyond LOD at north boundary…"></textarea></div>
-        <div class="field"><label>Additional Notes</label><textarea class="short" id="crew-${id}-notes" placeholder="Any other notes for this crew member or area…"></textarea></div>
+        <div class="field"><label>Issues / Non-Compliance (Level 1–4 if known)</label><textarea class="short auto-expand" id="crew-${id}-issues" placeholder="e.g. Level 2 — slash material observed 3 ft beyond LOD at north boundary…"></textarea></div>
+        <div class="field"><label>Additional Notes</label><textarea class="short auto-expand" id="crew-${id}-notes" placeholder="Any other notes for this crew member or area…"></textarea></div>
       </div>
     </div>`;
   document.getElementById('crewContainer').appendChild(d);
@@ -3959,6 +3960,7 @@ function restoreFormState(state){
   });
   updateCrewBadge();
   calcMiles();calcHours();
+  setTimeout(()=>document.querySelectorAll('textarea.auto-expand').forEach(autoResize),0);
 }
 
 function buildCrewHTML(id, num){
@@ -3975,16 +3977,16 @@ function buildCrewHTML(id, num){
       <div class="field" style="margin-bottom:10px">
         <label>Activities Observed</label>
         <div class="preset-strip" id="chips-crew-${id}-acts"></div>
-        <textarea class="short" id="crew-${id}-acts" placeholder="Describe contractor activities observed…"></textarea>
+        <textarea class="short auto-expand" id="crew-${id}-acts" placeholder="Describe contractor activities observed…"></textarea>
       </div>
       <div class="field" style="margin-bottom:10px">
         <label>Env. Compliance Observations</label>
         <div class="preset-strip" id="chips-crew-${id}-envcomp"></div>
-        <textarea class="short" id="crew-${id}-envcomp" placeholder="Note compliance or any deficiency observed for this crew…"></textarea>
+        <textarea class="short auto-expand" id="crew-${id}-envcomp" placeholder="Note compliance or any deficiency observed for this crew…"></textarea>
       </div>
       <div class="g g2">
-        <div class="field"><label>Issues / Non-Compliance (Level 1–4 if known)</label><textarea class="short" id="crew-${id}-issues" placeholder="e.g. Level 2 — slash material observed 3 ft beyond LOD…"></textarea></div>
-        <div class="field"><label>Additional Notes</label><textarea class="short" id="crew-${id}-notes" placeholder="Any other notes…"></textarea></div>
+        <div class="field"><label>Issues / Non-Compliance (Level 1–4 if known)</label><textarea class="short auto-expand" id="crew-${id}-issues" placeholder="e.g. Level 2 — slash material observed 3 ft beyond LOD…"></textarea></div>
+        <div class="field"><label>Additional Notes</label><textarea class="short auto-expand" id="crew-${id}-notes" placeholder="Any other notes…"></textarea></div>
       </div>
     </div>`;
 }
@@ -4004,6 +4006,10 @@ function debouncedAutoSave(){ clearTimeout(_asTimer); _asTimer=setTimeout(_autoS
 function _onInputEvent(){ debouncedAutoSave(); }
 document.addEventListener('input',  _onInputEvent);
 document.addEventListener('change', _onInputEvent);
+
+// AUTO-RESIZE TEXTAREAS
+function autoResize(el){ el.style.height='auto'; el.style.height=el.scrollHeight+'px'; }
+document.addEventListener('input', function(e){ if(e.target.classList.contains('auto-expand')) autoResize(e.target); });
 
 // ═══════════════════════════════════════════
 // COPY JSON EXPORT (report fields only)
@@ -4940,7 +4946,7 @@ function applyTheme(t){
   const isLight = t==='light' || (t==='system' && !prefersDark);
   document.body.classList.toggle('theme-light', isLight);
   const btn=document.getElementById('theme-btn');
-  if(btn) btn.textContent = t==='light' ? '🌙' : t==='system' ? '⊙' : '☀';
+  if(btn) btn.textContent = t==='light' ? '☀' : t==='system' ? '⊙' : '🌙';
   try{ localStorage.setItem('phinest_theme', t); }catch{}
 }
 function toggleTheme(){
@@ -5299,7 +5305,7 @@ async function dayNoteOpen(date){
   if(textarea) textarea.value=existing?existing.note:'';
   if(clearBtn) clearBtn.style.display=existing?'':'none';
   document.getElementById('daynote-overlay').style.display='flex';
-  setTimeout(()=>textarea?.focus(),100);
+  setTimeout(()=>{textarea?.focus();if(textarea)autoResize(textarea);},100);
 }
 async function dayNoteSave(){
   if(!_dnCurrentDate)return;
