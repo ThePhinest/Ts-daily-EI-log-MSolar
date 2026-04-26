@@ -3906,7 +3906,7 @@ function saveProjectConfig() {
   const _pid = _activeProjectId();
   try{if(typeof db!=='undefined'&&db&&_fbReady){
     _udb().collection('settings').doc('projectConfig').set(Object.assign({},cfg,{_ts:Date.now()}),{merge:true}).catch(()=>{});
-    _udb().collection('projects').doc(_pid).set(Object.assign({},cfg,{lastUsed:Date.now(),_ts:Date.now()}),{merge:true}).catch(()=>{});
+    if (_pid !== 'active') _udb().collection('settings').doc(_pid).set(Object.assign({},cfg,{lastUsed:Date.now(),_ts:Date.now()}),{merge:true}).catch(()=>{});
   }}catch(e){}
   knownProjectsUpsert(cfg, _pid);
   renderKnownProjectsDatalist();
@@ -3921,6 +3921,7 @@ function saveProjectConfig() {
 }
 
 // ── One-time migration: convert single-project structure → multi-project ──
+// Project configs stored in settings/{projectId} docs (uses existing allowed collection).
 async function _glMigrateToProjects() {
   if (localStorage.getItem('gl_active_project_id')) return; // already migrated
   if (!db) return;
@@ -3930,8 +3931,16 @@ async function _glMigrateToProjects() {
     const activeCfg = cfgDoc.exists ? Object.assign({}, cfgDoc.data()) : loadProjectConfig();
     delete activeCfg._ts;
 
-    // Build list of known projects — start from localStorage, ensure active is included
+    // Also try to pull the full known-projects list from Firestore (cross-device)
     let known = knownProjectsGet();
+    try {
+      const knownDoc = await db.collection('settings').doc('knownProjects').get();
+      if (knownDoc.exists && knownDoc.data().projects && knownDoc.data().projects.length > known.length) {
+        known = knownDoc.data().projects;
+      }
+    } catch(e) {}
+
+    // Ensure active project is in the list
     if (!known.some(p => p.projectName === activeCfg.projectName)) known.push(activeCfg);
 
     const projectIndex = [];
@@ -3954,7 +3963,8 @@ async function _glMigrateToProjects() {
         lastUsed:    isActive ? now : 0,
         _ts:         now
       };
-      await db.collection('projects').doc(projectId).set(projDoc);
+      // Store in settings/{projectId} — uses existing allowed Firestore collection
+      await db.collection('settings').doc(projectId).set(projDoc);
       if (isActive) activeProjectId = projectId;
       projectIndex.push({ projectId, projectName: p.projectName, location: p.location || '', lastUsed: projDoc.lastUsed });
     }
@@ -3974,7 +3984,30 @@ async function _glMigrateToProjects() {
     console.log('GroundLog: migrated to multi-project. Active:', activeProjectId);
   } catch(e) {
     console.warn('GroundLog: project migration failed —', e.message);
+    // Safe fallback: use 'active' as projectId so sessions/active path still works
+    localStorage.setItem('gl_active_project_id', 'active');
   }
+}
+
+// ── Sync known-projects list from Firestore → localStorage (cross-device) ──
+async function _syncProjectListFromCloud() {
+  if (!db || !_fbReady) return;
+  try {
+    const doc = await _udb().collection('settings').doc('knownProjects').get();
+    if (!doc.exists) return;
+    const remote = doc.data().projects || [];
+    if (!remote.length) return;
+    // Merge: remote wins for any project not in local list
+    const local = knownProjectsGet();
+    const merged = Object.values(
+      [...local, ...remote].reduce((acc, p) => {
+        const key = p.projectId || p.projectName;
+        if (!acc[key] || (p.lastUsed || 0) > (acc[key].lastUsed || 0)) acc[key] = p;
+        return acc;
+      }, {})
+    );
+    localStorage.setItem('gl_known_projects', JSON.stringify(merged));
+  } catch(e) {}
 }
 
 // ── Load (switch to) an existing project ──
@@ -3983,7 +4016,7 @@ async function loadProject(projectId, projDataOverride) {
   try {
     await cloudSave(); // preserve current session before switching
     const projDoc = projDataOverride ? { data: () => projDataOverride, exists: true }
-      : await _udb().collection('projects').doc(projectId).get();
+      : await _udb().collection('settings').doc(projectId).get();
     if (!projDoc.exists) return;
     const projData = projDoc.data ? projDoc.data() : projDataOverride;
 
@@ -3999,7 +4032,7 @@ async function loadProject(projectId, projDataOverride) {
     applyProjectConfig();
 
     // Update lastUsed
-    _udb().collection('projects').doc(projectId).set({ lastUsed: Date.now() }, { merge: true }).catch(() => {});
+    _udb().collection('settings').doc(projectId).set({ lastUsed: Date.now() }, { merge: true }).catch(() => {});
 
     // Load this project's session
     const sessionDoc = await _udb().collection('sessions').doc(projectId).get();
@@ -4035,7 +4068,7 @@ async function createProject(name, location, contractor) {
     _ts:         Date.now()
   };
   try {
-    await _udb().collection('projects').doc(projectId).set(projData);
+    await _udb().collection('settings').doc(projectId).set(projData);
     knownProjectsUpsert(projData, projectId);
     await loadProject(projectId, projData);
     showPage('config');
@@ -6826,21 +6859,37 @@ async function initFirebaseLoad() {
     const doc = await _udb().collection('sessions').doc(_activeProjectId()).get();
 
     if (!doc.exists) {
-      // Cloud doc missing — either first use OR reset was triggered on another device
-      // Check if we have local data with a timestamp (meaning it's stale, not first use)
-      let localTs = 0;
+      // Project session missing — try sessions/active as fallback (handles fresh migration)
+      let fallbackRestored = false;
       try {
-        const local = JSON.parse(localStorage.getItem('msf_autosave') || '{}');
-        localTs = local._ts || 0;
-      } catch {}
+        const fallbackDoc = await _udb().collection('sessions').doc('active').get();
+        if (fallbackDoc.exists) {
+          const fallbackState = fallbackDoc.data();
+          const fallbackTs = fallbackState._ts || 0;
+          let localTs2 = 0;
+          try { localTs2 = JSON.parse(localStorage.getItem('msf_autosave') || '{}')._ts || 0; } catch {}
+          if (fallbackTs >= localTs2) {
+            document.getElementById('crewContainer').innerHTML = '';
+            crewIds = []; crewSeq = 0;
+            restoreFormState(fallbackState);
+            try { localStorage.setItem('msf_autosave', JSON.stringify(fallbackState)); } catch {}
+            // Promote sessions/active to project-scoped path
+            _udb().collection('sessions').doc(_activeProjectId()).set(fallbackState).catch(() => {});
+            showCloudBanner('☁ Session restored from cloud — picked up where you left off.');
+            fallbackRestored = true;
+          }
+        }
+      } catch(e) {}
 
-      if (localTs > 0) {
-        // Had local data but cloud is gone — reset happened on another device
-                _resetFormCore();
-        showCloudBanner('↺ Log was reset on another device — starting fresh.');
-      } else {
-        // Genuine first use — nothing to restore
-              }
+      if (!fallbackRestored) {
+        // True first use or cloud was intentionally reset on another device
+        let localTs = 0;
+        try { const local = JSON.parse(localStorage.getItem('msf_autosave') || '{}'); localTs = local._ts || 0; } catch {}
+        if (localTs > 0) {
+          _resetFormCore();
+          showCloudBanner('↺ Log was reset on another device — starting fresh.');
+        }
+      }
       _fbReady = true;
       setSyncStatus('synced');
       phInit();
@@ -6848,6 +6897,7 @@ async function initFirebaseLoad() {
       tsLoadFromFirestore();
       syncProjectConfigFromCloud();
       syncPresetsFromCloud();
+      _syncProjectListFromCloud();
       checkNewDay();
       loadChecklistCloud();
       loadFlagsCloud();
@@ -6864,7 +6914,7 @@ async function initFirebaseLoad() {
     } catch {}
 
     if (cloudTs > localTs) {
-            document.getElementById('crewContainer').innerHTML = '';
+      document.getElementById('crewContainer').innerHTML = '';
       crewIds = []; crewSeq = 0;
       restoreFormState(cloudState);
       try { localStorage.setItem('msf_autosave', JSON.stringify(cloudState)); } catch {}
@@ -6876,6 +6926,7 @@ async function initFirebaseLoad() {
       tsLoadFromFirestore();
       syncProjectConfigFromCloud();
       syncPresetsFromCloud();
+      _syncProjectListFromCloud();
       checkNewDay();
       loadChecklistCloud();
       loadFlagsCloud();
@@ -6886,6 +6937,7 @@ async function initFirebaseLoad() {
       tsLoadFromFirestore();
       syncProjectConfigFromCloud();
       syncPresetsFromCloud();
+      _syncProjectListFromCloud();
       checkNewDay();
       loadChecklistCloud();
       loadFlagsCloud();
@@ -6896,6 +6948,7 @@ async function initFirebaseLoad() {
       tsLoadFromFirestore();
       syncProjectConfigFromCloud();
       syncPresetsFromCloud();
+      _syncProjectListFromCloud();
       checkNewDay();
       loadChecklistCloud();
       loadFlagsCloud();
