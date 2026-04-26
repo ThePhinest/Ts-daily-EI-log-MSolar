@@ -4139,6 +4139,26 @@ async function _glMigrateCompliancePhaseD() {
   localStorage.setItem('gl_phaseD_cl_migrated', '1');
 }
 
+// ── Phase D: one-time migration — tag existing daily log archives with active projectId ──
+async function _glMigrateDailyLogsPhaseD() {
+  if (localStorage.getItem('gl_phaseD_logs_migrated')) return;
+  if (!_fbReady) return;
+  const pid = _activeProjectId();
+  if (!pid || pid === 'default') return;
+  const all = dlGetAll();
+  const toUpdate = Object.entries(all).filter(([, v]) => !v.projectId);
+  if (!toUpdate.length) { localStorage.setItem('gl_phaseD_logs_migrated', '1'); return; }
+  toUpdate.forEach(([date, record]) => {
+    record.projectId = pid;
+    dlSaveLocal(date, record);
+  });
+  // Firestore: merge-write projectId onto each doc (fire-and-forget)
+  toUpdate.forEach(([date]) => {
+    try { _udb().collection('dailyLogs').doc(date).set({ projectId: pid }, { merge: true }).catch(() => {}); } catch(e) {}
+  });
+  localStorage.setItem('gl_phaseD_logs_migrated', '1');
+}
+
 // ── Phase C: merge any data into the active project's settings doc ──
 function _saveProjectSettings(mergeData) {
   const pid = _activeProjectId();
@@ -6281,6 +6301,7 @@ async function calLoadCloud(){
 
 async function calRender(){
   await calLoadCloud();
+  await _glMigrateDailyLogsPhaseD();
   await dnLoadCloud();
   // Always close day view and reset to grid/list on tab activation
   document.getElementById('cal-day-view').style.display='none';
