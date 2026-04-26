@@ -3838,10 +3838,18 @@ async function syncProjectConfigFromCloud() {
   while(!_fbReady && waited<5000){ await new Promise(r=>setTimeout(r,200)); waited+=200; }
   if(!_fbReady) return;
   try {
-    const doc = await _udb().collection('settings').doc('projectConfig').get();
-    if(doc.exists) {
-      const data = doc.data();
-      delete data._ts;
+    // Read per-project doc first; fall back to global projectConfig for legacy/first-run
+    const pid = _activeProjectId();
+    let doc;
+    if (pid && pid !== 'active' && pid !== 'default') {
+      doc = await _udb().collection('settings').doc(pid).get();
+    }
+    if (!doc || !doc.exists) {
+      doc = await _udb().collection('settings').doc('projectConfig').get();
+    }
+    if(doc && doc.exists) {
+      const data = Object.assign({}, doc.data());
+      delete data.lastUsed; delete data.createdAt; delete data._ts;
       localStorage.setItem('msf_projectconfig', JSON.stringify(data));
         applyProjectConfig();
         ['projectName','preparedBy','org','activePhase','contractor','location','reviewedBy'].forEach(k=>{
@@ -4038,6 +4046,11 @@ async function loadProject(projectId, projDataOverride) {
       contractor:projData.contractor||'', location:projData.location||'', reviewedBy:projData.reviewedBy||'' };
     localStorage.setItem('msf_projectconfig', JSON.stringify(cfg));
     applyProjectConfig();
+    activePhaseLabel = cfg.activePhase || activePhaseLabel;
+    ss('msf_activephase', activePhaseLabel);
+    const _apInput = document.getElementById('activePhaseInput');
+    if (_apInput) _apInput.value = activePhaseLabel;
+    renderAllChips();
 
     // Update lastUsed
     _udb().collection('settings').doc(projectId).set({ lastUsed: Date.now() }, { merge: true }).catch(() => {});
