@@ -6385,19 +6385,34 @@ function setSyncStatus(s) {
 
 function _reconnectFirebase() {
   if (!db) {
-        try {
+    try {
       const _fbApp = firebase.apps.length ? firebase.apps[0] : firebase.initializeApp(_fbConfig);
       db = _fbApp.firestore();
-            cloudSave();
-    } catch(e) {
-          }
+      cloudSave();
+    } catch(e) {}
     return;
   }
   db.enableNetwork().then(function() {
-        setSyncStatus('syncing');
-    cloudSave();
-  }).catch(function(e) {
-      });
+    setSyncStatus('syncing');
+    _udb().collection('sessions').doc('active').get().then(function(doc) {
+      const cloudTs = doc.exists ? (doc.data()._ts || 0) : 0;
+      let localTs = 0;
+      try { localTs = JSON.parse(localStorage.getItem('msf_autosave') || '{}')._ts || 0; } catch {}
+      if (localTs > cloudTs) {
+        cloudSave();
+      } else if (cloudTs > localTs && doc.exists) {
+        const cloudState = doc.data();
+        document.getElementById('crewContainer').innerHTML = '';
+        crewIds = []; crewSeq = 0;
+        restoreFormState(cloudState);
+        try { localStorage.setItem('msf_autosave', JSON.stringify(cloudState)); } catch {}
+        showCloudBanner('☁ Synced — picked up changes from another device.');
+        setSyncStatus('synced');
+      } else {
+        setSyncStatus('synced');
+      }
+    }).catch(function() { cloudSave(); });
+  }).catch(function(e) {});
 }
 
 // ── Browser online/offline events ──
@@ -6406,6 +6421,26 @@ window.addEventListener('online', function() {
 });
 window.addEventListener('offline', function() {
     setSyncStatus('offline');
+});
+
+// ── Visibility change — re-sync when device wakes or user returns to tab ──
+document.addEventListener('visibilitychange', function() {
+  if (document.visibilityState !== 'visible') return;
+  if (!db || !_fbReady) return;
+  _udb().collection('sessions').doc('active').get().then(function(doc) {
+    if (!doc.exists) return;
+    const cloudState = doc.data();
+    const cloudTs = cloudState._ts || 0;
+    let localTs = 0;
+    try { localTs = JSON.parse(localStorage.getItem('msf_autosave') || '{}')._ts || 0; } catch {}
+    if (cloudTs > localTs) {
+      document.getElementById('crewContainer').innerHTML = '';
+      crewIds = []; crewSeq = 0;
+      restoreFormState(cloudState);
+      try { localStorage.setItem('msf_autosave', JSON.stringify(cloudState)); } catch {}
+      showCloudBanner('☁ Synced — picked up changes from another device.');
+    }
+  }).catch(function() {});
 });
 
 // ── Cloud save (called with debounce from autoSave) ──
