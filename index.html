@@ -7160,6 +7160,16 @@ async function initFirebaseLoad() {
     return;
   }
 
+  // If localStorage was wiped, recover the active project ID from Firestore before proceeding
+  if (!localStorage.getItem('gl_active_project_id')) {
+    try {
+      const apDoc = await _udb().collection('settings').doc('activeProject').get();
+      if (apDoc.exists && apDoc.data().projectId) {
+        localStorage.setItem('gl_active_project_id', apDoc.data().projectId);
+      }
+    } catch(e) {}
+  }
+
   // One-time migrations
   await _glMigrateToProjects();
   await _glMigratePhaseC();
