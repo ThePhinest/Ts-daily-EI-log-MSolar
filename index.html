@@ -10,18 +10,10 @@
 <link rel="icon" type="image/png" href="icon-192.png">
 <link rel="manifest" href="manifest.json">
 <title>GroundLog — Field Log</title>
-<!-- Firebase SDKs — CDN (SW v6 passes external requests through untouched) -->
-<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-storage-compat.js"></script>
-<script src="https://unpkg.com/docx@8.5.0/build/index.umd.js"></script>
+<script type="module" src="/src/main.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@300;700&family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link href="https://api.mapbox.com/mapbox-gl-js/v3.3.0/mapbox-gl.css" rel="stylesheet">
-<script src="https://api.mapbox.com/mapbox-gl-js/v3.3.0/mapbox-gl.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/exifr@7.1.3/dist/full.umd.js"></script>
 <style>
 :root {
   /* GroundLog — Dark */
@@ -6791,25 +6783,22 @@ const _fbConfig = {
 };
 // Firebase debug panel removed
 
-// Firebase init — check for existing app to avoid duplicate init error on reload
-var db = null;
-var storage = null;
-var auth = null;
-var _currentUser = null;
-var _fbReady = false;
-if (typeof firebase !== 'undefined') {
-  try {
-    const _fbApp = firebase.apps.length ? firebase.apps[0] : firebase.initializeApp(_fbConfig);
-    db = _fbApp.firestore();
-    storage = _fbApp.storage();
-    auth = _fbApp.auth();
-    console.log('Phinest EI: Firebase initialized OK');
-  } catch(e) {
-    console.error('Phinest EI: Firebase init failed —', e.message);
+// Firebase init — deferred to DOMContentLoaded so src/main.js (npm modules) are ready first
+document.addEventListener('DOMContentLoaded', function _initFirebase() {
+  if (typeof firebase !== 'undefined') {
+    try {
+      const _fbApp = firebase.apps.length ? firebase.apps[0] : firebase.initializeApp(_fbConfig);
+      db = _fbApp.firestore();
+      storage = _fbApp.storage();
+      auth = _fbApp.auth();
+      console.log('Phinest EI: Firebase initialized OK');
+    } catch(e) {
+      console.error('Phinest EI: Firebase init failed —', e.message);
+    }
+  } else {
+    console.error('Phinest EI: firebase global not defined');
   }
-} else {
-  console.error('Phinest EI: firebase global not defined');
-}
+});
 
 // ── Onboarding ──
 var _obSlideIndex = 0;
@@ -6918,32 +6907,34 @@ function _obInitSwipe() {
   }, { passive: true });
 }
 
-// ── Auth state gate — show sign-in page until user is confirmed ──
-if (auth) {
-  // Handle Google redirect result on page load (iOS PWA requires redirect flow, not popup)
-  auth.getRedirectResult().catch(function(e) {
-    if (e.code && e.code !== 'auth/no-current-user') {
-      const errEl = document.getElementById('si-error');
-      if (errEl) errEl.textContent = _siAuthError ? _siAuthError(e.code) : 'Sign-in failed. Please try again.';
-    }
-  });
-  auth.onAuthStateChanged(function(user) {
-    document.getElementById('page-auth-loading').style.display = 'none';
-    if (user) {
-      _currentUser = user;
-      document.getElementById('page-signin').style.display = 'none';
-      const emailEl = document.getElementById('cfg-account-email');
-      if (emailEl) emailEl.textContent = user.email || user.displayName || 'Signed in';
-      obCheck();
-    } else {
-      _currentUser = null;
-      document.getElementById('page-signin').style.display = 'flex';
-    }
-  });
-} else {
-  // Auth unavailable — proceed without gate (fallback)
-  initFirebaseLoad();
-}
+// ── Auth state gate — fires after _initFirebase (same DOMContentLoaded, registration order) ──
+document.addEventListener('DOMContentLoaded', function() {
+  if (auth) {
+    // Handle Google redirect result on page load (iOS PWA requires redirect flow, not popup)
+    auth.getRedirectResult().catch(function(e) {
+      if (e.code && e.code !== 'auth/no-current-user') {
+        const errEl = document.getElementById('si-error');
+        if (errEl) errEl.textContent = _siAuthError ? _siAuthError(e.code) : 'Sign-in failed. Please try again.';
+      }
+    });
+    auth.onAuthStateChanged(function(user) {
+      document.getElementById('page-auth-loading').style.display = 'none';
+      if (user) {
+        _currentUser = user;
+        document.getElementById('page-signin').style.display = 'none';
+        const emailEl = document.getElementById('cfg-account-email');
+        if (emailEl) emailEl.textContent = user.email || user.displayName || 'Signed in';
+        obCheck();
+      } else {
+        _currentUser = null;
+        document.getElementById('page-signin').style.display = 'flex';
+      }
+    });
+  } else {
+    // Auth unavailable — proceed without gate (fallback)
+    initFirebaseLoad();
+  }
+});
 
 // ── Inject sync status indicator into app bar ──
 (function(){
