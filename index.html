@@ -1129,7 +1129,7 @@ body.theme-light .preset-chip:hover{background:rgba(0,76,84,0.18);border-color:v
         <div class="field"><label>Report Date</label><input type="date" id="reportDate"></div>
         <div class="field"><label>Prepared By</label><input type="text" id="preparedBy" value="Tim Shortz" readonly></div>
         <div class="field"><label>Organization</label><input type="text" id="org" value="London Environmental LLC" readonly></div>
-        <div class="field span2"><label>Active Phase</label><input type="text" id="activePhase" value="Phase 1 — Tree Felling" readonly></div>
+        <div class="field span2"><label>Current Activity</label><input type="text" id="activePhase" value="Phase 1 — Tree Felling" readonly></div>
         <div class="field span2"><label>Town / County</label><input type="text" id="location" value="Town of Burns, Allegany County, NY" readonly=""></div>
         <div class="field"><label>Active Contractor</label>
           <div style="display:flex;gap:6px;align-items:center">
@@ -1890,7 +1890,7 @@ EI to conduct LOD walk prior to start of operations"></textarea>
     <div class="card-body" style="padding:13px 17px">
       <div style="font-family:var(--mono);font-size:11px;color:var(--muted2);line-height:1.75">
         <span style="color:var(--amber);font-weight:500">Config &amp; Presets</span> — Manage quick-insert chips that appear above text fields in the daily log.<br>
-        Tag each preset to a phase. Only <strong style="color:var(--text)">active phase</strong> presets (plus "All Phases") appear as chips. All edits save to this browser automatically.
+        All chips appear in the daily log. All edits save to this browser automatically.
       </div>
     </div>
   </div>
@@ -1919,7 +1919,7 @@ EI to conduct LOD walk prior to start of operations"></textarea>
         <div class="field"><label>Project Name</label><input type="text" id="cfg-projectName" placeholder="Moraine Solar Energy Center" list="known-projects-list" oninput="onProjectNameInput(this.value)"><datalist id="known-projects-list"></datalist></div>
         <div class="field"><label>Prepared By</label><input type="text" id="cfg-preparedBy" placeholder="Tim Shortz"></div>
         <div class="field"><label>Organization</label><input type="text" id="cfg-org" placeholder="London Environmental LLC"></div>
-        <div class="field"><label>Active Phase</label><input type="text" id="cfg-activePhase" placeholder="Phase 1 — Tree Felling"></div>
+        <div class="field"><label>Current Activity</label><input type="text" id="cfg-activePhase" placeholder="e.g. Grading, Clearing &amp; Grubbing, Installation"></div>
         <div class="field"><label>Active Contractor</label><input type="text" id="cfg-contractor" placeholder="Supreme Industries"></div>
         <div class="field"><label>Town / County</label><input type="text" id="cfg-location" placeholder="Town of Burns, Allegany County, NY"></div>
         <div class="field"><label>Reviewed By</label><input type="text" id="cfg-reviewedBy" placeholder="Robert Forest Rung"></div>
@@ -2132,11 +2132,11 @@ EI to conduct LOD walk prior to start of operations"></textarea>
   </div>
 
   <div class="config-section" id="cfg-phase">
-    <div class="config-head" onclick="toggleSection('cfg-phase')"><span class="config-title">Active Phase</span><span class="card-chevron">▾</span></div>
+    <div class="config-head" onclick="toggleSection('cfg-phase')"><span class="config-title">Current Activity</span><span class="card-chevron">▾</span></div>
     <div class="config-body">
-      <p class="config-hint">Controls which preset chips appear in the daily log. Keep in sync with your current project phase.</p>
+      <p class="config-hint">Records the active construction scope for this project. Appears on daily logs and generated reports.</p>
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-        <input type="text" id="activePhaseInput" style="max-width:320px;background:var(--bg);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--body);font-size:17px;padding:8px 11px" placeholder="Active phase label">
+        <input type="text" id="activePhaseInput" style="max-width:320px;background:var(--bg);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--body);font-size:17px;padding:8px 11px" placeholder="e.g. Grading, Clearing &amp; Grubbing, Installation">
         <button class="btn btn-amber" style="font-size:11px;padding:7px 14px" onclick="savePhaseLabel()">Save &amp; Apply</button>
       </div>
     </div>
@@ -3466,7 +3466,7 @@ function renumberCrew(){crewIds.forEach((id,i)=>{const l=document.querySelector(
 function renderChips(stripId, key){
   const strip=document.getElementById('chips-'+stripId);if(!strip)return;
   strip.innerHTML='';
-  const items=(presets[key]||[]).filter(p=>p.phase===activePhaseLabel||p.phase==='All Phases');
+  const items=presets[key]||[];
   items.forEach(item=>{
     const btn=document.createElement('button');btn.className='preset-chip';btn.type='button';btn.title=item.text;
     btn.textContent=item.text.length>58?item.text.slice(0,56)+'…':item.text;
@@ -3680,7 +3680,7 @@ function addPhase(){
   _saveProjectSettings({phases});
 }
 function removePhase(idx){
-  if(phases[idx]===activePhaseLabel){alert('Cannot remove the currently active phase.');return}
+  if(phases[idx]===activePhaseLabel){alert('Cannot remove the current activity label while it is active.');return}
   phases.splice(idx,1);ss('msf_phases',phases);renderPhaseList();populateSelects();
   _saveProjectSettings({phases});
 }
@@ -7784,7 +7784,7 @@ async function rptBuildDocx(logData,polished,photos){
     infoRow('Prepared By:',logData.preparedBy+' \u2014 Environmental Inspector'),
     infoRow('Organization:',logData.org),
     infoRow('Project:',logData.project),
-    infoRow('Active Phase:',logData.activePhase),
+    infoRow('Current Activity:',logData.activePhase),
     infoRow('Active Contractors:',logData.contractor||'\u2014')
   ]});
   // Section 1: Weather
