@@ -9,6 +9,7 @@ import * as docx from 'docx'
 import './sw-register.js'
 import './maps.js'
 import './photos.js'
+import './compliance.js'
 
 window.firebase = firebase
 window.mapboxgl = mapboxgl
