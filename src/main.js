@@ -7,6 +7,7 @@ import 'mapbox-gl/dist/mapbox-gl.css'
 import * as exifr from 'exifr'
 import * as docx from 'docx'
 import './sw-register.js'
+import './maps.js'
 
 window.firebase = firebase
 window.mapboxgl = mapboxgl
