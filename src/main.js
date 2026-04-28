@@ -8,6 +8,7 @@ import * as exifr from 'exifr'
 import * as docx from 'docx'
 import './sw-register.js'
 import './maps.js'
+import './photos.js'
 
 window.firebase = firebase
 window.mapboxgl = mapboxgl
