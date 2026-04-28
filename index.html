@@ -4510,7 +4510,7 @@ function calCloseDayView(){
 // INIT
 // ═══════════════════════════════════════════
 document.getElementById('reportDate').value=localToday();
-applyProjectConfig();
+if (typeof applyProjectConfig === 'function') applyProjectConfig();
 restoreCollapsedSections();
 buildChecklist();
 renderAllChips();

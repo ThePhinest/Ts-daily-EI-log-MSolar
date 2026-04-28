@@ -686,3 +686,7 @@ window._syncProjectListFromCloud = _syncProjectListFromCloud;
 window.loadProject = loadProject;
 window.createProject = createProject;
 window.showProjectSwitcher = showProjectSwitcher;
+
+// Modules are deferred — run the boot-time project config apply here
+// since the inline script's call runs before modules load
+applyProjectConfig();
