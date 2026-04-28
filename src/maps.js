@@ -818,8 +818,11 @@ async function mapLoadSettingsFields(){
   if(sf) sf.value=style;
 }
 
+function mapResize(){ if(_mapInstance) _mapInstance.resize(); }
+
 // ── Expose to window for HTML onclick handlers and cross-module calls ──
 window.mapInit = mapInit;
+window.mapResize = mapResize;
 window.mapLocateMe = mapLocateMe;
 window.mapSetStyle = mapSetStyle;
 window.mapUpdateStyleButtons = mapUpdateStyleButtons;

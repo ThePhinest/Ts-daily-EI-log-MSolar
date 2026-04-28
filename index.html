@@ -2336,7 +2336,7 @@ function showPage(name){
     if(moreBtn)moreBtn.classList.add('active');
   }
   if(name==='config'){ renderConfig(); tsLoadConfigFields(); renderNavConfig(); mapLoadSettingsFields(); }
-  if(name==='map'){ mapInit(); setTimeout(()=>{ if(_mapInstance) _mapInstance.resize(); },200); }
+  if(name==='map'){ mapInit(); setTimeout(()=>{ mapResize(); },200); }
   if(name==='calendar'){ calRender(); }
   if(name==='timesheet'){ tsPushFromDailyLog(); tsRenderCurrentWeek(); tsRenderHistory(); tsRenderCumulative(); tsCheckArchivePrompt(); }
   if(name==='compliance'){ clInit(); clAutoDetect(); }
