@@ -6645,7 +6645,7 @@ function calRenderGrid(){
   const all=_projectFilterActive
     ? Object.fromEntries(Object.entries(_allLogs).filter(([,v])=> !v.projectId || v.projectId===_activeProjectId()))
     : _allLogs;
-  const today=new Date().toISOString().split('T')[0];
+  const today=localToday();
   // First day of month and total days
   const firstDay=new Date(_calYear,_calMonth,1).getDay(); // 0=Sun
   const daysInMonth=new Date(_calYear,_calMonth+1,0).getDate();
@@ -6717,7 +6717,7 @@ function calRenderList(){
 }
 
 function calOpenNewDay(date){
-  const today=new Date().toISOString().split('T')[0];
+  const today=localToday();
   _confirmModal('No log exists for '+dlFmtDisplay(date)+'. Start a new log for this day?', function(){
     _resetFormCore();
     const el=document.getElementById('reportDate');
