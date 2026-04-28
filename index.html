@@ -4198,6 +4198,33 @@ async function _fixOrphanLogProjectIds() {
   localStorage.setItem('gl_orphan_ids_fixed', '1');
 }
 
+function _fixTimesheetEntryProjects() {
+  if (localStorage.getItem('gl_ts_proj_fixed')) return;
+  const known = knownProjectsGet();
+  const moraineNm = (known.find(p => /moraine/i.test(p.projectName || '')) || {}).projectName || '';
+  const srw = known.find(p => p.projectId && !/moraine/i.test(p.projectName || ''));
+  const srwNm = srw ? srw.projectName : '';
+  if (!moraineNm || !srwNm) return;
+  const cutoff = '2026-04-23';
+  const entries = tsGetAllEntries();
+  let changed = false;
+  Object.entries(entries).forEach(([date, e]) => {
+    if (!e.projectName) {
+      e.projectName = date < cutoff ? moraineNm : srwNm;
+      changed = true;
+    }
+  });
+  if (changed) {
+    localStorage.setItem('msf_ts_entries', JSON.stringify(entries));
+    if (typeof db !== 'undefined' && db && _fbReady) {
+      Object.entries(entries).forEach(([date, e]) => {
+        try { _udb().collection('timesheetEntries').doc(date).set(e).catch(() => {}); } catch(err) {}
+      });
+    }
+  }
+  localStorage.setItem('gl_ts_proj_fixed', '1');
+}
+
 // ── Phase C: merge any data into the active project's settings doc ──
 function _saveProjectSettings(mergeData) {
   const pid = _activeProjectId();
@@ -4872,9 +4899,12 @@ function tsRenderCumulative(){
   const weeks=tsGetArchivedWeeks();
   const entries=tsGetProjectEntries();
   const cfg=tsLoadConfig();
+  const allLogs=dlGetAll();
+  const activePid=_activeProjectId();
+  const inProject=date=>{const l=allLogs[date];return !l||!l.projectId||l.projectId===activePid;};
   let totH=0,totM=0,totMil=0,totPD=0,days=0;
-  weeks.forEach(w=>{const t=w.totals||{};totH+=Number(t.hours||0);totM+=Number(t.miles||0);totMil+=parseFloat(t.mileage||0);totPD+=Number(t.perDiem||0);days+=(w.days||[]).filter(d=>Number(d.hours)>0).length;});
-  Object.values(entries).forEach(e=>{if(Number(e.hours)>0){totH+=Number(e.hours||0);totM+=Number(e.miles||0);totMil+=parseFloat(tsCalcMileage(Number(e.miles||0)));totPD+=Number(e.perDiem||0);days++;}});
+  weeks.forEach(w=>{(w.days||[]).forEach(d=>{if(!inProject(d.date))return;totH+=Number(d.hours||0);totM+=Number(d.miles||0);totMil+=parseFloat(d.mileage||0);totPD+=Number(d.perDiem||0);if(Number(d.hours)>0)days++;});});
+  Object.entries(entries).forEach(([date,e])=>{if(Number(e.hours)>0&&inProject(date)){totH+=Number(e.hours||0);totM+=Number(e.miles||0);totMil+=parseFloat(tsCalcMileage(Number(e.miles||0)));totPD+=Number(e.perDiem||0);days++;}});
   const set=(id,v)=>{const el=document.getElementById(id);if(el)el.textContent=v;};
   set('ts-cum-hours',totH.toFixed(1));
   set('ts-cum-miles',totM.toLocaleString());
@@ -4895,19 +4925,20 @@ function tsRenderCumulative(){
         grossWages=(regH*rate)+(otH*rate*1.5);
       } else {
         // Daily OT — need per-day breakdown
-        // Approximate from archived weeks daily data
+        // Per-day calculation filtered to active project
         let calcWages=0;
         weeks.forEach(w=>{
           (w.days||[]).forEach(d=>{
+            if(!inProject(d.date))return;
             const h=Number(d.hours||0);
             const reg=Math.min(h,8);
             const ot=Math.max(h-8,0);
             calcWages+=(reg*rate)+(ot*rate*1.5);
           });
         });
-        Object.values(entries).forEach(e=>{
+        Object.entries(entries).forEach(([date,e])=>{
           const h=Number(e.hours||0);
-          if(h>0){const reg=Math.min(h,8);const ot=Math.max(h-8,0);calcWages+=(reg*rate)+(ot*rate*1.5);}
+          if(h>0&&inProject(date)){const reg=Math.min(h,8);const ot=Math.max(h-8,0);calcWages+=(reg*rate)+(ot*rate*1.5);}
         });
         grossWages=calcWages;
       }
@@ -6335,6 +6366,7 @@ async function calRender(){
   await _glMigrateDailyLogsPhaseD();
   await _fixDailyLogProjectsByDate();
   await _fixOrphanLogProjectIds();
+  _fixTimesheetEntryProjects();
   await dnLoadCloud();
   // Always close day view and reset to grid/list on tab activation
   document.getElementById('cal-day-view').style.display='none';
