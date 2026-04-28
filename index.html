@@ -4174,6 +4174,30 @@ async function _fixDailyLogProjectsByDate() {
   localStorage.setItem('gl_phaseD_logs_date_fixed', '1');
 }
 
+async function _fixOrphanLogProjectIds() {
+  if (localStorage.getItem('gl_orphan_ids_fixed')) return;
+  if (!_fbReady) return;
+  const orphanIds = ['proj_1777250627510', 'proj_1777250627511'];
+  const known = knownProjectsGet();
+  const srw = known.find(p => p.projectId && !/moraine/i.test(p.projectName || ''));
+  if (!srw) return;
+  const srwPid = srw.projectId;
+  const all = dlGetAll();
+  const toUpdate = [];
+  Object.entries(all).forEach(([date, record]) => {
+    if (record && orphanIds.includes(record.projectId)) {
+      record.projectId = srwPid;
+      dlSaveLocal(date, record);
+      toUpdate.push(date);
+    }
+  });
+  toUpdate.forEach(date => {
+    try { _udb().collection('dailyLogs').doc(date).set({ projectId: srwPid }, { merge: true }).catch(() => {}); } catch(e) {}
+  });
+  if (toUpdate.length > 0) console.log('GroundLog: retagged', toUpdate.length, 'orphan logs →', srwPid, toUpdate);
+  localStorage.setItem('gl_orphan_ids_fixed', '1');
+}
+
 // ── Phase C: merge any data into the active project's settings doc ──
 function _saveProjectSettings(mergeData) {
   const pid = _activeProjectId();
@@ -6310,6 +6334,7 @@ async function calRender(){
   await calLoadCloud();
   await _glMigrateDailyLogsPhaseD();
   await _fixDailyLogProjectsByDate();
+  await _fixOrphanLogProjectIds();
   await dnLoadCloud();
   // Always close day view and reset to grid/list on tab activation
   document.getElementById('cal-day-view').style.display='none';
@@ -6523,7 +6548,7 @@ function calRenderDayViewGrid(){
   const body=document.getElementById('cal-dv-grid-body');
   if(!body) return;
   const all=dlGetAll();
-  const today=new Date().toISOString().split('T')[0];
+  const today=localToday();
   const firstDay=new Date(_calYear,_calMonth,1).getDay();
   const daysInMonth=new Date(_calYear,_calMonth+1,0).getDate();
   let cells='';
