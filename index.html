@@ -4226,16 +4226,8 @@ async function _syncProjectListFromCloud() {
     if (!doc.exists) return;
     const remote = doc.data().projects || [];
     if (!remote.length) return;
-    // Merge: remote wins for any project not in local list
-    const local = knownProjectsGet();
-    const merged = Object.values(
-      [...local, ...remote].reduce((acc, p) => {
-        const key = p.projectId || p.projectName;
-        if (!acc[key] || (p.lastUsed || 0) > (acc[key].lastUsed || 0)) acc[key] = p;
-        return acc;
-      }, {})
-    );
-    localStorage.setItem('gl_known_projects', JSON.stringify(merged));
+    // Firestore is authoritative — replace local list to prevent orphan re-injection
+    localStorage.setItem('gl_known_projects', JSON.stringify(remote));
   } catch(e) {}
 }
 
@@ -7160,12 +7152,29 @@ async function initFirebaseLoad() {
     return;
   }
 
-  // If localStorage was wiped, recover the active project ID from Firestore before proceeding
-  if (!localStorage.getItem('gl_active_project_id')) {
+  // Recover if localStorage was wiped OR if stored project ID is not in Firestore known projects
+  const _storedPid = localStorage.getItem('gl_active_project_id');
+  if (!_storedPid) {
     try {
       const apDoc = await _udb().collection('settings').doc('activeProject').get();
       if (apDoc.exists && apDoc.data().projectId) {
         localStorage.setItem('gl_active_project_id', apDoc.data().projectId);
+      }
+    } catch(e) {}
+  } else {
+    try {
+      const knownDoc = await _udb().collection('settings').doc('knownProjects').get();
+      if (knownDoc.exists) {
+        const validIds = (knownDoc.data().projects || []).map(p => p.projectId).filter(Boolean);
+        if (validIds.length > 0 && !validIds.includes(_storedPid)) {
+          const apDoc = await _udb().collection('settings').doc('activeProject').get();
+          if (apDoc.exists && apDoc.data().projectId && validIds.includes(apDoc.data().projectId)) {
+            const recoveredId = apDoc.data().projectId;
+            localStorage.setItem('gl_active_project_id', recoveredId);
+            localStorage.setItem('gl_known_projects', JSON.stringify(knownDoc.data().projects || []));
+            console.log('GroundLog: stale project ID recovered', _storedPid, '→', recoveredId);
+          }
+        }
       }
     } catch(e) {}
   }
