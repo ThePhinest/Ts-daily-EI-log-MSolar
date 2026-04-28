@@ -10,6 +10,7 @@ import './sw-register.js'
 import './maps.js'
 import './photos.js'
 import './compliance.js'
+import './projects.js'
 
 window.firebase = firebase
 window.mapboxgl = mapboxgl
