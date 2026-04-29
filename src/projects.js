@@ -151,7 +151,7 @@ function applyProjectConfig() {
     const el = document.getElementById('cfg-' + k);
     if (el) el.value = cfg[k];
  });
-  initCardTitles();
+  if (typeof initCardTitles === 'function') initCardTitles();
 }
 
 function saveProjectConfig() {

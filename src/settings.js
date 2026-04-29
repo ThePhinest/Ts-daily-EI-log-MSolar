@@ -704,5 +704,6 @@ window.toggleTheme = toggleTheme;
 // ═══════════════════════════════════════════
 // BOOT CALLS (functions called at sync init, now deferred to module load)
 // ═══════════════════════════════════════════
+initCardTitles();
 renderAllChips();
 renderNav();
