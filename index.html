@@ -2431,12 +2431,12 @@ function restoreFormState(state){
     const idx=crewIds.indexOf(block.id);
     d.innerHTML=buildCrewHTML(block.id, idx+1);
     document.getElementById('crewContainer').appendChild(d);
-    ['acts','envcomp'].forEach(f=>renderChips(`crew-${block.id}-${f}`,f==='acts'?'act':'env'));
+    ['acts','envcomp'].forEach(f=>{ if(typeof renderChips==='function') renderChips(`crew-${block.id}-${f}`,f==='acts'?'act':'env'); });
     ['name','time','loc','acts','envcomp','issues','notes'].forEach(f=>{
       const el=document.getElementById(`crew-${block.id}-${f}`);if(el)el.value=block[f]||'';
     });
   });
-  updateCrewBadge();
+  if(typeof updateCrewBadge==='function') updateCrewBadge();
   calcMiles();calcHours();
   setTimeout(()=>document.querySelectorAll('textarea.auto-expand').forEach(autoResize),0);
 }

@@ -707,3 +707,4 @@ window.toggleTheme = toggleTheme;
 initCardTitles();
 renderAllChips();
 renderNav();
+updateCrewBadge();
