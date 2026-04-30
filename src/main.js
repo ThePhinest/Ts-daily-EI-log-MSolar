@@ -14,6 +14,7 @@ import './projects.js'
 import './settings.js'
 import './timesheet.js'
 import './calendar.js'
+import './daily-log.js'
 
 window.firebase = firebase
 window.mapboxgl = mapboxgl
