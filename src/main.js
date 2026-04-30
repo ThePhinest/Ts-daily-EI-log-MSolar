@@ -12,6 +12,7 @@ import './photos.js'
 import './compliance.js'
 import './projects.js'
 import './settings.js'
+import './timesheet.js'
 
 window.firebase = firebase
 window.mapboxgl = mapboxgl
