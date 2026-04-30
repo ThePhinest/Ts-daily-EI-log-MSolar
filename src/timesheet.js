@@ -95,7 +95,7 @@ function tsPushFromDailyLog(){
   if(!existing._manualMiles){
     const s=parseFloat(document.getElementById('p-odoStart')?.value)||0;
     const e=parseFloat(document.getElementById('p-odoEnd')?.value)||0;
-    if(s&&e&&e>s)update.miles=Math.round(e-s);
+    if(e>s)update.miles=Math.round(e-s);
   }
   if(!existing._manualActivity){
     const sum=document.getElementById('inspSummary')?.value?.trim()||'';
