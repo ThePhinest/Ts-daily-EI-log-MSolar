@@ -1,16 +1,6 @@
 import { defineConfig } from 'vite'
 import { VitePWA } from 'vite-plugin-pwa'
 
-const EXTERNAL_DOMAINS = [
-  'gstatic.com',
-  'googleapis.com',
-  'firebaseapp.com',
-  'firebasestorage.app',
-  'mapbox.com',
-  'cdn.jsdelivr.net',
-  'anthropic.com',
-]
-
 export default defineConfig({
   base: '/',
   publicDir: 'public',
@@ -29,7 +19,8 @@ export default defineConfig({
         maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
         runtimeCaching: [
           {
-            urlPattern: ({ url }) => EXTERNAL_DOMAINS.some(d => url.hostname.includes(d)),
+            // Inline array — closure vars aren't available in the serialized SW context
+            urlPattern: ({ url }) => ['gstatic.com','googleapis.com','firebaseapp.com','firebasestorage.app','mapbox.com','cdn.jsdelivr.net','anthropic.com'].some(d => url.hostname.includes(d)),
             handler: 'NetworkOnly',
           },
         ],
