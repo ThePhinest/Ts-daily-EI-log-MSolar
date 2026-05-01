@@ -123,11 +123,17 @@ function _reconnectFirebase() {
 }
 
 // ── Browser online/offline events ──
+// Debounce the offline handler — iOS fires a spurious 'offline' event during hard refresh.
+let _offlineDebounce = null;
 window.addEventListener('online', function() {
+    if (_offlineDebounce) { clearTimeout(_offlineDebounce); _offlineDebounce = null; }
     _reconnectFirebase();
 });
 window.addEventListener('offline', function() {
-    setSyncStatus('offline');
+    _offlineDebounce = setTimeout(function() {
+        _offlineDebounce = null;
+        setSyncStatus('offline');
+    }, 2500);
 });
 
 // ── Visibility change — re-sync when device wakes or user returns to tab ──
