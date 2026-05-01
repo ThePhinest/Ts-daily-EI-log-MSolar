@@ -28,25 +28,7 @@ document.addEventListener('DOMContentLoaded', function _initFirebase() {
       window.storage = _fbApp.storage();
       window.auth = _fbApp.auth();
       console.log('Phinest EI: Firebase initialized OK');
-      window.auth.getRedirectResult().catch(function(e) {
-        if (e.code && e.code !== 'auth/no-current-user') {
-          const errEl = document.getElementById('si-error');
-          if (errEl) errEl.textContent = typeof window._siAuthError === 'function' ? window._siAuthError(e.code) : 'Sign-in failed. Please try again.';
-        }
-      });
-      window.auth.onAuthStateChanged(function(user) {
-        document.getElementById('page-auth-loading').style.display = 'none';
-        if (user) {
-          window._currentUser = user;
-          document.getElementById('page-signin').style.display = 'none';
-          const emailEl = document.getElementById('cfg-account-email');
-          if (emailEl) emailEl.textContent = user.email || user.displayName || 'Signed in';
-          if (typeof window.obCheck === 'function') window.obCheck();
-        } else {
-          window._currentUser = null;
-          document.getElementById('page-signin').style.display = 'flex';
-        }
-      });
+      if (typeof window._initAuth === 'function') window._initAuth();
     } catch(e) {
       console.error('Phinest EI: Firebase init failed —', e.message);
       document.getElementById('page-auth-loading').style.display = 'none';
