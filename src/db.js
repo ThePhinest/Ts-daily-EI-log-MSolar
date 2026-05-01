@@ -345,7 +345,7 @@ async function initFirebaseLoad() {
       syncProjectConfigFromCloud();
       syncPresetsFromCloud();
       _syncProjectListFromCloud();
-      _rptInitHostedKeyBtn();
+      window._rptInitHostedKeyBtn();
       checkNewDay();
       loadChecklistCloud();
       loadFlagsCloud();
@@ -375,7 +375,7 @@ async function initFirebaseLoad() {
       syncProjectConfigFromCloud();
       syncPresetsFromCloud();
       _syncProjectListFromCloud();
-      _rptInitHostedKeyBtn();
+      window._rptInitHostedKeyBtn();
       checkNewDay();
       loadChecklistCloud();
       loadFlagsCloud();
@@ -387,7 +387,7 @@ async function initFirebaseLoad() {
       syncProjectConfigFromCloud();
       syncPresetsFromCloud();
       _syncProjectListFromCloud();
-      _rptInitHostedKeyBtn();
+      window._rptInitHostedKeyBtn();
       checkNewDay();
       loadChecklistCloud();
       loadFlagsCloud();
@@ -399,7 +399,7 @@ async function initFirebaseLoad() {
       syncProjectConfigFromCloud();
       syncPresetsFromCloud();
       _syncProjectListFromCloud();
-      _rptInitHostedKeyBtn();
+      window._rptInitHostedKeyBtn();
       checkNewDay();
       loadChecklistCloud();
       loadFlagsCloud();

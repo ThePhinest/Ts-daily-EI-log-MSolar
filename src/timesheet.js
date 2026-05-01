@@ -427,6 +427,7 @@ function tsBackfillWeekFromLogs(date){
 // ═══════════════════════════════════════════
 // WINDOW EXPOSURE
 // ═══════════════════════════════════════════
+window.TS_DEFAULTS = TS_DEFAULTS;
 window.tsLoadConfig = tsLoadConfig;
 window.tsFormatDate = tsFormatDate;
 window.tsParseDate = tsParseDate;

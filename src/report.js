@@ -509,3 +509,4 @@ window.polishLog = polishLog;
 window.saveApiKey = saveApiKey;
 window.toggleApiKeyVisibility = toggleApiKeyVisibility;
 window.rptSaveHostedKey = rptSaveHostedKey;
+window._rptInitHostedKeyBtn = _rptInitHostedKeyBtn;
