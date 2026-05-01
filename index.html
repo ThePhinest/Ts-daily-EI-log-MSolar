@@ -2513,34 +2513,6 @@ function _obInitSwipe() {
   }, { passive: true });
 }
 
-// ── Auth state gate — fires after _initFirebase (same DOMContentLoaded, registration order) ──
-document.addEventListener('DOMContentLoaded', function() {
-  if (auth) {
-    // Handle Google redirect result on page load (iOS PWA requires redirect flow, not popup)
-    auth.getRedirectResult().catch(function(e) {
-      if (e.code && e.code !== 'auth/no-current-user') {
-        const errEl = document.getElementById('si-error');
-        if (errEl) errEl.textContent = _siAuthError ? _siAuthError(e.code) : 'Sign-in failed. Please try again.';
-      }
-    });
-    auth.onAuthStateChanged(function(user) {
-      document.getElementById('page-auth-loading').style.display = 'none';
-      if (user) {
-        _currentUser = user;
-        document.getElementById('page-signin').style.display = 'none';
-        const emailEl = document.getElementById('cfg-account-email');
-        if (emailEl) emailEl.textContent = user.email || user.displayName || 'Signed in';
-        obCheck();
-      } else {
-        _currentUser = null;
-        document.getElementById('page-signin').style.display = 'flex';
-      }
-    });
-  } else {
-    // Auth unavailable — proceed without gate (fallback)
-    initFirebaseLoad();
-  }
-});
 
 
 // ═══════════════════════════════════════════

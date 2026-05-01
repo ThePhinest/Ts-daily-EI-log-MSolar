@@ -18,6 +18,8 @@ const _fbConfig = {
 };
 
 // Firebase init — deferred to DOMContentLoaded so src/main.js (npm modules) are ready first
+// Auth state gate is registered here (not separately) to guarantee it fires AFTER auth is set up.
+// If registered in a classic script DOMContentLoaded, it would fire before this module's listener.
 document.addEventListener('DOMContentLoaded', function _initFirebase() {
   if (typeof firebase !== 'undefined') {
     try {
@@ -26,11 +28,33 @@ document.addEventListener('DOMContentLoaded', function _initFirebase() {
       window.storage = _fbApp.storage();
       window.auth = _fbApp.auth();
       console.log('Phinest EI: Firebase initialized OK');
+      window.auth.getRedirectResult().catch(function(e) {
+        if (e.code && e.code !== 'auth/no-current-user') {
+          const errEl = document.getElementById('si-error');
+          if (errEl) errEl.textContent = typeof window._siAuthError === 'function' ? window._siAuthError(e.code) : 'Sign-in failed. Please try again.';
+        }
+      });
+      window.auth.onAuthStateChanged(function(user) {
+        document.getElementById('page-auth-loading').style.display = 'none';
+        if (user) {
+          window._currentUser = user;
+          document.getElementById('page-signin').style.display = 'none';
+          const emailEl = document.getElementById('cfg-account-email');
+          if (emailEl) emailEl.textContent = user.email || user.displayName || 'Signed in';
+          if (typeof window.obCheck === 'function') window.obCheck();
+        } else {
+          window._currentUser = null;
+          document.getElementById('page-signin').style.display = 'flex';
+        }
+      });
     } catch(e) {
       console.error('Phinest EI: Firebase init failed —', e.message);
+      document.getElementById('page-auth-loading').style.display = 'none';
     }
   } else {
     console.error('Phinest EI: firebase global not defined');
+    document.getElementById('page-auth-loading').style.display = 'none';
+    if (typeof window.initFirebaseLoad === 'function') window.initFirebaseLoad();
   }
 });
 
