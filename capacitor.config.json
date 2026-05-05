@@ -1,0 +1,27 @@
+{
+  "appId": "io.groundlog.app",
+  "appName": "GroundLog",
+  "webDir": "dist",
+  "ios": {
+    "scheme": "GroundLog",
+    "contentInset": "always",
+    "limitsNavigationsToAppBoundDomains": true
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 1500,
+      "backgroundColor": "#0F1F2E",
+      "showSpinner": false,
+      "androidScaleType": "CENTER_CROP"
+    },
+    "StatusBar": {
+      "style": "DARK",
+      "backgroundColor": "#000000"
+    },
+    "Keyboard": {
+      "resize": "native",
+      "style": "DARK",
+      "resizeOnFullScreen": true
+    }
+  }
+}
