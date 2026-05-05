@@ -1,0 +1,82 @@
+# Dependabot — automated dependency update PRs
+# Docs: https://docs.github.com/en/code-security/dependabot/dependabot-version-updates
+#
+# Strategy: weekly, grouped, conservative
+# - npm: groups patch + minor together; major bumps get their own PRs
+# - github-actions: tracks runner action version pins (actions/checkout@vN, etc.)
+# - Capacitor + Firebase grouped separately so a coordinated upgrade lands in one PR
+
+version: 2
+updates:
+  # ───────────────────────────────────────────────
+  # npm — runtime + dev dependencies
+  # ───────────────────────────────────────────────
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "08:00"
+      timezone: "America/New_York"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependency-watch"
+      - "deps:npm"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+    groups:
+      # Capacitor packages must upgrade together on majors — group keeps the PR coherent
+      capacitor:
+        patterns:
+          - "@capacitor/*"
+          - "@capacitor-firebase/*"
+        update-types:
+          - "minor"
+          - "patch"
+      # Firebase patch/minor bumps — majors stay individual (compat-layer review needed)
+      firebase:
+        patterns:
+          - "firebase"
+        update-types:
+          - "minor"
+          - "patch"
+      # Vite ecosystem — vite + plugins together for patch/minor
+      vite-stack:
+        patterns:
+          - "vite"
+          - "vite-plugin-*"
+          - "@vitejs/*"
+        update-types:
+          - "minor"
+          - "patch"
+      # Everything else — patch only, grouped to reduce PR noise
+      misc-patches:
+        patterns:
+          - "*"
+        update-types:
+          - "patch"
+        exclude-patterns:
+          - "@capacitor/*"
+          - "@capacitor-firebase/*"
+          - "firebase"
+          - "vite"
+          - "vite-plugin-*"
+
+  # ───────────────────────────────────────────────
+  # GitHub Actions — workflow action pins
+  # ───────────────────────────────────────────────
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "08:00"
+      timezone: "America/New_York"
+    open-pull-requests-limit: 3
+    labels:
+      - "dependency-watch"
+      - "deps:actions"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
