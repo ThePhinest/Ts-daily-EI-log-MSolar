@@ -1,0 +1,156 @@
+name: Dependency Watch
+
+# Weekly scan of npm dependencies + security advisories.
+# Opens a GitHub Issue ONLY when state has changed since the last scan,
+# so quiet weeks stay quiet (no inbox noise on stable weeks).
+#
+# GitHub emails the repo owner automatically when issues open — that's
+# the primary alert path for the dependency-watch system.
+#
+# Companion docs: groundlog/wiki/dependency-watch.md in the KB.
+
+on:
+  schedule:
+    # Monday 13:00 UTC ≈ 8-9am ET (cron doesn't observe DST).
+    - cron: '0 13 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - run: npm ci
+
+      # ───────────────────────────────────────────────
+      # Capture raw scan data
+      # ───────────────────────────────────────────────
+      - name: Run npm outdated
+        run: |
+          # `npm outdated` exits non-zero when packages are outdated — that's normal, not an error
+          npm outdated --json > outdated.json || true
+          if [ ! -s outdated.json ]; then echo "{}" > outdated.json; fi
+          echo "Outdated package count: $(jq 'length' outdated.json)"
+
+      - name: Run npm audit
+        run: |
+          npm audit --json > audit.json || true
+          jq '.metadata.vulnerabilities' audit.json
+
+      # ───────────────────────────────────────────────
+      # Compute fingerprint — only alert on changes
+      # ───────────────────────────────────────────────
+      - name: Compute state fingerprint
+        id: fingerprint
+        run: |
+          OUTDATED_HASH=$(jq -S '.' outdated.json | sha256sum | cut -d' ' -f1 | head -c 16)
+          AUDIT_HASH=$(jq -S '.metadata.vulnerabilities' audit.json | sha256sum | cut -d' ' -f1 | head -c 16)
+          FINGERPRINT="${OUTDATED_HASH}-${AUDIT_HASH}"
+          echo "fingerprint=$FINGERPRINT" >> "$GITHUB_OUTPUT"
+          echo "Computed fingerprint: $FINGERPRINT"
+
+      - name: Compare to last scan
+        id: changes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          LAST_BODY=$(gh issue list --label dependency-watch --state all --limit 1 --json body --jq '.[0].body // ""')
+          LAST_FP=$(echo "$LAST_BODY" | grep -oP 'fingerprint:\s*\K\S+' | head -1 || echo "")
+          CURR_FP="${{ steps.fingerprint.outputs.fingerprint }}"
+          if [ -n "$LAST_FP" ] && [ "$LAST_FP" = "$CURR_FP" ]; then
+            echo "No changes since last scan ($LAST_FP) — skipping issue creation."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Changes detected: ${LAST_FP:-<no prior scan>} → $CURR_FP"
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # ───────────────────────────────────────────────
+      # Build markdown report (only if changes detected)
+      # ───────────────────────────────────────────────
+      - name: Build markdown report
+        if: steps.changes.outputs.changed == 'true'
+        id: report
+        run: |
+          DATE=$(date -u +%Y-%m-%d)
+          {
+            echo "Automated weekly dependency scan. See [\`groundlog/wiki/dependency-watch.md\`](https://github.com/${{ github.repository }}/blob/main/../KB/groundlog/wiki/dependency-watch.md) in the KB for full context, cadence, and outstanding items."
+            echo
+            echo "## Outdated packages"
+            echo
+            COUNT=$(jq 'length' outdated.json)
+            if [ "$COUNT" = "0" ]; then
+              echo "✅ All tracked packages are within their declared version range."
+            else
+              echo "| Package | Current | Wanted | Latest |"
+              echo "|---|---|---|---|"
+              jq -r 'to_entries[] | "| `\(.key)` | \(.value.current) | \(.value.wanted) | \(.value.latest) |"' outdated.json
+            fi
+            echo
+            echo "## Security advisories"
+            echo
+            CRITS=$(jq '.metadata.vulnerabilities.critical // 0' audit.json)
+            HIGHS=$(jq '.metadata.vulnerabilities.high // 0' audit.json)
+            MODS=$(jq '.metadata.vulnerabilities.moderate // 0' audit.json)
+            LOWS=$(jq '.metadata.vulnerabilities.low // 0' audit.json)
+            echo "**Counts:** $CRITS critical · $HIGHS high · $MODS moderate · $LOWS low"
+            echo
+            if [ "$CRITS" != "0" ] || [ "$HIGHS" != "0" ]; then
+              echo "### High/critical advisories"
+              echo
+              echo "| Package | Severity | Fix available? | Direct? |"
+              echo "|---|---|---|---|"
+              jq -r '.vulnerabilities | to_entries[] | select(.value.severity == "high" or .value.severity == "critical") | "| `\(.value.name)` | \(.value.severity) | \(.value.fixAvailable) | \(.value.isDirect) |"' audit.json
+              echo
+              echo "_Note: 11 high-severity advisories in the `@capacitor/assets` build-time chain are known and intentionally unpatched (devDep, never ships to production). See KB wiki §9 for full posture._"
+            fi
+            echo
+            echo "---"
+            echo
+            echo "**Action items:**"
+            echo "1. If anything is new vs the prior scan, update [\`dependency-watch.md\`](https://github.com/${{ github.repository }}/blob/main/../KB/groundlog/wiki/dependency-watch.md) Outstanding Items table."
+            echo "2. Decide: hit-now / defer / ignore. Capture the call in the wiki."
+            echo "3. Close this issue once acted on."
+            echo
+            echo "<!-- fingerprint: ${{ steps.fingerprint.outputs.fingerprint }} -->"
+            echo "<!-- generated by .github/workflows/dependency-watch.yml -->"
+          } > report.md
+
+          echo "title=Dependency Watch — $DATE" >> "$GITHUB_OUTPUT"
+          echo "---report preview---"
+          cat report.md
+
+      - name: Ensure label exists
+        if: steps.changes.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh label create "dependency-watch" \
+            --color "0E8A16" \
+            --description "Automated dependency scan results" \
+            --force
+
+      - name: Open issue
+        if: steps.changes.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue create \
+            --title "${{ steps.report.outputs.title }}" \
+            --body-file report.md \
+            --label "dependency-watch"
+
+      - name: Log no-change run
+        if: steps.changes.outputs.changed == 'false'
+        run: |
+          echo "::notice::No dependency changes detected this week. No issue opened."
