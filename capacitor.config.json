@@ -26,6 +26,10 @@
       "resize": "native",
       "style": "DARK",
       "resizeOnFullScreen": true
+    },
+    "FirebaseAuthentication": {
+      "skipNativeAuth": true,
+      "providers": ["google.com"]
     }
   }
 }

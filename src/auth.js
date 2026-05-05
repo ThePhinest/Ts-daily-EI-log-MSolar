@@ -113,8 +113,10 @@ function _obInitSwipe() {
 // AUTH — SIGN IN / REGISTER / SIGN OUT
 // ═══════════════════════════════════════════
 
-// Hide Google sign-in on iOS PWA — OAuth redirect breaks in that context
-if (window.navigator.standalone === true) {
+// Hide Google sign-in on iOS PWA — OAuth redirect breaks in that context.
+// Capacitor native uses the @capacitor-firebase/authentication plugin path
+// which DOES work in WKWebView, so the hide must skip when running native.
+if (window.navigator.standalone === true && !window.Capacitor?.isNativePlatform?.()) {
   document.querySelectorAll('.si-btn-google, .si-divider').forEach(function(el) {
     el.style.display = 'none';
   });
@@ -165,11 +167,35 @@ function siCreateAccount() {
     .catch(function(e) { siSetError(_siAuthError(e.code)); });
 }
 
-function siGoogleSignIn() {
+async function siGoogleSignIn() {
   if (!auth) return siSetError('Auth not available.');
   siSetError('');
+
+  // Native Capacitor path: native iOS Google Sign-In SDK via plugin.
+  // signInWithRedirect/Popup is broken in WKWebView; the plugin opens
+  // the system in-app auth sheet, returns an OAuth credential, and we
+  // hand it to the JS Firebase SDK so JS-side auth state stays the
+  // single source of truth (skipNativeAuth: true in capacitor.config).
+  if (window.Capacitor?.isNativePlatform?.()) {
+    try {
+      const { FirebaseAuthentication } = await import('@capacitor-firebase/authentication');
+      const result = await FirebaseAuthentication.signInWithGoogle();
+      if (!result || !result.credential || !result.credential.idToken) {
+        return siSetError('Google sign-in was cancelled.');
+      }
+      const credential = firebase.auth.GoogleAuthProvider.credential(
+        result.credential.idToken,
+        result.credential.accessToken
+      );
+      await auth.signInWithCredential(credential);
+      return;
+    } catch(e) {
+      return siSetError(_siAuthError(e && e.code) || (e && e.message) || 'Google sign-in failed.');
+    }
+  }
+
+  // Web path: redirect-based sign-in (popup breaks in iOS Safari PWA).
   const provider = new firebase.auth.GoogleAuthProvider();
-  // Use redirect (not popup) — popup breaks in iOS Safari PWA mode
   auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL)
     .then(function() { return auth.signInWithRedirect(provider); })
     .catch(function(e) { siSetError(_siAuthError(e.code)); });

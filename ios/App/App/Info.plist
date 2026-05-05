@@ -51,5 +51,14 @@
 	<array>
 		<string>app.groundlog.io</string>
 	</array>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.242008020472-6n0tb1jvkag5jban21168cehud1krvr3</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>
