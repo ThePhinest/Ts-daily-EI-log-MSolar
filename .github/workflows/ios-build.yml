@@ -1,0 +1,79 @@
+name: iOS — TestFlight build
+
+# Builds the GroundLog iOS app on a macOS runner, signs with Fastlane Match,
+# and uploads to TestFlight. Manual trigger only for now (workflow_dispatch);
+# can move to push-on-tag or push-on-main once the pipeline is proven.
+#
+# Build number = GitHub Actions run number (auto-increments per run).
+# Marketing version = MARKETING_VERSION in App.xcodeproj (currently "1.0").
+
+on:
+  workflow_dispatch:
+    inputs:
+      changelog:
+        description: "TestFlight changelog (what testers see for this build)"
+        required: false
+        default: "Automated build"
+        type: string
+
+concurrency:
+  group: ios-build
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build IPA + upload to TestFlight
+    runs-on: macos-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Build web bundle
+        run: npm run build
+
+      - name: Sync Capacitor iOS
+        run: npx cap sync ios
+
+      - name: Set up Ruby + Bundler cache
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.3"
+          bundler-cache: true
+          working-directory: ios
+
+      - name: Compute Match git basic auth header
+        run: |
+          AUTH=$(printf "%s" "x-access-token:${{ secrets.MATCH_GIT_PAT }}" | base64 | tr -d '\n')
+          echo "MATCH_GIT_BASIC_AUTHORIZATION=$AUTH" >> "$GITHUB_ENV"
+
+      - name: Build and upload to TestFlight
+        working-directory: ios
+        env:
+          MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
+          MATCH_GIT_URL: ${{ secrets.MATCH_GIT_URL }}
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APP_STORE_CONNECT_API_KEY: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
+          BUILD_NUMBER: ${{ github.run_number }}
+          CHANGELOG: ${{ inputs.changelog }}
+        run: bundle exec fastlane beta
+
+      - name: Upload IPA artifact (debug aid)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: GroundLog-${{ github.run_number }}.ipa
+          path: ios/build/GroundLog.ipa
+          if-no-files-found: warn
+          retention-days: 14

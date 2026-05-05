@@ -1,0 +1,90 @@
+default_platform(:ios)
+
+platform :ios do
+  before_all do
+    setup_ci if ENV["CI"]
+  end
+
+  # ---------------------------------------------------------------------------
+  # seed_certs (one-shot)
+  # Generates the App Store distribution cert + provisioning profile, encrypts
+  # them with MATCH_PASSWORD, pushes to the certs repo. Run once per project,
+  # then re-run only when nuking + rotating.
+  # ---------------------------------------------------------------------------
+  desc "Generate and push App Store distribution cert + profile to certs repo"
+  lane :seed_certs do
+    api_key = app_store_connect_api_key(
+      key_id: ENV["APP_STORE_CONNECT_KEY_ID"],
+      issuer_id: ENV["APP_STORE_CONNECT_ISSUER_ID"],
+      key_content: ENV["APP_STORE_CONNECT_API_KEY"],
+      is_key_content_base64: true,
+      in_house: false
+    )
+
+    match(
+      type: "appstore",
+      readonly: false,
+      generate_apple_certs: true,
+      api_key: api_key,
+      git_basic_authorization: ENV["MATCH_GIT_BASIC_AUTHORIZATION"]
+    )
+  end
+
+  # ---------------------------------------------------------------------------
+  # beta
+  # Pulls Match certs read-only, signs the existing Capacitor archive,
+  # uploads to TestFlight. Run from ios-build.yml.
+  # ---------------------------------------------------------------------------
+  desc "Build IPA, sign with Match, upload to TestFlight"
+  lane :beta do
+    api_key = app_store_connect_api_key(
+      key_id: ENV["APP_STORE_CONNECT_KEY_ID"],
+      issuer_id: ENV["APP_STORE_CONNECT_ISSUER_ID"],
+      key_content: ENV["APP_STORE_CONNECT_API_KEY"],
+      is_key_content_base64: true,
+      in_house: false
+    )
+
+    match(
+      type: "appstore",
+      readonly: true,
+      api_key: api_key,
+      git_basic_authorization: ENV["MATCH_GIT_BASIC_AUTHORIZATION"]
+    )
+
+    update_code_signing_settings(
+      use_automatic_signing: false,
+      path: "App/App.xcodeproj",
+      bundle_identifier: "io.groundlog.app",
+      profile_name: "match AppStore io.groundlog.app",
+      code_sign_identity: "Apple Distribution",
+      team_id: CredentialsManager::AppfileConfig.try_fetch_value(:team_id)
+    )
+
+    increment_build_number(
+      xcodeproj: "App/App.xcodeproj",
+      build_number: ENV["BUILD_NUMBER"] || "1"
+    )
+
+    build_app(
+      project: "App/App.xcodeproj",
+      scheme: "App",
+      configuration: "Release",
+      export_method: "app-store",
+      output_directory: "./build",
+      output_name: "GroundLog.ipa",
+      clean: true,
+      include_bitcode: false,
+      include_symbols: true,
+      xcargs: "-allowProvisioningUpdates"
+    )
+
+    pilot(
+      api_key: api_key,
+      ipa: "./build/GroundLog.ipa",
+      skip_waiting_for_build_processing: true,
+      skip_submission: true,
+      changelog: ENV["CHANGELOG"] || "Automated build"
+    )
+  end
+end

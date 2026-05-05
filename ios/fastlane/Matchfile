@@ -1,0 +1,8 @@
+# Fastlane Match config — defines where signing certs live and what type.
+# Auth (MATCH_PASSWORD + MATCH_GIT_BASIC_AUTHORIZATION) and team_id come
+# from environment + Appfile. Keeping this file minimal so secrets stay
+# out of the repo.
+
+git_url(ENV["MATCH_GIT_URL"])
+storage_mode("git")
+type("appstore")

@@ -1,0 +1,68 @@
+name: iOS — Seed Match certs (one-shot)
+
+# One-shot workflow to generate the App Store distribution cert + provisioning
+# profile via Fastlane Match and push them (encrypted) to the certs repo.
+#
+# Run this exactly once when first wiring up CI signing. After that, the main
+# `ios-build.yml` workflow uses `match --readonly` to pull these.
+#
+# Re-run only when:
+#   - Distribution cert expires (Apple distribution certs last 1 year by default,
+#     but renew automatically when Match runs with --readonly false)
+#   - Bundle ID capabilities change in Apple Developer portal (need new profile)
+#   - You've nuked the certs repo and need to reseed
+
+on:
+  workflow_dispatch:
+    inputs:
+      nuke_first:
+        description: "Nuke existing certs before regenerating? (LAST RESORT — invalidates ALL existing builds)"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+
+jobs:
+  seed:
+    name: Generate distribution cert + profile
+    runs-on: macos-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v5
+
+      - name: Set up Ruby + Bundler cache
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.3"
+          bundler-cache: true
+          working-directory: ios
+
+      - name: Compute Match git basic auth header
+        run: |
+          AUTH=$(printf "%s" "x-access-token:${{ secrets.MATCH_GIT_PAT }}" | base64 | tr -d '\n')
+          echo "MATCH_GIT_BASIC_AUTHORIZATION=$AUTH" >> "$GITHUB_ENV"
+
+      - name: Nuke existing certs (only if requested)
+        if: ${{ inputs.nuke_first == 'true' }}
+        working-directory: ios
+        env:
+          MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
+          MATCH_GIT_URL: ${{ secrets.MATCH_GIT_URL }}
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APP_STORE_CONNECT_API_KEY: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
+        run: bundle exec fastlane match nuke distribution --skip_confirmation true
+
+      - name: Seed Match certs and profile
+        working-directory: ios
+        env:
+          MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
+          MATCH_GIT_URL: ${{ secrets.MATCH_GIT_URL }}
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APP_STORE_CONNECT_API_KEY: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
+        run: bundle exec fastlane seed_certs
