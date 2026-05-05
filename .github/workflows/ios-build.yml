@@ -33,7 +33,10 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v5
         with:
-          node-version: "20"
+          # Capacitor 8 CLI requires Node >=22 (per cap sync error 2026-05-05).
+          # Other workflows (deploy.yml, dependency-watch.yml) stay on 20 since
+          # they don't invoke @capacitor/cli.
+          node-version: "22"
           cache: "npm"
 
       - name: Install npm dependencies
