@@ -38,9 +38,16 @@ jobs:
       - name: Run npm outdated
         run: |
           # `npm outdated` exits non-zero when packages are outdated — that's normal, not an error
-          npm outdated --json > outdated.json || true
-          if [ ! -s outdated.json ]; then echo "{}" > outdated.json; fi
-          echo "Outdated package count: $(jq 'length' outdated.json)"
+          npm outdated --json > outdated-raw.json || true
+          if [ ! -s outdated-raw.json ]; then echo "{}" > outdated-raw.json; fi
+
+          # Filter known false positives:
+          # - @capacitor/cli: Capacitor 8 majors publish on the `next` dist-tag; the `latest`
+          #   tag still points to 7.x. `npm outdated` flags 8.3.1 as "outdated → 7.6.2" which
+          #   would be a downgrade. We're on 8.x intentionally — skip it from the report.
+          jq 'del(."@capacitor/cli")' outdated-raw.json > outdated.json
+
+          echo "Outdated package count (after filter): $(jq 'length' outdated.json)"
 
       - name: Run npm audit
         run: |
@@ -112,7 +119,7 @@ jobs:
               echo "|---|---|---|---|"
               jq -r '.vulnerabilities | to_entries[] | select(.value.severity == "high" or .value.severity == "critical") | "| `\(.value.name)` | \(.value.severity) | \(.value.fixAvailable) | \(.value.isDirect) |"' audit.json
               echo
-              echo "_Note: 11 high-severity advisories in the `@capacitor/assets` build-time chain are known and intentionally unpatched (devDep, never ships to production). See KB wiki §9 for full posture._"
+              echo "_Note: high-severity advisories in the \`@capacitor/assets\` build-time dependency chain (devDep, never ships to production) are known and intentionally unpatched. See KB wiki §9 for full posture._"
             fi
             echo
             echo "---"
