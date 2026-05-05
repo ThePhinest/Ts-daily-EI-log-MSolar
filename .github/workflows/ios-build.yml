@@ -48,6 +48,15 @@ jobs:
       - name: Sync Capacitor iOS
         run: npx cap sync ios
 
+      - name: Select Xcode 26 (Apple now requires iOS 26 SDK for App Store uploads)
+        # Apple enforces a minimum SDK version annually. As of 2026-04, all
+        # uploads to App Store Connect must be built with Xcode 26+ (iOS 26 SDK).
+        # macos-latest has multiple Xcodes installed but defaults to 16.4 —
+        # this action picks the latest stable available on the runner.
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
       - name: Set up Ruby + Bundler cache
         uses: ruby/setup-ruby@v1
         with:
