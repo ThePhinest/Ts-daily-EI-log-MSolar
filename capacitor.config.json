@@ -2,6 +2,10 @@
   "appId": "io.groundlog.app",
   "appName": "GroundLog",
   "webDir": "dist",
+  "server": {
+    "iosScheme": "https",
+    "hostname": "app.groundlog.io"
+  },
   "ios": {
     "scheme": "GroundLog",
     "contentInset": "always",
