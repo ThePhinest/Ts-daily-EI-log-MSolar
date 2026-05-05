@@ -159,7 +159,7 @@ document.addEventListener('visibilitychange', function() {
 // ── Cloud save (called with debounce from autoSave) ──
 let _cloudTimer = null;
 async function cloudSave() {
-  if (!db || !_fbReady) { return; } // not ready — skip silently, don't show offline
+  if (!db || !_fbReady || !_currentUser) { return; } // not ready — skip silently, don't show offline
   try {
     setSyncStatus('syncing');
     const state = collectFormState();

@@ -394,6 +394,11 @@ function _initAuth() {
       obCheck();
     } else {
       window._currentUser = null;
+      // Reset Firestore-ready flag on sign-out so any pending debounced
+      // writes (cloudSave, autosave, etc.) fail-safe instead of firing
+      // _udb()→null→.collection() and crashing. Re-set true by
+      // initFirebaseLoad on next sign-in.
+      window._fbReady = false;
       document.getElementById('page-signin').style.display = 'flex';
     }
   });
