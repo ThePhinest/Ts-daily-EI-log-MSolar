@@ -112,6 +112,11 @@ jobs:
           APP_STORE_CONNECT_API_KEY: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
           BUILD_NUMBER: ${{ github.run_number }}
           CHANGELOG: ${{ inputs.changelog }}
+          # Fastlane's `xcodebuild -showBuildSettings` retry default is 4 attempts
+          # at 3s/6s/12s/24s. Xcode 26 on macos-latest sometimes exceeds this on
+          # cold runners (build #11 timed out 2026-05-06). Bumping to 60s prevents
+          # the transient flake without affecting successful runs.
+          FASTLANE_XCODEBUILD_SETTINGS_TIMEOUT: "60"
         run: bundle exec fastlane beta
 
       - name: Upload IPA artifact (debug aid)
