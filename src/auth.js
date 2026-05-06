@@ -198,11 +198,25 @@ async function siGoogleSignIn() {
     }
   }
 
-  // Web path: redirect-based sign-in (popup breaks in iOS Safari PWA).
+  // Web path: popup-based sign-in. Redirect breaks because Firebase's
+  // auth handler iframe ({authDomain}.firebaseapp.com) can't access its
+  // own storage in the third-party context that modern browsers (Edge
+  // tracking prevention, Safari ITP, Chrome partitioned storage) enforce
+  // — getRedirectResult returns {credential:null, user:null} after Google
+  // bounces back. Popup avoids the cross-origin iframe entirely.
+  // iOS Safari PWA case is handled separately by the visibility guard at
+  // the top of this file (button hidden when window.navigator.standalone
+  // is true and Capacitor is not native).
   const provider = new firebase.auth.GoogleAuthProvider();
   auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL)
-    .then(function() { return auth.signInWithRedirect(provider); })
-    .catch(function(e) { siSetError(_siAuthError(e.code)); });
+    .then(function() { return auth.signInWithPopup(provider); })
+    .catch(function(e) {
+      // Filter the two benign popup-cancel codes — user closing the
+      // popup or initiating a second one is not an error to surface.
+      if (e.code !== 'auth/popup-closed-by-user' && e.code !== 'auth/cancelled-popup-request') {
+        siSetError(_siAuthError(e.code));
+      }
+    });
 }
 
 function siForgotPassword() {
