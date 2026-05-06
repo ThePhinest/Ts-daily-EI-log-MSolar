@@ -53,6 +53,14 @@
 	</array>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<key>NSCameraUsageDescription</key>
+	<string>GroundLog uses the camera to capture field photos for daily inspection logs and reports.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>GroundLog accesses your photo library so you can attach existing photos to daily logs and reports.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>GroundLog saves field photos to your photo library when you long-press a photo in the app.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>GroundLog uses your location to tag photos and place markers on the field map. Your location is never shared without your action.</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
