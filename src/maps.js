@@ -657,8 +657,22 @@ async function kmlLoadLayers(){
       try{
         const url = await storage.ref(storagePath).getDownloadURL();
         const res = await fetch(url);
+        if(!res.ok) throw new Error('HTTP ' + res.status + ' ' + (res.statusText||''));
         kmlText = await res.text();
-      }catch(err){ console.warn('kmlLoadLayers fetch failed:', err.message); }
+      }catch(err){
+        console.warn('kmlLoadLayers fetch failed:', err.message);
+        // Forward to β.1 — initial KML load on map open. If this silently
+        // fails on iOS native, layers will appear in the panel but won't
+        // render on the map. Same iOS-WebView CORS hypothesis as toggle path.
+        if(typeof window._reportError === 'function'){
+          window._reportError({
+            type: 'kml-load-failed',
+            message: 'kmlLoadLayers fetch failed: ' + (err && err.message ? err.message : String(err)),
+            stack: err && err.stack ? err.stack : null,
+            kmlStoragePath: storagePath
+          });
+        }
+      }
     }
 
     // Register all layers, render only visible ones
@@ -816,10 +830,27 @@ async function mapToggleKmlLayerById(id, visible){
       try{
         const url = await storage.ref(layer.storagePath).getDownloadURL();
         const res = await fetch(url);
+        if(!res.ok) throw new Error('HTTP ' + res.status + ' ' + (res.statusText||''));
         const kmlText = await res.text();
         const features = kmlParseLayerById(kmlText, layer.name);
         mapReaddKmlLayer(layer, features);
-      }catch(err){ console.warn('mapToggleKmlLayerById:', err.message); }
+      }catch(err){
+        console.warn('mapToggleKmlLayerById:', err.message);
+        // Forward to β.1 reporter so swallowed errors are visible on iOS WebView
+        // where there's no Safari Web Inspector. Hypothesis 2026-05-06: KML
+        // fetch from Firebase Storage may fail CORS on capacitor:// origin
+        // — same root cause as Mapbox token issue, different surface.
+        if(typeof window._reportError === 'function'){
+          window._reportError({
+            type: 'kml-toggle-failed',
+            message: 'KML toggle ON failed: ' + (err && err.message ? err.message : String(err)),
+            stack: err && err.stack ? err.stack : null,
+            kmlLayerId: layer.id,
+            kmlLayerName: layer.name,
+            kmlStoragePath: layer.storagePath
+          });
+        }
+      }
     }
   }
   kmlSaveLayers();
