@@ -51,6 +51,8 @@
 	<array>
 		<string>app.groundlog.io</string>
 	</array>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
