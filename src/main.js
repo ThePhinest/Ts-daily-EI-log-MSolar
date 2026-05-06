@@ -21,6 +21,18 @@ Sentry.init({
   // Errors-only: no performance tracing, no Session Replay (privacy posture —
   // Replay deferred until per-tenant opt-in + masking config land).
   tracesSampleRate: 0,
+  // CRITICAL: empty propagation targets prevents Sentry from injecting
+  // `sentry-trace` and `baggage` HTTP headers into outgoing fetch/XHR.
+  // Firebase identitytoolkit and Mapbox tile endpoints reject requests
+  // with these unexpected headers as 400 Bad Request. Found 2026-05-06
+  // when web sign-in regressed immediately after Sentry deploy.
+  tracePropagationTargets: [],
+  // Filter out the browserTracing integration entirely — we're not using
+  // performance monitoring, and even with tracesSampleRate=0 the integration
+  // still installs fetch/XHR instrumentation that can interfere with strict
+  // APIs. Belt-and-suspenders alongside tracePropagationTargets above.
+  integrations: (defaultIntegrations) =>
+    defaultIntegrations.filter((i) => i.name !== 'BrowserTracing'),
   // Privacy: don't auto-send IPs / headers / cookies. We attach user.uid
   // explicitly in auth.js once auth resolves; no email or PII beyond that.
   sendDefaultPii: false,
