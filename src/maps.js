@@ -7,20 +7,34 @@ let _mapCurrentStyle=localStorage.getItem('gl_map_style')||'satellite-streets-v1
 async function mapInit(){
   document.getElementById('map-no-token').style.display='none';
   document.getElementById('map-loading').style.display='flex';
-  if(_mapInstance){ 
+  if(_mapInstance){
     document.getElementById('map-loading').style.display='none';
-    setTimeout(()=>{ _mapInstance.resize(); _mapInstance.triggerRepaint(); },150); 
-    return; 
+    setTimeout(()=>{ _mapInstance.resize(); _mapInstance.triggerRepaint(); },150);
+    return;
   }
-  let token=(localStorage.getItem('gl_map_token')||'').trim();
+  // Two-token architecture (locked 2026-05-06 — see [[cost-tracker]] Mapbox row,
+  // memory feedback_operate_as_if_multi_tenant.md):
+  //   - Web platforms read `mapboxToken` (URL-restricted to https://app.groundlog.io
+  //     etc.) — defense-in-depth against drive-by token theft.
+  //   - iOS native reads `mapboxTokenNative` (no URL restrictions) — required
+  //     because Mapbox's allowlist only accepts http/https schemes, but the iOS
+  //     WebView origin is `capacitor://app.groundlog.io`. Confirmed via β.1
+  //     mapbox-error capture on build #15: 403 Forbidden, capacitor:// referer.
+  // Phase 4b will replace both reads with server-side per-firm token issuance
+  // via Cloud Function — at which point this branch becomes a single fetch call.
+  const _isNativeMap = !!(window.Capacitor && typeof window.Capacitor.isNativePlatform === 'function' && window.Capacitor.isNativePlatform());
+  const _tokenField = _isNativeMap ? 'mapboxTokenNative' : 'mapboxToken';
+  const _tokenStorageKey = _isNativeMap ? 'gl_map_token_native' : 'gl_map_token';
+
+  let token=(localStorage.getItem(_tokenStorageKey)||'').trim();
   if(!token&&db){
     try{
       let waited=0;
       while(!_fbReady&&waited<5000){await new Promise(r=>setTimeout(r,200));waited+=200;}
       const doc=await _udb().collection('settings').doc('projectConfig').get();
-      if(doc.exists&&doc.data().mapboxToken){
-        token=doc.data().mapboxToken.trim();
-        localStorage.setItem('gl_map_token',token);
+      if(doc.exists&&doc.data()[_tokenField]){
+        token=doc.data()[_tokenField].trim();
+        localStorage.setItem(_tokenStorageKey,token);
         const style=doc.data().mapStyle||'satellite-streets-v11';
         localStorage.setItem('gl_map_style',style);
       }
