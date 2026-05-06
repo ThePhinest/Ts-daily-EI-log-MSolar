@@ -8,6 +8,8 @@ name: iOS — TestFlight build
 # Marketing version = MARKETING_VERSION in App.xcodeproj (currently "1.0").
 
 on:
+  # Manual trigger — for ad-hoc builds (e.g. CI changes, testing, hot-fixes
+  # without a code change), and for setting an explicit changelog string.
   workflow_dispatch:
     inputs:
       changelog:
@@ -16,9 +18,31 @@ on:
         default: "Automated build"
         type: string
 
+  # Auto-trigger on every push to main that touches files affecting the
+  # iOS build. Doc-only commits, KB changes, deploy.yml-only edits, and
+  # dependency-watch.yml tweaks don't fire this — keeps macOS minute spend
+  # tied to actual app changes. Add paths here when new iOS-relevant
+  # surfaces emerge.
+  push:
+    branches:
+      - main
+    paths:
+      - "src/**"
+      - "public/**"
+      - "index.html"
+      - "vite.config.js"
+      - "package.json"
+      - "package-lock.json"
+      - "ios/**"
+      - "capacitor.config.json"
+      - ".github/workflows/ios-build.yml"
+
 concurrency:
   group: ios-build
-  cancel-in-progress: false
+  # If a new commit lands while a build is running, cancel the in-flight
+  # build and start fresh on the latest. Saves macOS minutes on rapid
+  # iteration. Manual workflow_dispatch runs are also subject to this.
+  cancel-in-progress: true
 
 jobs:
   build:
