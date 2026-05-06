@@ -22,7 +22,7 @@
     "@capacitor/keyboard": "^8.0.3",
     "@capacitor/splash-screen": "^8.0.1",
     "@capacitor/status-bar": "^8.0.2",
-    "@sentry/browser": "^10.51.0",
+    "@sentry/browser": "10.43.0",
     "@sentry/capacitor": "^4.0.0",
     "docx": "^8.5.0",
     "exifr": "^7.1.3",
