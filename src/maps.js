@@ -70,6 +70,55 @@ function mapSetup(token){
     center, zoom,
     attributionControl:false
   });
+
+  // ── β.1 instrumentation — Mapbox + WebGL silent-failure capture ──
+  // Mapbox emits its own 'error' event on tile/style/source failures —
+  // these don't bubble to window.error, so β.1's global listener misses
+  // them. Forward through window._reportError to land in users/{uid}/_debug.
+  // Added to diagnose iOS WebView map-tile black-screen carryover from
+  // Capacitor Session 3 (desktop renders fine, iOS native shows pins on
+  // black). UID-gated downstream by errorReporter; safe on all builds.
+  _mapInstance.on('error', function(e) {
+    if (typeof window._reportError !== 'function') return;
+    const err = e && e.error;
+    window._reportError({
+      type: 'mapbox-error',
+      message: (err && err.message) || (e && e.message) || String(err || 'mapbox error'),
+      stack: (err && err.stack) || null,
+      mapboxSourceId: (e && e.sourceId) || null,
+      mapboxTileState: (e && e.tile && e.tile.state) ? String(e.tile.state) : null,
+      mapboxStatus: (err && err.status) || null,
+      mapboxUrl: (err && err.url) || null,
+      mapStyle: _mapCurrentStyle
+    });
+  });
+
+  // WebGL context loss without a JS exception — the canvas can lose its
+  // GL context (memory pressure, app backgrounding, GPU reset) and the
+  // map renders black with no error thrown. Capture explicitly.
+  try {
+    const _glCanvas = _mapInstance.getCanvas();
+    if (_glCanvas) {
+      _glCanvas.addEventListener('webglcontextlost', function(ev) {
+        if (typeof window._reportError !== 'function') return;
+        window._reportError({
+          type: 'webgl-context-lost',
+          message: 'WebGL context lost on map canvas',
+          stack: null,
+          preventedDefault: !!ev.defaultPrevented
+        });
+      }, false);
+      _glCanvas.addEventListener('webglcontextrestored', function() {
+        if (typeof window._reportError !== 'function') return;
+        window._reportError({
+          type: 'webgl-context-restored',
+          message: 'WebGL context restored on map canvas',
+          stack: null
+        });
+      }, false);
+    }
+  } catch (_) { /* never let instrumentation break map setup */ }
+
   _mapInstance.addControl(new mapboxgl.AttributionControl({compact:true}),'bottom-left');
   _mapInstance.addControl(new mapboxgl.NavigationControl({showCompass:true}),'bottom-right');
   _mapInstance.on('load',()=>{

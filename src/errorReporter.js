@@ -120,3 +120,20 @@ window.addEventListener('unhandledrejection', function(event) {
     ..._platformContext(),
   });
 });
+
+// Public helper for non-exception failures that need explicit reporting —
+// e.g. Mapbox `map.on('error', ...)` events that don't bubble to window.error,
+// WebGL context-lost canvas events, fetch-without-throw failures.
+// Call from anywhere with a partial payload; platform context is added here.
+// Caller payload should include at minimum {type, message}; stack and any
+// custom fields are passed through to Firestore unchanged.
+window._reportError = function(payload) {
+  try {
+    _writeError({
+      ...payload,
+      ..._platformContext(),
+    });
+  } catch (_) {
+    // Reporter must never throw.
+  }
+};
