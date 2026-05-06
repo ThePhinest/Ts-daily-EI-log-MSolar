@@ -1,3 +1,7 @@
+// Sentry — initialized in main.js; we just attach user identity here.
+// Privacy posture: only the opaque Firebase UID, never email or display name.
+import * as Sentry from '@sentry/capacitor'
+
 // ── Module-level state (onboarding carousel) ──
 let _obSlideIndex = 0;
 let _obTotalSlides = 8;
@@ -388,12 +392,18 @@ function _initAuth() {
     document.getElementById('page-auth-loading').style.display = 'none';
     if (user) {
       window._currentUser = user;
+      // Tag Sentry events with the opaque UID only (no email/name) so we
+      // can correlate per-user issues without leaking PII to Sentry.
+      Sentry.setUser({ id: user.uid });
       document.getElementById('page-signin').style.display = 'none';
       const emailEl = document.getElementById('cfg-account-email');
       if (emailEl) emailEl.textContent = user.email || user.displayName || 'Signed in';
       obCheck();
     } else {
       window._currentUser = null;
+      // Clear Sentry user identity so post-signout errors aren't attributed
+      // to the prior user.
+      Sentry.setUser(null);
       // Reset Firestore-ready flag on sign-out so any pending debounced
       // writes (cloudSave, autosave, etc.) fail-safe instead of firing
       // _udb()→null→.collection() and crashing. Re-set true by

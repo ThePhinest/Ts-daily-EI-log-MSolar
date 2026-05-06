@@ -24,7 +24,15 @@ jobs:
           node-version: '20'
           cache: npm
       - run: npm ci
-      - run: npm run build
+      - name: Build web bundle
+        env:
+          # Baked into the JS bundle for runtime error capture
+          VITE_SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+          # Build-time only — used by @sentry/vite-plugin for source map upload
+          SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
+          SENTRY_PROJECT: ${{ secrets.SENTRY_PROJECT }}
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+        run: npm run build
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist

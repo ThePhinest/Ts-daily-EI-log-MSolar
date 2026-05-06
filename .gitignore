@@ -2,3 +2,11 @@ CLAUDE.md
 .claude/
 node_modules/
 dist/
+
+# Local env files — NEVER commit these. Real values live in:
+# - GitHub Actions secrets (CI builds)
+# - Tim's password manager (local reference)
+# Only .env.example (committed, no values) should ever be in the repo.
+.env
+.env.local
+.env.*.local

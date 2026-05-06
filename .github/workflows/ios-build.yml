@@ -67,6 +67,15 @@ jobs:
         run: npm ci
 
       - name: Build web bundle
+        env:
+          # Baked into the JS bundle for runtime error capture (iOS WebView + web)
+          VITE_SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+          # Build-time only — used by @sentry/vite-plugin for source map upload.
+          # GITHUB_RUN_NUMBER is auto-set by Actions; Vite plugin reads it
+          # to tag the Sentry release matching the TestFlight build number.
+          SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
+          SENTRY_PROJECT: ${{ secrets.SENTRY_PROJECT }}
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
         run: npm run build
 
       - name: Sync Capacitor iOS
