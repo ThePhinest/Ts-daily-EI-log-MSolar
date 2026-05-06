@@ -4,6 +4,23 @@
 let _mapInstance=null, _mapGpsMarker=null, _mapGpsWatch=null;
 let _mapCurrentStyle=localStorage.getItem('gl_map_style')||'satellite-streets-v11';
 
+// Two-token architecture (locked 2026-05-06 — see [[cost-tracker]] Mapbox row,
+// memory feedback_operate_as_if_multi_tenant.md):
+//   - Web reads `mapboxToken` (URL-restricted) — defense-in-depth.
+//   - iOS native reads `mapboxTokenNative` (unrestricted) — required because
+//     Mapbox URL allowlist accepts only http/https schemes and the iOS WebView
+//     origin is `capacitor://app.groundlog.io`.
+// Single source of truth for token keys to prevent any code path from reading
+// the wrong field/storage and clobbering the other platform's token state.
+// Phase 4b will replace both reads with server-side per-firm token issuance.
+function _mapTokenKeys(){
+  const isNative = !!(window.Capacitor && typeof window.Capacitor.isNativePlatform === 'function' && window.Capacitor.isNativePlatform());
+  return {
+    storageKey: isNative ? 'gl_map_token_native' : 'gl_map_token',
+    firestoreField: isNative ? 'mapboxTokenNative' : 'mapboxToken'
+  };
+}
+
 async function mapInit(){
   document.getElementById('map-no-token').style.display='none';
   document.getElementById('map-loading').style.display='flex';
@@ -12,29 +29,16 @@ async function mapInit(){
     setTimeout(()=>{ _mapInstance.resize(); _mapInstance.triggerRepaint(); },150);
     return;
   }
-  // Two-token architecture (locked 2026-05-06 — see [[cost-tracker]] Mapbox row,
-  // memory feedback_operate_as_if_multi_tenant.md):
-  //   - Web platforms read `mapboxToken` (URL-restricted to https://app.groundlog.io
-  //     etc.) — defense-in-depth against drive-by token theft.
-  //   - iOS native reads `mapboxTokenNative` (no URL restrictions) — required
-  //     because Mapbox's allowlist only accepts http/https schemes, but the iOS
-  //     WebView origin is `capacitor://app.groundlog.io`. Confirmed via β.1
-  //     mapbox-error capture on build #15: 403 Forbidden, capacitor:// referer.
-  // Phase 4b will replace both reads with server-side per-firm token issuance
-  // via Cloud Function — at which point this branch becomes a single fetch call.
-  const _isNativeMap = !!(window.Capacitor && typeof window.Capacitor.isNativePlatform === 'function' && window.Capacitor.isNativePlatform());
-  const _tokenField = _isNativeMap ? 'mapboxTokenNative' : 'mapboxToken';
-  const _tokenStorageKey = _isNativeMap ? 'gl_map_token_native' : 'gl_map_token';
-
-  let token=(localStorage.getItem(_tokenStorageKey)||'').trim();
+  const {storageKey, firestoreField} = _mapTokenKeys();
+  let token=(localStorage.getItem(storageKey)||'').trim();
   if(!token&&db){
     try{
       let waited=0;
       while(!_fbReady&&waited<5000){await new Promise(r=>setTimeout(r,200));waited+=200;}
       const doc=await _udb().collection('settings').doc('projectConfig').get();
-      if(doc.exists&&doc.data()[_tokenField]){
-        token=doc.data()[_tokenField].trim();
-        localStorage.setItem(_tokenStorageKey,token);
+      if(doc.exists&&doc.data()[firestoreField]){
+        token=doc.data()[firestoreField].trim();
+        localStorage.setItem(storageKey,token);
         const style=doc.data().mapStyle||'satellite-streets-v11';
         localStorage.setItem('gl_map_style',style);
       }
@@ -208,7 +212,9 @@ function mapSetStyle(style){
   if(!_mapInstance) return;
   _mapCurrentStyle=style;
   localStorage.setItem('gl_map_style',style);
-  mapboxgl.accessToken = localStorage.getItem('gl_map_token');
+  // Reset accessToken before style switch — Mapbox destroys/recreates the map
+  // instance and may re-fetch tiles. Use platform-correct token (web vs native).
+  mapboxgl.accessToken = localStorage.getItem(_mapTokenKeys().storageKey);
   _mapInstance.setStyle(`mapbox://styles/mapbox/${style}`);
   mapUpdateStyleButtons();
   _mapInstance.once('styledata',()=>{
@@ -230,12 +236,16 @@ function mapUpdateStyleButtons(){
 async function mapSaveSettings(){
   const token=(document.getElementById('cfg-map-token')?.value||'').trim();
   const style=document.getElementById('cfg-map-style')?.value||'satellite-streets-v11';
-  if(token) localStorage.setItem('gl_map_token',token);
+  // Settings UI saves to platform-correct token slot — editing the token from
+  // an iOS device updates `mapboxTokenNative`, from web updates `mapboxToken`.
+  // Prevents either platform's settings UI from clobbering the other's token.
+  const {storageKey, firestoreField} = _mapTokenKeys();
+  if(token) localStorage.setItem(storageKey,token);
   localStorage.setItem('gl_map_style',style);
   if(db&&_fbReady){
     try{
       await _udb().collection('settings').doc('projectConfig').set(
-        {mapboxToken:token, mapStyle:style, _ts:Date.now()},
+        {[firestoreField]:token, mapStyle:style, _ts:Date.now()},
         {merge:true}
       );
     }catch(e){console.warn('mapSaveSettings cloud failed:',e.message);}
@@ -863,17 +873,20 @@ function mapExportKml(){
 }
 
 async function mapLoadSettingsFields(){
+  // Settings UI displays the platform-correct token (web sees mapboxToken,
+  // native sees mapboxTokenNative) so the field never shows the wrong one.
+  const {storageKey, firestoreField} = _mapTokenKeys();
   if(db&&_fbReady){
     try{
       const doc=await _udb().collection('settings').doc('projectConfig').get();
       if(doc.exists){
         const d=doc.data();
-        if(d.mapboxToken){ localStorage.setItem('gl_map_token',d.mapboxToken); }
+        if(d[firestoreField]){ localStorage.setItem(storageKey,d[firestoreField]); }
         if(d.mapStyle){ localStorage.setItem('gl_map_style',d.mapStyle); }
       }
     }catch(e){console.warn('mapLoadSettingsFields cloud failed:',e.message);}
   }
-  const token=localStorage.getItem('gl_map_token')||'';
+  const token=localStorage.getItem(storageKey)||'';
   const style=localStorage.getItem('gl_map_style')||'satellite-streets-v11';
   const tf=document.getElementById('cfg-map-token');
   const sf=document.getElementById('cfg-map-style');
