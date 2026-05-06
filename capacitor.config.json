@@ -9,7 +9,7 @@
   "ios": {
     "scheme": "GroundLog",
     "contentInset": "always",
-    "limitsNavigationsToAppBoundDomains": false
+    "limitsNavigationsToAppBoundDomains": true
   },
   "plugins": {
     "SplashScreen": {
