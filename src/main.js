@@ -77,3 +77,38 @@ window.firebase = firebase
 window.mapboxgl = mapboxgl
 window.exifr = exifr
 window.docx = docx
+
+// ─── Capacitor native context flag ─────────────────────────────────────────
+// Adds `is-native` class to <body> when running inside the Capacitor iOS
+// WebView. Used by CSS rules that need to differ web vs. native (currently:
+// input font-size bump to 16px to prevent iOS WKWebView auto-zoom on focus
+// — see index.html style block).
+import { Keyboard } from '@capacitor/keyboard'
+if (Capacitor.isNativePlatform && Capacitor.isNativePlatform()) {
+  document.body.classList.add('is-native')
+}
+
+// ─── Tap-outside dismisses keyboard ────────────────────────────────────────
+// iOS WKWebView's default behavior for input.blur() vs. soft-keyboard dismiss
+// is undefined — sometimes it dismisses, sometimes it doesn't. Owning this
+// explicitly: any pointerdown that moves focus away from an input also calls
+// Keyboard.hide() on native. Web-side .blur() handles soft-keyboard dismiss
+// via standard browser behavior. Capture-phase listener so it fires before
+// element-level handlers.
+document.addEventListener('pointerdown', function(e){
+  const active = document.activeElement
+  if (!active) return
+  const t = active.tagName
+  if (t !== 'INPUT' && t !== 'TEXTAREA' && t !== 'SELECT') return
+  const tgt = e.target
+  // Tapping the focused input itself or its descendants — no-op
+  if (tgt === active || (active.contains && active.contains(tgt))) return
+  // Tapping into a different input — let it focus naturally
+  const tt = tgt.tagName
+  if (tt === 'INPUT' || tt === 'TEXTAREA' || tt === 'SELECT') return
+  // Tapped elsewhere — dismiss keyboard
+  active.blur()
+  if (Capacitor.isNativePlatform && Capacitor.isNativePlatform()) {
+    Keyboard.hide().catch(()=>{})
+  }
+}, true)

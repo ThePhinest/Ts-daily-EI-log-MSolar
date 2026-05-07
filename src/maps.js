@@ -627,7 +627,128 @@ function kmlParseLayerById(kmlText, layerName){
   });
   return features;
 }
-  
+
+// ═══════════════════════════════════════════
+// KML EDIT MODE — bulk select + delete
+// ═══════════════════════════════════════════
+// Edit mode repurposes the visibility checkboxes as selection checkboxes
+// while preserving each layer's actual visibility state in memory. Toggling
+// edit mode flips the panel into a selection UI; the existing per-row delete
+// buttons hide, replaced by a bulk-delete button driven by `_mapKmlSelected`.
+// Selection state is transient — cleared on enter/exit/successful delete.
+// Two-tap arm-and-confirm on the delete action — first tap arms the button
+// for 5s; second tap within that window executes; otherwise auto-disarms.
+// Changing selection mid-confirm disarms (prevents accidental wrong-set
+// deletes). Single-row delete (`mapRemoveKmlLayerById`) and visibility toggle
+// (`mapToggleKmlLayerById`) paths are untouched; bulk delete is purely
+// additive logic running alongside them.
+let _mapKmlEditMode = false;
+let _mapKmlSelected = new Set();
+let _mapKmlDeleteArmed = false;
+let _mapKmlDeleteArmedTimer = null;
+
+function _mapKmlClearArm(){
+  _mapKmlDeleteArmed = false;
+  if(_mapKmlDeleteArmedTimer){ clearTimeout(_mapKmlDeleteArmedTimer); _mapKmlDeleteArmedTimer = null; }
+}
+
+function mapToggleKmlEditMode(){
+  _mapKmlEditMode = !_mapKmlEditMode;
+  _mapKmlSelected.clear();
+  _mapKmlClearArm();
+  mapUpdateKmlLayerList();
+}
+
+function mapKmlToggleSelection(id){
+  if(_mapKmlSelected.has(id)) _mapKmlSelected.delete(id);
+  else _mapKmlSelected.add(id);
+  _mapKmlClearArm();
+  mapUpdateKmlEditUI();
+}
+
+function mapKmlFolderToggleSelection(folderName){
+  const layers = _mapKmlLayers.filter(l => l.folderName === folderName);
+  const allSelected = layers.length > 0 && layers.every(l => _mapKmlSelected.has(l.id));
+  if(allSelected) layers.forEach(l => _mapKmlSelected.delete(l.id));
+  else layers.forEach(l => _mapKmlSelected.add(l.id));
+  _mapKmlClearArm();
+  mapUpdateKmlLayerList();
+}
+
+function mapKmlToggleSelectAll(){
+  const allSelected = _mapKmlLayers.length > 0 && _mapKmlLayers.every(l => _mapKmlSelected.has(l.id));
+  _mapKmlSelected.clear();
+  if(!allSelected) _mapKmlLayers.forEach(l => _mapKmlSelected.add(l.id));
+  _mapKmlClearArm();
+  mapUpdateKmlLayerList();
+}
+
+function mapUpdateKmlEditUI(){
+  const editBtn = document.getElementById('map-kml-edit-btn');
+  const delBtn = document.getElementById('map-kml-bulk-delete-btn');
+  const helper = document.getElementById('map-kml-edit-helper');
+  if(!editBtn || !delBtn || !helper) return;
+  if(_mapKmlEditMode){
+    editBtn.innerHTML = '✕ Cancel';
+    editBtn.style.display = '';
+    helper.style.display = _mapKmlLayers.length > 0 ? '' : 'none';
+    if(_mapKmlSelected.size > 0){
+      delBtn.style.display = '';
+      if(_mapKmlDeleteArmed){
+        delBtn.style.background = '#5a0000';
+        delBtn.style.borderColor = '#ff4444';
+        delBtn.style.color = '#ffffff';
+        delBtn.innerHTML = `🗑 CONFIRM (${_mapKmlSelected.size})`;
+      } else {
+        delBtn.style.background = '#3d1414';
+        delBtn.style.borderColor = '#6b2020';
+        delBtn.style.color = '#ff8080';
+        delBtn.innerHTML = `🗑 Delete (<span id="map-kml-bulk-delete-count">${_mapKmlSelected.size}</span>)`;
+      }
+    } else {
+      delBtn.style.display = 'none';
+    }
+  } else {
+    editBtn.innerHTML = '✏️ Edit';
+    editBtn.style.display = _mapKmlLayers.length > 0 ? '' : 'none';
+    delBtn.style.display = 'none';
+    helper.style.display = 'none';
+  }
+}
+
+async function mapBulkDeleteSelected(){
+  if(_mapKmlSelected.size === 0) return;
+  // Two-tap arm/confirm — first tap arms (5s window), second executes
+  if(!_mapKmlDeleteArmed){
+    _mapKmlDeleteArmed = true;
+    if(_mapKmlDeleteArmedTimer) clearTimeout(_mapKmlDeleteArmedTimer);
+    _mapKmlDeleteArmedTimer = setTimeout(()=>{
+      _mapKmlDeleteArmed = false;
+      _mapKmlDeleteArmedTimer = null;
+      mapUpdateKmlEditUI();
+    }, 5000);
+    mapUpdateKmlEditUI();
+    return;
+  }
+  // Confirmed — execute
+  _mapKmlClearArm();
+  const ids = new Set(_mapKmlSelected);
+  // Tear down map state for all selected
+  for(const layer of _mapKmlLayers.filter(l => ids.has(l.id))){
+    ['fill','line'].forEach(t=>{ if(_mapInstance.getLayer(layer.id+'-'+t)) _mapInstance.removeLayer(layer.id+'-'+t); });
+    if(_mapInstance.getSource(layer.id)) _mapInstance.removeSource(layer.id);
+  }
+  // Remove from registry (back-to-front to preserve indices during splice)
+  for(let i=_mapKmlLayers.length-1;i>=0;i--){
+    if(ids.has(_mapKmlLayers[i].id)) _mapKmlLayers.splice(i,1);
+  }
+  kmlSaveLayers();
+  // Exit edit mode + re-render
+  _mapKmlEditMode = false;
+  _mapKmlSelected.clear();
+  mapUpdateKmlLayerList();
+}
+
 async function kmlLoadLayers(){
   let data = null;
   if(db&&_fbReady){
@@ -691,16 +812,38 @@ async function kmlLoadLayers(){
 function mapUpdateKmlLayerList(){
   const list = document.getElementById('map-kml-layer-list');
   if(!list) return;
-  if(!_mapKmlLayers.length){ list.innerHTML = '<span>No layers imported.</span>'; return; }
+  // Empty state — also reset edit mode in case the last layer was just deleted
+  if(!_mapKmlLayers.length){
+    _mapKmlEditMode = false;
+    _mapKmlSelected.clear();
+    _mapKmlClearArm();
+    list.innerHTML = '<span>No layers imported.</span>';
+    mapUpdateKmlEditUI();
+    return;
+  }
   list.innerHTML = '';
+  // makeLayerRow branches by mode: normal = visibility checkbox + per-row ✕ delete;
+  // edit = selection checkbox + red accent + selection-tinted background; no ✕.
   function makeLayerRow(layer){
+    const selected = _mapKmlSelected.has(layer.id);
     const row = document.createElement('div');
-    row.style.cssText = 'display:flex;align-items:center;gap:6px;padding:5px 8px;background:var(--s1);border-radius:6px;margin-bottom:4px;';
-    row.innerHTML = `<label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-family:var(--mono);font-size:11px;color:var(--text);flex:1;min-width:0;">
-      <input type="checkbox" ${layer.visible?'checked':''} onchange="mapToggleKmlLayerById('${layer.id}',this.checked)">
-      <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${layer.name}</span>
-    </label>
-    <button onclick="mapRemoveKmlLayerById('${layer.id}')" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;padding:0;">✕</button>`;
+    if(_mapKmlEditMode && selected){
+      row.style.cssText = 'display:flex;align-items:center;gap:6px;padding:5px 8px;background:#2a1414;border:1px solid #6b2020;border-radius:6px;margin-bottom:4px;';
+    } else {
+      row.style.cssText = 'display:flex;align-items:center;gap:6px;padding:5px 8px;background:var(--s1);border-radius:6px;margin-bottom:4px;';
+    }
+    if(_mapKmlEditMode){
+      row.innerHTML = `<label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-family:var(--mono);font-size:11px;color:var(--text);flex:1;min-width:0;">
+        <input type="checkbox" ${selected?'checked':''} style="accent-color:#ff4444;" onchange="mapKmlToggleSelection('${layer.id}')">
+        <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${layer.name}</span>
+      </label>`;
+    } else {
+      row.innerHTML = `<label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-family:var(--mono);font-size:11px;color:var(--text);flex:1;min-width:0;">
+        <input type="checkbox" ${layer.visible?'checked':''} onchange="mapToggleKmlLayerById('${layer.id}',this.checked)">
+        <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${layer.name}</span>
+      </label>
+      <button onclick="mapRemoveKmlLayerById('${layer.id}')" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;padding:0;">✕</button>`;
+    }
     return row;
   }
   const folders = {};
@@ -711,16 +854,26 @@ function mapUpdateKmlLayerList(){
   });
   Object.entries(folders).forEach(([folderName, layers])=>{
     const folderId = 'kml-folder-'+folderName.replace(/[^a-z0-9]/gi,'_');
-    const allVisible = layers.every(l=>l.visible);
-    const someVisible = layers.some(l=>l.visible);
     const folderWrap = document.createElement('div');
     folderWrap.style.cssText = 'margin-bottom:6px;border:1px solid var(--border2);border-radius:6px;overflow:hidden;';
     const header = document.createElement('div');
     header.style.cssText = 'display:flex;align-items:center;gap:6px;padding:6px 8px;background:var(--s2);cursor:pointer;';
+    // Folder-level checkbox: visibility tristate in normal mode,
+    // selection tristate in edit mode (red accent).
+    let cbChecked, cbAccent;
+    if(_mapKmlEditMode){
+      const allSelected = layers.every(l => _mapKmlSelected.has(l.id));
+      cbChecked = allSelected ? 'checked' : '';
+      cbAccent = '#ff4444';
+    } else {
+      const allVisible = layers.every(l=>l.visible);
+      cbChecked = allVisible ? 'checked' : '';
+      cbAccent = 'var(--amber)';
+    }
     header.innerHTML = `
       <span id="${folderId}-chev" style="font-size:10px;color:var(--muted2);">▾</span>
-      <input type="checkbox" ${allVisible?'checked':someVisible?'':''}
-        style="accent-color:var(--amber);width:14px;height:14px;flex-shrink:0;"
+      <input type="checkbox" ${cbChecked}
+        style="accent-color:${cbAccent};width:14px;height:14px;flex-shrink:0;"
         id="${folderId}-cb">
       <span style="font-family:var(--mono);font-size:11px;color:var(--amber2);font-weight:600;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">📁 ${folderName}</span>
       <span style="font-family:var(--mono);font-size:9px;color:var(--muted);">${layers.length}</span>`;
@@ -735,16 +888,22 @@ function mapUpdateKmlLayerList(){
       children.style.display = collapsed ? '' : 'none';
       document.getElementById(folderId+'-chev').textContent = collapsed ? '▾' : '▸';
     });
-    // Folder-level checkbox
+    // Folder-level checkbox — branches by mode
     header.querySelector(`#${folderId}-cb`).addEventListener('click', function(e){
       e.stopPropagation();
-      kmlToggleFolderVisibility(folderName, this.checked);
+      if(_mapKmlEditMode){
+        mapKmlFolderToggleSelection(folderName);
+      } else {
+        kmlToggleFolderVisibility(folderName, this.checked);
+      }
     });
     folderWrap.appendChild(header);
     folderWrap.appendChild(children);
     list.appendChild(folderWrap);
   });
   noFolder.forEach(layer => list.appendChild(makeLayerRow(layer)));
+  // Sync edit-mode buttons (Edit/Cancel/Delete/SelectAll helper)
+  mapUpdateKmlEditUI();
 }
 async function kmlToggleFolderVisibility(folderName, visible){
   const layers = _mapKmlLayers.filter(l=>l.folderName===folderName);
@@ -957,6 +1116,11 @@ window.mapToggleKmlLayer = mapToggleKmlLayer;
 window.mapRemoveKmlLayer = mapRemoveKmlLayer;
 window.mapRemoveKmlLayerById = mapRemoveKmlLayerById;
 window.mapToggleKmlLayerById = mapToggleKmlLayerById;
+window.mapToggleKmlEditMode = mapToggleKmlEditMode;
+window.mapKmlToggleSelection = mapKmlToggleSelection;
+window.mapKmlFolderToggleSelection = mapKmlFolderToggleSelection;
+window.mapKmlToggleSelectAll = mapKmlToggleSelectAll;
+window.mapBulkDeleteSelected = mapBulkDeleteSelected;
 window.mapShowExportModal = mapShowExportModal;
 window.mapExportKml = mapExportKml;
 window.mapLoadSettingsFields = mapLoadSettingsFields;
