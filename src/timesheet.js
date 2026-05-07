@@ -11,7 +11,12 @@ function tsDisplayDate(d){const days=['Sun','Mon','Tue','Wed','Thu','Fri','Sat']
 function tsWeekLabel(s,e){const mo=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];return mo[s.getMonth()]+' '+s.getDate()+' – '+mo[e.getMonth()]+' '+e.getDate()+', '+e.getFullYear();}
 function tsGetAllEntries(){try{return JSON.parse(localStorage.getItem('msf_ts_entries')||'{}');}catch{return{};}}
 function tsGetProjectEntries(){const pn=(JSON.parse(localStorage.getItem('msf_projectconfig')||'{}').projectName)||'';const all=tsGetAllEntries();return Object.fromEntries(Object.entries(all).filter(([,v])=>!v.projectName||v.projectName===pn));}
-function tsGetEntry(ds){const entry=tsGetAllEntries()[ds]||null;if(!entry)return null;const pn=(JSON.parse(localStorage.getItem('msf_projectconfig')||'{}').projectName)||'';if(entry.projectName&&entry.projectName!==pn)return null;return entry;}
+// Returns the entry for a given date regardless of which project it was tagged under.
+// The weekly view's purpose is "show what happened in this week" — a date can only have
+// one entry, and if a different project tagged it, the data still belongs to the user.
+// Cumulative view filters by project via tsGetProjectEntries (separate path) so totals
+// stay project-scoped for reporting.
+function tsGetEntry(ds){return tsGetAllEntries()[ds]||null;}
 function tsSaveEntry(ds,data){const entries=tsGetAllEntries();const pn=(JSON.parse(localStorage.getItem('msf_projectconfig')||'{}').projectName)||'';if(!entries[ds])entries[ds]={projectName:pn};else if(!entries[ds].projectName)entries[ds].projectName=pn;entries[ds]=Object.assign(entries[ds],data);localStorage.setItem('msf_ts_entries',JSON.stringify(entries));try{if(typeof db!=='undefined'&&db&&_fbReady){_udb().collection('timesheetEntries').doc(ds).set(entries[ds]).catch(()=>{});}}catch(e){}}
 function tsGetAllArchivedWeeks(){try{return JSON.parse(localStorage.getItem('msf_ts_weeks')||'[]');}catch{return[];}}
 function tsGetArchivedWeeks(){const pn=(JSON.parse(localStorage.getItem('msf_projectconfig')||'{}').projectName)||'';return tsGetAllArchivedWeeks().filter(w=>!w.projectName||w.projectName===pn);}
