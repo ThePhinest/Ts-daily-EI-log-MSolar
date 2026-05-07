@@ -403,6 +403,184 @@ async function rptBuildDocx(logData,polished,photos){
   return Packer.toBlob(doc);
 }
 
+// ── Report versioning + cache (B keystone) ──
+// Architecture: every Generate Report writes a versioned snapshot to
+//   users/{uid}/reports/{reportDate}/versions/{v1, v2, ...}
+// Each version stores polish output + input snapshot + hash of input. On
+// re-tap of Generate Report:
+//   - no prior version → fresh polish, save as v1
+//   - hash matches latest → silent cache hit, re-export from latest (no API call)
+//   - hash differs → 3-choice modal: Cancel / Generate new / Re-export existing
+// Re-export uses cached polish + cached input snapshot — same DOCX every time.
+// This makes polished narratives durable, deterministic, and free to regenerate.
+
+// Bump when rptCallClaude system prompt changes — invalidates all cached polish
+const _RPT_PROMPT_VERSION = 1;
+
+// Friendly labels for top-level logData fields. Presence here implies the
+// field's value flows through Anthropic polish (narrative). Absent fields
+// default to mechanical. Crew block subfields are handled by pattern below.
+// To add a new narrative field: add an entry here. Mechanical fields need none.
+const _FIELD_INFO = {
+  inspectionSummary: {label:'Inspection Summary',     narrative:true},
+  agencyInspection:  {label:'Agency Inspection',      narrative:true},
+  landownerContact:  {label:'Landowner Contact',      narrative:true},
+  rteObservation:    {label:'RTE Observation',        narrative:true},
+  nonCompliance:     {label:'Non-Compliance',         narrative:true},
+  generalComms:      {label:'General Communications', narrative:true},
+  lookahead:         {label:'24-Hour Look Ahead',     narrative:true}
+};
+
+function _getFieldInfo(path){
+  const m = path.match(/^crewBlocks\[(\d+)\]\.(\w+)$/);
+  if(m){
+    const n = parseInt(m[1])+1, sub = m[2];
+    const subLabels = {name:'Name',time:'Time',location:'Location',activities:'Activities Observed',envCompliance:'Env Compliance',issues:'Issues',notes:'Notes'};
+    return {label:`Crew ${n} — ${subLabels[sub]||sub}`, narrative:['activities','envCompliance','issues','notes'].includes(sub)};
+  }
+  return _FIELD_INFO[path] || {label:path, narrative:false};
+}
+
+// Walk an object and yield leaf paths like "weather.tempAM" or "crewBlocks[0].activities"
+function _walkPaths(obj, prefix=''){
+  const out = [];
+  if(obj === null || obj === undefined) return out;
+  if(Array.isArray(obj)){
+    obj.forEach((item, i) => {
+      const p = `${prefix}[${i}]`;
+      if(item && typeof item === 'object') out.push(..._walkPaths(item, p));
+      else out.push(p);
+    });
+  } else if(typeof obj === 'object'){
+    for(const k of Object.keys(obj)){
+      const p = prefix ? `${prefix}.${k}` : k;
+      const v = obj[k];
+      if(v && typeof v === 'object') out.push(..._walkPaths(v, p));
+      else out.push(p);
+    }
+  } else {
+    out.push(prefix);
+  }
+  return out;
+}
+
+function _getAtPath(obj, path){
+  const parts = path.split(/[\.\[\]]/).filter(Boolean);
+  let cur = obj;
+  for(const p of parts){
+    if(cur === null || cur === undefined) return undefined;
+    cur = cur[p];
+  }
+  return cur;
+}
+
+// Recursive sort by key for stable JSON.stringify (hashes must be deterministic)
+function _canonicalize(v){
+  if(v === null || typeof v !== 'object') return v;
+  if(Array.isArray(v)) return v.map(_canonicalize);
+  const out = {};
+  for(const k of Object.keys(v).sort()) out[k] = _canonicalize(v[k]);
+  return out;
+}
+
+async function _hashSnapshot(snapshot){
+  const canonical = _canonicalize({...snapshot, _promptVersion: _RPT_PROMPT_VERSION});
+  const buf = new TextEncoder().encode(JSON.stringify(canonical));
+  const hashBuf = await crypto.subtle.digest('SHA-256', buf);
+  return Array.from(new Uint8Array(hashBuf)).map(b => b.toString(16).padStart(2,'0')).join('');
+}
+
+function _buildSnapshot(logData, compEntries, skipPolish, photos){
+  const photoRefs = (photos||[]).map(p => {
+    const ref = {...p};
+    delete ref._localUrl; delete ref._thumbUrl; delete ref._blobUrl;
+    return ref;
+  }).sort((a,b) => String(a.id||'').localeCompare(String(b.id||'')));
+  const compRefs = (compEntries||[]).slice().sort((a,b) => String(a.id||'').localeCompare(String(b.id||'')));
+  return {logData, compEntries: compRefs, skipPolish: !!skipPolish, photoRefs};
+}
+
+function _categorizeChanges(prevSnap, currSnap){
+  const allPaths = new Set([..._walkPaths(prevSnap.logData||{}), ..._walkPaths(currSnap.logData||{})]);
+  let mechanicalCount = 0;
+  const narrativeFields = [];
+  for(const path of allPaths){
+    const a = _getAtPath(prevSnap.logData, path);
+    const b = _getAtPath(currSnap.logData, path);
+    if((a||'') === (b||'')) continue;  // treat null/undefined/'' as equivalent
+    const info = _getFieldInfo(path);
+    if(info.narrative) narrativeFields.push(info.label);
+    else mechanicalCount++;
+  }
+  return {mechanicalCount, narrativeFields};
+}
+
+async function _loadReportVersions(reportDate){
+  if(!db || !_currentUser || !_fbReady) return [];
+  try{
+    const snap = await _udb().collection('reports').doc(reportDate).collection('versions').orderBy('version','desc').get();
+    return snap.docs.map(d => d.data());
+  } catch(e){
+    console.warn('[report-cache] load failed:', e);
+    return [];
+  }
+}
+
+async function _saveReportVersion(reportDate, snapshot, polished, inputHash, version){
+  if(!db || !_currentUser || !_fbReady) return;
+  try{
+    // JSON round-trip strips undefined and ensures Firestore-compatible payload
+    const cleanSnap = JSON.parse(JSON.stringify(snapshot));
+    const cleanPolished = JSON.parse(JSON.stringify(polished));
+    const verRef = _udb().collection('reports').doc(reportDate).collection('versions').doc('v'+version);
+    await verRef.set({
+      version,
+      polished: cleanPolished,
+      inputSnapshot: cleanSnap,
+      inputHash,
+      promptVersion: _RPT_PROMPT_VERSION,
+      generatedAt: window.firebase.firestore.FieldValue.serverTimestamp(),
+      generatedAtMs: Date.now()
+    });
+    await _udb().collection('reports').doc(reportDate).set({
+      reportDate,
+      latestVersion: version,
+      updatedAt: window.firebase.firestore.FieldValue.serverTimestamp(),
+      updatedAtMs: Date.now()
+    }, {merge:true});
+  } catch(e){
+    console.warn('[report-cache] save failed:', e);
+    // Non-fatal — DOCX still ships to user, cache miss next time
+  }
+}
+
+// Generic 3-choice modal: Cancel | secondary | primary (rightmost = default action)
+function _3choiceModal(msg, title, primaryLabel, secondaryLabel, onChoice){
+  var ov = document.createElement('div');
+  ov.className = 'modal-overlay';
+  ov.innerHTML = '<div class="modal-box">'+
+    '<div class="modal-title">'+title+'</div>'+
+    '<div class="modal-msg">'+msg+'</div>'+
+    '<div class="modal-btns">'+
+      '<button class="modal-cancel" id="_3c">Cancel</button>'+
+      '<button class="modal-confirm" id="_3b" style="background:transparent;border:1px solid var(--border2);color:var(--muted2)">'+secondaryLabel+'</button>'+
+      '<button class="modal-confirm" id="_3a" style="background:var(--amber);border-color:var(--amber);color:#111">'+primaryLabel+'</button>'+
+    '</div></div>';
+  document.body.appendChild(ov);
+  document.getElementById('_3c').onclick = function(){ ov.remove(); onChoice('cancel'); };
+  document.getElementById('_3b').onclick = function(){ ov.remove(); onChoice('secondary'); };
+  document.getElementById('_3a').onclick = function(){ ov.remove(); onChoice('primary'); };
+}
+
+function _fmtGenTime(ms){
+  if(!ms) return '';
+  const d = new Date(ms);
+  let h = d.getHours(), m = d.getMinutes();
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  h = h % 12 || 12;
+  return `${h}:${String(m).padStart(2,'0')} ${ampm}`;
+}
+
 // ── Main generateReport function ──
 async function generateReport(){
   if(!window.docx){_confirmModal('The report library is still loading. Please wait a moment and try again.',()=>{}, 'One Moment…', 'OK');return;}
@@ -436,6 +614,7 @@ async function _doGenerate(){
   const btn=document.getElementById('btn-generate-report');
   const status=document.getElementById('rpt-status');
   const setStatus=(msg,color)=>{if(status){status.textContent=msg;status.style.color=color||'var(--green)';status.style.opacity='1';}};
+  const clearStatusSoon=()=>setTimeout(()=>{if(status)status.style.opacity='0';},3000);
   if(btn){btn.disabled=true;btn.textContent='\u29d7 Generating...';}
   try{
     setStatus('Retrieving API key\u2026');
@@ -476,23 +655,90 @@ async function _doGenerate(){
     // Get compliance entries for this report date
     let compEntries=[];
     try{const all=JSON.parse(localStorage.getItem('cl_entries')||'[]');compEntries=all.filter(e=>e.sourceReport===reportDate||e.date===reportDate);}catch(e){}
-    // Call Claude API
-    setStatus('Polishing report narrative\u2026');
-    const polished=await rptCallClaude(apiKey,logData,compEntries);
-    // Get photos
     const photos=_phPhotos.filter(p=>p.date===reportDate);
-    // Build DOCX
-    setStatus('Assembling report\u2026');
-    const blob=await rptBuildDocx(logData,polished,photos);
-    // Save \u2014 routes to iOS share sheet on native, navigator.share/anchor on web.
-    // See src/saveFile.js for the branch logic.
-    const[y,m,d]=reportDate.split('-');
-    const filename=`${m}-${d}-${y}_Moraine_Solar-Daily_Inspection_Report.docx`;
-    const mimeType='application/vnd.openxmlformats-officedocument.wordprocessingml.document';
-    setStatus('Opening save sheet\u2026');
-    await window.saveFileNative(blob,filename,mimeType);
-    setStatus('\u2713 Report generated!');
-    setTimeout(()=>{if(status)status.style.opacity='0';},3000);
+    const skipPolish=(window._rptSkipPolish===true);
+
+    // Build current snapshot + hash for cache lookup
+    const currSnap=_buildSnapshot(logData,compEntries,skipPolish,photos);
+    const currHash=await _hashSnapshot(currSnap);
+
+    // Look up prior versions from Firestore
+    setStatus('Checking cache\u2026');
+    const versions=await _loadReportVersions(reportDate);
+    const latest=versions.length?versions[0]:null;  // sorted desc by version
+
+    // Helper: assemble DOCX + open share sheet from any polished/snapshot pair
+    const assembleAndSave=async(polishedToUse,snapshotToUse)=>{
+      setStatus('Assembling report\u2026');
+      const blob=await rptBuildDocx(snapshotToUse.logData,polishedToUse,snapshotToUse.photoRefs||[]);
+      const[y,m,d]=reportDate.split('-');
+      const filename=`${m}-${d}-${y}_Moraine_Solar-Daily_Inspection_Report.docx`;
+      const mimeType='application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+      setStatus('Opening save sheet\u2026');
+      await window.saveFileNative(blob,filename,mimeType);
+    };
+
+    // \u2500\u2500\u2500 Decision tree \u2500\u2500\u2500
+    if(!latest){
+      // No prior version \u2014 fresh polish, save as v1
+      setStatus('Polishing report narrative\u2026');
+      const polished=await rptCallClaude(apiKey,logData,compEntries);
+      _saveReportVersion(reportDate,currSnap,polished,currHash,1).catch(e=>console.warn('[report-cache] write failed:',e));
+      await assembleAndSave(polished,currSnap);
+      setStatus('\u2713 Report generated!');
+      clearStatusSoon();
+      return;
+    }
+
+    if(latest.inputHash===currHash){
+      // Silent cache hit \u2014 same input, re-export from latest version (no API call)
+      await assembleAndSave(latest.polished,latest.inputSnapshot);
+      setStatus('\u2713 Report re-exported (no changes since last generation).');
+      clearStatusSoon();
+      return;
+    }
+
+    // Input changed since last generation \u2014 surface 3-choice modal
+    const diff=_categorizeChanges(latest.inputSnapshot,currSnap);
+    const genTime=_fmtGenTime(latest.generatedAtMs);
+    let modalMsg;
+    if(diff.narrativeFields.length===0){
+      const n=diff.mechanicalCount;
+      modalMsg=`You generated a report for today at <strong>${genTime}</strong>. You've updated ${n} field value${n===1?'':'s'} since then but the narrative content is unchanged.<br><br>Re-exporting will give you that report with the new values filled in. Generating a new version will create a fresh report \u2014 the narrative may read slightly differently.`;
+    } else {
+      const fieldList=diff.narrativeFields.slice(0,5).map(f=>`<em>${f}</em>`).join(', ')+(diff.narrativeFields.length>5?', \u2026':'');
+      const n=diff.narrativeFields.length;
+      modalMsg=`You generated a report for today at <strong>${genTime}</strong>. You've edited ${n} narrative field${n===1?'':'s'} since then (${fieldList}).<br><br>Re-exporting will give you the original report unchanged. Generating a new version will produce a fresh report with new prose.`;
+    }
+
+    setStatus('Awaiting your choice\u2026');
+    const choice=await new Promise(resolve=>{
+      _3choiceModal(modalMsg,'Report already generated for today','Re-export existing','Generate new version',resolve);
+    });
+
+    if(choice==='cancel'){
+      setStatus('Cancelled.');
+      clearStatusSoon();
+      return;
+    }
+    if(choice==='primary'){
+      // Re-export existing \u2014 no API call, no new version
+      await assembleAndSave(latest.polished,latest.inputSnapshot);
+      setStatus('\u2713 Existing report re-exported.');
+      clearStatusSoon();
+      return;
+    }
+    if(choice==='secondary'){
+      // Generate new version \u2014 fresh polish, save as v(latest+1)
+      setStatus('Polishing report narrative\u2026');
+      const polished=await rptCallClaude(apiKey,logData,compEntries);
+      const newVer=(latest.version||0)+1;
+      _saveReportVersion(reportDate,currSnap,polished,currHash,newVer).catch(e=>console.warn('[report-cache] write failed:',e));
+      await assembleAndSave(polished,currSnap);
+      setStatus(`\u2713 Report v${newVer} generated!`);
+      clearStatusSoon();
+      return;
+    }
   }catch(e){
     setStatus('\u2717 '+e.message,'var(--red)');
     console.error('generateReport:',e);
