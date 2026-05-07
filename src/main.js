@@ -63,6 +63,7 @@ import './db.js'
 import './auth.js'
 import './errorReporter.js'
 import './sw-register.js'
+import './saveFile.js'
 import './maps.js'
 import './photos.js'
 import './compliance.js'
@@ -84,8 +85,23 @@ window.docx = docx
 // input font-size bump to 16px to prevent iOS WKWebView auto-zoom on focus
 // — see index.html style block).
 import { Keyboard } from '@capacitor/keyboard'
+import { App as CapApp } from '@capacitor/app'
 if (Capacitor.isNativePlatform && Capacitor.isNativePlatform()) {
   document.body.classList.add('is-native')
+
+  // Re-run new-day detection on foreground. checkNewDay() is fired during
+  // Firebase init / auth-state-change at cold boot, but a backgrounded app
+  // reopened the next morning resumes the WebView from memory — Firebase
+  // doesn't re-init, so the boot-time check never re-fires. Without this
+  // listener the user only sees the "start new day" prompt after navigating
+  // to Calendar. checkNewDay() is window-scoped from daily-log.js and is
+  // self-suppressing (pei_newday_suppress key), so calling it on every
+  // resume is safe.
+  CapApp.addListener('appStateChange', ({ isActive }) => {
+    if (isActive && typeof window.checkNewDay === 'function') {
+      window.checkNewDay()
+    }
+  })
 }
 
 // ─── Tap-outside dismisses keyboard ────────────────────────────────────────

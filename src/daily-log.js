@@ -164,7 +164,7 @@ function _buildAndCopyJSON(){
 function fbCopy(text,cb){const ta=document.createElement('textarea');ta.value=text;document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);cb()}
 
 // ── Download filled log ──
-function downloadLog(){
+async function downloadLog(){
   const state=collectFormState();
   const stateJSON=JSON.stringify(state);
   let src=document.documentElement.outerHTML;
@@ -174,18 +174,16 @@ function downloadLog(){
   const filename=`${m}-${d}-${y}_Moraine_Solar-Daily_Inspection_Report.html`;
   const blob=new Blob([src],{type:'text/html;charset=utf-8'});
   const showStatus=()=>{const s=document.getElementById('dlStatus');s.classList.add('show');setTimeout(()=>s.classList.remove('show'),3500);};
-  // iOS Safari: use Web Share API with File — triggers native share sheet with "Save to Files"
-  if(navigator.canShare && navigator.share){
-    const file=new File([blob],filename,{type:'text/html'});
-    if(navigator.canShare({files:[file]})){
-      navigator.share({files:[file],title:filename})
-        .then(showStatus)
-        .catch(err=>{if(err.name!=='AbortError'){fallbackDownload(blob,filename);}});
-      return;
-    }
+  try{
+    // Routes to iOS share sheet on native, navigator.share/anchor on web.
+    // See src/saveFile.js for branch logic.
+    await window.saveFileNative(blob,filename,'text/html');
+    showStatus();
+  }catch(e){
+    console.error('downloadLog:',e);
+    fallbackDownload(blob,filename);
+    showStatus();
   }
-  fallbackDownload(blob,filename);
-  showStatus();
 }
 function fallbackDownload(blob,filename){
   const url=URL.createObjectURL(blob);

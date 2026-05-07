@@ -281,10 +281,10 @@ function glRunMigration() {
       } catch(e) {
         setSyncStatus('offline');
         if (el) { el.disabled = false; el.textContent = 'Migrate Data'; }
-        _confirmModal('Migration failed: ' + e.message, null, { title: '✗ Migration Failed', confirmLabel: 'Close' });
+        _confirmModal('Migration failed: ' + e.message, null, '✗ Migration Failed', 'Close');
       }
     },
-    { title: 'Migrate Data', confirmLabel: 'Migrate' }
+    'Migrate Data', 'Migrate'
   );
 }
 
@@ -366,7 +366,7 @@ function glRunStorageMigration() {
         _confirmModal('Migration failed: ' + e.message, function(){}, '✗ Migration Failed', 'Close');
       }
     },
-    { title: 'Migrate Storage', confirmLabel: 'Migrate' }
+    'Migrate Storage', 'Migrate'
   );
 }
 
@@ -374,7 +374,7 @@ function glSignOut() {
   if (!auth) return;
   _confirmModal('Sign out of GroundLog on this device?', function() {
     auth.signOut();
-  }, { title: 'Sign Out', confirmLabel: 'Sign Out' });
+  }, 'Sign Out', 'Sign Out');
 }
 
 function _siAuthError(code) {

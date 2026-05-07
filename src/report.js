@@ -484,15 +484,13 @@ async function _doGenerate(){
     // Build DOCX
     setStatus('Assembling report\u2026');
     const blob=await rptBuildDocx(logData,polished,photos);
-    // Download
+    // Save \u2014 routes to iOS share sheet on native, navigator.share/anchor on web.
+    // See src/saveFile.js for the branch logic.
     const[y,m,d]=reportDate.split('-');
     const filename=`${m}-${d}-${y}_Moraine_Solar-Daily_Inspection_Report.docx`;
     const mimeType='application/vnd.openxmlformats-officedocument.wordprocessingml.document';
-    if(navigator.canShare&&navigator.share){
-      const file=new File([blob],filename,{type:mimeType});
-      if(navigator.canShare({files:[file]})){await navigator.share({files:[file],title:filename}).catch(err=>{if(err.name!=='AbortError')fallbackDownload(blob,filename);});
-      }else{fallbackDownload(blob,filename);}
-    }else{fallbackDownload(blob,filename);}
+    setStatus('Opening save sheet\u2026');
+    await window.saveFileNative(blob,filename,mimeType);
     setStatus('\u2713 Report generated!');
     setTimeout(()=>{if(status)status.style.opacity='0';},3000);
   }catch(e){
