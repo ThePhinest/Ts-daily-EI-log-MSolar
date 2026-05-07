@@ -1,15 +1,25 @@
 name: iOS — TestFlight build
 
 # Builds the GroundLog iOS app on a macOS runner, signs with Fastlane Match,
-# and uploads to TestFlight. Manual trigger only for now (workflow_dispatch);
-# can move to push-on-tag or push-on-main once the pipeline is proven.
+# and uploads to TestFlight. Manual trigger only (workflow_dispatch).
+#
+# Cadence: every change deploys to web first via deploy.yml on push to main.
+# After Tim verifies the change on app.groundlog.io, this workflow is
+# triggered manually for the iOS build. Avoids speculative macOS minute
+# spend (~10× the cost of Linux minutes) on builds we'd cancel anyway when
+# fixing an issue caught in web testing.
+#
+# Push-on-main auto-trigger was tried 2026-05-05 → 2026-05-07 but did the
+# wrong thing: every web fix push burned a macOS build cycle that
+# cancel-in-progress would kill. Reverted to manual-only 2026-05-07.
+#
+# To rebuild for TestFlight: GitHub → Actions → "iOS — TestFlight build"
+# → "Run workflow" → main → optional changelog string → Run.
 #
 # Build number = GitHub Actions run number (auto-increments per run).
 # Marketing version = MARKETING_VERSION in App.xcodeproj (currently "1.0").
 
 on:
-  # Manual trigger — for ad-hoc builds (e.g. CI changes, testing, hot-fixes
-  # without a code change), and for setting an explicit changelog string.
   workflow_dispatch:
     inputs:
       changelog:
@@ -17,25 +27,6 @@ on:
         required: false
         default: "Automated build"
         type: string
-
-  # Auto-trigger on every push to main that touches files affecting the
-  # iOS build. Doc-only commits, KB changes, deploy.yml-only edits, and
-  # dependency-watch.yml tweaks don't fire this — keeps macOS minute spend
-  # tied to actual app changes. Add paths here when new iOS-relevant
-  # surfaces emerge.
-  push:
-    branches:
-      - main
-    paths:
-      - "src/**"
-      - "public/**"
-      - "index.html"
-      - "vite.config.js"
-      - "package.json"
-      - "package-lock.json"
-      - "ios/**"
-      - "capacitor.config.json"
-      - ".github/workflows/ios-build.yml"
 
 concurrency:
   group: ios-build
