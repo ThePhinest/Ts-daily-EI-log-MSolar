@@ -147,7 +147,50 @@ function tsFieldEdit(ds,field,value,manualFlag){
   update[field]=isNaN(Number(value))||field==='activitySummary'?value:Number(value);
   update[manualFlag]=true;
   tsSaveEntry(ds,update);
-  tsRenderCurrentWeek();
+  // Update only derived cells in place. Full tsRenderCurrentWeek() destroys
+  // and recreates the input the user just edited, which on iOS WKWebView
+  // both reverts visible value (the per-diem bug) and triggers a delayed
+  // re-paint (the visual-delay-until-tab-switch bug).
+  _tsRefreshDerivedCells(ds);
+}
+
+// Lightweight refresh — updates row mileage cell + week totals row without
+// rebuilding any input. Inputs keep the value the user typed; localStorage
+// already has the saved value via tsSaveEntry.
+function _tsRefreshDerivedCells(ds){
+  const today=new Date();today.setHours(0,0,0,0);
+  const{start}=tsGetWeekBounds(today);
+  const dates=tsWeekDates(start);
+  const cfg=tsLoadConfig();
+  // Update this row's mileage cell (only relevant for miles edits, harmless otherwise)
+  const row=document.querySelector(`#ts-week-tbody tr[data-date="${ds}"]`);
+  if(row){
+    const entry=tsGetEntry(ds)||{};
+    const miles=entry.miles!==undefined?Number(entry.miles):0;
+    const mileageCell=row.querySelector('.ts-td-calc');
+    if(mileageCell) mileageCell.textContent='$'+tsCalcMileage(miles);
+  }
+  // Update weekly totals row
+  let totH=0,totM=0,totPD=0,totMil=0;
+  dates.forEach(d=>{
+    const ds2=tsFormatDate(d);
+    const e=tsGetEntry(ds2)||{};
+    const h=e.hours!==undefined?Number(e.hours):0;
+    const m=e.miles!==undefined?Number(e.miles):0;
+    const pd=e.perDiem!==undefined?Number(e.perDiem):cfg.perDiem;
+    totH+=h; totM+=m; totPD+=pd;
+    totMil+=parseFloat(tsCalcMileage(m));
+  });
+  const totalsRow=document.querySelector('#ts-week-tbody .ts-row-totals');
+  if(totalsRow){
+    const cells=totalsRow.querySelectorAll('td');
+    if(cells.length>=5){
+      cells[1].textContent=totH.toFixed(1);
+      cells[2].textContent='$'+totPD.toFixed(0);
+      cells[3].textContent=String(totM);
+      cells[4].textContent='$'+totMil.toFixed(2);
+    }
+  }
 }
 
 function tsRenderHistory(){
