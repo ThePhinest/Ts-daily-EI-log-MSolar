@@ -283,8 +283,9 @@ function getMyWeather(){
       if(btn) btn.textContent='⛅ Fetching weather…';
       try{
         const url=`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}`+
-          `&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,windspeed_10m_max,winddirection_10m_dominant,weathercode`+
-          `&hourly=precipitation&current_weather=true`+
+          `&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,windspeed_10m_max,windgusts_10m_max,winddirection_10m_dominant,weathercode,sunrise,sunset`+
+          `&hourly=precipitation,windspeed_10m,weathercode,soil_moisture_0_to_7cm,soil_temperature_0_to_7cm`+
+          `&past_days=1&current_weather=true`+
           `&temperature_unit=fahrenheit&windspeed_unit=mph&precipitation_unit=inch&timezone=auto&forecast_days=3`;
         const res=await fetch(url);
         if(!res.ok) throw new Error('HTTP '+res.status);
@@ -307,74 +308,193 @@ function getMyWeather(){
   );
 }
 
+// ── C-pack weather helpers ──
+// Active inspection window — 6 AM to 7 PM in user's local timezone (per Tim 2026-05-07)
+function _findTodayActiveRange(data){
+  // Use Open-Meteo's reported current_weather time as the source of truth for "today"
+  // (avoids UTC-vs-local-date pitfalls). past_days=1 means the hourly array starts
+  // 24h before today, so today's 6 AM is somewhere in the second day of the array.
+  const todayStr = (data.current_weather?.time || '').slice(0,10);
+  if(!todayStr) return {startIdx:-1, endIdx:-1};
+  const startIdx = data.hourly.time.indexOf(`${todayStr}T06:00`);
+  const endIdx   = data.hourly.time.indexOf(`${todayStr}T19:00`);
+  return {startIdx, endIdx};
+}
+
+function _meanActive(arr, startIdx, endIdx){
+  if(!arr || startIdx < 0 || endIdx < 0) return null;
+  let sum = 0, count = 0;
+  for(let i = startIdx; i <= endIdx; i++){
+    if(typeof arr[i] === 'number'){ sum += arr[i]; count++; }
+  }
+  return count > 0 ? sum / count : null;
+}
+
+function _windRangeActive(data, startIdx, endIdx){
+  if(!data.hourly?.windspeed_10m || startIdx < 0 || endIdx < 0) return null;
+  const speeds = data.hourly.windspeed_10m.slice(startIdx, endIdx + 1).filter(v => typeof v === 'number');
+  if(!speeds.length) return null;
+  return {min: Math.min(...speeds), max: Math.max(...speeds)};
+}
+
+// Sum hourly precipitation for the 24 hours leading up to current_weather time
+function _past24hrPrecip(data){
+  if(!data.hourly?.precipitation || !data.current_weather?.time) return 0;
+  const nowMs = new Date(data.current_weather.time).getTime();
+  let currentIdx = -1;
+  for(let i = data.hourly.time.length - 1; i >= 0; i--){
+    if(new Date(data.hourly.time[i]).getTime() <= nowMs){ currentIdx = i; break; }
+  }
+  if(currentIdx < 0) return 0;
+  const startIdx = Math.max(0, currentIdx - 24);
+  let sum = 0;
+  for(let i = startIdx; i < currentIdx; i++) sum += (data.hourly.precipitation[i] || 0);
+  return sum;
+}
+
+// Fixed-threshold soil descriptor (per Tim 2026-05-07)
+function _classifySoil(soilTempF, soilMoisture, hadSnowCode){
+  if(hadSnowCode && soilTempF <= 32) return 'Snow Cover';
+  if(soilTempF <= 32) return 'Frozen';
+  if(soilTempF <= 36) return 'Frost / Partially Frozen';
+  if(soilMoisture >= 0.40) return 'Saturated';
+  if(soilMoisture >= 0.25) return 'Moist';
+  return 'Dry';
+}
+
+function _wmoToSkyId(code){
+  if(code === 0) return 'sky-clear';
+  if(code <= 2) return 'sky-partly';
+  if(code === 3) return 'sky-overcast';
+  if(code <= 49) return 'sky-fog';
+  if(code <= 59) return 'sky-rain';
+  if(code <= 69) return 'sky-mix';
+  if(code <= 79) return 'sky-snow';
+  if(code <= 84) return 'sky-rain';
+  if(code <= 94) return 'sky-mix';
+  return 'sky-overcast';  // thunder
+}
+
+// Multi-check sky checkboxes from a list of WMO codes (dedupes by category)
+function _applySkyCheckboxes(codes){
+  document.querySelectorAll('input[name="sky"]').forEach(cb => cb.checked = false);
+  if(!codes || !codes.length) return;
+  const matched = new Set();
+  codes.forEach(c => { const id = _wmoToSkyId(c); if(id) matched.add(id); });
+  matched.forEach(id => { const el = document.getElementById(id); if(el) el.checked = true; });
+}
+
+function _formatTimeAmPm(d){
+  let h = d.getHours(), m = d.getMinutes();
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  h = h % 12 || 12;
+  return `${h}:${String(m).padStart(2,'0')} ${ampm}`;
+}
+
+function _formatDaylight(sunriseISO, sunsetISO){
+  if(!sunriseISO || !sunsetISO) return null;
+  const sr = new Date(sunriseISO), ss = new Date(sunsetISO);
+  if(isNaN(sr) || isNaN(ss)) return null;
+  const lengthMs = ss - sr;
+  const lengthH = Math.floor(lengthMs / 3600000);
+  const lengthM = Math.round((lengthMs % 3600000) / 60000);
+  return {sunrise: _formatTimeAmPm(sr), sunset: _formatTimeAmPm(ss), length: `${lengthH}h ${lengthM}m`};
+}
+
 function _applyWeatherData(data){
   const d=data.daily;
   const cw=data.current_weather;
   if(!d||!cw) return;
+  // past_days=1 means daily array has [yesterday, today, tomorrow, day_after]
+  // Find today's index using current_weather time so we don't depend on positional assumptions
+  const todayStr = cw.time.slice(0,10);
+  const TODAY = d.time.findIndex(t => t === todayStr);
+  if(TODAY < 0) return;
+  const TMR = TODAY + 1;
+  const range = _findTodayActiveRange(data);
 
   // ── Temps: today's low = AM, today's high = PM ──
-  const hiF=Math.round(d.temperature_2m_max[0]);
-  const loF=Math.round(d.temperature_2m_min[0]);
+  const hiF=Math.round(d.temperature_2m_max[TODAY]);
+  const loF=Math.round(d.temperature_2m_min[TODAY]);
   const amEl=document.getElementById('tempAM');
   const pmEl=document.getElementById('tempPM');
   if(amEl) amEl.value=loF;
   if(pmEl) pmEl.value=hiF;
 
-  // ── Wind: max speed + cardinal direction ──
-  const wspd=Math.round(d.windspeed_10m_max[0]);
-  const wdir=d.winddirection_10m_dominant[0];
-  const dirs=['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
-  const cardDir=dirs[Math.round(wdir/22.5)%16];
-  const windEl=document.getElementById('wind');
-  if(windEl) windEl.value=`${wspd} mph ${cardDir}`;
-
-  // ── Precip: today's total ──
-  const precip=d.precipitation_sum[0]||0;
-  const precipEl=document.getElementById('precip');
-  if(precipEl) precipEl.value=precip.toFixed(2);
-
-  // ── Sky conditions: map WMO code to checkboxes ──
-  const wmo=d.weathercode[0];
-  // Clear all sky checkboxes first
-  document.querySelectorAll('input[name="sky"]').forEach(cb=>cb.checked=false);
-  // WMO code mapping
-  if(wmo===0){
-    document.getElementById('sky-clear').checked=true;
-  } else if(wmo<=2){
-    document.getElementById('sky-partly').checked=true;
-  } else if(wmo===3){
-    document.getElementById('sky-overcast').checked=true;
-  } else if(wmo<=49){
-    // Fog/drizzle range
-    document.getElementById('sky-fog').checked=true;
-  } else if(wmo<=59){
-    document.getElementById('sky-rain').checked=true;
-  } else if(wmo<=69){
-    // Freezing rain / mix
-    document.getElementById('sky-mix').checked=true;
-  } else if(wmo<=79){
-    document.getElementById('sky-snow').checked=true;
-  } else if(wmo<=84){
-    document.getElementById('sky-rain').checked=true;
-  } else if(wmo<=94){
-    document.getElementById('sky-mix').checked=true;
-  } else {
-    document.getElementById('sky-overcast').checked=true;
+  // ── Daylight: UI display row, not persisted in logData ──
+  const daylight = _formatDaylight(d.sunrise?.[TODAY], d.sunset?.[TODAY]);
+  if(daylight){
+    const srEl = document.getElementById('wx-sunrise');
+    const ssEl = document.getElementById('wx-sunset');
+    const dlEl = document.getElementById('wx-daylight');
+    if(srEl) srEl.textContent = daylight.sunrise;
+    if(ssEl) ssEl.textContent = daylight.sunset;
+    if(dlEl) dlEl.textContent = daylight.length;
   }
 
-  // ── Forecast: tomorrow's conditions ──
-  const tmrHi=Math.round(d.temperature_2m_max[1]);
-  const tmrLo=Math.round(d.temperature_2m_min[1]);
-  const tmrWmo=d.weathercode[1];
-  const tmrWspd=Math.round(d.windspeed_10m_max[1]);
-  const tmrDesc=_wmoToDesc(tmrWmo);
-  const fcastEl=document.getElementById('upcomingWeather');
-  const fcastStr=`Tomorrow: ${tmrDesc}, High ${tmrHi}°F / Low ${tmrLo}°F, Winds up to ${tmrWspd} mph`;
-  if(fcastEl) fcastEl.value=fcastStr;
+  // ── Wind: range across 6 AM–7 PM + gusts + cardinal direction ──
+  const wRange = _windRangeActive(data, range.startIdx, range.endIdx);
+  const gustsMph = Math.round(d.windgusts_10m_max?.[TODAY] || 0);
+  const wdir = d.winddirection_10m_dominant[TODAY];
+  const dirs = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
+  const cardDir = dirs[Math.round(wdir/22.5)%16];
+  const windEl = document.getElementById('wind');
+  if(windEl){
+    let speedStr;
+    if(wRange){
+      const minS = Math.round(wRange.min), maxS = Math.round(wRange.max);
+      speedStr = (minS === maxS) ? `${maxS}` : `${minS}–${maxS}`;
+    } else {
+      speedStr = String(Math.round(d.windspeed_10m_max[TODAY]));
+    }
+    const gustStr = gustsMph > 0 ? `, gusts to ${gustsMph}` : '';
+    windEl.value = `${speedStr} mph ${cardDir}${gustStr}`;
+  }
 
-  // Push forecast to look-ahead if empty
-  const lookaheadEl=document.getElementById('lookaheadWeather');
-  if(lookaheadEl && !lookaheadEl.value.trim()) lookaheadEl.value=fcastStr;
+  // ── Precip: past 24 hours from hourly (more accurate than today's daily total) ──
+  const past24 = _past24hrPrecip(data);
+  const precipEl = document.getElementById('precip');
+  if(precipEl) precipEl.value = past24.toFixed(2);
+
+  // ── Soil Conditions: classify by mean of active-hour samples ──
+  if(data.hourly?.soil_temperature_0_to_7cm && data.hourly?.soil_moisture_0_to_7cm){
+    const meanTemp = _meanActive(data.hourly.soil_temperature_0_to_7cm, range.startIdx, range.endIdx);
+    const meanMoisture = _meanActive(data.hourly.soil_moisture_0_to_7cm, range.startIdx, range.endIdx);
+    const codesForSnow = (range.startIdx >= 0 && range.endIdx >= 0)
+      ? data.hourly.weathercode.slice(range.startIdx, range.endIdx + 1)
+      : [];
+    const hadSnow = codesForSnow.some(c => c >= 71 && c <= 77);
+    if(meanTemp !== null && meanMoisture !== null){
+      const soilDescriptor = _classifySoil(meanTemp, meanMoisture, hadSnow);
+      const soilEl = document.getElementById('soilCond');
+      if(soilEl) soilEl.value = soilDescriptor;
+    }
+  }
+
+  // ── Sky: multi-check across active hours, fall back to daily code if no active range ──
+  if(range.startIdx >= 0 && range.endIdx >= 0){
+    const codes = data.hourly.weathercode.slice(range.startIdx, range.endIdx + 1);
+    _applySkyCheckboxes(codes.length ? codes : [d.weathercode[TODAY]]);
+  } else {
+    _applySkyCheckboxes([d.weathercode[TODAY]]);
+  }
+
+  // ── Forecast: tomorrow with gusts ──
+  if(TMR < d.time.length){
+    const tmrHi = Math.round(d.temperature_2m_max[TMR]);
+    const tmrLo = Math.round(d.temperature_2m_min[TMR]);
+    const tmrWmo = d.weathercode[TMR];
+    const tmrWspd = Math.round(d.windspeed_10m_max[TMR]);
+    const tmrGusts = Math.round(d.windgusts_10m_max?.[TMR] || 0);
+    const tmrDesc = _wmoToDesc(tmrWmo);
+    const gustTail = tmrGusts > 0 ? ` (gusts ${tmrGusts})` : '';
+    const fcastStr = `Tomorrow: ${tmrDesc}, High ${tmrHi}°F / Low ${tmrLo}°F, Winds up to ${tmrWspd} mph${gustTail}`;
+    const fcastEl = document.getElementById('upcomingWeather');
+    if(fcastEl) fcastEl.value = fcastStr;
+    // Push forecast to look-ahead if empty
+    const lookaheadEl = document.getElementById('lookaheadWeather');
+    if(lookaheadEl && !lookaheadEl.value.trim()) lookaheadEl.value = fcastStr;
+  }
 
   // Trigger autosave
   debouncedAutoSave();
