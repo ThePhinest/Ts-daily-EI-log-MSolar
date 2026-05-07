@@ -552,10 +552,14 @@ body.theme-light .preset-chip:hover{background:rgba(0,76,84,0.18);border-color:v
 /* iOS WKWebView auto-zooms on focus when input font-size < 16px,
    and our viewport meta lets the zoom stick. Bump to 16px for native
    only — keeps web's dense 11px design intact. See src/main.js for
-   the body.is-native class wire-up. */
+   the body.is-native class wire-up. !important is required because
+   many inputs (e.g. #map-marker-label) have inline style="font-size:11px"
+   which would otherwise outrank a class-based selector by CSS specificity.
+   Build #19 shipped without it — Bug B regressed on field marker input;
+   build #20 adds it. */
 body.is-native input,
 body.is-native textarea,
-body.is-native select { font-size: 16px; }
+body.is-native select { font-size: 16px !important; }
 </style>
 </head>
 <body>
