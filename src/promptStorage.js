@@ -317,6 +317,50 @@ async function revertPersonalPromptToVersion(sourceVersion) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
+// DELETE A VERSION FROM HISTORY (Stage 8)
+// ─────────────────────────────────────────────────────────────────────────
+//
+// Removes a single version doc from the versions subcollection and writes
+// an audit log entry recording the deletion. The user's CURRENT saved state
+// is unaffected — that lives in the parent reportPrompt doc, not in the
+// versions subcollection. Deleting the latest version doesn't break next-save
+// either: _nextVersionNumber re-queries the subcollection so a fresh save
+// after deletion lands at (current_max + 1), preserving monotonicity.
+
+async function deletePromptVersion(versionNum) {
+  if (!db || !_currentUser || !_fbReady) {
+    throw new Error('Not signed in or Firebase not ready');
+  }
+  if (typeof versionNum !== 'number' || versionNum < 1) {
+    throw new Error('deletePromptVersion: versionNum must be a positive integer');
+  }
+
+  const uid = _currentUser.uid;
+  const docRef = _udb().collection('settings').doc('reportPrompt');
+  const versionsRef = docRef.collection('versions');
+  const auditRef = docRef.collection('auditLog');
+
+  const now = Date.now();
+  const fst = window.firebase.firestore.FieldValue.serverTimestamp();
+
+  const batch = db.batch();
+
+  batch.delete(versionsRef.doc('v' + versionNum));
+
+  const auditDoc = auditRef.doc();
+  batch.set(auditDoc, {
+    eventId: auditDoc.id,
+    action: 'delete-version',
+    version: versionNum, // the version that was deleted
+    actorUid: uid,
+    timestamp: fst,
+    timestampMs: now
+  });
+
+  await batch.commit();
+}
+
+// ─────────────────────────────────────────────────────────────────────────
 // PROJECT OVERRIDE WRITERS — Phase 1 has no UI; included for dogfooding
 // via DevTools and ready for Phase 2 to wire to the editor.
 // ─────────────────────────────────────────────────────────────────────────
@@ -350,5 +394,6 @@ window.loadPromptAuditLog = loadPromptAuditLog;
 window.savePersonalPrompt = savePersonalPrompt;
 window.resetPersonalPromptToDefault = resetPersonalPromptToDefault;
 window.revertPersonalPromptToVersion = revertPersonalPromptToVersion;
+window.deletePromptVersion = deletePromptVersion;
 window.saveProjectOverride = saveProjectOverride;
 window.deleteProjectOverride = deleteProjectOverride;

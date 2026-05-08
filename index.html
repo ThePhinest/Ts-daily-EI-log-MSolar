@@ -390,6 +390,20 @@ body.theme-light .preset-chip:hover{background:rgba(0,76,84,0.18);border-color:v
 .ab-struct-body{padding:10px 12px;border-top:1px solid var(--border)}
 .ab-struct-body textarea{background:var(--bg);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--mono);font-size:11.5px;line-height:1.55;padding:10px 12px;width:100%;resize:vertical;min-height:90px;box-sizing:border-box}
 .ab-struct-body textarea:focus{outline:none;border-color:var(--amber)}
+/* Version History (Stage 8) — list of past saves with view/revert/delete. */
+.ab-version-list{display:flex;flex-direction:column;gap:6px}
+.ab-version-row{background:var(--bg);border:1px solid var(--border);border-radius:5px;padding:10px 12px}
+.ab-version-row-head{display:flex;align-items:baseline;gap:10px;margin-bottom:6px;flex-wrap:wrap}
+.ab-version-num{font-family:var(--cond);font-weight:700;font-size:13px;letter-spacing:.06em;color:var(--amber)}
+.ab-version-ts{font-family:var(--mono);font-size:10px;color:var(--muted)}
+.ab-version-action{font-family:var(--mono);font-size:9px;color:var(--muted2);text-transform:uppercase;letter-spacing:.1em;background:var(--s2);padding:1px 6px;border-radius:3px}
+.ab-version-changed{font-family:var(--mono);font-size:10.5px;color:var(--muted2);margin-bottom:8px;line-height:1.5;word-break:break-word}
+.ab-version-actions{display:flex;gap:6px;flex-wrap:wrap}
+.ab-version-btn{background:var(--bg);border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:10px;padding:5px 11px;border-radius:4px;cursor:pointer;transition:all .15s;letter-spacing:.05em}
+.ab-version-btn:hover{border-color:var(--amber);color:var(--amber)}
+.ab-version-btn.danger{padding:5px 9px;font-size:13px;line-height:1}
+.ab-version-btn.danger:hover{border-color:var(--red);color:var(--red)}
+.ab-version-empty{font-family:var(--mono);font-size:11px;color:var(--muted);font-style:italic;margin:0}
 .ab-actions{display:flex;align-items:center;gap:10px;margin:6px 0 18px;flex-wrap:wrap}
 .ab-status{font-family:var(--mono);font-size:11px;color:var(--green);opacity:0;transition:opacity .4s;margin-left:6px}
 .ab-status.error{color:var(--red)}
@@ -2545,6 +2559,23 @@ EI to conduct LOD walk prior to start of operations"></textarea>
       <div class="ab-section-body">
         <p class="ab-hint">This is the assembled system prompt sent to Claude on every report generation. Updates live as you edit. Read-only.</p>
         <pre id="ab-preview" class="ab-preview"></pre>
+      </div>
+    </div>
+
+    <!-- Version History section (Stage 8) — lists every save / reset / revert
+         from the versions subcollection, newest first. Each row offers View
+         (assembled prompt at that version), Revert (creates new version with
+         that content), and × Delete (removes the version from history; current
+         saved state unaffected). -->
+    <div class="ab-section" id="ab-section-versions">
+      <div class="ab-section-head" onclick="toggleSection('ab-section-versions')">
+        <span class="ab-section-title">Version History</span>
+        <span class="ab-section-sub">Every save, reset, and revert</span>
+        <span class="card-chevron">▾</span>
+      </div>
+      <div class="ab-section-body">
+        <p class="ab-hint">Each Save creates a new version. Past versions are read-only history — you can View any version's assembled prompt, Revert to one (which creates a new version with that content), or Delete a version from the historical record. Your current saved state is unaffected by deletes.</p>
+        <div id="ab-version-list" class="ab-version-list"></div>
       </div>
     </div>
 

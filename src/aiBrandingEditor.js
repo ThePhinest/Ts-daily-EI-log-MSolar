@@ -139,6 +139,10 @@ async function aiBrandingInit() {
   _abDirty = false;
   _aiBrandingUpdateSaveButton();
   await _aiBrandingUpdatePreview();
+
+  // Stage 8 — refresh version history list. Fire-and-forget so a slow
+  // Firestore read doesn't block the rest of the editor from rendering.
+  aiBrandingVersionsRender().catch(e => console.warn('[ai-branding] versions render failed:', e));
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -269,6 +273,139 @@ function aiBrandingStructEdit(idx, value) {
   // Mutate state in place — no re-render, textarea keeps focus
   _abStructural[idx] = Object.assign({}, _abStructural[idx], { instructions: value });
   aiBrandingScheduleUpdatePreview();
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// VERSION HISTORY (Stage 8) — list / view / revert / delete past versions
+// ─────────────────────────────────────────────────────────────────────────
+
+async function aiBrandingVersionsRender() {
+  const container = document.getElementById('ab-version-list');
+  if (!container) return;
+
+  if (typeof loadPromptVersions !== 'function') {
+    container.innerHTML = '<p class="ab-version-empty">Version history unavailable.</p>';
+    return;
+  }
+
+  let versions = [];
+  try {
+    versions = await loadPromptVersions(100);
+  } catch (e) {
+    container.innerHTML = '<p class="ab-version-empty">Failed to load versions.</p>';
+    return;
+  }
+
+  if (!versions.length) {
+    container.innerHTML = '<p class="ab-version-empty">No saved versions yet — your first Save creates v1.</p>';
+    return;
+  }
+
+  container.innerHTML = versions.map(v => {
+    const ts = v.createdAtMs ? new Date(v.createdAtMs).toLocaleString() : '';
+    const action = v.action || 'save';
+    const sourceVer = (action === 'revert' && v.sourceVersion) ? ' from v' + v.sourceVersion : '';
+    const isReset = action === 'reset';
+    // Reset versions have content: null and shouldn't be View-able as a prompt
+    const viewBtn = isReset ? '' : `<button class="ab-version-btn" onclick="aiBrandingVersionView(${v.version})">View</button>`;
+    return (
+      '<div class="ab-version-row" id="ab-ver-' + v.version + '">' +
+        '<div class="ab-version-row-head">' +
+          '<span class="ab-version-num">v' + v.version + '</span>' +
+          '<span class="ab-version-ts">' + _abEscapeHtml(ts) + '</span>' +
+          '<span class="ab-version-action">' + _abEscapeHtml(action + sourceVer) + '</span>' +
+        '</div>' +
+        '<div class="ab-version-actions">' +
+          viewBtn +
+          '<button class="ab-version-btn" onclick="aiBrandingVersionRevert(' + v.version + ')">Revert to this</button>' +
+          '<button class="ab-version-btn danger" onclick="aiBrandingVersionDelete(' + v.version + ')" title="Delete this version">×</button>' +
+        '</div>' +
+      '</div>'
+    );
+  }).join('');
+}
+
+async function aiBrandingVersionView(versionNum) {
+  if (typeof loadPromptVersions !== 'function' || !window.assemblePrompt) return;
+  let versions = [];
+  try {
+    versions = await loadPromptVersions(100);
+  } catch (e) {
+    console.warn('[ai-branding] versions load failed for view:', e);
+    return;
+  }
+  const ver = versions.find(v => v.version === versionNum);
+  if (!ver || !ver.content) {
+    _aiBrandingSetStatus('v' + versionNum + ' has no content (reset marker).', true);
+    return;
+  }
+  let systemPrompt = '';
+  try {
+    const result = await window.assemblePrompt({ layers: [ver.content, window.PROMPT_DEFAULTS] });
+    systemPrompt = result.systemPrompt;
+  } catch (e) {
+    console.warn('[ai-branding] assemble failed for view:', e);
+    return;
+  }
+  _aiBrandingShowVersionModal(versionNum, ver, systemPrompt);
+}
+
+function _aiBrandingShowVersionModal(versionNum, ver, systemPrompt) {
+  const ov = document.createElement('div');
+  ov.className = 'modal-overlay';
+  const ts = ver.createdAtMs ? new Date(ver.createdAtMs).toLocaleString() : '';
+  ov.innerHTML = (
+    '<div class="modal-box" style="max-width:680px;width:92%">' +
+      '<div class="modal-title">Version v' + versionNum + ' — ' + _abEscapeHtml(ts) + '</div>' +
+      '<div class="modal-msg" style="margin-bottom:10px;font-size:11px;color:var(--muted2)">This is the assembled system prompt the AI saw with this version active.</div>' +
+      '<pre class="ab-preview" style="margin:0;max-height:50vh">' + _abEscapeHtml(systemPrompt) + '</pre>' +
+      '<div class="modal-btns">' +
+        '<button class="modal-cancel" id="_abvc">Close</button>' +
+      '</div>' +
+    '</div>'
+  );
+  document.body.appendChild(ov);
+  const closeBtn = document.getElementById('_abvc');
+  if (closeBtn) closeBtn.onclick = () => ov.remove();
+}
+
+async function aiBrandingVersionRevert(versionNum) {
+  if (typeof _confirmModal !== 'function') return;
+  _confirmModal(
+    'Revert to version v' + versionNum + '? This creates a new version (the latest) with v' + versionNum + "'s content. Your current state and history are preserved.",
+    async () => {
+      try {
+        await window.revertPersonalPromptToVersion(versionNum);
+        await aiBrandingInit();
+        await aiBrandingVersionsRender();
+        _aiBrandingSetStatus('✓ Reverted to v' + versionNum);
+      } catch (e) {
+        console.error('[ai-branding] revert failed:', e);
+        _aiBrandingSetStatus('✗ ' + (e.message || 'Revert failed'), true);
+      }
+    },
+    '↺ Revert',
+    'Revert'
+  );
+}
+
+async function aiBrandingVersionDelete(versionNum) {
+  if (typeof _confirmModal !== 'function') return;
+  _confirmModal(
+    'Delete version v' + versionNum + ' from history? Your current saved state is unaffected — only the historical snapshot is removed. This cannot be undone.',
+    async () => {
+      try {
+        await window.deletePromptVersion(versionNum);
+        await aiBrandingVersionsRender();
+        _aiBrandingSetStatus('✓ v' + versionNum + ' deleted from history');
+      } catch (e) {
+        console.error('[ai-branding] delete failed:', e);
+        _aiBrandingSetStatus('✗ ' + (e.message || 'Delete failed'), true);
+      }
+    },
+    '🗑 Delete Version',
+    'Delete'
+  );
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -467,6 +604,8 @@ async function aiBrandingSave() {
     _abDirty = false;
     _aiBrandingSetStatus('✓ Saved');
     _aiBrandingUpdateSaveButton();
+    // Stage 8 — refresh version history so the new save shows up
+    aiBrandingVersionsRender().catch(() => {});
   } catch (e) {
     console.error('[ai-branding] save failed:', e);
     _aiBrandingSetStatus('✗ ' + (e.message || 'Save failed'), true);
@@ -496,6 +635,8 @@ async function aiBrandingResetToDefault() {
         await window.resetPersonalPromptToDefault();
         _abLastSavedSnapshot = null;
         await aiBrandingInit();
+        // aiBrandingInit already fires aiBrandingVersionsRender, so the
+        // reset's new version row appears automatically.
         _aiBrandingSetStatus('✓ Reset to defaults');
       } catch (e) {
         console.error('[ai-branding] reset failed:', e);
@@ -518,3 +659,7 @@ window.aiBrandingTermsAddPair = aiBrandingTermsAddPair;
 window.aiBrandingTermsRemove = aiBrandingTermsRemove;
 window.aiBrandingStructToggle = aiBrandingStructToggle;
 window.aiBrandingStructEdit = aiBrandingStructEdit;
+window.aiBrandingVersionsRender = aiBrandingVersionsRender;
+window.aiBrandingVersionView = aiBrandingVersionView;
+window.aiBrandingVersionRevert = aiBrandingVersionRevert;
+window.aiBrandingVersionDelete = aiBrandingVersionDelete;
