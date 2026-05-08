@@ -314,6 +314,15 @@ body.theme-light .preset-chip:hover{background:rgba(0,76,84,0.18);border-color:v
 .config-section.collapsed .config-head{border-bottom:none}
 .config-title{font-family:var(--cond);font-weight:700;font-size:15px;letter-spacing:.1em;text-transform:uppercase;color:var(--amber2)}
 .config-sub{font-family:var(--mono);font-size:12px;color:var(--muted);margin-left:auto}
+/* Nav-style settings cards — distinct from collapse/expand cards.
+   Tap opens a dedicated subpage instead of expanding inline.
+   Visual signal: title in brand teal, subtitle/chevron in brand amber
+   (inverse of the collapse/expand cards' coloring). Excluded from
+   Collapse All / Expand All by class-based selector in those handlers. */
+.config-section.nav-card .config-title{color:var(--muted2)}
+.config-section.nav-card .nav-card-subtitle{font-family:var(--mono);font-size:9px;color:var(--amber);margin-left:auto;margin-right:8px}
+.config-section.nav-card .card-chevron{color:var(--amber);transform:rotate(-90deg);margin-left:0}
+.config-section.nav-card .config-head{border-bottom:none}
 .config-body{padding:16px}
 .config-hint{font-family:var(--mono);font-size:10.5px;color:var(--muted);margin-bottom:12px;line-height:1.6}
 .preset-list{list-style:none;margin-bottom:10px}
@@ -1926,15 +1935,16 @@ EI to conduct LOD walk prior to start of operations"></textarea>
   </div>
 
   <!-- AI & Branding navigation card — opens dedicated subpage (page-aiBranding).
-       First subpage-style nav card in the app. The chevron rotated -90deg
-       (pointing right) signals "opens elsewhere" vs. the down-chevron expand/collapse
-       cards. Future deep-config surfaces (Phase 4 §1 API Keys, Phase 4b firm branding,
-       Phase 4 §2 form templates) will all use this same card pattern. -->
-  <div class="config-section" id="cfg-aiBranding-nav" onclick="showPage('aiBranding')" role="button" tabindex="0" style="cursor:pointer;margin-bottom:14px">
-    <div class="config-head" style="border-bottom:none">
+       The .nav-card class (a) styles it distinctly from collapse/expand cards
+       (title in teal, subtitle/chevron in amber — inverse of the standard cards),
+       and (b) excludes it from collapseAllConfig / expandAllConfig handlers.
+       All future subpage-style cards (Phase 4 §1 API Keys, Phase 4b firm
+       branding, Phase 4 §2 form templates) will reuse this exact pattern. -->
+  <div class="config-section nav-card" id="cfg-aiBranding-nav" onclick="showPage('aiBranding')" role="button" tabindex="0" style="cursor:pointer;margin-bottom:14px">
+    <div class="config-head">
       <span class="config-title">AI &amp; Branding</span>
-      <span style="font-family:var(--mono);font-size:9px;color:var(--muted2);margin-left:auto;margin-right:8px">Polish prompt, terminology, branding</span>
-      <span class="card-chevron" style="margin-left:0;transform:rotate(-90deg)">▾</span>
+      <span class="nav-card-subtitle">Polish prompt, terminology, branding</span>
+      <span class="card-chevron">▾</span>
     </div>
   </div>
 
@@ -2437,14 +2447,20 @@ function expandAllSections(){
 const CFG_COLLAPSE_KEY='pei_collapsed_config';
 function _getCollapsedConfig(){try{return JSON.parse(localStorage.getItem(CFG_COLLAPSE_KEY)||'[]');}catch{return[];}}
 function _saveCollapsedConfig(arr){try{localStorage.setItem(CFG_COLLAPSE_KEY,JSON.stringify(arr));}catch{}}
+// Collapse / Expand All — dynamic so any new .config-section added in the
+// future is picked up automatically. Skips .nav-card sections (those open a
+// subpage on tap, not collapse/expand).
+// Pre-2026-05-08 this was a hardcoded ID list which silently missed
+// cfg-report and cfg-account; the dynamic query closes that gap.
 function collapseAllConfig(){
-  const ids=['cfg-nav','cfg-proj','cfg-ts','cfg-map','cfg-card-labels','cfg-obs','cfg-act','cfg-env','cfg-comms','cfg-look','cfg-phases','cfg-phase','cfg-checklist','cfg-flags'];
-  ids.forEach(id=>{const el=document.getElementById(id);if(el)el.classList.add('collapsed');});
+  const sections=document.querySelectorAll('#page-config .config-section:not(.nav-card)');
+  const ids=[];
+  sections.forEach(el=>{ if(el.id){ el.classList.add('collapsed'); ids.push(el.id); } });
   _saveCollapsedConfig(ids);
 }
 function expandAllConfig(){
-  const ids=['cfg-nav','cfg-proj','cfg-ts','cfg-map','cfg-card-labels','cfg-obs','cfg-act','cfg-env','cfg-comms','cfg-look','cfg-phases','cfg-phase','cfg-checklist','cfg-flags'];
-  ids.forEach(id=>{const el=document.getElementById(id);if(el)el.classList.remove('collapsed');});
+  const sections=document.querySelectorAll('#page-config .config-section:not(.nav-card)');
+  sections.forEach(el=>{ el.classList.remove('collapsed'); });
   _saveCollapsedConfig([]);
 }
 function restoreCollapsedSections(){
