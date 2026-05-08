@@ -1202,10 +1202,17 @@ body.is-native select { font-size: 16px !important; }
         <div class="field"><label>PM Temp (°F)</label><input type="number" id="tempPM" placeholder="°F"></div>
         <div class="field"><label>Wind (mph)</label><input type="text" id="wind" placeholder="e.g. 10–15 mph"></div>
         <div class="field"><label>Precip (in.)</label><input type="number" id="precip" step="0.01" placeholder="0.00"></div>
-        <div class="weather-daylight" style="grid-column:1 / -1;display:flex;justify-content:space-around;align-items:center;padding:8px 12px;background:rgba(0,107,117,0.06);border:1px solid var(--border2);border-radius:5px;font-size:11px;font-family:var(--cond);font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted2)">
-          <span>🌅 Sunrise <strong id="wx-sunrise" style="color:var(--text);font-family:var(--mono);font-weight:400;text-transform:none;letter-spacing:0;margin-left:6px">—</strong></span>
-          <span>🌇 Sunset <strong id="wx-sunset" style="color:var(--text);font-family:var(--mono);font-weight:400;text-transform:none;letter-spacing:0;margin-left:6px">—</strong></span>
-          <span>☀️ Daylight <strong id="wx-daylight" style="color:var(--text);font-family:var(--mono);font-weight:400;text-transform:none;letter-spacing:0;margin-left:6px">—</strong></span>
+        <div class="weather-daylight" style="grid-column:1 / -1;display:flex;flex-direction:column;gap:4px;padding:8px 12px;background:rgba(0,107,117,0.06);border:1px solid var(--border2);border-radius:5px;font-size:11px;font-family:var(--cond);font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted2)">
+          <div style="display:flex;justify-content:space-around;align-items:center">
+            <span>🌅 Sunrise <strong id="wx-sunrise" style="color:var(--text);font-family:var(--mono);font-weight:400;text-transform:none;letter-spacing:0;margin-left:6px">—</strong></span>
+            <span>🌇 Sunset <strong id="wx-sunset" style="color:var(--text);font-family:var(--mono);font-weight:400;text-transform:none;letter-spacing:0;margin-left:6px">—</strong></span>
+          </div>
+          <div style="text-align:center">
+            <span>☀️ Daylight <strong id="wx-daylight" style="color:var(--text);font-family:var(--mono);font-weight:400;text-transform:none;letter-spacing:0;margin-left:6px">—</strong></span>
+          </div>
+          <input type="hidden" id="wxSunrise">
+          <input type="hidden" id="wxSunset">
+          <input type="hidden" id="wxDaylight">
         </div>
         <div class="field span2">
           <label>Soil Conditions</label>
@@ -1243,9 +1250,9 @@ body.is-native select { font-size: 16px !important; }
           <textarea class="tall auto-expand" id="inspSummary" placeholder="Describe areas inspected, notable observations, work conducted, and relevant field conditions…"></textarea>
         </div>
         <div class="g g3">
-          <div class="field"><label>Agency Inspection</label><input type="text" id="agencyInsp" placeholder="Agency, name, notes — or leave blank"></div>
-          <div class="field"><label>Landowner Contact</label><input type="text" id="landowner" placeholder="Name, topic — or leave blank"></div>
-          <div class="field"><label>RTE Species Observation</label><input type="text" id="rte" placeholder="Species, location, action — or leave blank"></div>
+          <div class="field"><label>Agency Inspection</label><textarea class="short auto-expand" id="agencyInsp" placeholder="Agency, name, notes — or leave blank"></textarea></div>
+          <div class="field"><label>Landowner Contact</label><textarea class="short auto-expand" id="landowner" placeholder="Name, topic — or leave blank"></textarea></div>
+          <div class="field"><label>RTE Species Observation</label><textarea class="short auto-expand" id="rte" placeholder="Species, location, action — or leave blank"></textarea></div>
         </div>
         <div class="field"><label>Non-Compliance Note (include Level 1–4 if applicable)</label><textarea class="short auto-expand" id="nonCompliance" placeholder="Describe any observed non-compliance. Leave blank if none."></textarea></div>
       </div>
@@ -1412,7 +1419,7 @@ EI to conduct LOD walk prior to start of operations"></textarea>
     </div>
     <div class="card-body">
       <div class="field">
-        <textarea class="short" id="p-notes" placeholder="Personal observations, reminders, follow-ups — this field is never exported to Claude or included in any report…"></textarea>
+        <textarea class="short auto-expand" id="p-notes" placeholder="Personal observations, reminders, follow-ups — this field is never exported to Claude or included in any report…"></textarea>
       </div>
       <span class="personal-note">⚠ Never copied to clipboard or included in any report export.</span>
     </div>
@@ -1599,15 +1606,17 @@ EI to conduct LOD walk prior to start of operations"></textarea>
   </div>
 
   <!-- Legend -->
-  <div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:16px;padding:10px 12px;background:var(--s1);border:1px solid var(--border);border-radius:var(--r)">
-    <span style="font-family:var(--mono);font-size:9.5px;color:var(--muted);letter-spacing:.06em;text-transform:uppercase;width:100%;margin-bottom:2px">Legend</span>
-    <span style="font-family:var(--mono);font-size:11px;color:var(--muted2)"><span style="color:var(--green)">●</span> Log saved</span>
-    <span style="font-family:var(--mono);font-size:11px;color:var(--muted2)">⚠️ Edited after archive</span>
-    <span style="font-family:var(--mono);font-size:11px;color:var(--muted2)">❗ Compliance entry</span>
-    <span style="font-family:var(--mono);font-size:11px;color:var(--muted2)">📸 Photos</span>
-    <span style="font-family:var(--mono);font-size:11px;color:var(--muted2)">🕒 Hours logged</span>
-    <span style="font-family:var(--mono);font-size:11px;color:var(--muted2)">🚚 Miles logged</span>
-    <span style="font-family:var(--mono);font-size:11px;color:var(--muted2)">📝 Day note</span>
+  <div style="margin-top:16px;padding:10px 12px;background:var(--s1);border:1px solid var(--border);border-radius:var(--r)">
+    <div style="font-family:var(--mono);font-size:9.5px;color:var(--muted);letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px">Legend</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 14px;font-family:var(--mono);font-size:11px;color:var(--muted2)">
+      <span><span style="color:var(--green)">●</span> Log saved</span>
+      <span>⚠️ Edited after archive</span>
+      <span>❗ Compliance entry</span>
+      <span>📸 Photos</span>
+      <span>🕒 Hours logged</span>
+      <span>🚚 Miles logged</span>
+      <span style="grid-column:1 / -1;text-align:center">📝 Day note</span>
+    </div>
   </div>
 
 </div></div>

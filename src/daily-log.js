@@ -12,6 +12,7 @@ function collectFormState(){
   // Simple fields
   const fields=['projectName','reportDate','preparedBy','org','activePhase','contractor','reviewedBy',
     'tempAM','tempPM','wind','precip','soilCond','upcomingWeather',
+    'wxSunrise','wxSunset','wxDaylight',
     'inspSummary','agencyInsp','landowner','rte','nonCompliance',
     'genComms','lookahead','lookaheadWeather',
     'p-timeIn','p-timeOut','p-odoStart','p-odoEnd','p-notes'];
@@ -76,6 +77,15 @@ function restoreFormState(state){
   });
   if(typeof updateCrewBadge==='function') updateCrewBadge();
   calcMiles();calcHours();
+  // Sync persisted sunrise/sunset/daylight hidden inputs into the visible
+  // strong tags. Field loop above sets hidden input values; the strong tags
+  // are display-only siblings that don't get touched by the generic loop.
+  ['wxSunrise|wx-sunrise','wxSunset|wx-sunset','wxDaylight|wx-daylight'].forEach(pair=>{
+    const [hiddenId,visibleId]=pair.split('|');
+    const hv=document.getElementById(hiddenId)?.value;
+    const vEl=document.getElementById(visibleId);
+    if(hv && vEl) vEl.textContent=hv;
+  });
   setTimeout(()=>document.querySelectorAll('textarea.auto-expand').forEach(autoResize),0);
 }
 
@@ -421,7 +431,10 @@ function _applyWeatherData(data){
   if(amEl) amEl.value=loF;
   if(pmEl) pmEl.value=hiF;
 
-  // ── Daylight: UI display row, not persisted in logData ──
+  // ── Daylight: persisted via hidden inputs (wxSunrise/wxSunset/wxDaylight)
+  // so calendar reload of archived day shows real values, not placeholder.
+  // Hidden inputs are NOT in report.js logData builder, so they don't bust
+  // the report cache hash.
   const daylight = _formatDaylight(d.sunrise?.[TODAY], d.sunset?.[TODAY]);
   if(daylight){
     const srEl = document.getElementById('wx-sunrise');
@@ -430,6 +443,12 @@ function _applyWeatherData(data){
     if(srEl) srEl.textContent = daylight.sunrise;
     if(ssEl) ssEl.textContent = daylight.sunset;
     if(dlEl) dlEl.textContent = daylight.length;
+    const srHidden = document.getElementById('wxSunrise');
+    const ssHidden = document.getElementById('wxSunset');
+    const dlHidden = document.getElementById('wxDaylight');
+    if(srHidden) srHidden.value = daylight.sunrise;
+    if(ssHidden) ssHidden.value = daylight.sunset;
+    if(dlHidden) dlHidden.value = daylight.length;
   }
 
   // ── Wind: range across 6 AM–7 PM + gusts + cardinal direction ──

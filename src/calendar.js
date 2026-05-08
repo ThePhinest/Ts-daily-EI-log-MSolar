@@ -70,7 +70,11 @@ function calOpenDay(date){
   const title=document.getElementById('cal-day-title');
   if(title){
     const indicators=calGetDotIndicators(rec);
-    title.innerHTML=dlFmtDisplay(date)+'<span style="margin-left:10px;font-size:13px;vertical-align:middle">'+indicators+'</span>';
+    const projectName=(rec.fields&&rec.fields.projectName||'').trim();
+    const projectPill=projectName
+      ? '<span style="display:inline-block;margin-left:10px;padding:2px 8px;background:rgba(201,160,39,.12);border:1px solid rgba(201,160,39,.4);border-radius:10px;font-family:var(--mono);font-size:9px;color:var(--amber);letter-spacing:.04em;text-transform:none;vertical-align:middle">'+projectName+'</span>'
+      : '';
+    title.innerHTML=dlFmtDisplay(date)+projectPill+'<span style="margin-left:10px;font-size:13px;vertical-align:middle">'+indicators+'</span>';
   }
   const content=document.getElementById('cal-day-content');
   if(!content) return;
