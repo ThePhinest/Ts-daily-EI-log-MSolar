@@ -78,6 +78,18 @@ async function aiBrandingInit() {
   // Field-fallback rule: saved value if present (even if empty string —
   // an explicit empty save is a real user choice), else PROMPT_DEFAULTS.
 
+  // Brand & Identity (Stage 7-5) — four text inputs at the top of the editor.
+  const dBi = (window.PROMPT_DEFAULTS && window.PROMPT_DEFAULTS.brandIdentity) || {};
+  const sBi = (saved && saved.brandIdentity) || {};
+  const _setInput = (id, val) => {
+    const el = document.getElementById(id);
+    if (el) el.value = val == null ? '' : val;
+  };
+  _setInput('ab-bi-inspectorRole',  (sBi.inspectorRole  !== undefined) ? sBi.inspectorRole  : (dBi.inspectorRole  || ''));
+  _setInput('ab-bi-projectContext', (sBi.projectContext !== undefined) ? sBi.projectContext : (dBi.projectContext || ''));
+  _setInput('ab-bi-outputDocType',  (sBi.outputDocType  !== undefined) ? sBi.outputDocType  : (dBi.outputDocType  || ''));
+  _setInput('ab-bi-docStyleNotes',  (sBi.docStyleNotes  !== undefined) ? sBi.docStyleNotes  : (dBi.docStyleNotes  || ''));
+
   // Custom Instructions (Stage 7-1)
   const ciValue = (saved && saved.customInstructions !== undefined)
     ? saved.customInstructions
@@ -273,6 +285,19 @@ function aiBrandingStructEdit(idx, value) {
 function aiBrandingCollect() {
   const defaults = window.PROMPT_DEFAULTS || {};
   const dTv = defaults.toneVoice || {};
+  const dBi = defaults.brandIdentity || {};
+
+  // Brand & Identity (Stage 7-5)
+  const _readInput = (id, fallback) => {
+    const el = document.getElementById(id);
+    return el ? el.value : fallback;
+  };
+  const brandIdentity = {
+    inspectorRole:  _readInput('ab-bi-inspectorRole',  dBi.inspectorRole  || ''),
+    projectContext: _readInput('ab-bi-projectContext', dBi.projectContext || ''),
+    outputDocType:  _readInput('ab-bi-outputDocType',  dBi.outputDocType  || ''),
+    docStyleNotes:  _readInput('ab-bi-docStyleNotes',  dBi.docStyleNotes  || '')
+  };
 
   // Custom Instructions (Stage 7-1)
   const ciEl = document.getElementById('ab-customInstructions');
@@ -312,7 +337,7 @@ function aiBrandingCollect() {
 
   return {
     schemaVersion: defaults.schemaVersion || 1,
-    brandIdentity: { ...(defaults.brandIdentity || {}) },
+    brandIdentity,
     toneVoice,
     terminology,
     structural,
@@ -373,6 +398,14 @@ function _aiBrandingUpdateSaveButton() {
 function _aiBrandingChangedFieldPaths(prev, next) {
   const paths = [];
   const baseline = prev || window.PROMPT_DEFAULTS || {};
+
+  // Brand & Identity (Stage 7-5)
+  const baseBI = baseline.brandIdentity || {};
+  const nextBI = next.brandIdentity || {};
+  if ((baseBI.inspectorRole  || '') !== (nextBI.inspectorRole  || '')) paths.push('brandIdentity.inspectorRole');
+  if ((baseBI.projectContext || '') !== (nextBI.projectContext || '')) paths.push('brandIdentity.projectContext');
+  if ((baseBI.outputDocType  || '') !== (nextBI.outputDocType  || '')) paths.push('brandIdentity.outputDocType');
+  if ((baseBI.docStyleNotes  || '') !== (nextBI.docStyleNotes  || '')) paths.push('brandIdentity.docStyleNotes');
 
   // Custom Instructions (Stage 7-1)
   if ((baseline.customInstructions || '') !== (next.customInstructions || '')) {

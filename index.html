@@ -2359,6 +2359,37 @@ EI to conduct LOD walk prior to start of operations"></textarea>
        the Version History card. State management lives in aiBrandingEditor.js. -->
   <div id="ai-branding-body">
 
+    <!-- Brand & Identity section (Stage 7-5) — top of the editor. Defines the
+         "what is this report and who's writing it" layer that opens the
+         assembled prompt. Four text inputs feed the opening sentence of the
+         system prompt. Future Phase 4b adds firm logo / watermark / legal
+         masthead fields here once firm-baseline layer ships. -->
+    <div class="ab-section" id="ab-section-brand">
+      <div class="ab-section-head">
+        <span class="ab-section-title">Brand &amp; Identity</span>
+        <span class="ab-section-sub">What this report is and who's writing it</span>
+      </div>
+      <div class="ab-section-body">
+        <p class="ab-hint">Defines the opening sentence of the assembled system prompt — the AI's understanding of the report context. These fields shape every polish before tone, terminology, or structure rules apply.</p>
+        <div class="field" style="margin-bottom:12px">
+          <label>Inspector Role</label>
+          <input type="text" id="ab-bi-inspectorRole" class="ab-input" style="font-size:13px;padding:8px 11px" placeholder="e.g. Environmental Inspector (EI) report writer" oninput="aiBrandingScheduleUpdatePreview()">
+        </div>
+        <div class="field" style="margin-bottom:12px">
+          <label>Project Context</label>
+          <input type="text" id="ab-bi-projectContext" class="ab-input" style="font-size:13px;padding:8px 11px" placeholder="e.g. Moraine Solar Energy Center, a 94 MW AC PV solar facility" oninput="aiBrandingScheduleUpdatePreview()">
+        </div>
+        <div class="field" style="margin-bottom:12px">
+          <label>Output Doc Type</label>
+          <input type="text" id="ab-bi-outputDocType" class="ab-input" style="font-size:13px;padding:8px 11px" placeholder="e.g. Daily Environmental Compliance Report" oninput="aiBrandingScheduleUpdatePreview()">
+        </div>
+        <div class="field">
+          <label>Doc Style Notes</label>
+          <input type="text" id="ab-bi-docStyleNotes" class="ab-input" style="font-size:13px;padding:8px 11px" placeholder="e.g. Polish raw field notes into professional language" oninput="aiBrandingScheduleUpdatePreview()">
+        </div>
+      </div>
+    </div>
+
     <!-- Tone & Voice section (Stage 7-2) — structured controls for how the AI
          writes. Three dropdowns + additional notes textarea. Each setting flows
          into the assembled system prompt as a STYLE RULE on every polish. -->
