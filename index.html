@@ -1913,6 +1913,33 @@ EI to conduct LOD walk prior to start of operations"></textarea>
 ══════════════════════════════════ -->
 <div class="page" id="page-config"><div class="wrap">
 
+  <!-- Top blanket Settings intro — broader scope than the legacy Config & Presets
+       intro below (which is specific to chip management). Set above the AI & Branding
+       nav card so users see "what is this page" before any actionable controls. -->
+  <div class="card" style="border-color:rgba(232,160,32,.2)">
+    <div class="card-body" style="padding:13px 17px">
+      <div style="font-family:var(--mono);font-size:11px;color:var(--muted2);line-height:1.75">
+        <span style="color:var(--amber);font-weight:500">Settings</span> — Configure the app, layout, and how your reports get polished.<br>
+        Cards expand to edit, or open a dedicated page. Changes save automatically across your devices.
+      </div>
+    </div>
+  </div>
+
+  <!-- AI & Branding navigation card — opens dedicated subpage (page-aiBranding).
+       First subpage-style nav card in the app. The chevron rotated -90deg
+       (pointing right) signals "opens elsewhere" vs. the down-chevron expand/collapse
+       cards. Future deep-config surfaces (Phase 4 §1 API Keys, Phase 4b firm branding,
+       Phase 4 §2 form templates) will all use this same card pattern. -->
+  <div class="config-section" id="cfg-aiBranding-nav" onclick="showPage('aiBranding')" role="button" tabindex="0" style="cursor:pointer;margin-bottom:14px">
+    <div class="config-head" style="border-bottom:none">
+      <span class="config-title">AI &amp; Branding</span>
+      <span style="font-family:var(--mono);font-size:9px;color:var(--muted2);margin-left:auto;margin-right:8px">Polish prompt, terminology, branding</span>
+      <span class="card-chevron" style="margin-left:0;transform:rotate(-90deg)">▾</span>
+    </div>
+  </div>
+
+  <!-- Legacy Config & Presets intro — kept because the chip-management cards below
+       (Inspection Summary presets, Activity presets, etc.) still anchor to it. -->
   <div class="card" style="border-color:rgba(232,160,32,.2)">
     <div class="card-body" style="padding:13px 17px">
       <div style="font-family:var(--mono);font-size:11px;color:var(--muted2);line-height:1.75">
@@ -1953,19 +1980,6 @@ EI to conduct LOD walk prior to start of operations"></textarea>
       </div>
       <button class="btn btn-amber" style="font-size:11px;padding:7px 14px" onclick="saveProjectConfig()">Save &amp; Apply</button>
       <span id="cfg-proj-status" style="font-family:var(--mono);font-size:11px;color:var(--green);margin-left:12px;opacity:0;transition:opacity .4s"></span>
-    </div>
-  </div>
-
-  <!-- AI & Branding navigation card — opens dedicated subpage (page-aiBranding).
-       This is the first subpage-style nav card in the app. The chevron rotated -90deg
-       (pointing right) signals "opens elsewhere" vs. the down-chevron expand/collapse
-       cards. Future deep-config surfaces (Phase 4 §1 API Keys, Phase 4b firm branding,
-       Phase 4 §2 form templates) will all use this same card pattern. -->
-  <div class="config-section" id="cfg-aiBranding-nav" onclick="showPage('aiBranding')" role="button" tabindex="0" style="cursor:pointer">
-    <div class="config-head" style="border-bottom:none">
-      <span class="config-title">AI &amp; Branding</span>
-      <span style="font-family:var(--mono);font-size:9px;color:var(--muted2);margin-left:auto;margin-right:8px">Polish prompt, terminology, branding</span>
-      <span class="card-chevron" style="margin-left:0;transform:rotate(-90deg)">▾</span>
     </div>
   </div>
 
@@ -2245,7 +2259,7 @@ EI to conduct LOD walk prior to start of operations"></textarea>
       <span style="font-size:14px;line-height:1">‹</span>
       <span>Settings</span>
     </button>
-    <span class="subpage-title" style="font-family:var(--mono);font-size:14px;font-weight:500;color:var(--text);letter-spacing:.02em">AI &amp; Branding</span>
+    <span class="subpage-title" style="font-family:var(--mono);font-size:14px;font-weight:500;color:var(--amber);letter-spacing:.02em">AI &amp; Branding</span>
   </div>
 
   <!-- Intro card — explains what this page configures. -->
