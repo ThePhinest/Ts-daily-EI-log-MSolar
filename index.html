@@ -343,6 +343,28 @@ body.theme-light .preset-chip:hover{background:rgba(0,76,84,0.18);border-color:v
 .ab-select:focus{outline:none;border-color:var(--amber)}
 .ab-field-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:14px}
 @media (max-width:540px){.ab-field-row{grid-template-columns:1fr}}
+/* Terminology editor — three lists with inline add/remove. .ab-term-* hierarchy
+   keeps the Terminology section's internal labels distinct from the section
+   title in the .ab-section-head above. */
+.ab-term-group{margin-bottom:18px}
+.ab-term-group:last-child{margin-bottom:0}
+.ab-term-label{display:block;font-family:var(--mono);font-size:10.5px;color:var(--muted2);letter-spacing:.05em;text-transform:uppercase;margin-bottom:6px}
+.ab-term-hint{color:var(--muted);text-transform:none;letter-spacing:normal;font-weight:400;margin-left:4px}
+.ab-list{list-style:none;padding:0;margin:0 0 8px 0;display:flex;flex-direction:column;gap:4px}
+.ab-list:empty{display:none}
+.ab-list li{display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--bg);border:1px solid var(--border);border-radius:5px;font-family:var(--mono);font-size:11.5px;color:var(--text)}
+.ab-list-text{flex:1;word-break:break-word}
+.ab-list-arrow{color:var(--muted);font-size:11px;margin:0 2px;flex-shrink:0}
+.ab-list-remove{background:none;border:none;color:var(--muted);cursor:pointer;font-family:var(--mono);font-size:16px;padding:0 4px;line-height:1;transition:color .15s;flex-shrink:0}
+.ab-list-remove:hover{color:var(--red)}
+.ab-add-row{display:flex;gap:6px;align-items:center}
+.ab-add-row-pair .ab-input{flex:1;min-width:0}
+.ab-input{flex:1;background:var(--bg);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--mono);font-size:11.5px;padding:7px 10px;box-sizing:border-box;min-width:0}
+.ab-input:focus{outline:none;border-color:var(--amber)}
+.ab-add-arrow{color:var(--muted);font-size:13px;flex-shrink:0;padding:0 2px}
+.ab-btn-add{background:var(--bg);border:1px solid var(--amber);color:var(--amber);font-family:var(--mono);font-size:16px;font-weight:600;padding:0 12px;border-radius:5px;cursor:pointer;height:31px;line-height:1;transition:all .15s;flex-shrink:0}
+.ab-btn-add:hover{background:var(--amber);color:#111}
+.ab-btn-add:active{transform:scale(0.95)}
 .ab-actions{display:flex;align-items:center;gap:10px;margin:6px 0 18px;flex-wrap:wrap}
 .ab-status{font-family:var(--mono);font-size:11px;color:var(--green);opacity:0;transition:opacity .4s;margin-left:6px}
 .ab-status.error{color:var(--red)}
@@ -2359,6 +2381,49 @@ EI to conduct LOD walk prior to start of operations"></textarea>
         <div class="field">
           <label>Additional Tone Notes</label>
           <textarea id="ab-tv-additionalNotes" class="ab-textarea" rows="3" placeholder="e.g. Keep language tight and direct — no filler. Use Oxford commas." style="min-height:70px" oninput="aiBrandingScheduleUpdatePreview()"></textarea>
+        </div>
+      </div>
+    </div>
+
+    <!-- Terminology section (Stage 7-3) — three editable lists that flow into
+         the assembled prompt as TERMINOLOGY rules. Each list is mutable inline
+         (add input + remove × on each row). Render is driven from a module-
+         scoped _abTerminology state object in aiBrandingEditor.js. -->
+    <div class="ab-section" id="ab-section-terminology">
+      <div class="ab-section-head">
+        <span class="ab-section-title">Terminology</span>
+        <span class="ab-section-sub">Banned, preferred substitutions, required</span>
+      </div>
+      <div class="ab-section-body">
+        <p class="ab-hint">Three lists that flow into the assembled prompt as TERMINOLOGY rules. The AI uses them to enforce house-style word choices during polish.</p>
+
+        <div class="ab-term-group">
+          <label class="ab-term-label">Preferred substitutions <span class="ab-term-hint">— "use X not Y"</span></label>
+          <ul class="ab-list" id="ab-list-preferred"></ul>
+          <div class="ab-add-row ab-add-row-pair">
+            <input type="text" id="ab-preferred-from" class="ab-input" placeholder="from (e.g. performing)">
+            <span class="ab-add-arrow">→</span>
+            <input type="text" id="ab-preferred-to" class="ab-input" placeholder="to (e.g. conducting)">
+            <button class="ab-btn-add" onclick="aiBrandingTermsAddPair()" title="Add substitution">+</button>
+          </div>
+        </div>
+
+        <div class="ab-term-group">
+          <label class="ab-term-label">Banned words/phrases <span class="ab-term-hint">— "avoid these"</span></label>
+          <ul class="ab-list" id="ab-list-banned"></ul>
+          <div class="ab-add-row">
+            <input type="text" id="ab-banned-input" class="ab-input" placeholder="add banned word or phrase…">
+            <button class="ab-btn-add" onclick="aiBrandingTermsAdd('banned')" title="Add banned word">+</button>
+          </div>
+        </div>
+
+        <div class="ab-term-group">
+          <label class="ab-term-label">Required terms <span class="ab-term-hint">— "always include where relevant"</span></label>
+          <ul class="ab-list" id="ab-list-required"></ul>
+          <div class="ab-add-row">
+            <input type="text" id="ab-required-input" class="ab-input" placeholder="add required term…">
+            <button class="ab-btn-add" onclick="aiBrandingTermsAdd('required')" title="Add required term">+</button>
+          </div>
         </div>
       </div>
     </div>

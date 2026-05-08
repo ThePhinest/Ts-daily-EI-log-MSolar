@@ -34,6 +34,19 @@ let _abDirty = false;
 // Debounce handle for live preview updates.
 let _abPreviewTimer = null;
 
+// Terminology lists held in module scope — the editor renders them by
+// regenerating <li> markup on every mutation, so we need the data outside
+// the DOM. aiBrandingInit hydrates this from saved/defaults; collect reads
+// it; add/remove handlers mutate it and trigger re-render + preview update.
+let _abTerminology = { banned: [], preferred: [], required: [] };
+
+// Lightweight HTML-escape for user-typed list content rendered into innerHTML.
+function _abEscapeHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+  ));
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 // INIT — called from showPage('aiBranding') on every navigation to the page
 // ─────────────────────────────────────────────────────────────────────────
@@ -82,9 +95,107 @@ async function aiBrandingInit() {
       : (dTv.additionalToneNotes || '');
   }
 
+  // Terminology (Stage 7-3) — hydrate module-scoped lists from saved or defaults.
+  const dTerm = (window.PROMPT_DEFAULTS && window.PROMPT_DEFAULTS.terminology) || {};
+  const sTerm = (saved && saved.terminology) || {};
+  _abTerminology = {
+    banned:    Array.isArray(sTerm.banned)    ? sTerm.banned.slice()    : (Array.isArray(dTerm.banned)    ? dTerm.banned.slice()    : []),
+    preferred: Array.isArray(sTerm.preferred) ? JSON.parse(JSON.stringify(sTerm.preferred)) : (Array.isArray(dTerm.preferred) ? JSON.parse(JSON.stringify(dTerm.preferred)) : []),
+    required:  Array.isArray(sTerm.required)  ? sTerm.required.slice()  : (Array.isArray(dTerm.required)  ? dTerm.required.slice()  : [])
+  };
+  _aiBrandingRenderTerms();
+  _aiBrandingWireTermInputs();
+
   _abDirty = false;
   _aiBrandingUpdateSaveButton();
   await _aiBrandingUpdatePreview();
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// TERMINOLOGY EDITOR (Stage 7-3) — render + add/remove handlers
+// ─────────────────────────────────────────────────────────────────────────
+
+function _aiBrandingRenderTerms() {
+  // Banned
+  const bannedUl = document.getElementById('ab-list-banned');
+  if (bannedUl) {
+    bannedUl.innerHTML = (_abTerminology.banned || []).map((word, i) =>
+      `<li><span class="ab-list-text">${_abEscapeHtml(word)}</span><button class="ab-list-remove" onclick="aiBrandingTermsRemove('banned',${i})" title="Remove">×</button></li>`
+    ).join('');
+  }
+  // Preferred substitutions
+  const prefUl = document.getElementById('ab-list-preferred');
+  if (prefUl) {
+    prefUl.innerHTML = (_abTerminology.preferred || []).map((p, i) =>
+      `<li><span class="ab-list-text">"${_abEscapeHtml(p && p.from)}" <span class="ab-list-arrow">→</span> "${_abEscapeHtml(p && p.to)}"</span><button class="ab-list-remove" onclick="aiBrandingTermsRemove('preferred',${i})" title="Remove">×</button></li>`
+    ).join('');
+  }
+  // Required
+  const reqUl = document.getElementById('ab-list-required');
+  if (reqUl) {
+    reqUl.innerHTML = (_abTerminology.required || []).map((word, i) =>
+      `<li><span class="ab-list-text">${_abEscapeHtml(word)}</span><button class="ab-list-remove" onclick="aiBrandingTermsRemove('required',${i})" title="Remove">×</button></li>`
+    ).join('');
+  }
+}
+
+// Wire Enter-key submit on the add-input rows. Re-runs on every aiBrandingInit
+// (each navigation to the page) — replacing prior handlers, no leak.
+function _aiBrandingWireTermInputs() {
+  const _wire = (id, handler) => {
+    const el = document.getElementById(id);
+    if (el) el.onkeydown = (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); handler(); }
+    };
+  };
+  _wire('ab-banned-input',   () => aiBrandingTermsAdd('banned'));
+  _wire('ab-required-input', () => aiBrandingTermsAdd('required'));
+  _wire('ab-preferred-from', () => aiBrandingTermsAddPair());
+  _wire('ab-preferred-to',   () => aiBrandingTermsAddPair());
+}
+
+function aiBrandingTermsAdd(listType) {
+  const inputId = listType === 'banned' ? 'ab-banned-input' : 'ab-required-input';
+  const input = document.getElementById(inputId);
+  if (!input) return;
+  const val = input.value.trim();
+  if (!val) return;
+  // Dedupe — silently skip if same string already present
+  const list = Array.isArray(_abTerminology[listType]) ? _abTerminology[listType] : [];
+  if (list.includes(val)) {
+    input.value = '';
+    return;
+  }
+  _abTerminology[listType] = [...list, val];
+  input.value = '';
+  _aiBrandingRenderTerms();
+  aiBrandingScheduleUpdatePreview();
+}
+
+function aiBrandingTermsAddPair() {
+  const fromEl = document.getElementById('ab-preferred-from');
+  const toEl = document.getElementById('ab-preferred-to');
+  if (!fromEl || !toEl) return;
+  const from = fromEl.value.trim();
+  const to = toEl.value.trim();
+  if (!from || !to) return;
+  // Dedupe by from-key — last write wins (matches the merge function's Map semantics)
+  const list = Array.isArray(_abTerminology.preferred) ? _abTerminology.preferred : [];
+  const filtered = list.filter(p => !p || p.from !== from);
+  _abTerminology.preferred = [...filtered, { from, to }];
+  fromEl.value = '';
+  toEl.value = '';
+  if (fromEl.focus) fromEl.focus();
+  _aiBrandingRenderTerms();
+  aiBrandingScheduleUpdatePreview();
+}
+
+function aiBrandingTermsRemove(listType, index) {
+  const list = Array.isArray(_abTerminology[listType]) ? _abTerminology[listType] : [];
+  if (index < 0 || index >= list.length) return;
+  _abTerminology[listType] = list.filter((_, i) => i !== index);
+  _aiBrandingRenderTerms();
+  aiBrandingScheduleUpdatePreview();
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -122,11 +233,14 @@ function aiBrandingCollect() {
     additionalToneNotes: _readTextarea('ab-tv-additionalNotes', dTv.additionalToneNotes || '')
   };
 
+  // Terminology (Stage 7-3) — read from module-scoped state, deep-cloned
+  const terminology = JSON.parse(JSON.stringify(_abTerminology || {}));
+
   return {
     schemaVersion: defaults.schemaVersion || 1,
     brandIdentity: { ...(defaults.brandIdentity || {}) },
     toneVoice,
-    terminology: JSON.parse(JSON.stringify(defaults.terminology || {})),
+    terminology,
     structural: JSON.parse(JSON.stringify(defaults.structural || {})),
     customInstructions
   };
@@ -198,6 +312,13 @@ function _aiBrandingChangedFieldPaths(prev, next) {
   if ((baseTV.person              || '') !== (nextTV.person              || '')) paths.push('toneVoice.person');
   if ((baseTV.sentenceLength      || '') !== (nextTV.sentenceLength      || '')) paths.push('toneVoice.sentenceLength');
   if ((baseTV.additionalToneNotes || '') !== (nextTV.additionalToneNotes || '')) paths.push('toneVoice.additionalToneNotes');
+
+  // Terminology (Stage 7-3) — three lists; compare by JSON shape
+  const baseT = baseline.terminology || {};
+  const nextT = next.terminology || {};
+  if (JSON.stringify(baseT.banned    || []) !== JSON.stringify(nextT.banned    || [])) paths.push('terminology.banned');
+  if (JSON.stringify(baseT.preferred || []) !== JSON.stringify(nextT.preferred || [])) paths.push('terminology.preferred');
+  if (JSON.stringify(baseT.required  || []) !== JSON.stringify(nextT.required  || [])) paths.push('terminology.required');
 
   return paths;
 }
@@ -276,3 +397,6 @@ window.aiBrandingCollect = aiBrandingCollect;
 window.aiBrandingSave = aiBrandingSave;
 window.aiBrandingResetToDefault = aiBrandingResetToDefault;
 window.aiBrandingScheduleUpdatePreview = aiBrandingScheduleUpdatePreview;
+window.aiBrandingTermsAdd = aiBrandingTermsAdd;
+window.aiBrandingTermsAddPair = aiBrandingTermsAddPair;
+window.aiBrandingTermsRemove = aiBrandingTermsRemove;
