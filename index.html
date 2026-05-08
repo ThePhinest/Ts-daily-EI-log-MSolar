@@ -383,7 +383,7 @@ body.theme-light .preset-chip:hover{background:rgba(0,76,84,0.18);border-color:v
 .ab-struct-item{background:var(--bg);border:1px solid var(--border);border-radius:5px;margin-bottom:6px;overflow:hidden}
 .ab-struct-head{padding:9px 12px;display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none;-webkit-user-select:none;transition:background .15s}
 .ab-struct-head:hover{background:var(--s2)}
-.ab-struct-label{font-family:var(--cond);font-weight:600;font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--text);flex:1}
+.ab-struct-label{font-family:var(--cond);font-weight:600;font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--amber);flex:1}
 .ab-struct-chevron{font-size:12px;color:var(--muted);transition:transform .2s;line-height:1;flex-shrink:0}
 .ab-struct-item.collapsed .ab-struct-chevron{transform:rotate(-90deg)}
 .ab-struct-item.collapsed .ab-struct-body{display:none}
@@ -410,8 +410,12 @@ body.theme-light .preset-chip:hover{background:rgba(0,76,84,0.18);border-color:v
    when the user navigates to a different page. */
 .ab-save-bar{position:fixed;bottom:calc(128px + env(safe-area-inset-bottom));left:50%;display:flex;align-items:center;gap:12px;background:var(--s1);border:1px solid var(--amber);border-radius:999px;padding:8px 16px;box-shadow:0 8px 28px rgba(0,0,0,0.5);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);z-index:250;transform:translateX(-50%) translateY(180%);opacity:0;pointer-events:none;transition:transform .3s cubic-bezier(.2,.8,.2,1),opacity .2s;max-width:calc(100vw - 32px)}
 .ab-save-bar.dirty{transform:translateX(-50%) translateY(0);opacity:1;pointer-events:auto}
-.ab-save-bar .btn-amber{font-size:13px;padding:7px 20px;border-radius:999px}
-.ab-save-bar .ab-status{margin-left:4px;font-size:11px}
+/* Save button takes the full visual weight of the bar — primary action. */
+.ab-save-bar .btn-amber{font-size:14px;padding:10px 36px;border-radius:999px;letter-spacing:.12em}
+/* Status floats as a toast ABOVE the bar so it doesn't affect bar width.
+   Without absolute positioning, residual text content (after fade-out) was
+   keeping the bar artificially wide. */
+.ab-save-bar .ab-status{position:absolute;bottom:100%;left:50%;transform:translateX(-50%);margin-bottom:10px;margin-left:0;white-space:nowrap;background:var(--s1);border:1px solid var(--border);border-radius:6px;padding:5px 12px;font-size:11px;box-shadow:0 4px 14px rgba(0,0,0,0.45);pointer-events:none}
 .ab-actions{display:flex;align-items:center;gap:10px;margin:6px 0 18px;flex-wrap:wrap}
 .ab-status{font-family:var(--mono);font-size:11px;color:var(--green);opacity:0;transition:opacity .4s;margin-left:6px}
 .ab-status.error{color:var(--red)}
