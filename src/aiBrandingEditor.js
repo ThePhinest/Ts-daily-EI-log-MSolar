@@ -55,14 +55,32 @@ async function aiBrandingInit() {
   }
   _abLastSavedSnapshot = saved ? JSON.parse(JSON.stringify(saved)) : null;
 
-  // Populate fields. Stage 7-1 has only Custom Instructions.
   // Field-fallback rule: saved value if present (even if empty string —
   // an explicit empty save is a real user choice), else PROMPT_DEFAULTS.
+
+  // Custom Instructions (Stage 7-1)
   const ciValue = (saved && saved.customInstructions !== undefined)
     ? saved.customInstructions
     : (window.PROMPT_DEFAULTS.customInstructions || '');
   const ciEl = document.getElementById('ab-customInstructions');
   if (ciEl) ciEl.value = ciValue;
+
+  // Tone & Voice (Stage 7-2)
+  const dTv = (window.PROMPT_DEFAULTS && window.PROMPT_DEFAULTS.toneVoice) || {};
+  const sTv = (saved && saved.toneVoice) || {};
+  const _setSelect = (id, val) => {
+    const el = document.getElementById(id);
+    if (el) el.value = val;
+  };
+  _setSelect('ab-tv-formality',      sTv.formality      || dTv.formality      || 'professional');
+  _setSelect('ab-tv-person',         sTv.person         || dTv.person         || 'third');
+  _setSelect('ab-tv-sentenceLength', sTv.sentenceLength || dTv.sentenceLength || 'standard');
+  const atnEl = document.getElementById('ab-tv-additionalNotes');
+  if (atnEl) {
+    atnEl.value = (sTv.additionalToneNotes !== undefined)
+      ? sTv.additionalToneNotes
+      : (dTv.additionalToneNotes || '');
+  }
 
   _abDirty = false;
   _aiBrandingUpdateSaveButton();
@@ -82,12 +100,32 @@ async function aiBrandingInit() {
 
 function aiBrandingCollect() {
   const defaults = window.PROMPT_DEFAULTS || {};
+  const dTv = defaults.toneVoice || {};
+
+  // Custom Instructions (Stage 7-1)
   const ciEl = document.getElementById('ab-customInstructions');
   const customInstructions = ciEl ? ciEl.value : (defaults.customInstructions || '');
+
+  // Tone & Voice (Stage 7-2)
+  const _readSelect = (id, fallback) => {
+    const el = document.getElementById(id);
+    return el ? el.value : fallback;
+  };
+  const _readTextarea = (id, fallback) => {
+    const el = document.getElementById(id);
+    return el ? el.value : fallback;
+  };
+  const toneVoice = {
+    formality:           _readSelect('ab-tv-formality',      dTv.formality      || 'professional'),
+    person:              _readSelect('ab-tv-person',         dTv.person         || 'third'),
+    sentenceLength:      _readSelect('ab-tv-sentenceLength', dTv.sentenceLength || 'standard'),
+    additionalToneNotes: _readTextarea('ab-tv-additionalNotes', dTv.additionalToneNotes || '')
+  };
+
   return {
     schemaVersion: defaults.schemaVersion || 1,
     brandIdentity: { ...(defaults.brandIdentity || {}) },
-    toneVoice: { ...(defaults.toneVoice || {}) },
+    toneVoice,
     terminology: JSON.parse(JSON.stringify(defaults.terminology || {})),
     structural: JSON.parse(JSON.stringify(defaults.structural || {})),
     customInstructions
@@ -147,9 +185,20 @@ function _aiBrandingUpdateSaveButton() {
 function _aiBrandingChangedFieldPaths(prev, next) {
   const paths = [];
   const baseline = prev || window.PROMPT_DEFAULTS || {};
+
+  // Custom Instructions (Stage 7-1)
   if ((baseline.customInstructions || '') !== (next.customInstructions || '')) {
     paths.push('customInstructions');
   }
+
+  // Tone & Voice (Stage 7-2)
+  const baseTV = baseline.toneVoice || {};
+  const nextTV = next.toneVoice || {};
+  if ((baseTV.formality           || '') !== (nextTV.formality           || '')) paths.push('toneVoice.formality');
+  if ((baseTV.person              || '') !== (nextTV.person              || '')) paths.push('toneVoice.person');
+  if ((baseTV.sentenceLength      || '') !== (nextTV.sentenceLength      || '')) paths.push('toneVoice.sentenceLength');
+  if ((baseTV.additionalToneNotes || '') !== (nextTV.additionalToneNotes || '')) paths.push('toneVoice.additionalToneNotes');
+
   return paths;
 }
 

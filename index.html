@@ -335,6 +335,10 @@ body.theme-light .preset-chip:hover{background:rgba(0,76,84,0.18);border-color:v
 .ab-hint{font-family:var(--mono);font-size:10.5px;color:var(--muted);margin-bottom:12px;line-height:1.6}
 .ab-textarea{background:var(--bg);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--mono);font-size:12px;line-height:1.55;padding:11px 12px;width:100%;resize:vertical;min-height:120px;box-sizing:border-box}
 .ab-textarea:focus{outline:none;border-color:var(--amber)}
+.ab-select{background:var(--bg);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--body);font-size:14px;padding:8px 11px;width:100%;box-sizing:border-box}
+.ab-select:focus{outline:none;border-color:var(--amber)}
+.ab-field-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:14px}
+@media (max-width:540px){.ab-field-row{grid-template-columns:1fr}}
 .ab-actions{display:flex;align-items:center;gap:10px;margin:6px 0 18px;flex-wrap:wrap}
 .ab-status{font-family:var(--mono);font-size:11px;color:var(--green);opacity:0;transition:opacity .4s;margin-left:6px}
 .ab-status.error{color:var(--red)}
@@ -2311,6 +2315,49 @@ EI to conduct LOD walk prior to start of operations"></textarea>
        Structural Preferences, and Brand & Identity sections. Stage 8 adds
        the Version History card. State management lives in aiBrandingEditor.js. -->
   <div id="ai-branding-body">
+
+    <!-- Tone & Voice section (Stage 7-2) — structured controls for how the AI
+         writes. Three dropdowns + additional notes textarea. Each setting flows
+         into the assembled system prompt as a STYLE RULE on every polish. -->
+    <div class="ab-section" id="ab-section-tone">
+      <div class="ab-section-head">
+        <span class="ab-section-title">Tone &amp; Voice</span>
+        <span class="ab-section-sub">How the AI writes — formality, person, length</span>
+      </div>
+      <div class="ab-section-body">
+        <p class="ab-hint">Three structured controls plus a free-text notes field. Each setting flows into the assembled system prompt as a STYLE RULE the AI follows on every report polish.</p>
+        <div class="ab-field-row">
+          <div class="field">
+            <label>Formality</label>
+            <select id="ab-tv-formality" class="ab-select" oninput="aiBrandingScheduleUpdatePreview()">
+              <option value="casual">Casual</option>
+              <option value="professional">Professional</option>
+              <option value="highly-technical">Highly Technical</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Person</label>
+            <select id="ab-tv-person" class="ab-select" oninput="aiBrandingScheduleUpdatePreview()">
+              <option value="first">First Person</option>
+              <option value="third">Third Person</option>
+              <option value="mixed">Mixed</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Sentence Length</label>
+            <select id="ab-tv-sentenceLength" class="ab-select" oninput="aiBrandingScheduleUpdatePreview()">
+              <option value="concise">Concise</option>
+              <option value="standard">Standard</option>
+              <option value="detailed">Detailed</option>
+            </select>
+          </div>
+        </div>
+        <div class="field">
+          <label>Additional Tone Notes</label>
+          <textarea id="ab-tv-additionalNotes" class="ab-textarea" rows="3" placeholder="e.g. Keep language tight and direct — no filler. Use Oxford commas." style="min-height:70px" oninput="aiBrandingScheduleUpdatePreview()"></textarea>
+        </div>
+      </div>
+    </div>
 
     <!-- Custom Instructions section (Stage 7-1) — free-text rules appended to
          every report polish. The simplest of the 6 sections; ships first to
