@@ -1202,12 +1202,12 @@ body.is-native select { font-size: 16px !important; }
         <div class="field"><label>PM Temp (°F)</label><input type="number" id="tempPM" placeholder="°F"></div>
         <div class="field"><label>Wind (mph)</label><input type="text" id="wind" placeholder="e.g. 10–15 mph"></div>
         <div class="field"><label>Precip (in.)</label><input type="number" id="precip" step="0.01" placeholder="0.00"></div>
-        <div class="weather-daylight" style="grid-column:1 / -1;display:flex;flex-direction:column;gap:4px;padding:8px 12px;background:rgba(0,107,117,0.06);border:1px solid var(--border2);border-radius:5px;font-size:11px;font-family:var(--cond);font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted2)">
+        <div class="weather-daylight" style="grid-column:1 / -1;display:flex;flex-direction:column;gap:8px;padding:11px 12px;background:rgba(0,107,117,0.06);border:1px solid var(--border2);border-radius:5px;font-size:12.5px;font-family:var(--cond);font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted2)">
           <div style="display:flex;justify-content:space-around;align-items:center">
             <span>🌅 Sunrise <strong id="wx-sunrise" style="color:var(--text);font-family:var(--mono);font-weight:400;text-transform:none;letter-spacing:0;margin-left:6px">—</strong></span>
             <span>🌇 Sunset <strong id="wx-sunset" style="color:var(--text);font-family:var(--mono);font-weight:400;text-transform:none;letter-spacing:0;margin-left:6px">—</strong></span>
           </div>
-          <div style="text-align:center">
+          <div style="text-align:center;border-top:1px solid rgba(0,107,117,0.18);padding-top:7px">
             <span>☀️ Daylight <strong id="wx-daylight" style="color:var(--text);font-family:var(--mono);font-weight:400;text-transform:none;letter-spacing:0;margin-left:6px">—</strong></span>
           </div>
           <input type="hidden" id="wxSunrise">
