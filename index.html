@@ -1956,6 +1956,19 @@ EI to conduct LOD walk prior to start of operations"></textarea>
     </div>
   </div>
 
+  <!-- AI & Branding navigation card — opens dedicated subpage (page-aiBranding).
+       This is the first subpage-style nav card in the app. The chevron rotated -90deg
+       (pointing right) signals "opens elsewhere" vs. the down-chevron expand/collapse
+       cards. Future deep-config surfaces (Phase 4 §1 API Keys, Phase 4b firm branding,
+       Phase 4 §2 form templates) will all use this same card pattern. -->
+  <div class="config-section" id="cfg-aiBranding-nav" onclick="showPage('aiBranding')" role="button" tabindex="0" style="cursor:pointer">
+    <div class="config-head" style="border-bottom:none">
+      <span class="config-title">AI &amp; Branding</span>
+      <span style="font-family:var(--mono);font-size:9px;color:var(--muted2);margin-left:auto;margin-right:8px">Polish prompt, terminology, branding</span>
+      <span class="card-chevron" style="margin-left:0;transform:rotate(-90deg)">▾</span>
+    </div>
+  </div>
+
   <div class="config-section" id="cfg-report">
     <div class="config-head" onclick="toggleSection('cfg-report')"><span class="config-title">Report Generation</span><span class="card-chevron">▾</span></div>
     <div class="config-body">
@@ -2204,6 +2217,65 @@ EI to conduct LOD walk prior to start of operations"></textarea>
 </div></div><!-- /page-config -->
 
 
+<!-- ════════════════════════════════════════════════════════════════════
+     AI & BRANDING — first subpage-style nav target in the app
+     ════════════════════════════════════════════════════════════════════
+     Opens from page-config via the cfg-aiBranding-nav card. Back button
+     returns to page-config. Top-level page (registered in PAGE_REGISTRY)
+     so users can also slot it into bottom nav via long-press if desired.
+
+     Phase 1 today (2026-05-08): empty placeholder. Stages 7-8 fill in:
+       - 6-section prompt editor (Brand & Identity, Tone & Voice, Terminology,
+         Structural Preferences, Custom Instructions, Effective Prompt Preview)
+       - Save / Reset to default buttons wired to promptStorage.js
+       - Version history card with diff + revert
+
+     Phase 4+ adds new sections to this same page:
+       - API Keys (Phase 4 §1)
+       - Form Templates (Phase 4 §2)
+       - Firm Branding (Phase 4b — logos, watermarks, doc-style)
+     ═══════════════════════════════════════════════════════════════════ -->
+<div class="page" id="page-aiBranding"><div class="wrap">
+
+  <!-- Subpage header — back button + page title.
+       Sweep-ready markup: semantic class names, no hardcoded sizes that
+       fight a future design pass. Branding sweep can restyle via CSS only. -->
+  <div class="subpage-header" style="display:flex;align-items:center;gap:12px;margin-bottom:14px;flex-wrap:wrap">
+    <button class="btn btn-outline subpage-back" style="font-size:11px;padding:6px 12px;display:inline-flex;align-items:center;gap:5px" onclick="showPage('config')">
+      <span style="font-size:14px;line-height:1">‹</span>
+      <span>Settings</span>
+    </button>
+    <span class="subpage-title" style="font-family:var(--mono);font-size:14px;font-weight:500;color:var(--text);letter-spacing:.02em">AI &amp; Branding</span>
+  </div>
+
+  <!-- Intro card — explains what this page configures. -->
+  <div class="card" style="border-color:rgba(232,160,32,.2);margin-bottom:14px">
+    <div class="card-body" style="padding:13px 17px">
+      <div style="font-family:var(--mono);font-size:11px;color:var(--muted2);line-height:1.75">
+        <span style="color:var(--amber);font-weight:500">AI &amp; Branding</span> — Customize how the AI polishes your reports. Tone, terminology, structural rules, and your firm-specific branding all flow through here.<br>
+        Future home for API keys, report templates, and firm logos / watermarks.
+      </div>
+    </div>
+  </div>
+
+  <!-- Editor body — Stage 7 fills this with the 6-section prompt editor.
+       Today: a placeholder card so the page isn't empty. -->
+  <div id="ai-branding-body">
+    <div class="card" style="border-color:var(--border)">
+      <div class="card-body" style="padding:24px;text-align:center">
+        <div style="font-family:var(--mono);font-size:11px;color:var(--muted2);line-height:1.6">
+          <strong style="color:var(--text);font-family:var(--body);font-size:13px">Editor coming soon</strong><br><br>
+          The 6-section prompt customization editor lands in Stage 7.<br>
+          For now, the system uses factory defaults — your reports polish exactly as before.<br><br>
+          <span style="color:var(--muted)">Stage 6 ✓ — subpage navigation primitive established</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div></div><!-- /page-aiBranding -->
+
+
 <script>
 var _logFormalized = false;
 // ═══════════════════════════════════════════
@@ -2386,6 +2458,7 @@ var PAGE_REGISTRY = [
   { id:'forms',      label:'Forms',       icon:'📄' },
   { id:'docs',       label:'Docs',        icon:'📁' },
   { id:'config',     label:'Settings',    icon:'⚙'  },
+  { id:'aiBranding', label:'AI & Branding', icon:'✦' },
 ];
 
 var _NAV_DEFAULTS = ['log','calendar','photos'];
