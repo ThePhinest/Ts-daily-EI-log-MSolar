@@ -340,6 +340,14 @@ body.theme-light .preset-chip:hover{background:rgba(0,76,84,0.18);border-color:v
 .ab-section-title{font-family:var(--cond);font-weight:700;font-size:15px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted2)}
 .ab-section-sub{font-family:var(--mono);font-size:9px;color:var(--amber);letter-spacing:.05em;margin-left:auto}
 .ab-section label{color:var(--amber)}
+/* Collapsible — same chevron + body-hide pattern as .config-section. Header
+   is now clickable; cursor:pointer applied to .ab-section-head globally
+   since every section can collapse. */
+.ab-section-head{cursor:pointer;user-select:none;-webkit-user-select:none}
+.ab-section-head:hover .ab-section-title{color:var(--amber)}
+.ab-section.collapsed .ab-section-body{display:none}
+.ab-section.collapsed .ab-section-head{border-bottom:none}
+.ab-section.collapsed .card-chevron{transform:rotate(-90deg)}
 .ab-section-body{padding:16px}
 .ab-hint{font-family:var(--mono);font-size:10.5px;color:var(--muted);margin-bottom:12px;line-height:1.6}
 .ab-textarea{background:var(--bg);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--mono);font-size:12px;line-height:1.55;padding:11px 12px;width:100%;resize:vertical;min-height:120px;box-sizing:border-box}
@@ -2354,9 +2362,15 @@ EI to conduct LOD walk prior to start of operations"></textarea>
     </div>
   </div>
 
-  <!-- Editor body — Stages 7-2..7-5 will add Tone & Voice, Terminology,
-       Structural Preferences, and Brand & Identity sections. Stage 8 adds
-       the Version History card. State management lives in aiBrandingEditor.js. -->
+  <!-- Collapse All / Expand All — matches the same control row on the Settings
+       page so users get a consistent way to manage card visibility. State
+       persists in localStorage under AB_COLLAPSE_KEY. -->
+  <div style="display:flex;gap:8px;margin-bottom:12px;justify-content:flex-end">
+    <button class="btn btn-outline" style="font-size:10px;padding:5px 12px" onclick="collapseAllAB()">Collapse All</button>
+    <button class="btn btn-outline" style="font-size:10px;padding:5px 12px" onclick="expandAllAB()">Expand All</button>
+  </div>
+
+  <!-- Editor body — State management lives in aiBrandingEditor.js. -->
   <div id="ai-branding-body">
 
     <!-- Brand & Identity section (Stage 7-5) — top of the editor. Defines the
@@ -2365,9 +2379,10 @@ EI to conduct LOD walk prior to start of operations"></textarea>
          system prompt. Future Phase 4b adds firm logo / watermark / legal
          masthead fields here once firm-baseline layer ships. -->
     <div class="ab-section" id="ab-section-brand">
-      <div class="ab-section-head">
+      <div class="ab-section-head" onclick="toggleSection('ab-section-brand')">
         <span class="ab-section-title">Brand &amp; Identity</span>
         <span class="ab-section-sub">What this report is and who's writing it</span>
+        <span class="card-chevron">▾</span>
       </div>
       <div class="ab-section-body">
         <p class="ab-hint">Defines the opening sentence of the assembled system prompt — the AI's understanding of the report context. These fields shape every polish before tone, terminology, or structure rules apply.</p>
@@ -2394,9 +2409,10 @@ EI to conduct LOD walk prior to start of operations"></textarea>
          writes. Three dropdowns + additional notes textarea. Each setting flows
          into the assembled system prompt as a STYLE RULE on every polish. -->
     <div class="ab-section" id="ab-section-tone">
-      <div class="ab-section-head">
+      <div class="ab-section-head" onclick="toggleSection('ab-section-tone')">
         <span class="ab-section-title">Tone &amp; Voice</span>
         <span class="ab-section-sub">How the AI writes — formality, person, length</span>
+        <span class="card-chevron">▾</span>
       </div>
       <div class="ab-section-body">
         <p class="ab-hint">Three structured controls plus a free-text notes field. Each setting flows into the assembled system prompt as a STYLE RULE the AI follows on every report polish.</p>
@@ -2438,9 +2454,10 @@ EI to conduct LOD walk prior to start of operations"></textarea>
          (add input + remove × on each row). Render is driven from a module-
          scoped _abTerminology state object in aiBrandingEditor.js. -->
     <div class="ab-section" id="ab-section-terminology">
-      <div class="ab-section-head">
+      <div class="ab-section-head" onclick="toggleSection('ab-section-terminology')">
         <span class="ab-section-title">Terminology</span>
         <span class="ab-section-sub">Banned, preferred substitutions, required</span>
+        <span class="card-chevron">▾</span>
       </div>
       <div class="ab-section-body">
         <p class="ab-hint">Three lists that flow into the assembled prompt as TERMINOLOGY rules. The AI uses them to enforce house-style word choices during polish.</p>
@@ -2483,9 +2500,10 @@ EI to conduct LOD walk prior to start of operations"></textarea>
          Claude. Future phases can introduce section management when the
          pipeline supports schema-driven JSON keys. -->
     <div class="ab-section" id="ab-section-structural">
-      <div class="ab-section-head">
+      <div class="ab-section-head" onclick="toggleSection('ab-section-structural')">
         <span class="ab-section-title">Structural Preferences</span>
         <span class="ab-section-sub">Per-section instructions for the assembled report</span>
+        <span class="card-chevron">▾</span>
       </div>
       <div class="ab-section-body">
         <p class="ab-hint">Each report section gets its own AI instructions on what to write and how. Tap a section to expand and edit. Changes flow into the OUTPUT SECTIONS block of the assembled prompt on every report polish.</p>
@@ -2497,9 +2515,10 @@ EI to conduct LOD walk prior to start of operations"></textarea>
          every report polish. The simplest of the 6 sections; ships first to
          validate the full edit -> save -> preview -> regenerate loop. -->
     <div class="ab-section" id="ab-section-custom">
-      <div class="ab-section-head">
+      <div class="ab-section-head" onclick="toggleSection('ab-section-custom')">
         <span class="ab-section-title">Custom Instructions</span>
         <span class="ab-section-sub">Free-text rules, applied to every polish</span>
+        <span class="card-chevron">▾</span>
       </div>
       <div class="ab-section-body">
         <p class="ab-hint">Anything you write here is added to the system prompt the AI sees when polishing your reports. Use this for project-specific rules or guidance that doesn't fit the structured fields below (coming in upcoming stages).</p>
@@ -2518,9 +2537,10 @@ EI to conduct LOD walk prior to start of operations"></textarea>
          system prompt the AI actually sees. Updates ~200ms after each
          keystroke (debounced via aiBrandingScheduleUpdatePreview). -->
     <div class="ab-section" id="ab-section-preview">
-      <div class="ab-section-head">
+      <div class="ab-section-head" onclick="toggleSection('ab-section-preview')">
         <span class="ab-section-title">Effective Prompt Preview</span>
         <span class="ab-section-sub">What the AI actually sees</span>
+        <span class="card-chevron">▾</span>
       </div>
       <div class="ab-section-body">
         <p class="ab-hint">This is the assembled system prompt sent to Claude on every report generation. Updates live as you edit. Read-only.</p>
@@ -2657,16 +2677,26 @@ document.getElementById('p-timeOut').addEventListener('change',calcHours);
 
 // ── Collapsible sections ──
 const COLLAPSE_KEY='pei_collapsed_sections';
+const AB_COLLAPSE_KEY='pei_aiBranding_collapsed_sections';
 function _getCollapsed(){try{return JSON.parse(localStorage.getItem(COLLAPSE_KEY)||'[]');}catch{return[];}}
 function _saveCollapsed(arr){try{localStorage.setItem(COLLAPSE_KEY,JSON.stringify(arr));}catch{}}
+function _getCollapsedAB(){try{return JSON.parse(localStorage.getItem(AB_COLLAPSE_KEY)||'[]');}catch{return[];}}
+function _saveCollapsedAB(arr){try{localStorage.setItem(AB_COLLAPSE_KEY,JSON.stringify(arr));}catch{}}
 function toggleSection(id){
   const el=document.getElementById(id);if(!el)return;
   const isCfg=id.startsWith('cfg-');
-  const collapsed=isCfg?_getCollapsedConfig():_getCollapsed();
+  const isAB=id.startsWith('ab-section-');
+  // Route to the right storage key by prefix:
+  //   cfg-*         -> _saveCollapsedConfig (Settings page)
+  //   ab-section-*  -> _saveCollapsedAB     (AI & Branding subpage)
+  //   default       -> _saveCollapsed       (daily log / etc.)
+  const collapsed = isCfg ? _getCollapsedConfig() : (isAB ? _getCollapsedAB() : _getCollapsed());
   const isCollapsed=el.classList.contains('collapsed');
   if(isCollapsed){el.classList.remove('collapsed');const i=collapsed.indexOf(id);if(i>-1)collapsed.splice(i,1);}
   else{el.classList.add('collapsed');if(!collapsed.includes(id))collapsed.push(id);}
-  isCfg?_saveCollapsedConfig(collapsed):_saveCollapsed(collapsed);
+  if(isCfg) _saveCollapsedConfig(collapsed);
+  else if(isAB) _saveCollapsedAB(collapsed);
+  else _saveCollapsed(collapsed);
 }
 function collapseAllSections(){
   const ids=['sec-01','sec-ts','sec-02','sec-03','sec-04','sec-05','sec-06','sec-07','sec-08','sec-notes'];
@@ -2697,9 +2727,22 @@ function expandAllConfig(){
   sections.forEach(el=>{ el.classList.remove('collapsed'); });
   _saveCollapsedConfig([]);
 }
+// AI & Branding subpage — same dynamic pattern as collapseAllConfig.
+function collapseAllAB(){
+  const sections=document.querySelectorAll('#page-aiBranding .ab-section');
+  const ids=[];
+  sections.forEach(el=>{ if(el.id){ el.classList.add('collapsed'); ids.push(el.id); } });
+  _saveCollapsedAB(ids);
+}
+function expandAllAB(){
+  const sections=document.querySelectorAll('#page-aiBranding .ab-section');
+  sections.forEach(el=>{ el.classList.remove('collapsed'); });
+  _saveCollapsedAB([]);
+}
 function restoreCollapsedSections(){
   _getCollapsed().forEach(id=>{const el=document.getElementById(id);if(el)el.classList.add('collapsed');});
   _getCollapsedConfig().forEach(id=>{const el=document.getElementById(id);if(el)el.classList.add('collapsed');});
+  _getCollapsedAB().forEach(id=>{const el=document.getElementById(id);if(el)el.classList.add('collapsed');});
 }
 
 var checklistItems=[];
