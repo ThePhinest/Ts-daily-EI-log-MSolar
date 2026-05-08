@@ -1948,6 +1948,15 @@ EI to conduct LOD walk prior to start of operations"></textarea>
     </div>
   </div>
 
+  <!-- Settings divider — separates nav-style cards (above) from collapse/expand
+       cards (below). Doubles as an inline hint about what to do with the cards
+       that follow. Future subpage-nav cards stack above this divider. -->
+  <div class="settings-divider" style="display:flex;align-items:center;gap:10px;margin:18px 0 14px">
+    <span style="height:1px;background:var(--border);flex:1"></span>
+    <span style="font-family:var(--mono);font-size:9px;color:var(--muted);letter-spacing:.15em;text-transform:uppercase">expand to edit</span>
+    <span style="height:1px;background:var(--border);flex:1"></span>
+  </div>
+
   <!-- Legacy Config & Presets intro — kept because the chip-management cards below
        (Inspection Summary presets, Activity presets, etc.) still anchor to it. -->
   <div class="card" style="border-color:rgba(232,160,32,.2)">
@@ -1966,7 +1975,7 @@ EI to conduct LOD walk prior to start of operations"></textarea>
   </div>
 
   <div class="config-section" id="cfg-nav">
-    <div class="config-head" onclick="toggleSection('cfg-nav')"><span class="config-title">Navigation Layout</span><span class="card-chevron">▾</span></div>
+    <div class="config-head" onclick="toggleSection('cfg-nav')"><span class="config-title">Navigation Layout</span><span class="config-sub">Customize bottom nav slots</span><span class="card-chevron">▾</span></div>
     <div class="config-body">
       <p class="config-hint">Choose which pages appear in the 3 customizable nav slots. Slot 4 (More) is always fixed. You can also long-press any nav button to swap it quickly.</p>
       <div class="g g3" style="margin-bottom:12px" id="nav-config-slots"></div>
@@ -1976,7 +1985,7 @@ EI to conduct LOD walk prior to start of operations"></textarea>
   </div>
 
   <div class="config-section" id="cfg-proj">
-    <div class="config-head" onclick="toggleSection('cfg-proj')"><span class="config-title">Project &amp; Report Info</span><span class="card-chevron">▾</span></div>
+    <div class="config-head" onclick="toggleSection('cfg-proj')"><span class="config-title">Project &amp; Report Info</span><span class="config-sub">Project name, contractor, location</span><span class="card-chevron">▾</span></div>
     <div class="config-body">
       <p class="config-hint">Tap the project name in the app bar to switch projects or create a new one. Edit this project's details below — changes save across all devices. Active Contractor sets the default; you can clear or change it per day directly on the log.</p>
       <div class="g g2" style="margin-bottom:10px">
@@ -1994,7 +2003,7 @@ EI to conduct LOD walk prior to start of operations"></textarea>
   </div>
 
   <div class="config-section" id="cfg-report">
-    <div class="config-head" onclick="toggleSection('cfg-report')"><span class="config-title">Report Generation</span><span class="card-chevron">▾</span></div>
+    <div class="config-head" onclick="toggleSection('cfg-report')"><span class="config-title">Report Generation</span><span class="config-sub">Anthropic API key</span><span class="card-chevron">▾</span></div>
     <div class="config-body">
       <p class="config-hint">Enter your Anthropic API key once to enable one-tap AI report generation. The key is encrypted and stored in Firestore — works across all your devices.</p>
       <div style="margin-bottom:10px">
@@ -2016,7 +2025,7 @@ EI to conduct LOD walk prior to start of operations"></textarea>
   </div>
 
   <div class="config-section" id="cfg-map">
-    <div class="config-head" onclick="toggleSection('cfg-map')"><span class="config-title">Map Settings</span><span class="card-chevron">▾</span></div>
+    <div class="config-head" onclick="toggleSection('cfg-map')"><span class="config-title">Map Settings</span><span class="config-sub">Mapbox token &amp; default style</span><span class="card-chevron">▾</span></div>
     <div class="config-body">
       <p class="config-hint">Configure the Field Map. Paste your Mapbox public token below to enable the map.</p>
       <div class="field" style="margin-bottom:10px">
@@ -2037,7 +2046,7 @@ EI to conduct LOD walk prior to start of operations"></textarea>
   </div>
 
   <div class="config-section" id="cfg-ts">
-    <div class="config-head" onclick="toggleSection('cfg-ts')"><span class="config-title">Timesheet Settings</span><span class="card-chevron">▾</span></div>
+    <div class="config-head" onclick="toggleSection('cfg-ts')"><span class="config-title">Timesheet Settings</span><span class="config-sub">Hours, mileage, per-diem rates</span><span class="card-chevron">▾</span></div>
     <div class="config-body">
       <p class="config-hint">Configure your timesheet defaults. Values apply to all timesheet calculations and persist through resets.</p>
       <div class="g g2" style="margin-bottom:10px">
@@ -2118,9 +2127,9 @@ EI to conduct LOD walk prior to start of operations"></textarea>
   </div>
 
   <div class="config-section" id="cfg-checklist">
-    <div class="config-head" onclick="toggleSection('cfg-checklist')"><span class="config-title">Compliance Checklist</span><span class="config-sub">→ Card 05</span><span class="card-chevron">▾</span></div>
+    <div class="config-head" onclick="toggleSection('cfg-checklist')"><span class="config-title">Compliance Checklist</span><span class="config-sub">Manage checklist items</span><span class="card-chevron">▾</span></div>
     <div class="config-body">
-      <p class="config-hint">Manage checklist items for Card 05. Checked items with notes will be included in the report.</p>
+      <p class="config-hint">Manage items for the Compliance Checklist card. Checked items with notes will be included in the report.</p>
       <div class="field" style="margin-bottom:10px">
         <label>Card Title</label>
         <input type="text" id="cfg-checklist-title" placeholder="Compliance Checklist" style="background:var(--bg);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--body);font-size:17px;padding:8px 11px;width:100%">
@@ -2137,9 +2146,9 @@ EI to conduct LOD walk prior to start of operations"></textarea>
   </div>
 
   <div class="config-section" id="cfg-flags">
-    <div class="config-head" onclick="toggleSection('cfg-flags')"><span class="config-title">Regulatory Flags</span><span class="config-sub">→ Card 06</span><span class="card-chevron">▾</span></div>
+    <div class="config-head" onclick="toggleSection('cfg-flags')"><span class="config-title">Regulatory Flags</span><span class="config-sub">Manage regulatory flag items</span><span class="card-chevron">▾</span></div>
     <div class="config-body">
-      <p class="config-hint">Manage regulatory flag items for Card 06. Checked items trigger a report warning.</p>
+      <p class="config-hint">Manage items for the Regulatory &amp; Incident Flags card. Checked items trigger a report warning.</p>
       <div class="field" style="margin-bottom:10px">
         <label>Card Title</label>
         <input type="text" id="cfg-flags-title" placeholder="Regulatory &amp; Incident Flags" style="background:var(--bg);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--body);font-size:17px;padding:8px 11px;width:100%">
@@ -2196,7 +2205,7 @@ EI to conduct LOD walk prior to start of operations"></textarea>
   </div>
 
   <div class="config-section" id="cfg-phase">
-    <div class="config-head" onclick="toggleSection('cfg-phase')"><span class="config-title">Current Activity</span><span class="card-chevron">▾</span></div>
+    <div class="config-head" onclick="toggleSection('cfg-phase')"><span class="config-title">Current Activity</span><span class="config-sub">Set the active construction phase</span><span class="card-chevron">▾</span></div>
     <div class="config-body">
       <p class="config-hint">Records the active construction scope for this project. Appears on daily logs and generated reports.</p>
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
@@ -2229,7 +2238,7 @@ EI to conduct LOD walk prior to start of operations"></textarea>
 
   <!-- ACCOUNT -->
   <div class="config-section" id="cfg-account">
-    <div class="config-head" onclick="toggleSection('cfg-account')"><span class="config-title">Account</span><span class="card-chevron">▾</span></div>
+    <div class="config-head" onclick="toggleSection('cfg-account')"><span class="config-title">Account</span><span class="config-sub">Profile and sign out</span><span class="card-chevron">▾</span></div>
     <div class="config-body">
       <div style="font-family:var(--mono);font-size:11px;color:var(--muted2);margin-bottom:14px">
         Signed in as <span id="cfg-account-email" style="color:var(--text)">—</span>
