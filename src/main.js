@@ -72,6 +72,9 @@ import './settings.js'
 import './timesheet.js'
 import './calendar.js'
 import './daily-log.js'
+import './promptDefaults.js'
+import './promptAssembly.js'
+import './promptStorage.js'
 import './report.js'
 
 window.firebase = firebase

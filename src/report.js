@@ -216,15 +216,28 @@ function _rptFmtTime(t){
   return `${h12}:${String(m).padStart(2,'0')} ${ampm}`;
 }
 
-async function rptCallClaude(apiKey,logData,compEntries){
+// rptCallClaude — make the polish API call.
+//
+// Stage 4 (C10, 2026-05-08): system prompt is now ASSEMBLED in _doGenerate via
+// promptAssembly.js + promptDefaults.js + the user's saved layers, then passed
+// in here. This function no longer hardcodes the prompt.
+//
+// The skip-polish suffix is appended at runtime — it is NOT folded into
+// effectivePromptHash because skipPolish is already a separate dimension of
+// the cache snapshot (so cache-key partitioning by skipPolish is automatic).
+async function rptCallClaude(apiKey, logData, compEntries, systemPromptIn){
+  if(!systemPromptIn || typeof systemPromptIn !== 'string'){
+    throw new Error('rptCallClaude: systemPrompt parameter required (Stage 4 / C10 contract). Call site must pass an assembled system prompt from promptAssembly.js.');
+  }
   const crewSummary=(logData.crewBlocks||[]).map(b=>`Crew: ${b.name} | Time: ${b.time} | Location: ${b.location}\nActivities: ${b.activities}\nEnv Compliance: ${b.envCompliance}\nIssues: ${b.issues}\nNotes: ${b.notes}`).join('\n\n');
   const compSummary=compEntries.length>0
     ?compEntries.map(e=>`Level ${e.level} — ${e.location}|Corrective: ${e.corrective}|Status: ${e.status}${e.dateResolved?'|Resolved: '+e.dateResolved:''}`).join('\n')
     :'No compliance issues';
   const timeIn=_rptFmtTime(logData['p-timeIn'])||'6:30 AM';
   const userPrompt=`REPORT DATE: ${logData.reportDate}\nACTIVE PHASE: ${logData.activePhase}\nCONTRACTOR: ${logData.contractor}\nTIME IN: ${timeIn}\n\nCREW BLOCKS:\n${crewSummary}\n\nINSPECTION SUMMARY:\n${logData.inspectionSummary||''}\n\nAGENCY INSPECTION:\n${logData.agencyInspection||''}\n\nCOMPLIANCE ISSUES:\n${compSummary}\n\nLANDOWNER/PUBLIC:\n${logData.landownerContact||''}\n\nT&E/RTE:\n${logData.rteObservation||''}\n\nGENERAL COMMS:\n${logData.generalComms||''}\n\n24-HOUR LOOK AHEAD:\n${logData.lookahead||''}\n\nReturn ONLY valid JSON — no markdown, no preamble:\n{"contractorActivities":"...","fieldObservationsOpening":"...","fieldObservationsBullets":["..."],"fieldObservationsClosing":"...","agencyInspection":"...","complianceIssues":[{"level":"...","description":"...","corrective":"...","status":"...","dateResolved":""}],"landownerContact":"...","rteObservation":"...","generalComms":"...","lookaheadBullets":["..."]}`;
-  const systemPrompt=`You are an Environmental Inspector (EI) report writer for the Moraine Solar Energy Center, a 94 MW AC PV solar facility in the Town of Burns, Allegany County, NY. Polish raw field notes into professional Daily Environmental Compliance Report language.\n\nSTYLE RULES:\n- Use "conducting" not "performing"\n- Use definitive language — "will" not "is anticipated to"\n- Refer to the Environmental Inspector as "EI" — never first person\n- Contractor language should be collaborative in tone\n- Keep language tight and direct — no filler\n- Do not mention residential proximity unless explicitly flagged\n\nCONTRACTOR ACTIVITIES:\n- ALWAYS begin with attending the morning safety meeting/tailgate — e.g. "[Contractor] personnel attended the morning safety meeting/tailgate at [TIME], then conducted..."\n- Follow with description of work activities from crew block data\n\nFIELD OBSERVATIONS:\n- Opening must use the time from TIME IN field and detect work type from crew activities\n- Opening MUST end with the exact phrase: "The following activities were observed:"\n- Include 3-5 specific observation bullets based on crew block data\n- Standard Phase 1 Tree Felling bullets: felling method/equipment, directional felling practices, slash/material management, access/staging\n- Closing must reference LOD compliance and buffer integrity\n\nGENERAL COMMUNICATIONS:\n- Frame as a documented field discussion with the contractor — professional record of what was communicated on site\n- Phrasing should reflect: "EI discussed [topic] with [contractor/foreman]..." or "EI communicated to contractor..." \n- Collaborative tone — not directive or accusatory\n- If blank, return "No general communications to report."\n\nAGENCY INSPECTION:\n- Polish into a single professional sentence describing who inspected, what was checked, and outcome\n- If no inspection, return "No agency inspections conducted today."\n\nLANDOWNER / PUBLIC INTERACTIONS:\n- Polish into one or two professional sentences — who, why they were on site, what was discussed\n- Collaborative, neutral tone\n- If none, return "No landowner or public interactions occurred today."\n\nT&E / UNANTICIPATED DISCOVERIES:\n- Polish into professional observation language\n- Reference species, location, and whether work was occurring nearby\n- If none, return "No rare, threatened, or endangered species were observed. No unanticipated archaeological or cultural resource discoveries were encountered."\n\nCOMPLIANCE:\n- Polish description and corrective action text\n- Keep Level and Status exactly as provided\n- If no issues: [{"level":"No issues identified","description":"All areas inspected — no compliance concerns observed.","corrective":"N/A","status":"Compliant","dateResolved":""}]\n\nReturn ONLY valid JSON — no code fences, no explanation.`;
-  const finalSystemPrompt=(window._rptSkipPolish===true)?systemPrompt+'\n\nIMPORTANT: The user has already professionally formalized the narrative text fields. Include ALL narrative content VERBATIM — do NOT rephrase, restructure, or alter any provided text.':systemPrompt;
+  const finalSystemPrompt=(window._rptSkipPolish===true)
+    ? systemPromptIn + '\n\nIMPORTANT: The user has already professionally formalized the narrative text fields. Include ALL narrative content VERBATIM — do NOT rephrase, restructure, or alter any provided text.'
+    : systemPromptIn;
   const resp=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:4000,system:finalSystemPrompt,messages:[{role:'user',content:userPrompt}]})});
   if(!resp.ok){const err=await resp.text();throw new Error('Claude API error '+resp.status+': '+err);}
   const data=await resp.json();
@@ -414,8 +427,18 @@ async function rptBuildDocx(logData,polished,photos){
 // Re-export uses cached polish + cached input snapshot — same DOCX every time.
 // This makes polished narratives durable, deterministic, and free to regenerate.
 
-// Bump when rptCallClaude system prompt changes — invalidates all cached polish
-const _RPT_PROMPT_VERSION = 1;
+// Bump when rptCallClaude's CALL-LAYER architecture changes — invalidates ALL
+// cached polish across all users at once. Use sparingly; for ordinary user-
+// driven prompt edits, use the per-call effectivePromptHash dimension instead
+// (which only invalidates the affected user's cache).
+//
+// 2026-05-08: bumped 1→2 for the C10 architectural shift. The system prompt
+// is no longer hardcoded inline — it is assembled at runtime from a layer
+// stack of user/project/(future-firm) prompt config docs via promptAssembly.js
+// over promptDefaults.js. The integer captures system-level changes (model
+// swap, message-format change, call-pattern change). Per-user content edits
+// flow through effectivePromptHash and do not require a bump here.
+const _RPT_PROMPT_VERSION = 2;
 
 // Friendly labels for top-level logData fields. Presence here implies the
 // field's value flows through Anthropic polish (narrative). Absent fields
@@ -490,14 +513,16 @@ async function _hashSnapshot(snapshot){
   return Array.from(new Uint8Array(hashBuf)).map(b => b.toString(16).padStart(2,'0')).join('');
 }
 
-function _buildSnapshot(logData, compEntries, skipPolish, photos){
+function _buildSnapshot(logData, compEntries, skipPolish, photos, effectivePromptHash){
   const photoRefs = (photos||[]).map(p => {
     const ref = {...p};
     delete ref._localUrl; delete ref._thumbUrl; delete ref._blobUrl;
     return ref;
   }).sort((a,b) => String(a.id||'').localeCompare(String(b.id||'')));
   const compRefs = (compEntries||[]).slice().sort((a,b) => String(a.id||'').localeCompare(String(b.id||'')));
-  return {logData, compEntries: compRefs, skipPolish: !!skipPolish, photoRefs};
+  // effectivePromptHash (added 2026-05-08, C10) folds the user's assembled prompt
+  // into the cache key. Identical inputs but different prompt config = cache miss.
+  return {logData, compEntries: compRefs, skipPolish: !!skipPolish, photoRefs, effectivePromptHash: effectivePromptHash || ''};
 }
 
 function _categorizeChanges(prevSnap, currSnap){
@@ -526,7 +551,7 @@ async function _loadReportVersions(reportDate){
   }
 }
 
-async function _saveReportVersion(reportDate, snapshot, polished, inputHash, version){
+async function _saveReportVersion(reportDate, snapshot, polished, inputHash, version, effectivePromptHash){
   if(!db || !_currentUser || !_fbReady) return;
   try{
     // JSON round-trip strips undefined and ensures Firestore-compatible payload
@@ -539,6 +564,10 @@ async function _saveReportVersion(reportDate, snapshot, polished, inputHash, ver
       inputSnapshot: cleanSnap,
       inputHash,
       promptVersion: _RPT_PROMPT_VERSION,
+      // effectivePromptHash stamped explicitly (in addition to being inside
+      // inputSnapshot) so future migration logic can identify pre-vs-post-C10
+      // versions without parsing the snapshot. Empty string for legacy rows.
+      effectivePromptHash: effectivePromptHash || '',
       generatedAt: window.firebase.firestore.FieldValue.serverTimestamp(),
       generatedAtMs: Date.now()
     });
@@ -658,8 +687,29 @@ async function _doGenerate(){
     const photos=_phPhotos.filter(p=>p.date===reportDate);
     const skipPolish=(window._rptSkipPolish===true);
 
+    // Stage 4 (C10, 2026-05-08): assemble effective system prompt from the
+    // user-sovereign layer stack BEFORE building the snapshot. The
+    // effectivePromptHash flows into the snapshot so the cache key
+    // automatically invalidates when the user edits their prompt config.
+    //
+    // Layer order (top of stack = highest precedence):
+    //   1. project-specific override (per-project tone tweaks; no UI in Phase 1, dogfood-only)
+    //   2. personal prompt (the user's saved customizations from the AI & Branding subpage)
+    //   3. PROMPT_DEFAULTS (factory baseline; bottom of stack, always present)
+    //
+    // Phase 2 (multi-tenant) will add firm-baseline + firm-user-override + firm-project-override
+    // layers BELOW the personal layer without disturbing this call site — see promptAssembly.js.
+    setStatus('Loading prompt config…');
+    const _activeProjId = (typeof _activeProjectId === 'function') ? _activeProjectId() : null;
+    const [_personalPromptLayer, _projectOverrideLayer] = await Promise.all([
+      (typeof loadPersonalPrompt === 'function') ? loadPersonalPrompt() : Promise.resolve(null),
+      (typeof loadProjectOverride === 'function' && _activeProjId) ? loadProjectOverride(_activeProjId) : Promise.resolve(null)
+    ]);
+    const _promptLayers = [_projectOverrideLayer, _personalPromptLayer, window.PROMPT_DEFAULTS].filter(Boolean);
+    const { systemPrompt: assembledSystemPrompt, effectivePromptHash } = await window.assemblePrompt({ layers: _promptLayers });
+
     // Build current snapshot + hash for cache lookup
-    const currSnap=_buildSnapshot(logData,compEntries,skipPolish,photos);
+    const currSnap=_buildSnapshot(logData,compEntries,skipPolish,photos,effectivePromptHash);
     const currHash=await _hashSnapshot(currSnap);
 
     // Look up prior versions from Firestore
@@ -682,8 +732,8 @@ async function _doGenerate(){
     if(!latest){
       // No prior version \u2014 fresh polish, save as v1
       setStatus('Polishing report narrative\u2026');
-      const polished=await rptCallClaude(apiKey,logData,compEntries);
-      _saveReportVersion(reportDate,currSnap,polished,currHash,1).catch(e=>console.warn('[report-cache] write failed:',e));
+      const polished=await rptCallClaude(apiKey,logData,compEntries,assembledSystemPrompt);
+      _saveReportVersion(reportDate,currSnap,polished,currHash,1,effectivePromptHash).catch(e=>console.warn('[report-cache] write failed:',e));
       await assembleAndSave(polished,currSnap);
       setStatus('\u2713 Report generated!');
       clearStatusSoon();
@@ -731,9 +781,9 @@ async function _doGenerate(){
     if(choice==='secondary'){
       // Generate new version \u2014 fresh polish, save as v(latest+1)
       setStatus('Polishing report narrative\u2026');
-      const polished=await rptCallClaude(apiKey,logData,compEntries);
+      const polished=await rptCallClaude(apiKey,logData,compEntries,assembledSystemPrompt);
       const newVer=(latest.version||0)+1;
-      _saveReportVersion(reportDate,currSnap,polished,currHash,newVer).catch(e=>console.warn('[report-cache] write failed:',e));
+      _saveReportVersion(reportDate,currSnap,polished,currHash,newVer,effectivePromptHash).catch(e=>console.warn('[report-cache] write failed:',e));
       await assembleAndSave(polished,currSnap);
       setStatus(`\u2713 Report v${newVer} generated!`);
       clearStatusSoon();
