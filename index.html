@@ -323,6 +323,22 @@ body.theme-light .preset-chip:hover{background:rgba(0,76,84,0.18);border-color:v
 .config-section.nav-card .nav-card-subtitle{font-family:var(--mono);font-size:9px;color:var(--amber);margin-left:auto;margin-right:8px}
 .config-section.nav-card .card-chevron{color:var(--amber);transform:rotate(-90deg);margin-left:0}
 .config-section.nav-card .config-head{border-bottom:none}
+/* AI & Branding editor — sweep-ready styles, semantic class names so the
+   future branding pass can restyle via CSS only without HTML rewrites.
+   Patterns mirror .config-section but with .ab- prefix to keep them
+   independent (the editor isn't an "expand/collapse settings card"). */
+.ab-section{background:var(--s1);border:1px solid var(--border);border-radius:var(--r);margin-bottom:16px;overflow:hidden}
+.ab-section-head{background:var(--header-bg);border-bottom:1px solid var(--border);padding:10px 17px;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.ab-section-title{font-family:var(--cond);font-weight:700;font-size:15px;letter-spacing:.1em;text-transform:uppercase;color:var(--amber2)}
+.ab-section-sub{font-family:var(--mono);font-size:9px;color:var(--muted2);letter-spacing:.05em;margin-left:auto}
+.ab-section-body{padding:16px}
+.ab-hint{font-family:var(--mono);font-size:10.5px;color:var(--muted);margin-bottom:12px;line-height:1.6}
+.ab-textarea{background:var(--bg);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--mono);font-size:12px;line-height:1.55;padding:11px 12px;width:100%;resize:vertical;min-height:120px;box-sizing:border-box}
+.ab-textarea:focus{outline:none;border-color:var(--amber)}
+.ab-actions{display:flex;align-items:center;gap:10px;margin:6px 0 18px;flex-wrap:wrap}
+.ab-status{font-family:var(--mono);font-size:11px;color:var(--green);opacity:0;transition:opacity .4s;margin-left:6px}
+.ab-status.error{color:var(--red)}
+.ab-preview{background:var(--bg);border:1px solid var(--border);border-radius:5px;padding:14px;font-family:var(--mono);font-size:10.5px;line-height:1.6;color:var(--muted2);white-space:pre-wrap;word-break:break-word;max-height:520px;overflow-y:auto;margin:0}
 .config-body{padding:16px}
 .config-hint{font-family:var(--mono);font-size:10.5px;color:var(--muted);margin-bottom:12px;line-height:1.6}
 .preset-list{list-style:none;margin-bottom:10px}
@@ -2291,19 +2307,46 @@ EI to conduct LOD walk prior to start of operations"></textarea>
     </div>
   </div>
 
-  <!-- Editor body — Stage 7 fills this with the 6-section prompt editor.
-       Today: a placeholder card so the page isn't empty. -->
+  <!-- Editor body — Stages 7-2..7-5 will add Tone & Voice, Terminology,
+       Structural Preferences, and Brand & Identity sections. Stage 8 adds
+       the Version History card. State management lives in aiBrandingEditor.js. -->
   <div id="ai-branding-body">
-    <div class="card" style="border-color:var(--border)">
-      <div class="card-body" style="padding:24px;text-align:center">
-        <div style="font-family:var(--mono);font-size:11px;color:var(--muted2);line-height:1.6">
-          <strong style="color:var(--text);font-family:var(--body);font-size:13px">Editor coming soon</strong><br><br>
-          The 6-section prompt customization editor lands in Stage 7.<br>
-          For now, the system uses factory defaults — your reports polish exactly as before.<br><br>
-          <span style="color:var(--muted)">Stage 6 ✓ — subpage navigation primitive established</span>
-        </div>
+
+    <!-- Custom Instructions section (Stage 7-1) — free-text rules appended to
+         every report polish. The simplest of the 6 sections; ships first to
+         validate the full edit -> save -> preview -> regenerate loop. -->
+    <div class="ab-section" id="ab-section-custom">
+      <div class="ab-section-head">
+        <span class="ab-section-title">Custom Instructions</span>
+        <span class="ab-section-sub">Free-text rules, applied to every polish</span>
+      </div>
+      <div class="ab-section-body">
+        <p class="ab-hint">Anything you write here is added to the system prompt the AI sees when polishing your reports. Use this for project-specific rules or guidance that doesn't fit the structured fields below (coming in upcoming stages).</p>
+        <textarea id="ab-customInstructions" class="ab-textarea" rows="6" placeholder="e.g. Do not mention residential proximity unless explicitly flagged." oninput="aiBrandingScheduleUpdatePreview()"></textarea>
       </div>
     </div>
+
+    <!-- Save / Reset action bar — wires into promptStorage.js. -->
+    <div class="ab-actions">
+      <button class="btn btn-amber" id="ab-save-btn" onclick="aiBrandingSave()" disabled>Save</button>
+      <button class="btn btn-outline" id="ab-reset-btn" onclick="aiBrandingResetToDefault()">↺ Reset to Default</button>
+      <span id="ab-status" class="ab-status"></span>
+    </div>
+
+    <!-- Effective Prompt Preview — read-only live render of the assembled
+         system prompt the AI actually sees. Updates ~200ms after each
+         keystroke (debounced via aiBrandingScheduleUpdatePreview). -->
+    <div class="ab-section" id="ab-section-preview">
+      <div class="ab-section-head">
+        <span class="ab-section-title">Effective Prompt Preview</span>
+        <span class="ab-section-sub">What the AI actually sees</span>
+      </div>
+      <div class="ab-section-body">
+        <p class="ab-hint">This is the assembled system prompt sent to Claude on every report generation. Updates live as you edit. Read-only.</p>
+        <pre id="ab-preview" class="ab-preview"></pre>
+      </div>
+    </div>
+
   </div>
 
 </div></div><!-- /page-aiBranding -->
@@ -2400,6 +2443,7 @@ function showPage(name){
     if(moreBtn)moreBtn.classList.add('active');
   }
   if(name==='config'){ renderConfig(); tsLoadConfigFields(); renderNavConfig(); mapLoadSettingsFields(); }
+  if(name==='aiBranding'){ if(typeof aiBrandingInit==='function') aiBrandingInit(); }
   if(name==='map'){ mapInit(); setTimeout(()=>{ mapResize(); },200); }
   if(name==='calendar'){ calRender(); }
   if(name==='timesheet'){ tsPushFromDailyLog(); tsRenderCurrentWeek(); tsRenderHistory(); tsRenderCumulative(); tsCheckArchivePrompt(); }

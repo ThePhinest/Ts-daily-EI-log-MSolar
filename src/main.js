@@ -75,6 +75,7 @@ import './daily-log.js'
 import './promptDefaults.js'
 import './promptAssembly.js'
 import './promptStorage.js'
+import './aiBrandingEditor.js'
 import './report.js'
 
 window.firebase = firebase
