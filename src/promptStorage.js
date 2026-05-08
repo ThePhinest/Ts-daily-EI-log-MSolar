@@ -209,10 +209,8 @@ async function resetPersonalPromptToDefault() {
 
   const uid = _currentUser.uid;
   const docRef = _udb().collection('settings').doc('reportPrompt');
-  const versionsRef = docRef.collection('versions');
   const auditRef = docRef.collection('auditLog');
 
-  const nextVersion = await _nextVersionNumber();
   const now = Date.now();
   const fst = window.firebase.firestore.FieldValue.serverTimestamp();
 
@@ -220,27 +218,21 @@ async function resetPersonalPromptToDefault() {
 
   batch.delete(docRef);
 
-  batch.set(versionsRef.doc('v' + nextVersion), {
-    version: nextVersion,
-    action: 'reset',
-    content: null, // null content signals "reset to defaults"
-    createdAt: fst,
-    createdAtMs: now
-  });
-
+  // Audit log entry only — no version doc.
+  // 2026-05-08 design decision: reset is a metadata event, not a content
+  // snapshot. The version list shows only actual content versions; reset
+  // events live in the audit log only. Surfaces in a future "export your
+  // data" feature (Phase 4 §5) which will include the audit log.
   const auditDoc = auditRef.doc();
   batch.set(auditDoc, {
     eventId: auditDoc.id,
     action: 'reset',
-    version: nextVersion,
-    changedFieldPaths: [],
     actorUid: uid,
     timestamp: fst,
     timestampMs: now
   });
 
   await batch.commit();
-  return nextVersion;
 }
 
 // ─────────────────────────────────────────────────────────────────────────

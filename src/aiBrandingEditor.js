@@ -527,6 +527,14 @@ function _aiBrandingUpdateSaveButton() {
     btn.disabled = !_abDirty;
     btn.style.opacity = _abDirty ? '1' : '0.5';
   }
+  // Sticky save bar: toggle visibility via .dirty class. CSS handles the
+  // slide-up animation. The bar lives inside #page-aiBranding so it
+  // auto-hides via parent display:none when navigating away.
+  const bar = document.getElementById('ab-save-bar');
+  if (bar) {
+    if (_abDirty) bar.classList.add('dirty');
+    else bar.classList.remove('dirty');
+  }
 }
 
 // Compute changed field paths between two prompt config objects, for the
@@ -580,13 +588,19 @@ function _aiBrandingChangedFieldPaths(prev, next) {
 // SAVE
 // ─────────────────────────────────────────────────────────────────────────
 
+// Status indicator mirror — Save flows live on the sticky bar (#ab-status);
+// Reset flows live in the Version History card (#ab-reset-status). Mirror
+// the message to BOTH so the user sees feedback wherever they're looking.
+// Only the visible one matters; the hidden one is harmless.
 function _aiBrandingSetStatus(msg, isError) {
-  const status = document.getElementById('ab-status');
-  if (!status) return;
-  status.textContent = msg;
-  status.className = isError ? 'ab-status error' : 'ab-status';
-  status.style.opacity = '1';
-  setTimeout(() => { status.style.opacity = '0'; }, isError ? 6000 : 3000);
+  ['ab-status', 'ab-reset-status'].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.textContent = msg;
+    el.className = isError ? 'ab-status error' : 'ab-status';
+    el.style.opacity = '1';
+    setTimeout(() => { el.style.opacity = '0'; }, isError ? 6000 : 3000);
+  });
 }
 
 async function aiBrandingSave() {

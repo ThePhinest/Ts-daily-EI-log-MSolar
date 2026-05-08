@@ -404,6 +404,14 @@ body.theme-light .preset-chip:hover{background:rgba(0,76,84,0.18);border-color:v
 .ab-version-btn.danger{padding:5px 9px;font-size:13px;line-height:1}
 .ab-version-btn.danger:hover{border-color:var(--red);color:var(--red)}
 .ab-version-empty{font-family:var(--mono);font-size:11px;color:var(--muted);font-style:italic;margin:0}
+/* Sticky save bar — anchored above the bottom nav. Slides up when there are
+   unsaved changes (.dirty class), slides back down when state matches saved.
+   Lives inside #page-aiBranding so it auto-hides via parent display:none
+   when the user navigates to a different page. */
+.ab-save-bar{position:fixed;bottom:calc(128px + env(safe-area-inset-bottom));left:50%;display:flex;align-items:center;gap:12px;background:var(--s1);border:1px solid var(--amber);border-radius:999px;padding:8px 16px;box-shadow:0 8px 28px rgba(0,0,0,0.5);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);z-index:250;transform:translateX(-50%) translateY(180%);opacity:0;pointer-events:none;transition:transform .3s cubic-bezier(.2,.8,.2,1),opacity .2s;max-width:calc(100vw - 32px)}
+.ab-save-bar.dirty{transform:translateX(-50%) translateY(0);opacity:1;pointer-events:auto}
+.ab-save-bar .btn-amber{font-size:13px;padding:7px 20px;border-radius:999px}
+.ab-save-bar .ab-status{margin-left:4px;font-size:11px}
 .ab-actions{display:flex;align-items:center;gap:10px;margin:6px 0 18px;flex-wrap:wrap}
 .ab-status{font-family:var(--mono);font-size:11px;color:var(--green);opacity:0;transition:opacity .4s;margin-left:6px}
 .ab-status.error{color:var(--red)}
@@ -2540,12 +2548,11 @@ EI to conduct LOD walk prior to start of operations"></textarea>
       </div>
     </div>
 
-    <!-- Save / Reset action bar — wires into promptStorage.js. -->
-    <div class="ab-actions">
-      <button class="btn btn-amber" id="ab-save-btn" onclick="aiBrandingSave()" disabled>Save</button>
-      <button class="btn btn-outline" id="ab-reset-btn" onclick="aiBrandingResetToDefault()">↺ Reset to Default</button>
-      <span id="ab-status" class="ab-status"></span>
-    </div>
+    <!-- Save / Reset moved 2026-05-08:
+           Save  -> sticky save bar (#ab-save-bar) below #ai-branding-body
+           Reset -> Version History card body (always available)
+         Old inline action row removed; eliminated the "stuck out" issue
+         where the row stayed visible between collapsed sections. -->
 
     <!-- Effective Prompt Preview — read-only live render of the assembled
          system prompt the AI actually sees. Updates ~200ms after each
@@ -2575,10 +2582,26 @@ EI to conduct LOD walk prior to start of operations"></textarea>
       </div>
       <div class="ab-section-body">
         <p class="ab-hint">Each Save creates a new version. Past versions are read-only history — you can View any version's assembled prompt, Revert to one (which creates a new version with that content), or Delete a version from the historical record. Your current saved state is unaffected by deletes.</p>
+        <!-- Reset to factory defaults — moved here 2026-05-08 from the old
+             inline action bar. Stable home; always available regardless of
+             dirty state. The sticky save bar handles Save only. -->
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap">
+          <button class="btn btn-outline" id="ab-reset-btn" onclick="aiBrandingResetToDefault()" style="font-size:11px;padding:7px 14px">↺ Reset all to factory defaults</button>
+          <span id="ab-reset-status" class="ab-status"></span>
+        </div>
         <div id="ab-version-list" class="ab-version-list"></div>
       </div>
     </div>
 
+  </div>
+
+  <!-- Sticky save bar — fixed position, anchored above the bottom nav.
+       Slides up when _abDirty === true; hidden otherwise. Status indicator
+       shares its target with #ab-reset-status so save/reset feedback
+       surfaces wherever the user is looking on the page. -->
+  <div class="ab-save-bar" id="ab-save-bar">
+    <button class="btn btn-amber" id="ab-save-btn" onclick="aiBrandingSave()" disabled>Save</button>
+    <span id="ab-status" class="ab-status"></span>
   </div>
 
 </div></div><!-- /page-aiBranding -->
