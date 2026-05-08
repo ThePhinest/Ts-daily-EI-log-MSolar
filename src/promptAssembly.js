@@ -52,14 +52,21 @@ function _mergePromptDocs(under, over) {
       ...(over.brandIdentity || {})
     },
 
-    // §2 Tone & Voice — field-level merge, over wins per field; tone notes append
+    // §2 Tone & Voice — field-level merge, over wins per field via spread.
+    // additionalToneNotes uses REPLACE semantics (over wins entirely when set).
+    //
+    // Why replace, not append: in the editor, the user sees the full textarea
+    // value as their saved content. If they type defaults verbatim and add
+    // their own line, the saved layer holds the COMBINED text. Appending it
+    // again to defaults would render defaults twice.
+    //
+    // Phase 2 (firm layer) introduces additive semantics for textareas via a
+    // separate editor surface: "inherited from firm" (read-only) + "your
+    // additions" (editable, only this part stored). At that point the merge
+    // function gets a layer-aware additive mode for text fields.
     toneVoice: {
       ...(under.toneVoice || {}),
-      ...(over.toneVoice || {}),
-      additionalToneNotes: [
-        under.toneVoice && under.toneVoice.additionalToneNotes,
-        over.toneVoice && over.toneVoice.additionalToneNotes
-      ].filter(s => s && String(s).trim()).join('\n').trim()
+      ...(over.toneVoice || {})
     },
 
     // §3 Terminology — three lists, each merged differently
@@ -97,11 +104,13 @@ function _mergePromptDocs(under, over) {
       })()
     },
 
-    // §5 Custom Instructions — additive concat (firm rules first, user adds after)
-    customInstructions: [
-      under.customInstructions,
-      over.customInstructions
-    ].filter(s => s && String(s).trim()).join('\n\n').trim()
+    // §5 Custom Instructions — REPLACE semantics (over wins when set).
+    // Same rationale as §2 additionalToneNotes above: textarea content is
+    // the user's full saved value; appending to defaults would duplicate.
+    // Phase 2 firm-baseline + user-addition split lands when firm layer ships.
+    customInstructions: (over.customInstructions !== undefined)
+      ? over.customInstructions
+      : (under.customInstructions || '')
   };
 }
 
