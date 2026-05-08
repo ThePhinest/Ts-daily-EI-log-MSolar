@@ -329,12 +329,17 @@ body.theme-light .preset-chip:hover{background:rgba(0,76,84,0.18);border-color:v
    independent (the editor isn't an "expand/collapse settings card"). */
 .ab-section{background:var(--s1);border:1px solid var(--border);border-radius:var(--r);margin-bottom:16px;overflow:hidden}
 .ab-section-head{background:var(--header-bg);border-bottom:1px solid var(--border);padding:10px 17px;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
-/* Title in teal + subtitle in amber — mirrors the .nav-card color pattern
-   on the Settings page so the visual identity carries from the AI & Branding
-   nav-card down into every section inside the subpage. Inverse of the
-   legacy expand/collapse cards (gold title, muted subtitle). */
+/* Color logic inside the AI & Branding subpage:
+   - Section title (header):  teal  — matches the .nav-card pattern that
+                                       opened the subpage. Section identity.
+   - Section subtitle (right): amber — accent on the header.
+   - Field labels (body):      amber — "this is an editable thing here."
+   Inverse of the legacy expand/collapse cards (gold title, muted subtitle).
+   Same color logic propagates to all future subsettings cards built on this
+   pattern (Stage 7-4, 7-5, Phase 4 §1 API Keys, Phase 4b firm branding). */
 .ab-section-title{font-family:var(--cond);font-weight:700;font-size:15px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted2)}
 .ab-section-sub{font-family:var(--mono);font-size:9px;color:var(--amber);letter-spacing:.05em;margin-left:auto}
+.ab-section label{color:var(--amber)}
 .ab-section-body{padding:16px}
 .ab-hint{font-family:var(--mono);font-size:10.5px;color:var(--muted);margin-bottom:12px;line-height:1.6}
 .ab-textarea{background:var(--bg);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--mono);font-size:12px;line-height:1.55;padding:11px 12px;width:100%;resize:vertical;min-height:120px;box-sizing:border-box}
@@ -348,7 +353,7 @@ body.theme-light .preset-chip:hover{background:rgba(0,76,84,0.18);border-color:v
    title in the .ab-section-head above. */
 .ab-term-group{margin-bottom:18px}
 .ab-term-group:last-child{margin-bottom:0}
-.ab-term-label{display:block;font-family:var(--mono);font-size:10.5px;color:var(--muted2);letter-spacing:.05em;text-transform:uppercase;margin-bottom:6px}
+.ab-term-label{display:block;font-family:var(--mono);font-size:10.5px;color:var(--amber);letter-spacing:.05em;text-transform:uppercase;margin-bottom:6px}
 .ab-term-hint{color:var(--muted);text-transform:none;letter-spacing:normal;font-weight:400;margin-left:4px}
 .ab-list{list-style:none;padding:0;margin:0 0 8px 0;display:flex;flex-direction:column;gap:4px}
 .ab-list:empty{display:none}
