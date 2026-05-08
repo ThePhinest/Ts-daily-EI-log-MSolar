@@ -40,6 +40,13 @@ let _abPreviewTimer = null;
 // it; add/remove handlers mutate it and trigger re-render + preview update.
 let _abTerminology = { banned: [], preferred: [], required: [] };
 
+// Structural sections — array of {key, label, instructions}. Same lifecycle
+// as _abTerminology: hydrated by init, read by collect, mutated in-place by
+// the structural-edit handler. We do NOT re-render the list on edit (would
+// destroy the focused textarea); state mutation alone is enough since the
+// textarea holds its own value until next init.
+let _abStructural = [];
+
 // Lightweight HTML-escape for user-typed list content rendered into innerHTML.
 function _abEscapeHtml(s) {
   return String(s == null ? '' : s).replace(/[&<>"']/g, c => (
@@ -105,6 +112,17 @@ async function aiBrandingInit() {
   };
   _aiBrandingRenderTerms();
   _aiBrandingWireTermInputs();
+
+  // Structural Preferences (Stage 7-4) — hydrate from saved or defaults.
+  // Saved sections take precedence (user can have customized any subset);
+  // defaults provide the canonical 7-section list as fallback.
+  const dStruct = (window.PROMPT_DEFAULTS && window.PROMPT_DEFAULTS.structural) || {};
+  const sStruct = (saved && saved.structural) || {};
+  const sourceSections = (Array.isArray(sStruct.sections) && sStruct.sections.length)
+    ? sStruct.sections
+    : (Array.isArray(dStruct.sections) ? dStruct.sections : []);
+  _abStructural = JSON.parse(JSON.stringify(sourceSections));
+  _aiBrandingRenderStructural();
 
   _abDirty = false;
   _aiBrandingUpdateSaveButton();
@@ -199,6 +217,49 @@ function aiBrandingTermsRemove(listType, index) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
+// STRUCTURAL EDITOR (Stage 7-4) — accordion render + per-section edit
+// ─────────────────────────────────────────────────────────────────────────
+//
+// Render strategy: regenerate the entire #ab-structural-list innerHTML on
+// hydrate (init) only. On user edit (textarea input), we mutate state but do
+// NOT re-render — that would destroy the focused textarea. The textarea
+// holds the latest value authoritatively in the DOM until the next init.
+// On collect, we read the latest values directly from the textareas (since
+// state may be stale between input events) — see aiBrandingCollect below.
+
+function _aiBrandingRenderStructural() {
+  const container = document.getElementById('ab-structural-list');
+  if (!container) return;
+  container.innerHTML = (_abStructural || []).map((s, i) => {
+    const label = _abEscapeHtml((s && (s.label || s.key)) || ('Section ' + (i + 1)));
+    const instructions = _abEscapeHtml((s && s.instructions) || '');
+    return (
+      '<div class="ab-struct-item collapsed" id="ab-struct-' + i + '">' +
+        '<div class="ab-struct-head" onclick="aiBrandingStructToggle(' + i + ')">' +
+          '<span class="ab-struct-label">' + label + '</span>' +
+          '<span class="ab-struct-chevron">▾</span>' +
+        '</div>' +
+        '<div class="ab-struct-body">' +
+          '<textarea oninput="aiBrandingStructEdit(' + i + ', this.value)" placeholder="Instructions for this section…">' + instructions + '</textarea>' +
+        '</div>' +
+      '</div>'
+    );
+  }).join('');
+}
+
+function aiBrandingStructToggle(idx) {
+  const item = document.getElementById('ab-struct-' + idx);
+  if (item) item.classList.toggle('collapsed');
+}
+
+function aiBrandingStructEdit(idx, value) {
+  if (idx < 0 || idx >= _abStructural.length) return;
+  // Mutate state in place — no re-render, textarea keeps focus
+  _abStructural[idx] = Object.assign({}, _abStructural[idx], { instructions: value });
+  aiBrandingScheduleUpdatePreview();
+}
+
+// ─────────────────────────────────────────────────────────────────────────
 // COLLECT — read all editor fields, return a full prompt config doc
 // ─────────────────────────────────────────────────────────────────────────
 //
@@ -236,12 +297,25 @@ function aiBrandingCollect() {
   // Terminology (Stage 7-3) — read from module-scoped state, deep-cloned
   const terminology = JSON.parse(JSON.stringify(_abTerminology || {}));
 
+  // Structural Preferences (Stage 7-4) — read from state. State is mutated
+  // in place by aiBrandingStructEdit on each textarea input, so it should
+  // be current. As a safety net we also harvest the latest textarea values
+  // directly from the DOM in case any input event was missed (e.g. paste
+  // without an input event in older browsers).
+  const structuralSections = (_abStructural || []).map((s, i) => {
+    const item = document.getElementById('ab-struct-' + i);
+    const ta = item && item.querySelector('textarea');
+    const liveValue = ta ? ta.value : (s && s.instructions);
+    return Object.assign({}, s, { instructions: liveValue == null ? '' : liveValue });
+  });
+  const structural = { sections: JSON.parse(JSON.stringify(structuralSections)) };
+
   return {
     schemaVersion: defaults.schemaVersion || 1,
     brandIdentity: { ...(defaults.brandIdentity || {}) },
     toneVoice,
     terminology,
-    structural: JSON.parse(JSON.stringify(defaults.structural || {})),
+    structural,
     customInstructions
   };
 }
@@ -319,6 +393,15 @@ function _aiBrandingChangedFieldPaths(prev, next) {
   if (JSON.stringify(baseT.banned    || []) !== JSON.stringify(nextT.banned    || [])) paths.push('terminology.banned');
   if (JSON.stringify(baseT.preferred || []) !== JSON.stringify(nextT.preferred || [])) paths.push('terminology.preferred');
   if (JSON.stringify(baseT.required  || []) !== JSON.stringify(nextT.required  || [])) paths.push('terminology.required');
+
+  // Structural Preferences (Stage 7-4) — single path entry covers the whole
+  // sections array. Granular paths (per-section-index) would help auditing
+  // but get noisy; the version doc holds full content for forensics anyway.
+  const baseStr = baseline.structural || {};
+  const nextStr = next.structural || {};
+  if (JSON.stringify(baseStr.sections || []) !== JSON.stringify(nextStr.sections || [])) {
+    paths.push('structural.sections');
+  }
 
   return paths;
 }
@@ -400,3 +483,5 @@ window.aiBrandingScheduleUpdatePreview = aiBrandingScheduleUpdatePreview;
 window.aiBrandingTermsAdd = aiBrandingTermsAdd;
 window.aiBrandingTermsAddPair = aiBrandingTermsAddPair;
 window.aiBrandingTermsRemove = aiBrandingTermsRemove;
+window.aiBrandingStructToggle = aiBrandingStructToggle;
+window.aiBrandingStructEdit = aiBrandingStructEdit;
