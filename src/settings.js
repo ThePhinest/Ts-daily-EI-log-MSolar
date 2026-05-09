@@ -65,29 +65,22 @@ async function initCardTitles(){
 // DEFAULT CHECKLIST + FLAG ITEMS
 // ═══════════════════════════════════════════
 const DEFAULT_CHECKLIST_ITEMS=[
-  {id:'c1', text:'Morning safety meeting / tailgate conducted at 6:30 AM prior to work start'},
-  {id:'c2', text:'All active work areas within staked Limits of Disturbance (LOD)'},
-  {id:'c3', text:'Directional felling — trees felled away from wetland and stream buffers and LOD boundaries'},
-  {id:'c4', text:'Stump heights at or below 6 inches above ground level'},
-  {id:'c5', text:'Slash and felled material managed within LOD — no encroachment beyond staked limits'},
-  {id:'c6', text:'No tree felling within wetland buffer or stream riparian corridor'},
-  {id:'c7', text:'Wetland and stream buffer markers intact, visible, and undisturbed'},
-  {id:'c8', text:'Access routes and staging areas within approved footprint'},
-  {id:'c9', text:'Equipment fueling and storage >100 ft from water resources — secondary containment in place'},
-  {id:'c10',text:'No turbid discharge or sediment-laden runoff observed at site perimeter or water resources'},
-  {id:'c11',text:'No unanticipated cultural, archaeological, or hazardous material discoveries'},
-  {id:'c12',text:'No RTE / State-listed species or habitat disturbance observed during operations'},
-  {id:'c13',text:'Tree protection, invasive species controls, and buffer demarcation in place at designated limits'},
+  {id:'c1', text:'Morning safety meeting / tailgate conducted prior to work start'},
+  {id:'c2', text:'All active work areas within approved Limits of Disturbance (LOD)'},
+  {id:'c3', text:'Equipment fueling and storage >100 ft from water resources — secondary containment in place'},
+  {id:'c4', text:'No turbid discharge or sediment-laden runoff observed at site perimeter or water resources'},
+  {id:'c5', text:'No unanticipated cultural, archaeological, or hazardous material discoveries'},
+  {id:'c6', text:'No RTE / State-listed species or habitat disturbance observed during operations'},
+  {id:'c7', text:'Erosion and sediment controls maintained and functional'},
 ];
 const DEFAULT_FLAG_ITEMS=[
-  {id:'flag-spdes',    text:'Turbid discharge observed — potential SPDES exceedance'},
-  {id:'flag-storm',    text:'Precipitation event >0.5 in. — post-storm inspection required'},
-  {id:'flag-buffer',   text:'Buffer encroachment observed'},
-  {id:'flag-riparian', text:'Riparian corridor disturbance observed'},
-  {id:'flag-discovery',text:'Unanticipated cultural, archaeological, or hazardous material discovery'},
-  {id:'flag-spill',    text:'Fuel or hydraulic fluid spill observed'},
-  {id:'flag-nci',      text:'Non-compliance notice issued (NCI)'},
-  {id:'flag-stop',     text:'Stop-work condition observed'},
+  {id:'flag-stormwater',text:'Turbid discharge observed — potential stormwater permit exceedance'},
+  {id:'flag-storm',     text:'Precipitation event >0.5 in. — post-storm inspection required'},
+  {id:'flag-buffer',    text:'Sensitive area buffer encroachment observed'},
+  {id:'flag-discovery', text:'Unanticipated cultural, archaeological, or hazardous material discovery'},
+  {id:'flag-spill',     text:'Fuel or hydraulic fluid spill observed'},
+  {id:'flag-nci',       text:'Non-compliance notice issued (NCI)'},
+  {id:'flag-stop',      text:'Stop-work condition observed'},
 ];
 
 // ═══════════════════════════════════════════

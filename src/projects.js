@@ -2,13 +2,13 @@
 // PROJECTS
 // ═══════════════════════════════════════════
 const PROJECT_CONFIG_DEFAULTS = {
-  projectName: 'Moraine Solar Energy Center',
-  preparedBy:  'Tim Shortz',
-  org:         'London Environmental LLC',
-  activePhase: 'Phase 1 — Tree Felling',
-  contractor:  'Supreme Industries',
-  location:    'Town of Burns, Allegany County, NY',
-  reviewedBy:  'Robert Forest Rung'
+  projectName: 'New Project',
+  preparedBy:  '',
+  org:         '',
+  activePhase: '',
+  contractor:  '',
+  location:    '',
+  reviewedBy:  ''
 };
 
 function loadProjectConfig() {

@@ -2623,34 +2623,26 @@ window.SAVED_DATA = SAVED_DATA;
 // ═══════════════════════════════════════════
 // DEFAULTS & STATE
 // ═══════════════════════════════════════════
-const DEFAULT_PHASES = ['Phase 1 — Tree Felling','Phase 2 — Grading & Earthwork','Phase 3 — Construction','All Phases'];
+const DEFAULT_PHASES = ['Mobilization','Active Construction','Cleanup & Demobilization','All Phases'];
 
 const DEFAULT_PRESETS = {
   obs:[
-    {text:'EI attended the morning safety meeting/tailgate at 6:30 AM',phase:'Phase 1 — Tree Felling'},
-    {text:'EI conducted walkthrough inspection of all active felling areas',phase:'Phase 1 — Tree Felling'},
-    {text:'Directional felling observed — trees felled away from wetland buffers and LOD boundaries',phase:'Phase 1 — Tree Felling'},
-    {text:'Stump heights observed at or below 6 inches above grade',phase:'Phase 1 — Tree Felling'},
-    {text:'Slash and felled material managed within LOD',phase:'Phase 1 — Tree Felling'},
-    {text:'All work observed within staked Limits of Disturbance (LOD)',phase:'Phase 1 — Tree Felling'},
-    {text:'Wetland and stream buffer boundaries remained intact and undisturbed',phase:'Phase 1 — Tree Felling'},
-    {text:'Access routes and staging areas within approved footprint',phase:'Phase 1 — Tree Felling'},
+    {text:'Morning safety meeting / tailgate observed prior to work start',phase:'All Phases'},
+    {text:'Walkthrough inspection of all active work areas conducted',phase:'All Phases'},
+    {text:'All work observed within approved Limits of Disturbance (LOD)',phase:'All Phases'},
+    {text:'Equipment staging and access routes within approved footprint',phase:'All Phases'},
     {text:'No turbid discharge or sediment-laden runoff observed at site perimeter',phase:'All Phases'},
+    {text:'Erosion and sediment controls in functional condition',phase:'All Phases'},
   ],
   act:[
-    {text:'Tree felling with chainsaw crews',phase:'Phase 1 — Tree Felling'},
-    {text:'Directional felling of trees ≥3" DBH',phase:'Phase 1 — Tree Felling'},
-    {text:'Slash/brush management and pile staging',phase:'Phase 1 — Tree Felling'},
-    {text:'Limbing and bucking of felled material',phase:'Phase 1 — Tree Felling'},
-    {text:'Equipment staging and access route maintenance',phase:'Phase 1 — Tree Felling'},
-    {text:'LOD flagging and boundary verification',phase:'Phase 1 — Tree Felling'},
     {text:'Morning safety tailgate / crew briefing',phase:'All Phases'},
-    {text:'General site mobilization and setup',phase:'All Phases'},
+    {text:'Site mobilization and setup',phase:'All Phases'},
+    {text:'Equipment staging and access route maintenance',phase:'All Phases'},
+    {text:'Boundary verification and flagging maintenance',phase:'All Phases'},
   ],
   env:[
-    {text:'Work conducted within LOD — no encroachment observed',phase:'Phase 1 — Tree Felling'},
-    {text:'Wetland buffer markers intact and undisturbed',phase:'Phase 1 — Tree Felling'},
-    {text:'Stream buffer maintained — no felling within riparian corridor',phase:'Phase 1 — Tree Felling'},
+    {text:'Work conducted within approved LOD — no encroachment observed',phase:'All Phases'},
+    {text:'Buffer markers intact and undisturbed',phase:'All Phases'},
     {text:'No turbid discharge or runoff observed',phase:'All Phases'},
     {text:'Equipment staged >100 ft from water resources',phase:'All Phases'},
     {text:'No fuel or hydraulic spills observed',phase:'All Phases'},
@@ -2658,17 +2650,15 @@ const DEFAULT_PRESETS = {
     {text:'Environmental controls in satisfactory condition',phase:'All Phases'},
   ],
   comms:[
-    {text:'Reminded crew of LOD limits and buffer no-entry zones prior to start of operations',phase:'Phase 1 — Tree Felling'},
-    {text:'Directed contractor to verify LOD flagging before expanding into new areas',phase:'Phase 1 — Tree Felling'},
-    {text:'Discussed stump height requirements with crew foreman',phase:'Phase 1 — Tree Felling'},
+    {text:'Reminded crew of approved limits and buffer no-entry zones prior to start of operations',phase:'All Phases'},
     {text:'Coordinator notified of anticipated change in work area for tomorrow',phase:'All Phases'},
     {text:'Confirmed post-storm inspection required prior to resuming work',phase:'All Phases'},
     {text:'Environmental management notified of access route condition concern',phase:'All Phases'},
   ],
   look:[
-    {text:'Continue tree felling operations in active areas',phase:'Phase 1 — Tree Felling'},
-    {text:'Expand felling into adjacent area per approved plan',phase:'Phase 1 — Tree Felling'},
-    {text:'EI to conduct LOD walk prior to start of operations',phase:'Phase 1 — Tree Felling'},
+    {text:'Continue active operations in approved areas',phase:'All Phases'},
+    {text:'Expand work into adjacent areas per approved plan',phase:'All Phases'},
+    {text:'EI to conduct boundary walk prior to start of operations',phase:'All Phases'},
     {text:'Equipment delivery / crew mobilization expected on site',phase:'All Phases'},
     {text:'Anticipated weather event — monitor forecast, standby for stop-work directive',phase:'All Phases'},
     {text:'Post-storm inspection required prior to resuming work',phase:'All Phases'},

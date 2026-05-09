@@ -42,7 +42,7 @@ const PROMPT_DEFAULTS = {
   // (lockable). The doc-style and inspector-role fields stay user-overridable.
   brandIdentity: {
     inspectorRole: 'Environmental Inspector (EI) report writer',
-    projectContext: 'Moraine Solar Energy Center, a 94 MW AC PV solar facility in the Town of Burns, Allegany County, NY',
+    projectContext: 'Construction project requiring environmental compliance documentation',
     outputDocType: 'Daily Environmental Compliance Report',
     docStyleNotes: 'Polish raw field notes into professional language'
   },
