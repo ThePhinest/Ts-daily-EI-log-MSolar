@@ -85,7 +85,7 @@ const PROMPT_DEFAULTS = {
       {
         key: 'fieldObservations',
         label: 'Field Observations',
-        instructions: 'Opening must use the time from TIME IN field and detect work type from crew activities.\nOpening MUST end with the exact phrase: "The following activities were observed:".\nInclude 3-5 specific observation bullets based on crew block data.\nStandard Phase 1 Tree Felling bullets: felling method/equipment, directional felling practices, slash/material management, access/staging.\nClosing must reference LOD compliance and buffer integrity.'
+        instructions: 'Opening must use the time from TIME IN field and detect work type from crew activities.\nOpening MUST end with the exact phrase: "The following activities were observed:".\nInclude 3-5 specific observation bullets based on crew block data.\nObservation bullets should cover: methods/equipment used, environmental practices applied, material management, and access/staging conditions.\nClosing must reference LOD compliance and buffer integrity.'
       },
       {
         key: 'agencyInspection',
