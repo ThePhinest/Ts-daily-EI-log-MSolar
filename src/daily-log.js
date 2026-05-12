@@ -98,7 +98,7 @@ function buildCrewHTML(id, num){
       <div class="g g3" style="margin-bottom:11px">
         <div class="field span2"><label>Contractor / Foreman Name</label><input type="text" id="crew-${id}-name" placeholder="Full name"></div>
         <div class="field"><label>Hours on Site</label><input type="text" id="crew-${id}-time" placeholder="e.g. 6:30 AM – 4:30 PM"></div>
-        <div class="field full"><label>Work Location / Area</label><input type="text" id="crew-${id}-loc" placeholder="e.g. Area 3 — north hillside, adjacent to wetland buffer"></div>
+        <div class="field full"><label>Work Location / Area</label><input type="text" id="crew-${id}-loc" placeholder="e.g. Station 00+00, laydown yard, etc."></div>
       </div>
       <div class="field" style="margin-bottom:10px">
         <label>Activities Observed</label>
@@ -111,7 +111,7 @@ function buildCrewHTML(id, num){
         <textarea class="short auto-expand" id="crew-${id}-envcomp" placeholder="Note compliance or any deficiency observed for this crew…"></textarea>
       </div>
       <div class="g g2">
-        <div class="field"><label>Issues / Non-Compliance (Level 1–4 if known)</label><textarea class="short auto-expand" id="crew-${id}-issues" placeholder="e.g. Level 2 — slash material observed 3 ft beyond LOD…"></textarea></div>
+        <div class="field"><label>Issues / Non-Compliance (Level 1–4 if known)</label><textarea class="short auto-expand" id="crew-${id}-issues" placeholder="e.g. Level 2 — material observed beyond approved boundary…"></textarea></div>
         <div class="field"><label>Additional Notes</label><textarea class="short auto-expand" id="crew-${id}-notes" placeholder="Any other notes…"></textarea></div>
       </div>
     </div>`;

@@ -1506,11 +1506,11 @@ body.is-native select { font-size: 16px !important; }
         <input type="text" id="lookaheadWeather" placeholder="e.g. Partly cloudy, temps 35–50°F, winds 5–10 mph, no precipitation expected">
       </div>
       <div class="field">
-        <label>Anticipated work items for tomorrow — one item per line</label>
+        <label>Anticipated work items for tomorrow</label>
         <div class="preset-strip" id="chips-lookahead"><button class="preset-chip" type="button" title="Continue tree felling operations in active areas">Continue tree felling operations in active areas</button><button class="preset-chip" type="button" title="Expand felling into adjacent area per approved plan">Expand felling into adjacent area per approved plan</button><button class="preset-chip" type="button" title="EI to conduct LOD walk prior to start of operations">EI to conduct LOD walk prior to start of operations</button><button class="preset-chip" type="button" title="Equipment delivery / crew mobilization expected on site">Equipment delivery / crew mobilization expected on site</button><button class="preset-chip" type="button" title="Anticipated weather event — monitor forecast, standby for stop-work directive">Anticipated weather event — monitor forecast, standby fo…</button><button class="preset-chip" type="button" title="Post-storm inspection required prior to resuming work">Post-storm inspection required prior to resuming work</button><button class="preset-chip" type="button" title="No work anticipated — weather or crew constraint">No work anticipated — weather or crew constraint</button></div>
-        <textarea class="tall auto-expand" id="lookahead" placeholder="Continue tree felling operations in Area 4
-Equipment delivery — additional chainsaw crews expected
-EI to conduct LOD walk prior to start of operations"></textarea>
+        <textarea class="tall auto-expand" id="lookahead" placeholder="Continue active work in approved areas
+Equipment delivery — additional crew mobilization expected
+Anticipated rain — AM weather monitoring expected"></textarea>
       </div>
     </div>
   </div>
@@ -2086,13 +2086,13 @@ EI to conduct LOD walk prior to start of operations"></textarea>
     <div class="config-body">
       <p class="config-hint">Tap the project name in the app bar to switch projects or create a new one. Edit this project's details below — changes save across all devices. Active Contractor sets the default; you can clear or change it per day directly on the log.</p>
       <div class="g g2" style="margin-bottom:10px">
-        <div class="field"><label>Project Name</label><input type="text" id="cfg-projectName" placeholder="Moraine Solar Energy Center" list="known-projects-list" oninput="onProjectNameInput(this.value)"><datalist id="known-projects-list"></datalist></div>
-        <div class="field"><label>Prepared By</label><input type="text" id="cfg-preparedBy" placeholder="Tim Shortz"></div>
-        <div class="field"><label>Organization</label><input type="text" id="cfg-org" placeholder="London Environmental LLC"></div>
+        <div class="field"><label>Project Name</label><input type="text" id="cfg-projectName" placeholder="Current/new project name" list="known-projects-list" oninput="onProjectNameInput(this.value)"><datalist id="known-projects-list"></datalist></div>
+        <div class="field"><label>Prepared By</label><input type="text" id="cfg-preparedBy" placeholder="Your full name"></div>
+        <div class="field"><label>Organization</label><input type="text" id="cfg-org" placeholder="Your firm/employer"></div>
         <div class="field"><label>Current Activity</label><input type="text" id="cfg-activePhase" placeholder="e.g. Grading, Clearing &amp; Grubbing, Installation"></div>
-        <div class="field"><label>Active Contractor</label><input type="text" id="cfg-contractor" placeholder="Supreme Industries"></div>
-        <div class="field"><label>Town / County</label><input type="text" id="cfg-location" placeholder="Town of Burns, Allegany County, NY"></div>
-        <div class="field"><label>Reviewed By</label><input type="text" id="cfg-reviewedBy" placeholder="Robert Forest Rung"></div>
+        <div class="field"><label>Active Contractor</label><input type="text" id="cfg-contractor" placeholder="Active contractor(s) on site"></div>
+        <div class="field"><label>Town / County</label><input type="text" id="cfg-location" placeholder="Town, county, state"></div>
+        <div class="field"><label>Reviewed By</label><input type="text" id="cfg-reviewedBy" placeholder="Reviewer / supervisor name"></div>
       </div>
       <button class="btn btn-amber" style="font-size:11px;padding:7px 14px" onclick="saveProjectConfig()">Save &amp; Apply</button>
       <span id="cfg-proj-status" style="font-family:var(--mono);font-size:11px;color:var(--green);margin-left:12px;opacity:0;transition:opacity .4s"></span>
@@ -2174,7 +2174,7 @@ EI to conduct LOD walk prior to start of operations"></textarea>
             <option value="weekly">Weekly — over 40 hrs/week</option>
           </select>
         </div>
-        <div class="field"><label>Supervisor Name</label><input type="text" id="cfg-ts-supervisor" placeholder="Benjamin Hope"></div>
+        <div class="field"><label>Supervisor Name</label><input type="text" id="cfg-ts-supervisor" placeholder="Your supervisor"></div>
       </div>
       <button class="btn btn-amber" style="font-size:11px;padding:7px 14px" onclick="saveTsConfig()">Save &amp; Apply</button>
       <span id="cfg-ts-status" style="font-family:var(--mono);font-size:11px;color:var(--green);margin-left:12px;opacity:0;transition:opacity .4s"></span>
@@ -2295,7 +2295,7 @@ EI to conduct LOD walk prior to start of operations"></textarea>
       <p class="config-hint">Add phase tags here as the project progresses. Each preset is tagged to one phase.</p>
       <ul class="preset-list" id="list-phases"></ul>
       <div class="add-preset-row">
-        <input type="text" id="new-phase-text" placeholder="e.g. Phase 2 — Grading &amp; Earthwork">
+        <input type="text" id="new-phase-text" placeholder="e.g. Site Prep, Foundations, Mobilization">
         <button class="btn-add-p" onclick="addPhase()">+ Add Phase</button>
       </div>
     </div>
@@ -2418,7 +2418,7 @@ EI to conduct LOD walk prior to start of operations"></textarea>
         </div>
         <div class="field" style="margin-bottom:12px">
           <label>Project Context</label>
-          <input type="text" id="ab-bi-projectContext" class="ab-input" style="font-size:13px;padding:8px 11px" placeholder="e.g. Moraine Solar Energy Center, a 94 MW AC PV solar facility" oninput="aiBrandingScheduleUpdatePreview()">
+          <input type="text" id="ab-bi-projectContext" class="ab-input" style="font-size:13px;padding:8px 11px" placeholder="e.g. Brief description of the project and its regulatory context" oninput="aiBrandingScheduleUpdatePreview()">
         </div>
         <div class="field" style="margin-bottom:12px">
           <label>Output Doc Type</label>
