@@ -36,9 +36,16 @@ import { dirname, join } from 'path';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ASSETS = join(__dirname, 'assets');
+const PUBLIC = join(__dirname, 'public');
 const ICON   = join(ASSETS, 'icon.png');
 const OUT    = join(ASSETS, 'splash.png');
 const OUT_DK = join(ASSETS, 'splash-dark.png');
+// Web loading-page icon — transparent-bg boot for inline use on the
+// pure-black `#page-auth-loading` shell. Wordmark is rendered as HTML text
+// above this image; image just needs to float on black with no card behind it.
+// 480×480 is 2x the rendered 240×240 size for crisp Retina display.
+const OUT_LOADING = join(PUBLIC, 'icon-loading.png');
+const LOADING_SIZE = 480;
 
 const CANVAS = 2732;
 const SPLASH_BG = { r: 0x00, g: 0x00, b: 0x00, alpha: 1 }; // Pure black per Tim 2026-05-07
@@ -121,6 +128,16 @@ async function build() {
       .toFile(out);
     console.log('Wrote', out);
   }
+
+  // Step 6: web loading-page icon — transparent-bg boot at 480×480.
+  // No black canvas composited; the loading page itself is #000 and the boot
+  // is alpha-keyed, so it floats cleanly with no card-style background.
+  await sharp(rgba, { raw: { width: w, height: h, channels: 4 } })
+    .extract({ left: minX, top: minY, width: bboxW, height: bboxH })
+    .resize({ width: LOADING_SIZE, height: LOADING_SIZE, fit: 'contain', background: { r:0, g:0, b:0, alpha:0 } })
+    .png()
+    .toFile(OUT_LOADING);
+  console.log('Wrote', OUT_LOADING);
 }
 
 build().catch(e => { console.error(e); process.exit(1); });
