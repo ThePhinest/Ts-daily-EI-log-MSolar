@@ -146,7 +146,7 @@ function _buildAndCopyJSON(){
   const lookaheadText=document.getElementById('lookahead').value.trim();
   const lookahead=lookaheadWx ? `Expected Weather: ${lookaheadWx}${lookaheadText?'\n'+lookaheadText:''}` : lookaheadText;
   const data={
-    _source:'Moraine Solar EI Field Log',
+    _source:'GroundLog Daily Log',
     project:    document.getElementById('projectName').value,
     reportDate: document.getElementById('reportDate').value,
     preparedBy: document.getElementById('preparedBy').value,
@@ -181,7 +181,9 @@ async function downloadLog(){
   src=src.replace('const SAVED_DATA = null;',`const SAVED_DATA = ${stateJSON};`);
   const raw=document.getElementById('reportDate').value||new Date().toISOString().split('T')[0];
   const [y,m,d]=raw.split('-');
-  const filename=`${m}-${d}-${y}_Moraine_Solar-Daily_Inspection_Report.html`;
+  const _projName=(document.getElementById('cfg-projectName')?.value?.trim()||'GroundLog');
+  const _projSlug=_projName.replace(/[^a-zA-Z0-9]+/g,'_').replace(/^_+|_+$/g,'')||'GroundLog';
+  const filename=`${m}-${d}-${y}_${_projSlug}-Daily_Inspection_Report.html`;
   const blob=new Blob([src],{type:'text/html;charset=utf-8'});
   const showStatus=()=>{const s=document.getElementById('dlStatus');s.classList.add('show');setTimeout(()=>s.classList.remove('show'),3500);};
   try{

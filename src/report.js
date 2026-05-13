@@ -722,7 +722,9 @@ async function _doGenerate(){
       setStatus('Assembling report\u2026');
       const blob=await rptBuildDocx(snapshotToUse.logData,polishedToUse,snapshotToUse.photoRefs||[]);
       const[y,m,d]=reportDate.split('-');
-      const filename=`${m}-${d}-${y}_Moraine_Solar-Daily_Inspection_Report.docx`;
+      const _projName=(document.getElementById('cfg-projectName')?.value?.trim()||'GroundLog');
+      const _projSlug=_projName.replace(/[^a-zA-Z0-9]+/g,'_').replace(/^_+|_+$/g,'')||'GroundLog';
+      const filename=`${m}-${d}-${y}_${_projSlug}-Daily_Inspection_Report.docx`;
       const mimeType='application/vnd.openxmlformats-officedocument.wordprocessingml.document';
       setStatus('Opening save sheet\u2026');
       await window.saveFileNative(blob,filename,mimeType);
