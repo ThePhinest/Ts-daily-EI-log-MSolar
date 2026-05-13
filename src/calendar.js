@@ -7,6 +7,31 @@ let _calView = 'grid';
 let _calYear = new Date().getFullYear();
 let _calMonth = new Date().getMonth();
 
+// ── E2.5: does this daily-log record represent actual user activity? ──
+// "Start new day" creates a default-state record before the user enters anything
+// (see calOpenNewDay). That empty shell shouldn't render as has-log on the
+// calendar grid. Returns true only if the user has entered narrative content,
+// time on site, mileage, crew data, or flagged any items. Auto-fetched weather
+// + project metadata alone do NOT count as "logged."
+function _calHasContent(rec){
+  if(!rec) return false;
+  const f=rec.fields||{};
+  // Time on site / mileage / personal notes
+  if(f['p-timeIn']||f['p-timeOut']||f['p-odoStart']||f['p-odoEnd']) return true;
+  if((f['p-notes']||'').trim()) return true;
+  // Narrative fields the user actually fills
+  const narrative=['inspSummary','agencyInsp','landowner','rte','nonCompliance','genComms','lookahead','contractor'];
+  if(narrative.some(k=>(f[k]||'').trim())) return true;
+  // Crew blocks with any content
+  if(Array.isArray(rec.crew)&&rec.crew.some(b=>
+    (b.name||'').trim()||(b.time||'').trim()||(b.loc||'').trim()||
+    (b.acts||'').trim()||(b.envcomp||'').trim()||(b.issues||'').trim()||(b.notes||'').trim()
+  )) return true;
+  // Any flag manually checked
+  if(rec.checkboxes&&Object.values(rec.checkboxes).some(v=>v===true)) return true;
+  return false;
+}
+
 function calGetIndicators(record){
   const indicators=[];
   if(record._edited) indicators.push('<span title="Edited after archive">⚠️</span>');
@@ -262,7 +287,7 @@ function calRenderDayViewGrid(){
     const dateStr=`${_calYear}-${mm}-${dd}`;
     const rec=all[dateStr]||null;
     const isToday=dateStr===today;
-    if(rec){
+    if(rec&&_calHasContent(rec)){
       cells+=`<div class="cal-cell has-log${isToday?' today':''}" onclick="calOpenDay('${dateStr}')">
         <div class="cal-cell-num">${d}</div>
         <div class="cal-cell-dots">${calGetDotIndicators(rec)}</div>
@@ -327,7 +352,7 @@ function calRenderGrid(){
     const dateStr=`${_calYear}-${mm}-${dd}`;
     const rec=all[dateStr]||null;
     const isToday=dateStr===today;
-    if(rec){
+    if(rec&&_calHasContent(rec)){
       cells+=`<div class="cal-cell has-log${isToday?' today':''}" onclick="calOpenDay('${dateStr}')">
         <div class="cal-cell-num">${d}</div>
         <div class="cal-cell-dots">${calGetDotIndicators(rec)}</div>
@@ -355,7 +380,8 @@ function calRenderList(){
   const all=_projectFilterActive
     ? Object.fromEntries(Object.entries(_allLogsL).filter(([,v])=> !v.projectId || v.projectId===_activeProjectId()))
     : _allLogsL;
-  const dates=Object.keys(all).sort((a,b)=>b.localeCompare(a));
+  // E2.5: filter out "empty new day" records that have no actual user content
+  const dates=Object.keys(all).filter(d=>_calHasContent(all[d])).sort((a,b)=>b.localeCompare(a));
   const list=document.getElementById('cal-list');
   const empty=document.getElementById('cal-empty');
   const count=document.getElementById('cal-count');

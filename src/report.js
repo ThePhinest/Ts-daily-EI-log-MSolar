@@ -109,6 +109,7 @@ function _polishSelectModal(fields, onConfirm){
     '<div class="modal-title">✦ Formalize Log</div>'+
     '<div class="modal-msg" style="margin-bottom:14px">Select fields to rewrite in professional language:</div>'+
     '<div style="margin-bottom:18px">'+checkboxes+'</div>'+
+    '<div id="_pmw" style="display:none;color:var(--amber);font-size:12px;margin-bottom:10px;text-align:center">Select at least one field to polish.</div>'+
     '<div class="modal-btns">'+
       '<button class="modal-cancel" id="_pmc">Cancel</button>'+
       '<button class="modal-confirm" id="_pmok" style="background:var(--amber);border-color:var(--amber);color:#111">✦ Polish</button>'+
@@ -120,8 +121,15 @@ function _polishSelectModal(fields, onConfirm){
       var cb=document.getElementById('_pf'+i);
       return cb&&cb.checked;
     });
+    // E1.3 fix: previously a 0-selected click silently closed the modal with no
+    // feedback. Now we keep the modal open and surface an inline warning so the
+    // user knows their click registered and what to do next.
+    if(!selected.length){
+      document.getElementById('_pmw').style.display='block';
+      return;
+    }
     ov.remove();
-    if(selected.length) onConfirm(selected);
+    onConfirm(selected);
   };
 }
 
@@ -170,11 +178,20 @@ async function polishLog(){
 }
 
 // ── Formalize Log — Claude API call + field update ──
+// E1.3 diagnostics (2026-05-13): the "all checked fields stay unchanged" symptom
+// could be caused by (a) Claude returning JSON keys that don't match field IDs,
+// (b) JSON.parse failure on a malformed response, or (c) silent API failure.
+// This version surfaces in-progress status, counts applied vs requested fields,
+// logs missing keys + raw response on parse failure, and keeps the status visible
+// longer so the user can spot warnings. Doesn't fix the underlying mystery — but
+// next time Tim hits it, the console + status bar will show exactly what's wrong.
 async function _doPolish(selectedFields, apiKey){
   const btn=document.getElementById('btn-formalize-log');
   const status=document.getElementById('rpt-status');
   const setStatus=function(msg,color){if(status){status.textContent=msg;status.style.color=color||'var(--green)';status.style.opacity='1';}};
+  const n=selectedFields.length;
   if(btn){btn.disabled=true;btn.textContent='Formalizing…';}
+  setStatus('Polishing '+n+' field'+(n===1?'':'s')+'…','var(--amber)');
   try{
     const payload=Object.fromEntries(selectedFields.map(function(f){return[f.id,f.value];}));
     const systemPrompt='You are a professional field inspector writing assistant. Rewrite the provided field log text into clean, professional language suitable for a regulatory compliance report. Rules: use "conducting" not "performing"; use definitive language ("will" not "anticipated to"); contractor compliance language must be collaborative in tone; do not use first person; preserve all specific facts, measurements, locations, and compliance levels exactly as entered; do not add information not present in the original; do not remove relevant observations. Return a JSON object with the same keys as provided, containing the rewritten text for each field. Return ONLY the JSON object — no preamble, no markdown, no code fences.';
@@ -184,22 +201,46 @@ async function _doPolish(selectedFields, apiKey){
     const data=await resp.json();
     const text=data.content[0].text;
     const j0=text.indexOf('{'),j1=text.lastIndexOf('}');
-    if(j0===-1||j1===-1) throw new Error('No JSON in response');
-    const polished=JSON.parse(text.slice(j0,j1+1));
+    if(j0===-1||j1===-1){
+      console.error('Formalize Log: no JSON object in Claude response. Raw text:',text);
+      throw new Error('Polish response malformed — see console');
+    }
+    let polished;
+    try{
+      polished=JSON.parse(text.slice(j0,j1+1));
+    }catch(parseErr){
+      console.error('Formalize Log: JSON.parse failed. Raw slice:',text.slice(j0,j1+1));
+      throw new Error('Polish JSON parse failed — see console');
+    }
+    let appliedCount=0;
+    const missingIds=[];
     selectedFields.forEach(function(f){
       if(polished[f.id]!=null){
         const el=document.getElementById(f.id);
-        if(el) el.value=polished[f.id];
+        if(el){ el.value=polished[f.id]; appliedCount++; }
+      } else {
+        missingIds.push(f.id);
       }
     });
+    if(missingIds.length){
+      console.warn('Formalize Log: Claude response missing keys for fields:',missingIds,
+        '— requested ids:',selectedFields.map(function(f){return f.id;}),
+        '— returned keys:',Object.keys(polished));
+    }
     if(typeof debouncedAutoSave==='function') debouncedAutoSave();
     _setFormalized();
-    setStatus('✓ Log formalized');
-    setTimeout(function(){if(status)status.style.opacity='0';},3000);
+    if(appliedCount===n){
+      setStatus('✓ Polished '+appliedCount+' field'+(appliedCount===1?'':'s'));
+    } else if(appliedCount>0){
+      setStatus('⚠ Polished '+appliedCount+' of '+n+' — see console','var(--amber)');
+    } else {
+      setStatus('⚠ No fields updated — see console','var(--amber)');
+    }
+    setTimeout(function(){if(status)status.style.opacity='0';},5000);
   }catch(e){
     console.error('Formalize Log error:',e);
-    setStatus('✗ '+e.message.slice(0,60),'var(--red)');
-    setTimeout(function(){if(status)status.style.opacity='0';},6000);
+    setStatus('✗ '+e.message.slice(0,80),'var(--red)');
+    setTimeout(function(){if(status)status.style.opacity='0';},8000);
   }finally{
     if(btn){btn.disabled=false;btn.textContent='✦ Formalize Log';}
   }
