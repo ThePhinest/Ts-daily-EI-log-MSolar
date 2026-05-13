@@ -680,7 +680,7 @@ body.is-native select { font-size: 16px !important; }
   <span class="app-wm-log">LOG</span>
   <span class="app-wm-io">.io</span>
 </div>
-    <div class="app-sub" id="app-bar-sub" onclick="showProjectSwitcher()" title="Switch project" style="cursor:pointer">Moraine Solar Energy Center</div>
+    <div class="app-sub" id="app-bar-sub" onclick="showProjectSwitcher()" title="Switch project" style="cursor:pointer"></div>
   </div>
   <div style="display:flex;align-items:center;gap:6px">
     <button class="icon-btn" title="Reload app" onclick="location.reload()">⟳</button>
@@ -1237,12 +1237,12 @@ body.is-native select { font-size: 16px !important; }
     </div>
     <div class="card-body">
       <div class="g g3">
-        <div class="field full"><label>Project Name</label><input type="text" id="projectName" value="Moraine Solar Energy Center" readonly=""></div>
+        <div class="field full"><label>Project Name</label><input type="text" id="projectName" value="" readonly=""></div>
         <div class="field"><label>Report Date</label><input type="date" id="reportDate"></div>
-        <div class="field"><label>Prepared By</label><input type="text" id="preparedBy" value="Tim Shortz" readonly></div>
-        <div class="field"><label>Organization</label><input type="text" id="org" value="London Environmental LLC" readonly></div>
-        <div class="field span2"><label>Current Activity</label><input type="text" id="activePhase" value="Phase 1 — Tree Felling" readonly></div>
-        <div class="field span2"><label>Town / County</label><input type="text" id="location" value="Town of Burns, Allegany County, NY" readonly=""></div>
+        <div class="field"><label>Prepared By</label><input type="text" id="preparedBy" value="" readonly></div>
+        <div class="field"><label>Organization</label><input type="text" id="org" value="" readonly></div>
+        <div class="field span2"><label>Current Activity</label><input type="text" id="activePhase" value="" readonly></div>
+        <div class="field span2"><label>Town / County</label><input type="text" id="location" value="" readonly=""></div>
         <div class="field"><label>Active Contractor</label>
           <div style="display:flex;gap:6px;align-items:center">
             <input type="text" id="contractor" placeholder="— none on site —" style="flex:1">
@@ -1250,7 +1250,7 @@ body.is-native select { font-size: 16px !important; }
           </div>
         </div>
         
-        <div class="field"><label>Reviewed By</label><input type="text" id="reviewedBy" value="Robert Forest Rung" readonly=""></div>
+        <div class="field"><label>Reviewed By</label><input type="text" id="reviewedBy" value="" readonly=""></div>
       </div>
     </div>
   </div>
@@ -1352,7 +1352,7 @@ body.is-native select { font-size: 16px !important; }
       <div class="g">
         <div class="field">
           <label>Field Observations / Inspection Notes</label>
-          <div class="preset-strip" id="chips-inspSummary"><button class="preset-chip" type="button" title="EI attended the morning safety meeting/tailgate at 6:30 AM">EI attended the morning safety meeting/tailgate at 6:30 AM</button><button class="preset-chip" type="button" title="EI conducted walkthrough inspection of all active felling areas">EI conducted walkthrough inspection of all active fellin…</button><button class="preset-chip" type="button" title="Directional felling observed — trees felled away from wetland buffers and LOD boundaries">Directional felling observed — trees felled away from we…</button><button class="preset-chip" type="button" title="Stump heights observed at or below 6 inches above grade">Stump heights observed at or below 6 inches above grade</button><button class="preset-chip" type="button" title="Slash and felled material managed within LOD">Slash and felled material managed within LOD</button><button class="preset-chip" type="button" title="All work observed within staked Limits of Disturbance (LOD)">All work observed within staked Limits of Disturbance (L…</button><button class="preset-chip" type="button" title="Wetland and stream buffer boundaries remained intact and undisturbed">Wetland and stream buffer boundaries remained intact and…</button><button class="preset-chip" type="button" title="Access routes and staging areas within approved footprint">Access routes and staging areas within approved footprint</button><button class="preset-chip" type="button" title="No turbid discharge or sediment-laden runoff observed at site perimeter">No turbid discharge or sediment-laden runoff observed at…</button></div>
+          <div class="preset-strip" id="chips-inspSummary"></div>
           <textarea class="tall auto-expand" id="inspSummary" placeholder="Describe areas inspected, notable observations, work conducted, and relevant field conditions…"></textarea>
         </div>
         <div class="g">
@@ -1383,98 +1383,7 @@ body.is-native select { font-size: 16px !important; }
   <div class="card" id="sec-05">
     <div class="card-head" onclick="toggleSection('sec-05')"><span class="card-num">05</span><span class="card-title" id="ctitle-05">Compliance Checklist</span><span class="card-chevron">▾</span></div>
     <div class="card-hint">Checked items with notes will be included in the report</div>
-    <div class="card-body" id="checklistBody"><div class="check-item"><div class="check-row">
-      <input type="checkbox" id="c1" onchange="toggleNote(&#39;c1&#39;)">
-      <span class="check-text">Morning safety meeting / tailgate conducted at 6:30 AM prior to work start</span>
-      <span class="check-tag tag-ops">OPS</span>
-    </div>
-    <div class="check-note-wrap" id="c1-nw">
-      <textarea class="check-note" id="c1-note" placeholder="Note or deficiency detail…"></textarea>
-    </div></div><div class="check-item"><div class="check-row">
-      <input type="checkbox" id="c2" onchange="toggleNote(&#39;c2&#39;)">
-      <span class="check-text">All active work areas within staked Limits of Disturbance (LOD)</span>
-      <span class="check-tag tag-lod">LOD</span>
-    </div>
-    <div class="check-note-wrap" id="c2-nw">
-      <textarea class="check-note" id="c2-note" placeholder="Note or deficiency detail…"></textarea>
-    </div></div><div class="check-item"><div class="check-row">
-      <input type="checkbox" id="c3" onchange="toggleNote(&#39;c3&#39;)">
-      <span class="check-text">Directional felling — trees felled away from wetland and stream buffers and LOD boundaries</span>
-      <span class="check-tag tag-ops">OPS</span>
-    </div>
-    <div class="check-note-wrap" id="c3-nw">
-      <textarea class="check-note" id="c3-note" placeholder="Note or deficiency detail…"></textarea>
-    </div></div><div class="check-item"><div class="check-row">
-      <input type="checkbox" id="c4" onchange="toggleNote(&#39;c4&#39;)">
-      <span class="check-text">Stump heights at or below 6 inches above ground level</span>
-      <span class="check-tag tag-ops">OPS</span>
-    </div>
-    <div class="check-note-wrap" id="c4-nw">
-      <textarea class="check-note" id="c4-note" placeholder="Note or deficiency detail…"></textarea>
-    </div></div><div class="check-item"><div class="check-row">
-      <input type="checkbox" id="c5" onchange="toggleNote(&#39;c5&#39;)">
-      <span class="check-text">Slash and felled material managed within LOD — no encroachment beyond staked limits</span>
-      <span class="check-tag tag-lod">LOD</span>
-    </div>
-    <div class="check-note-wrap" id="c5-nw">
-      <textarea class="check-note" id="c5-note" placeholder="Note or deficiency detail…"></textarea>
-    </div></div><div class="check-item"><div class="check-row">
-      <input type="checkbox" id="c6" onchange="toggleNote(&#39;c6&#39;)">
-      <span class="check-text">No tree felling within wetland buffer or stream riparian corridor</span>
-      <span class="check-tag tag-ew">WETLAND</span>
-    </div>
-    <div class="check-note-wrap" id="c6-nw">
-      <textarea class="check-note" id="c6-note" placeholder="Note or deficiency detail…"></textarea>
-    </div></div><div class="check-item"><div class="check-row">
-      <input type="checkbox" id="c7" onchange="toggleNote(&#39;c7&#39;)">
-      <span class="check-text">Wetland and stream buffer markers intact, visible, and undisturbed</span>
-      <span class="check-tag tag-ew">WETLAND</span>
-    </div>
-    <div class="check-note-wrap" id="c7-nw">
-      <textarea class="check-note" id="c7-note" placeholder="Note or deficiency detail…"></textarea>
-    </div></div><div class="check-item"><div class="check-row">
-      <input type="checkbox" id="c8" onchange="toggleNote(&#39;c8&#39;)">
-      <span class="check-text">Access routes and staging areas within approved footprint</span>
-      <span class="check-tag tag-lod">LOD</span>
-    </div>
-    <div class="check-note-wrap" id="c8-nw">
-      <textarea class="check-note" id="c8-note" placeholder="Note or deficiency detail…"></textarea>
-    </div></div><div class="check-item"><div class="check-row">
-      <input type="checkbox" id="c9" onchange="toggleNote(&#39;c9&#39;)">
-      <span class="check-text">Equipment fueling and storage &gt;100 ft from water resources — secondary containment in place</span>
-      <span class="check-tag tag-env">SPDES</span>
-    </div>
-    <div class="check-note-wrap" id="c9-nw">
-      <textarea class="check-note" id="c9-note" placeholder="Note or deficiency detail…"></textarea>
-    </div></div><div class="check-item"><div class="check-row">
-      <input type="checkbox" id="c10" onchange="toggleNote(&#39;c10&#39;)">
-      <span class="check-text">No turbid discharge or sediment-laden runoff observed at site perimeter or water resources</span>
-      <span class="check-tag tag-env">SPDES</span>
-    </div>
-    <div class="check-note-wrap" id="c10-nw">
-      <textarea class="check-note" id="c10-note" placeholder="Note or deficiency detail…"></textarea>
-    </div></div><div class="check-item"><div class="check-row">
-      <input type="checkbox" id="c11" onchange="toggleNote(&#39;c11&#39;)">
-      <span class="check-text">No unanticipated cultural, archaeological, or hazardous material discoveries</span>
-      <span class="check-tag tag-env">SHPO</span>
-    </div>
-    <div class="check-note-wrap" id="c11-nw">
-      <textarea class="check-note" id="c11-note" placeholder="Note or deficiency detail…"></textarea>
-    </div></div><div class="check-item"><div class="check-row">
-      <input type="checkbox" id="c12" onchange="toggleNote(&#39;c12&#39;)">
-      <span class="check-text">No RTE / State-listed species or habitat disturbance observed during operations</span>
-      <span class="check-tag tag-env">RTE</span>
-    </div>
-    <div class="check-note-wrap" id="c12-nw">
-      <textarea class="check-note" id="c12-note" placeholder="Note or deficiency detail…"></textarea>
-    </div></div><div class="check-item"><div class="check-row">
-      <input type="checkbox" id="c13" onchange="toggleNote(&#39;c13&#39;)">
-      <span class="check-text">Tree protection, invasive species controls, and buffer demarcation in place at designated limits</span>
-      <span class="check-tag tag-env">ENV</span>
-    </div>
-    <div class="check-note-wrap" id="c13-nw">
-      <textarea class="check-note" id="c13-note" placeholder="Note or deficiency detail…"></textarea>
-    </div></div></div>
+    <div class="card-body" id="checklistBody"></div>
   </div>
 
   <!-- 06 REGULATORY FLAGS -->
@@ -1491,7 +1400,7 @@ body.is-native select { font-size: 16px !important; }
     <div class="card-body">
       <div class="field">
         <label>Directives, communications, and coordination notes</label>
-        <div class="preset-strip" id="chips-genComms"><button class="preset-chip" type="button" title="Reminded crew of LOD limits and buffer no-entry zones prior to start of operations">Reminded crew of LOD limits and buffer no-entry zones pr…</button><button class="preset-chip" type="button" title="Directed contractor to verify LOD flagging before expanding into new areas">Directed contractor to verify LOD flagging before expand…</button><button class="preset-chip" type="button" title="Discussed stump height requirements with crew foreman">Discussed stump height requirements with crew foreman</button><button class="preset-chip" type="button" title="Coordinator notified of anticipated change in work area for tomorrow">Coordinator notified of anticipated change in work area …</button><button class="preset-chip" type="button" title="Confirmed post-storm inspection required prior to resuming work">Confirmed post-storm inspection required prior to resumi…</button><button class="preset-chip" type="button" title="Environmental management notified of access route condition concern">Environmental management notified of access route condit…</button></div>
+        <div class="preset-strip" id="chips-genComms"></div>
         <textarea class="tall auto-expand" id="genComms" placeholder="Document directives issued, field coordination, supervisor communications, or items discussed that don&#39;t rise to a formal compliance level…"></textarea>
       </div>
     </div>
@@ -1507,7 +1416,7 @@ body.is-native select { font-size: 16px !important; }
       </div>
       <div class="field">
         <label>Anticipated work items for tomorrow</label>
-        <div class="preset-strip" id="chips-lookahead"><button class="preset-chip" type="button" title="Continue tree felling operations in active areas">Continue tree felling operations in active areas</button><button class="preset-chip" type="button" title="Expand felling into adjacent area per approved plan">Expand felling into adjacent area per approved plan</button><button class="preset-chip" type="button" title="EI to conduct LOD walk prior to start of operations">EI to conduct LOD walk prior to start of operations</button><button class="preset-chip" type="button" title="Equipment delivery / crew mobilization expected on site">Equipment delivery / crew mobilization expected on site</button><button class="preset-chip" type="button" title="Anticipated weather event — monitor forecast, standby for stop-work directive">Anticipated weather event — monitor forecast, standby fo…</button><button class="preset-chip" type="button" title="Post-storm inspection required prior to resuming work">Post-storm inspection required prior to resuming work</button><button class="preset-chip" type="button" title="No work anticipated — weather or crew constraint">No work anticipated — weather or crew constraint</button></div>
+        <div class="preset-strip" id="chips-lookahead"></div>
         <textarea class="tall auto-expand" id="lookahead" placeholder="Continue active work in approved areas
 Equipment delivery — additional crew mobilization expected
 Anticipated rain — AM weather monitoring expected"></textarea>
@@ -2671,7 +2580,7 @@ function ss(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch{}}
 
 var phases           = ls('msf_phases',  DEFAULT_PHASES);
 var presets          = ls('msf_presets', DEFAULT_PRESETS);
-var activePhaseLabel = ls('msf_activephase','Phase 1 — Tree Felling');
+var activePhaseLabel = ls('msf_activephase','All Phases');
 var crewSeq=0, crewIds=[];
 
 // ═══════════════════════════════════════════
