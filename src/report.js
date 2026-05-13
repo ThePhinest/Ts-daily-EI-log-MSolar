@@ -48,7 +48,7 @@ async function rptGetApiKey(){
   return rptDecryptKey(enc);
 }
 async function _rptInitHostedKeyBtn(){
-  // Show "Share key with pilot users" only for users who have their own API key saved
+  // Show "Share key with invited users" only for users who have their own API key saved
   let hasKey = !!localStorage.getItem('pei_enc_api_key');
   if(!hasKey && db && _fbReady){
     try{const doc=await _udb().collection('appConfig').doc('reportSettings').get();if(doc.exists&&doc.data().encApiKey)hasKey=true;}catch(e){}
@@ -64,7 +64,7 @@ async function rptSaveHostedKey(){
   try{
     await db.collection('appConfig').doc('hosted').set({encApiKey:enc,_ts:Date.now()});
     const btn=document.getElementById('cfg-hosted-key-btn');
-    if(btn){btn.textContent='✓ Shared';btn.disabled=true;setTimeout(()=>{btn.textContent='Share key with pilot users';btn.disabled=false;},3000);}
+    if(btn){btn.textContent='✓ Shared';btn.disabled=true;setTimeout(()=>{btn.textContent='Share key with invited users';btn.disabled=false;},3000);}
   }catch(e){alert('Failed to share key: '+e.message);}
 }
 async function saveApiKey(){

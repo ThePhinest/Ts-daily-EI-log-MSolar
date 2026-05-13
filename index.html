@@ -820,9 +820,9 @@ body.is-native select { font-size: 16px !important; }
         <span class="more-tile-icon">🗺️</span>
         <span class="more-tile-label">Field Map</span>
       </div>
-      <div class="more-tile" onclick="showPage('forms');closeMoreMenu()">
+      <div class="more-tile" onclick="showPage('reports');closeMoreMenu()">
         <span class="more-tile-icon">📄</span>
-        <span class="more-tile-label">Forms</span>
+        <span class="more-tile-label">Reports</span>
       </div>
       <div class="more-tile" onclick="showPage('photos');closeMoreMenu()">
         <span class="more-tile-icon">📸</span>
@@ -886,9 +886,9 @@ body.is-native select { font-size: 16px !important; }
     <div class="ob-section-label">Before you begin</div>
     <div class="ob-heading">Terms of Use &amp; Privacy</div>
     <div class="ob-tos-scroll">
-      <p style="color:var(--muted2);font-style:italic;margin-bottom:14px">Pilot Version — By Invitation Only</p>
+      <p style="color:var(--muted2);font-style:italic;margin-bottom:14px">Early Access — By Invitation Only</p>
       <h3>What GroundLog is</h3>
-      <p>GroundLog is a field compliance logging tool for environmental inspection work. It is currently in beta and available by invitation only. It is not a commercial product and is provided as-is for pilot testing.</p>
+      <p>GroundLog is a field compliance logging tool for environmental inspection work. It is currently available by invitation only as part of early access. It is not a commercial product and is provided as-is.</p>
       <h3>What data we collect</h3>
       <p>When you use GroundLog, we collect and store:</p>
       <ul>
@@ -905,9 +905,9 @@ body.is-native select { font-size: 16px !important; }
       <h3>Your data, your responsibility</h3>
       <p>GroundLog is a logging and documentation tool. You are responsible for the accuracy and completeness of what you enter. GroundLog-generated reports are drafts — always review before submitting to any agency or client.</p>
       <h3>No warranty</h3>
-      <p>GroundLog is provided as-is during this pilot period. There are no guarantees of uptime, data retention, or fitness for any particular purpose. Do not use GroundLog as your only record of compliance-critical information.</p>
+      <p>GroundLog is provided as-is during this early-access period. There are no guarantees of uptime, data retention, or fitness for any particular purpose. Do not use GroundLog as your only record of compliance-critical information.</p>
       <h3>Changes and termination</h3>
-      <p>This is a pilot. Features will change. Access may be revoked at any time. You will be notified of any significant changes to these terms.</p>
+      <p>This is early access. Features will change. Access may be revoked at any time. You will be notified of any significant changes to these terms.</p>
       <h3>Contact</h3>
       <p>Questions or concerns: <a href="mailto:support@groundlog.io" style="color:var(--amber)">support@groundlog.io</a></p>
       <h3>Governing law</h3>
@@ -1636,10 +1636,10 @@ Anticipated rain — AM weather monitoring expected"></textarea>
 
 </div></div>
 
-<!-- FORMS PAGE (placeholder) -->
-<div class="page" id="page-forms"><div class="wrap">
-  <div class="card"><div class="card-head"><span class="card-num">📄</span><span class="card-title">Forms / Reports</span></div>
-  <div class="card-body" style="color:var(--muted);font-family:var(--mono);font-size:12px;">Coming soon — spill reports and other regulatory forms.</div></div>
+<!-- REPORTS PAGE (placeholder) -->
+<div class="page" id="page-reports"><div class="wrap">
+  <div class="card"><div class="card-head"><span class="card-num">📄</span><span class="card-title">Reports</span></div>
+  <div class="card-body" style="color:var(--muted);font-family:var(--mono);font-size:12px;">Dynamic spill reports and other regulatory forms — upload your existing forms or describe the fields you want included, and we'll create the report for you.</div></div>
 </div></div>
 
 <!-- ══════════════════════════════════
@@ -1747,7 +1747,7 @@ Anticipated rain — AM weather monitoring expected"></textarea>
 <!-- DOCS PAGE (placeholder) -->
 <div class="page" id="page-docs"><div class="wrap">
   <div class="card"><div class="card-head"><span class="card-num">📁</span><span class="card-title">Docs</span></div>
-  <div class="card-body" style="color:var(--muted);font-family:var(--mono);font-size:12px;">Coming soon — project document library. Upload and reference EMPs, permits, drawings, and specs.</div></div>
+  <div class="card-body" style="color:var(--muted);font-family:var(--mono);font-size:12px;">Project document library and compliance knowledge base. Upload plans, permits, drawings, and specs to share with collaborators and reference in the field — the foundation for AI-assisted compliance review.</div></div>
 </div></div>
 
 <!-- PHOTOS PAGE -->
@@ -2024,7 +2024,7 @@ Anticipated rain — AM weather monitoring expected"></textarea>
       <button class="btn btn-amber" style="font-size:11px;padding:7px 14px" onclick="saveApiKey()">Save &amp; Encrypt</button>
       <span id="cfg-api-status" style="font-family:var(--mono);font-size:11px;color:var(--green);margin-left:12px;opacity:0;transition:opacity .4s"></span>
       <div style="margin-top:10px">
-        <button id="cfg-hosted-key-btn" class="btn btn-outline" style="font-size:11px;padding:7px 14px;display:none" onclick="rptSaveHostedKey()">Share key with pilot users</button>
+        <button id="cfg-hosted-key-btn" class="btn btn-outline" style="font-size:11px;padding:7px 14px;display:none" onclick="rptSaveHostedKey()">Share key with invited users</button>
         <div class="config-hint" style="margin-top:4px">Makes Formalize Log &amp; Generate Report available to users without their own API key.</div>
       </div>
     </div>
@@ -2719,7 +2719,7 @@ var PAGE_REGISTRY = [
   { id:'compliance', label:'Compliance',  icon:'⚠'  },
   { id:'photos',     label:'Photos',      icon:'📸' },
   { id:'calendar',   label:'Calendar',    icon:'📅' },
-  { id:'forms',      label:'Forms',       icon:'📄' },
+  { id:'reports',    label:'Reports',     icon:'📄' },
   { id:'docs',       label:'Docs',        icon:'📁' },
   { id:'config',     label:'Settings',    icon:'⚙'  },
   { id:'aiBranding', label:'AI & Branding', icon:'✦' },
