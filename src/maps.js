@@ -472,130 +472,172 @@ function mapUpdateFieldMarkerList(){
   });
 }
 
-function mapImportKml(input){
+// B2 Stage 1.4 — refactored to use src/kmlImport.js parser + project-scoped
+// Storage paths + default-OFF imported folders + feature-color preservation.
+// Existing user-scoped KML files at kml/{uid}/... are orphaned by design —
+// Tim re-uploads after B2 ships per locked plan 2026-05-14.
+async function mapImportKml(input){
   const file = input.files[0];
   if(!file) return;
-  const reader = new FileReader();
-  reader.onload = async e => {
-    const kmlText = e.target.result;
-    const kml = new DOMParser().parseFromString(kmlText, 'text/xml');
+  let parsed;
+  try {
+    parsed = await window.parseKmlOrKmzFile(file);
+  } catch(err){
+    console.warn('mapImportKml parse failed:', err.message);
+    // _reportError already fired inside parseKmlOrKmzFile.
+    input.value = '';
+    return;
+  }
+  if(!parsed.features || parsed.features.length === 0){
+    input.value = '';
+    return;
+  }
 
-    function getName(node){
-      return node.querySelector('name')?.textContent?.trim() ||
-             node.querySelector('n')?.textContent?.trim() || '';
-    }
-
-    const fileName = file.name.replace(/\.kml$/i,'');
-
-    function parsePlacemarks(node){
-      const features = [];
-      node.querySelectorAll('Placemark').forEach(pm=>{
-        const name = getName(pm);
-        const poly = pm.querySelector('Polygon outerBoundaryIs coordinates') || pm.querySelector('Polygon coordinates');
-        const line = pm.querySelector('LineString coordinates');
-        const pt = pm.querySelector('Point coordinates');
-        if(poly){
-          const c = poly.textContent.trim().split(/\s+/).map(s=>s.split(',').map(Number).slice(0,2));
-          features.push({type:'Feature',properties:{name},geometry:{type:'Polygon',coordinates:[c]}});
-        } else if(line){
-          const c = line.textContent.trim().split(/\s+/).map(s=>s.split(',').map(Number).slice(0,2));
-          features.push({type:'Feature',properties:{name},geometry:{type:'LineString',coordinates:c}});
-        } else if(pt){
-          const [lng,lat] = pt.textContent.trim().split(',').map(Number);
-          features.push({type:'Feature',properties:{name},geometry:{type:'Point',coordinates:[lng,lat]}});
-        }
-      });
-      return features;
-    }
-
-    // Recursively walk KML tree — build flat layerDefs with folderName captured
-    const layerDefs = [];
-    let autoCount = 0;
-    function walkNode(node, parentFolderName){
-      const tag = node.tagName;
-      if(tag === 'Document'){
-        // Documents are always leaf layers — never recurse into them
-        const nodeName = getName(node) || fileName;
-        const autoLoad = autoCount < 2;
-        if(autoLoad) autoCount++;
-        layerDefs.push({name:nodeName, folderName:parentFolderName||'', docEl:node, autoLoad});
-      } else if(tag === 'Folder'){
-        const nodeName = getName(node) || fileName;
-        const subFolders = Array.from(node.children).filter(c=>c.tagName==='Folder');
-        const subDocs = Array.from(node.children).filter(c=>c.tagName==='Document');
-        const directPlacemarks = Array.from(node.children).filter(c=>c.tagName==='Placemark');
-        if(subDocs.length > 0){
-          // Folder contains Documents — each Document is a layer, this Folder is the group
-          subDocs.forEach(doc => walkNode(doc, nodeName));
-          subFolders.forEach(f => walkNode(f, nodeName));
-        } else if(subFolders.length > 0 && directPlacemarks.length === 0){
-          // Folder contains only sub-Folders — recurse, this Folder is a group
-          subFolders.forEach(f => walkNode(f, nodeName));
-        } else {
-          // Folder has direct Placemarks — it's a leaf layer
-          const autoLoad = autoCount < 2;
-          if(autoLoad) autoCount++;
-          layerDefs.push({name:nodeName, folderName:parentFolderName||'', docEl:node, autoLoad});
-        }
+  // Upload original file to project-scoped Storage once.
+  const pid = (typeof _activeProjectId === 'function') ? _activeProjectId() : 'default';
+  const fileId = 'kml-' + Date.now() + '-' + Math.random().toString(36).slice(2,6);
+  const storagePath = `projects/${pid}/kml/${fileId}.kml`;
+  if(storage && _currentUser){
+    try {
+      await storage.ref(storagePath).put(file);
+    } catch(err){
+      console.warn('KML Storage upload failed:', err.message);
+      if(typeof window._reportError === 'function'){
+        window._reportError({
+          type: 'kml-import-error',
+          stage: 'storage-upload',
+          filename: file.name,
+          projectId: pid,
+          error: err.message
+        });
       }
     }
-    const root = kml.querySelector('Folder') || kml.querySelector('Document');
-    if(!root){ input.value=''; return; }
-    const rootChildren = Array.from(root.children).filter(c=>c.tagName==='Folder'||c.tagName==='Document');
-    if(rootChildren.length > 0){
-      rootChildren.forEach(child => walkNode(child, ''));
-    } else {
-      layerDefs.push({name:getName(root)||fileName, folderName:'', docEl:root, autoLoad:true});
-    }
-    if(layerDefs.length === 0){ input.value=''; return; }
+  }
 
-    // Upload original file to Storage once
-    const fileId = 'kml-'+Date.now()+'-'+Math.random().toString(36).slice(2,6);
-    const storagePath = `kml/${_currentUser.uid}/${fileId}.kml`;
-    if(storage){
-      try{
-        await storage.ref(storagePath).put(file);
-      }catch(err){ console.warn('KML Storage upload failed:', err.message); }
-    }
+  // Group features by folder path (top-level folder name). Each leaf
+  // "folder" becomes one _mapKmlLayers entry — same shape as the legacy
+  // code so kmlLoadLayers / mapToggleKmlLayer* keep working.
+  // Features outside any folder land under the file's base name.
+  const baseFileName = parsed.sourceFilename.replace(/\.(kml|kmz)$/i, '');
+  const byFolder = new Map();
+  parsed.features.forEach(f => {
+    const props = f.properties || {};
+    const folderPath = props._folderPath || '';
+    const topLevel = folderPath ? folderPath.split(' / ')[0] : '';
+    const groupKey = topLevel || baseFileName;
+    if(!byFolder.has(groupKey)) byFolder.set(groupKey, []);
+    byFolder.get(groupKey).push(f);
+  });
 
-    // Register all layers — only auto-load first 2
-    layerDefs.forEach(({name, folderName, docEl, autoLoad})=>{
-      const id = 'kml-'+Date.now()+'-'+Math.random().toString(36).slice(2,6);
-      const visible = autoLoad;
-
-      if(autoLoad){
-        const features = parsePlacemarks(docEl);
-        if(features.length > 0){
-          _mapInstance.addSource(id,{type:'geojson',data:{type:'FeatureCollection',features}});
-          _mapInstance.addLayer({id:id+'-fill',type:'fill',source:id,paint:{'fill-color':'#C9A84C','fill-opacity':0.15},filter:['==',['geometry-type'],'Polygon']});
-          _mapInstance.addLayer({id:id+'-line',type:'line',source:id,paint:{'line-color':'#C9A84C','line-width':2},filter:['any',['==',['geometry-type'],'LineString'],['==',['geometry-type'],'Polygon']]});
-        }
-      }
-
-      _mapKmlLayers.push({id, name, folderName, visible, storagePath});
+  // Register each folder as one layer. Default visible=false per locked plan
+  // (Tension 5 + Discord 5/12 'not all default to gold' ask).
+  byFolder.forEach((features, folderName) => {
+    const id = 'kml-' + Date.now() + '-' + Math.random().toString(36).slice(2,6);
+    _mapKmlLayers.push({
+      id,
+      name: folderName,
+      folderName: '',           // top-level — flat list rather than nested
+      visible: false,           // default-OFF per spec
+      storagePath,
+      features,                 // keep in memory so toggle ON is instant
+      featureCount: features.length
     });
+  });
 
-    kmlSaveLayers();
-    mapUpdateKmlLayerList();
-    input.value='';
-  };
-  reader.readAsText(file);
+  kmlSaveLayers();
+  mapUpdateKmlLayerList();
+  // Stage 1.5 hooks the import inspection modal in here — for now just
+  // surface the result to the panel.
+  if(typeof window.mapShowKmlImportInspectionModal === 'function'){
+    window.mapShowKmlImportInspectionModal(parsed, storagePath, baseFileName);
+  }
+  input.value = '';
 }
 
+// B2 Stage 1.4 — feature-color preservation. togeojson emits 'fill' /
+// 'stroke' / 'fill-opacity' / 'stroke-width' as simplestyle-spec props on
+// each feature where the KML defined a <Style>. We read them via Mapbox
+// data-driven expressions ['get','fill'] with the palette fallback when
+// the prop is missing. _paletteIdx is also stamped on each feature by
+// kmlImport.js so unstyled features still pick from the 11-color rotation
+// (vs the previous all-gold).
 function mapReaddKmlLayer(layer, features){
   if(!_mapInstance || !features || !features.length) return;
   if(_mapInstance.getSource(layer.id)) return;
-  _mapInstance.addSource(layer.id,{type:'geojson',data:{type:'FeatureCollection',features}});
-  _mapInstance.addLayer({id:layer.id+'-fill',type:'fill',source:layer.id,paint:{'fill-color':'#C9A84C','fill-opacity':0.15},filter:['==',['geometry-type'],'Polygon']});
-  _mapInstance.addLayer({id:layer.id+'-line',type:'line',source:layer.id,paint:{'line-color':'#C9A84C','line-width':2},filter:['any',['==',['geometry-type'],'LineString'],['==',['geometry-type'],'Polygon']]});
+  _mapInstance.addSource(layer.id, { type: 'geojson', data: { type: 'FeatureCollection', features } });
+  // Stamp top-level palette fallback. If feature has 'fill', use it;
+  // otherwise fall back to palette[_paletteIdx] or gold.
+  const palette = (typeof window !== 'undefined' && window.KML_PALETTE) ? window.KML_PALETTE : ['#C9A84C'];
+  // Pre-resolve fallback per feature (Mapbox can't index a JS array via
+  // a data-expression, so we stamp the resolved color as a property).
+  features.forEach(f => {
+    f.properties = f.properties || {};
+    if(typeof f.properties.fill !== 'string'){
+      const idx = (typeof f.properties._paletteIdx === 'number') ? f.properties._paletteIdx : 0;
+      f.properties._fillResolved = palette[idx % palette.length];
+    } else {
+      f.properties._fillResolved = f.properties.fill;
+    }
+    if(typeof f.properties.stroke !== 'string'){
+      f.properties._strokeResolved = f.properties._fillResolved;
+    } else {
+      f.properties._strokeResolved = f.properties.stroke;
+    }
+  });
+  // Need to refresh the source after stamping properties.
+  _mapInstance.getSource(layer.id).setData({ type: 'FeatureCollection', features });
+  _mapInstance.addLayer({
+    id: layer.id + '-fill',
+    type: 'fill',
+    source: layer.id,
+    paint: {
+      'fill-color': ['coalesce', ['get','_fillResolved'], '#C9A84C'],
+      'fill-opacity': ['coalesce', ['get','fill-opacity'], 0.18]
+    },
+    filter: ['==', ['geometry-type'], 'Polygon']
+  });
+  _mapInstance.addLayer({
+    id: layer.id + '-line',
+    type: 'line',
+    source: layer.id,
+    paint: {
+      'line-color': ['coalesce', ['get','_strokeResolved'], '#C9A84C'],
+      'line-width': ['coalesce', ['get','stroke-width'], 2]
+    },
+    filter: ['any', ['==', ['geometry-type'], 'LineString'], ['==', ['geometry-type'], 'Polygon']]
+  });
+  _mapInstance.addLayer({
+    id: layer.id + '-pt',
+    type: 'circle',
+    source: layer.id,
+    paint: {
+      'circle-color': ['coalesce', ['get','_fillResolved'], '#C9A84C'],
+      'circle-radius': 6,
+      'circle-stroke-width': 1.5,
+      'circle-stroke-color': ['coalesce', ['get','_strokeResolved'], '#FFFFFF']
+    },
+    filter: ['==', ['geometry-type'], 'Point']
+  });
 }
 
+// B2 Stage 1.4 — project-scoped layer metadata storage. Features stay in
+// memory; only id/name/visibility/storagePath is persisted (re-fetch + re-parse
+// from Storage on cold boot via kmlLoadLayers).
+function _kmlStorageKey(){
+  const pid = (typeof _activeProjectId === 'function') ? _activeProjectId() : 'default';
+  return 'msf_proj_' + pid + '_kml_layers';
+}
 function kmlSaveLayers(){
-  // Store metadata only — features stay in memory, KML text in Storage
-  const data = _mapKmlLayers.map(l=>({id:l.id, name:l.name, folderName:l.folderName||'', visible:l.visible, storagePath:l.storagePath||''}));
-  try{ localStorage.setItem('gl_kml_layers', JSON.stringify(data)); }catch{}
-  if(db&&_fbReady){
-    _udb().collection('kml').doc('layers').set({data, _ts:Date.now()}).catch(e=>console.warn('kmlSaveLayers:',e.message));
+  const pid = (typeof _activeProjectId === 'function') ? _activeProjectId() : 'default';
+  const data = _mapKmlLayers.map(l => ({
+    id: l.id, name: l.name, folderName: l.folderName || '',
+    visible: l.visible, storagePath: l.storagePath || ''
+  }));
+  try { localStorage.setItem(_kmlStorageKey(), JSON.stringify(data)); } catch {}
+  if(db && _fbReady){
+    _udb().collection('projects').doc(pid).collection('kml').doc('layers')
+      .set({ data, _ts: Date.now() })
+      .catch(e => console.warn('kmlSaveLayers:', e.message));
   }
 }
   
@@ -751,14 +793,15 @@ async function mapBulkDeleteSelected(){
 
 async function kmlLoadLayers(){
   let data = null;
-  if(db&&_fbReady){
-    try{
-      const doc = await _udb().collection('kml').doc('layers').get();
+  const pid = (typeof _activeProjectId === 'function') ? _activeProjectId() : 'default';
+  if(db && _fbReady){
+    try {
+      const doc = await _udb().collection('projects').doc(pid).collection('kml').doc('layers').get();
       if(doc.exists) data = doc.data().data;
-    }catch(e){ console.warn('kmlLoadLayers cloud:', e.message); }
+    } catch(e){ console.warn('kmlLoadLayers cloud:', e.message); }
   }
-  if(!data){ try{ const raw=localStorage.getItem('gl_kml_layers'); if(raw) data=JSON.parse(raw); }catch{} }
-  if(!data||!data.length) return;
+  if(!data){ try { const raw = localStorage.getItem(_kmlStorageKey()); if(raw) data = JSON.parse(raw); } catch {} }
+  if(!data || !data.length) return;
 
   // Group by storagePath — fetch each KML file once, render visible layers only
   const byPath = {};
@@ -1015,6 +1058,24 @@ async function mapToggleKmlLayerById(id, visible){
   kmlSaveLayers();
 }
 
+// B2 Stage 1.4 — called from projects.js loadProject() on project switch.
+// Tears down all KML sources/layers + clears in-memory state, then triggers
+// kmlLoadLayers() to rehydrate from the new project's per-project cache.
+function mapClearKmlLayers(){
+  if(_mapInstance){
+    _mapKmlLayers.forEach(layer => {
+      ['fill','line','pt'].forEach(t => {
+        if(_mapInstance.getLayer(layer.id + '-' + t)) _mapInstance.removeLayer(layer.id + '-' + t);
+      });
+      if(_mapInstance.getSource(layer.id)) _mapInstance.removeSource(layer.id);
+    });
+  }
+  _mapKmlLayers.length = 0;
+  if(typeof _mapKmlEditMode !== 'undefined') _mapKmlEditMode = false;
+  if(typeof _mapKmlSelected !== 'undefined' && _mapKmlSelected.clear) _mapKmlSelected.clear();
+  mapUpdateKmlLayerList();
+}
+
 function mapShowExportModal(){
   document.getElementById('map-export-modal').style.display='block';
 }
@@ -1110,6 +1171,7 @@ window.mapReaddKmlLayer = mapReaddKmlLayer;
 window.kmlSaveLayers = kmlSaveLayers;
 window.kmlParseLayerById = kmlParseLayerById;
 window.kmlLoadLayers = kmlLoadLayers;
+window.mapClearKmlLayers = mapClearKmlLayers;
 window.mapUpdateKmlLayerList = mapUpdateKmlLayerList;
 window.kmlToggleFolderVisibility = kmlToggleFolderVisibility;
 window.mapToggleKmlLayer = mapToggleKmlLayer;

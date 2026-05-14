@@ -524,6 +524,20 @@ async function loadProject(projectId, projDataOverride) {
     // Apply project-scoped settings (Phase C) — must run before restoreFormState
     _applyProjectSettings(projData);
 
+    // B2 Stage 1.4 — KML layers are project-scoped. Tear down the previous
+    // project's mounted layers + state, then reload from the new project's
+    // per-project metadata cache.
+    if(typeof mapClearKmlLayers === 'function') mapClearKmlLayers();
+    if(typeof kmlLoadLayers === 'function'){
+      // Fire-and-forget — kmlLoadLayers is async but project switch must not
+      // block on Storage fetches.
+      kmlLoadLayers().catch(e => console.warn('kmlLoadLayers (project switch):', e.message));
+    }
+    // Same for tracker entries (Stage 1.2 helper).
+    if(typeof trLoadFromFirestore === 'function'){
+      trLoadFromFirestore(projectId).catch(e => console.warn('trLoadFromFirestore (project switch):', e.message));
+    }
+
     // Update lastUsed
     _udb().collection('settings').doc(projectId).set({ lastUsed: Date.now() }, { merge: true }).catch(() => {});
 
