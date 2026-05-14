@@ -853,13 +853,41 @@ async function kmlLoadLayers(){
       }
     }
 
+    // Re-parse KML through full togeojson pipeline to restore style info
+    // (fill/stroke/palette colors). kmlParseLayerById is a fallback that
+    // strips styles — we only use it if the togeojson path fails.
+    let folderFeatures = null;
+    if(kmlText && typeof window.parseKmlOrKmzFile === 'function'){
+      try{
+        const kmlFile = new File([kmlText], 'restore.kml', { type: 'text/xml' });
+        const reparsed = await window.parseKmlOrKmzFile(kmlFile);
+        folderFeatures = new Map();
+        reparsed.features.forEach(f => {
+          const props = f.properties || {};
+          const folderPath = props._folderPath || '';
+          const segments = folderPath.split(' / ');
+          const leafName = segments[segments.length - 1] || folderPath;
+          if(!folderFeatures.has(leafName)) folderFeatures.set(leafName, []);
+          folderFeatures.get(leafName).push(f);
+        });
+      }catch(e){
+        console.warn('kmlLoadLayers reparse failed, falling back:', e.message);
+      }
+    }
+
     // Register all layers, render only visible ones
     layers.forEach(layer=>{
       if(_mapKmlLayers.find(l=>l.id===layer.id)) return;
-      _mapKmlLayers.push({...layer});
+      const layerObj = { ...layer };
+      _mapKmlLayers.push(layerObj);
       if(layer.visible && kmlText){
-        const features = kmlParseLayerById(kmlText, layer.name);
-        mapReaddKmlLayer(layer, features);
+        const features = folderFeatures
+          ? (folderFeatures.get(layer.name) || [])
+          : kmlParseLayerById(kmlText, layer.name);
+        if(features.length){
+          layerObj.features = features; // restore in-memory so future toggles skip Storage
+          mapReaddKmlLayer(layerObj, features);
+        }
       }
     });
   }
