@@ -223,14 +223,13 @@ function _kimDismiss(){
 }
 
 // Public entry — called from maps.js mapImportKml after parse + register.
-function mapShowKmlImportInspectionModal(parsed, storagePath, baseFileName){
+// `layers` is the array of newly-registered _mapKmlLayers entries from
+// mapImportKml (passed explicitly because _mapKmlLayers is module-local in
+// maps.js after the Vite bundle).
+function mapShowKmlImportInspectionModal(parsed, storagePath, baseFileName, layers){
   _kimEnsureRoot();
-  // Pick up the _mapKmlLayers entries that mapImportKml just registered for
-  // this file. They share the same storagePath.
-  const layers = (typeof _mapKmlLayers !== 'undefined' && Array.isArray(_mapKmlLayers))
-    ? _mapKmlLayers.filter(l => l.storagePath === storagePath)
-    : [];
-  _kimState = { parsed, layers, storagePath, baseFileName, previewTimer: null, mountedForPreview: [], foldersExpanded: false };
+  const layerList = Array.isArray(layers) ? layers : [];
+  _kimState = { parsed, layers: layerList, storagePath, baseFileName, previewTimer: null, mountedForPreview: [], foldersExpanded: false };
 
   document.getElementById('kim-filename').textContent = parsed.sourceFilename || baseFileName;
   // Counts tiles.

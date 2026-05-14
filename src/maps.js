@@ -493,10 +493,15 @@ async function mapImportKml(input){
     return;
   }
 
-  // Upload original file to project-scoped Storage once.
+  // Upload original file to Storage. Scope under the user namespace so the
+  // existing Firebase Storage rules (allow read/write on users/{uid}/**) keep
+  // working pre-Phase-4.5 multi-tenant. Path still includes projectId so the
+  // future migration to firms/{fid}/projects/{pid}/... is a simple find/replace.
   const pid = (typeof _activeProjectId === 'function') ? _activeProjectId() : 'default';
   const fileId = 'kml-' + Date.now() + '-' + Math.random().toString(36).slice(2,6);
-  const storagePath = `projects/${pid}/kml/${fileId}.kml`;
+  const storagePath = _currentUser
+    ? `users/${_currentUser.uid}/projects/${pid}/kml/${fileId}.kml`
+    : `projects/${pid}/kml/${fileId}.kml`;
   if(storage && _currentUser){
     try {
       await storage.ref(storagePath).put(file);
@@ -514,42 +519,48 @@ async function mapImportKml(input){
     }
   }
 
-  // Group features by folder path (top-level folder name). Each leaf
-  // "folder" becomes one _mapKmlLayers entry — same shape as the legacy
-  // code so kmlLoadLayers / mapToggleKmlLayer* keep working.
-  // Features outside any folder land under the file's base name.
+  // Group features by FULL folder path (each unique leaf folder = one layer
+  // entry). Top-level-only grouping collapsed multi-folder KMLs into a single
+  // entry — fixed 2026-05-14. Features with no _folderPath (root-level
+  // placemarks) land under the file's base name.
   const baseFileName = parsed.sourceFilename.replace(/\.(kml|kmz)$/i, '');
   const byFolder = new Map();
   parsed.features.forEach(f => {
     const props = f.properties || {};
     const folderPath = props._folderPath || '';
-    const topLevel = folderPath ? folderPath.split(' / ')[0] : '';
-    const groupKey = topLevel || baseFileName;
+    const groupKey = folderPath || baseFileName;
     if(!byFolder.has(groupKey)) byFolder.set(groupKey, []);
     byFolder.get(groupKey).push(f);
   });
 
-  // Register each folder as one layer. Default visible=false per locked plan
-  // (Tension 5 + Discord 5/12 'not all default to gold' ask).
-  byFolder.forEach((features, folderName) => {
-    const id = 'kml-' + Date.now() + '-' + Math.random().toString(36).slice(2,6);
-    _mapKmlLayers.push({
+  // Register each leaf folder as one layer. Use the leaf folder name (last
+  // segment of the path) as the displayed name; carry the parent path as
+  // folderName so the layer panel can group nested KMLs under their parent.
+  const newLayers = [];
+  byFolder.forEach((features, fullPath) => {
+    const segments = fullPath.split(' / ');
+    const leafName = segments[segments.length - 1] || baseFileName;
+    const parentPath = segments.slice(0, -1).join(' / ');
+    const id = 'kml-' + Date.now() + '-' + Math.random().toString(36).slice(2,6) + '-' + newLayers.length;
+    const entry = {
       id,
-      name: folderName,
-      folderName: '',           // top-level — flat list rather than nested
+      name: leafName,
+      folderName: parentPath,   // empty for single-level KMLs; populated for nested
       visible: false,           // default-OFF per spec
       storagePath,
       features,                 // keep in memory so toggle ON is instant
       featureCount: features.length
-    });
+    };
+    _mapKmlLayers.push(entry);
+    newLayers.push(entry);
   });
 
   kmlSaveLayers();
   mapUpdateKmlLayerList();
-  // Stage 1.5 hooks the import inspection modal in here — for now just
-  // surface the result to the panel.
+  // Stage 1.5 modal — pass the new layers explicitly so the modal doesn't
+  // have to reach into _mapKmlLayers via window (module-local in Vite bundle).
   if(typeof window.mapShowKmlImportInspectionModal === 'function'){
-    window.mapShowKmlImportInspectionModal(parsed, storagePath, baseFileName);
+    window.mapShowKmlImportInspectionModal(parsed, storagePath, baseFileName, newLayers);
   }
   input.value = '';
 }
