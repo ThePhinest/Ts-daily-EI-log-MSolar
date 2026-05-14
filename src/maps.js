@@ -1196,6 +1196,7 @@ async function mapLoadSettingsFields(){
 function mapResize(){ if(_mapInstance) _mapInstance.resize(); }
 
 // ── Expose to window for HTML onclick handlers and cross-module calls ──
+window.getMapInstance = () => _mapInstance;
 window.mapInit = mapInit;
 window.mapResize = mapResize;
 window.mapLocateMe = mapLocateMe;

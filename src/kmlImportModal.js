@@ -126,8 +126,9 @@ function _kimToggleFolderList(){
 
 function _kimBoundsInView(bounds){
   if(!bounds) return 'no geometry';
-  if(typeof _mapInstance === 'undefined' || !_mapInstance) return 'map not ready';
-  const mb = _mapInstance.getBounds();
+  const map = window.getMapInstance && window.getMapInstance();
+  if(!map) return 'map not ready';
+  const mb = map.getBounds();
   // Loose overlap check on lng/lat ranges.
   const overlapLng = !(bounds.maxLng < mb.getWest() || bounds.minLng > mb.getEast());
   const overlapLat = !(bounds.maxLat < mb.getSouth() || bounds.minLat > mb.getNorth());
@@ -135,11 +136,12 @@ function _kimBoundsInView(bounds){
 }
 
 function _kimDoPreview(){
-  if(!_kimState || typeof _mapInstance === 'undefined' || !_mapInstance) return;
+  const map = window.getMapInstance && window.getMapInstance();
+  if(!_kimState || !map) return;
   // Mount ALL layers temporarily regardless of visibility checkbox state.
   _kimState.mountedForPreview = [];
   _kimState.layers.forEach(layer => {
-    if(layer.features && layer.features.length && !_mapInstance.getSource(layer.id)){
+    if(layer.features && layer.features.length && !map.getSource(layer.id)){
       if(typeof mapReaddKmlLayer === 'function'){
         mapReaddKmlLayer(layer, layer.features);
         _kimState.mountedForPreview.push(layer.id);
@@ -150,7 +152,7 @@ function _kimDoPreview(){
   if(_kimState.parsed && _kimState.parsed.bounds){
     const b = _kimState.parsed.bounds;
     try {
-      _mapInstance.fitBounds(
+      map.fitBounds(
         [[b.minLng, b.minLat], [b.maxLng, b.maxLat]],
         { padding: 60, duration: 800, maxZoom: 16 }
       );
@@ -165,12 +167,13 @@ function _kimDoPreview(){
 
 function _kimUnmountPreview(){
   if(!_kimState || !_kimState.mountedForPreview) return;
+  const map = window.getMapInstance && window.getMapInstance();
   _kimState.mountedForPreview.forEach(id => {
-    if(_mapInstance && _mapInstance.getSource(id)){
+    if(map && map.getSource(id)){
       ['fill','line','pt'].forEach(t => {
-        if(_mapInstance.getLayer(id + '-' + t)) _mapInstance.removeLayer(id + '-' + t);
+        if(map.getLayer(id + '-' + t)) map.removeLayer(id + '-' + t);
       });
-      if(_mapInstance.getSource(id)) _mapInstance.removeSource(id);
+      if(map.getSource(id)) map.removeSource(id);
     }
   });
   _kimState.mountedForPreview = [];
@@ -199,8 +202,9 @@ function _kimDone(){
   // Unmount any preview-only layers that weren't "Keep visible'd".
   _kimUnmountPreview();
   // For each layer marked visible, ensure it's actually mounted on the map.
+  const map = window.getMapInstance && window.getMapInstance();
   _kimState.layers.forEach(layer => {
-    if(layer.visible && layer.features && layer.features.length && _mapInstance && !_mapInstance.getSource(layer.id)){
+    if(layer.visible && layer.features && layer.features.length && map && !map.getSource(layer.id)){
       if(typeof mapReaddKmlLayer === 'function') mapReaddKmlLayer(layer, layer.features);
     }
   });
