@@ -587,13 +587,17 @@ async function dlArchive(date){
       const diff=((h2*60+m2)-(h1*60+m1))/60;
       if(diff>0) hours=Math.round(diff*10)/10;
     }
-    const existing=tsGetEntry(date)||{};
+    // Resolve projectId at write time (E1.1 Option C). Daily log is always
+    // editing the active project's session, so active project is the right
+    // binding for the timesheet entry created from this log.
+    const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+    const existing=tsGetEntry(date,pid)||{};
     const update={};
     if(!existing._manualHours && hours>0) update.hours=hours;
     if(!existing._manualMiles && miles>0) update.miles=miles;
     if(!existing._manualActivity && f.activePhase) update.activitySummary=f.activePhase;
-    if(!existing._manualPerDiem) update.perDiem=tsLoadConfig().perDiem;
-    if(Object.keys(update).length>0) tsSaveEntry(date, update);
+    if(!existing._manualPerDiem) update.perDiem=tsLoadConfig(pid).perDiem;
+    if(Object.keys(update).length>0) tsSaveEntry(date, update, pid);
   }catch(e){}
   // ── Option C: backfill past week snapshot if this date is in a past week ──
   try{ tsBackfillWeekFromLogs(date); }catch(e){}

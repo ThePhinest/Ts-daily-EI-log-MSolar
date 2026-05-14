@@ -462,9 +462,24 @@ function _applyProjectSettings(data) {
   }
   if (data.tsConfig) {
     const cfg = Object.assign({}, TS_DEFAULTS, data.tsConfig);
+    // Per-project key (E1.1 Option C — Stage 3 primary path).
+    const pid = _activeProjectId();
+    try { localStorage.setItem('msf_proj_' + pid + '_ts_config', JSON.stringify(cfg)); } catch {}
+    // Legacy global key kept in sync during 30-day overlap so any
+    // unmigrated reader still sees the active project's config.
     try { localStorage.setItem('msf_ts_config', JSON.stringify(cfg)); } catch {}
     tsLoadConfigFields();
   }
+  // Re-render timesheet surface if it's visible — entries are filtered by
+  // projectId on read, so switching projects must trigger a refresh even
+  // though localStorage entries didn't change. Cheap no-op if not visible.
+  try {
+    if (document.getElementById('page-timesheet')?.classList.contains('active')){
+      if (typeof tsRenderCurrentWeek === 'function') tsRenderCurrentWeek();
+      if (typeof tsRenderHistory === 'function') tsRenderHistory();
+      if (typeof tsRenderCumulative === 'function') tsRenderCumulative();
+    }
+  } catch {}
 }
 
 // ── Sync known-projects list from Firestore → localStorage (cross-device) ──

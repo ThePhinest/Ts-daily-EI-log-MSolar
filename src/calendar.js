@@ -49,7 +49,11 @@ function calGetIndicators(record){
   const f=record.fields||{};
   const tin=f['p-timeIn']||''; const tout=f['p-timeOut']||'';
   if(tin&&tout) indicators.push('<span title="Hours logged">🕒</span>');
-  const tsE=tsGetEntry(record._archivedDate||'');
+  // Active-project scoped: indicators reflect THIS project's timesheet
+  // entry for that date. With multi-project state isolation (E1.1 Option C),
+  // a different project's entry on the same date doesn't surface here.
+  const _calPid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const tsE=tsGetEntry(record._archivedDate||'',_calPid);
   if(tsE&&tsE.miles){
     indicators.push('<span title="Miles logged">🚚</span>');
   } else {
@@ -107,7 +111,8 @@ function calOpenDay(date){
   const f=rec.fields||{};
   let tin='—', tout='—', hours='—', miles='—';
   try{
-    const tsEntry=tsGetEntry(date);
+    const _dayPid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+    const tsEntry=tsGetEntry(date,_dayPid);
     if(tsEntry){
       if(tsEntry.hours) hours=tsEntry.hours+' hrs';
       if(tsEntry.miles) miles=tsEntry.miles+' mi';
