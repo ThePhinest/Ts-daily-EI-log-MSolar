@@ -502,9 +502,15 @@ async function mapImportKml(input){
   const storagePath = _currentUser
     ? `kml/${_currentUser.uid}/${fileId}.kml`
     : `projects/${pid}/kml/${fileId}.kml`;
+  // For KMZ files, upload the extracted KML text (not the binary archive) so
+  // kmlLoadLayers can download and parse it as valid XML on cold-boot. KML files
+  // are uploaded as-is.
+  const uploadBlob = (parsed.kmlText && /\.kmz$/i.test(file.name))
+    ? new Blob([parsed.kmlText], { type: 'text/xml' })
+    : file;
   if(storage && _currentUser){
     try {
-      await storage.ref(storagePath).put(file);
+      await storage.ref(storagePath).put(uploadBlob);
     } catch(err){
       console.warn('KML Storage upload failed:', err.message);
       if(typeof window._reportError === 'function'){

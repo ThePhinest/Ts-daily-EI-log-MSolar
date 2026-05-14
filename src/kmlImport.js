@@ -208,7 +208,7 @@ export async function parseKmzFile(file){
       parsed.errors.push({ stage: 'icon-extract', path: entry.name, message: e.message });
     }
   }
-  return { ...parsed, fileSize, embeddedIcons };
+  return { ...parsed, fileSize, embeddedIcons, kmlText };
 }
 
 // Convenience: branch on file extension. Used by the import button handler.
