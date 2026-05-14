@@ -564,12 +564,10 @@ async function mapImportKml(input){
 function mapReaddKmlLayer(layer, features){
   if(!_mapInstance || !features || !features.length) return;
   if(_mapInstance.getSource(layer.id)) return;
-  _mapInstance.addSource(layer.id, { type: 'geojson', data: { type: 'FeatureCollection', features } });
-  // Stamp top-level palette fallback. If feature has 'fill', use it;
-  // otherwise fall back to palette[_paletteIdx] or gold.
+  // Stamp resolved fill/stroke onto each feature BEFORE addSource — Mapbox
+  // expressions can't index a JS array (palette) at render time, so we
+  // pre-resolve the color via data-expressions ['coalesce',['get','_fillResolved']].
   const palette = (typeof window !== 'undefined' && window.KML_PALETTE) ? window.KML_PALETTE : ['#C9A84C'];
-  // Pre-resolve fallback per feature (Mapbox can't index a JS array via
-  // a data-expression, so we stamp the resolved color as a property).
   features.forEach(f => {
     f.properties = f.properties || {};
     if(typeof f.properties.fill !== 'string'){
@@ -584,8 +582,7 @@ function mapReaddKmlLayer(layer, features){
       f.properties._strokeResolved = f.properties.stroke;
     }
   });
-  // Need to refresh the source after stamping properties.
-  _mapInstance.getSource(layer.id).setData({ type: 'FeatureCollection', features });
+  _mapInstance.addSource(layer.id, { type: 'geojson', data: { type: 'FeatureCollection', features } });
   _mapInstance.addLayer({
     id: layer.id + '-fill',
     type: 'fill',
