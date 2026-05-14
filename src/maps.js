@@ -500,7 +500,7 @@ async function mapImportKml(input){
   const pid = (typeof _activeProjectId === 'function') ? _activeProjectId() : 'default';
   const fileId = 'kml-' + Date.now() + '-' + Math.random().toString(36).slice(2,6);
   const storagePath = _currentUser
-    ? `users/${_currentUser.uid}/projects/${pid}/kml/${fileId}.kml`
+    ? `kml/${_currentUser.uid}/${fileId}.kml`
     : `projects/${pid}/kml/${fileId}.kml`;
   if(storage && _currentUser){
     try {
@@ -785,7 +785,7 @@ async function mapBulkDeleteSelected(){
   const ids = new Set(_mapKmlSelected);
   // Tear down map state for all selected
   for(const layer of _mapKmlLayers.filter(l => ids.has(l.id))){
-    ['fill','line'].forEach(t=>{ if(_mapInstance.getLayer(layer.id+'-'+t)) _mapInstance.removeLayer(layer.id+'-'+t); });
+    ['fill','line','pt'].forEach(t=>{ if(_mapInstance.getLayer(layer.id+'-'+t)) _mapInstance.removeLayer(layer.id+'-'+t); });
     if(_mapInstance.getSource(layer.id)) _mapInstance.removeSource(layer.id);
   }
   // Remove from registry (back-to-front to preserve indices during splice)
@@ -961,17 +961,21 @@ async function kmlToggleFolderVisibility(folderName, visible){
   for(const layer of layers){
     layer.visible = visible;
     if(!visible){
-      ['fill','line'].forEach(t=>{ if(_mapInstance.getLayer(layer.id+'-'+t)) _mapInstance.removeLayer(layer.id+'-'+t); });
+      ['fill','line','pt'].forEach(t=>{ if(_mapInstance.getLayer(layer.id+'-'+t)) _mapInstance.removeLayer(layer.id+'-'+t); });
       if(_mapInstance.getSource(layer.id)) _mapInstance.removeSource(layer.id);
     } else {
-      if(!_mapInstance.getSource(layer.id) && layer.storagePath && storage){
-        try{
-          const url = await storage.ref(layer.storagePath).getDownloadURL();
-          const res = await fetch(url);
-          const kmlText = await res.text();
-          const features = kmlParseLayerById(kmlText, layer.name);
-          mapReaddKmlLayer(layer, features);
-        }catch(err){ console.warn('kmlToggleFolderVisibility:', err.message); }
+      if(!_mapInstance.getSource(layer.id)){
+        if(layer.features && layer.features.length){
+          mapReaddKmlLayer(layer, layer.features);
+        } else if(layer.storagePath && storage){
+          try{
+            const url = await storage.ref(layer.storagePath).getDownloadURL();
+            const res = await fetch(url);
+            const kmlText = await res.text();
+            const features = kmlParseLayerById(kmlText, layer.name);
+            mapReaddKmlLayer(layer, features);
+          }catch(err){ console.warn('kmlToggleFolderVisibility:', err.message); }
+        }
       }
     }
   }
@@ -992,7 +996,9 @@ async function mapToggleKmlLayer(i, visible){
   } else {
     // Fetch and render on demand if not already on map
     if(!_mapInstance.getSource(layer.id)){
-      if(layer.storagePath && storage){
+      if(layer.features && layer.features.length){
+        mapReaddKmlLayer(layer, layer.features);
+      } else if(layer.storagePath && storage){
         try{
           const url = await storage.ref(layer.storagePath).getDownloadURL();
           const res = await fetch(url);
@@ -1012,7 +1018,7 @@ async function mapToggleKmlLayer(i, visible){
 
 function mapRemoveKmlLayer(i){
   const layer = _mapKmlLayers[i];
-  ['fill','line'].forEach(t=>{ if(_mapInstance.getLayer(layer.id+'-'+t)) _mapInstance.removeLayer(layer.id+'-'+t); });
+  ['fill','line','pt'].forEach(t=>{ if(_mapInstance.getLayer(layer.id+'-'+t)) _mapInstance.removeLayer(layer.id+'-'+t); });
   if(_mapInstance.getSource(layer.id)) _mapInstance.removeSource(layer.id);
   _mapKmlLayers.splice(i,1);
   kmlSaveLayers();
@@ -1022,7 +1028,7 @@ function mapRemoveKmlLayerById(id){
   const idx = _mapKmlLayers.findIndex(l=>l.id===id);
   if(idx===-1) return;
   const layer = _mapKmlLayers[idx];
-  ['fill','line'].forEach(t=>{ if(_mapInstance.getLayer(layer.id+'-'+t)) _mapInstance.removeLayer(layer.id+'-'+t); });
+  ['fill','line','pt'].forEach(t=>{ if(_mapInstance.getLayer(layer.id+'-'+t)) _mapInstance.removeLayer(layer.id+'-'+t); });
   if(_mapInstance.getSource(layer.id)) _mapInstance.removeSource(layer.id);
   _mapKmlLayers.splice(idx,1);
   kmlSaveLayers();
@@ -1033,32 +1039,32 @@ async function mapToggleKmlLayerById(id, visible){
   if(!layer) return;
   layer.visible = visible;
   if(!visible){
-    ['fill','line'].forEach(t=>{ if(_mapInstance.getLayer(layer.id+'-'+t)) _mapInstance.removeLayer(layer.id+'-'+t); });
+    ['fill','line','pt'].forEach(t=>{ if(_mapInstance.getLayer(layer.id+'-'+t)) _mapInstance.removeLayer(layer.id+'-'+t); });
     if(_mapInstance.getSource(layer.id)) _mapInstance.removeSource(layer.id);
   } else {
-    if(!_mapInstance.getSource(layer.id) && layer.storagePath && storage){
-      try{
-        const url = await storage.ref(layer.storagePath).getDownloadURL();
-        const res = await fetch(url);
-        if(!res.ok) throw new Error('HTTP ' + res.status + ' ' + (res.statusText||''));
-        const kmlText = await res.text();
-        const features = kmlParseLayerById(kmlText, layer.name);
-        mapReaddKmlLayer(layer, features);
-      }catch(err){
-        console.warn('mapToggleKmlLayerById:', err.message);
-        // Forward to β.1 reporter so swallowed errors are visible on iOS WebView
-        // where there's no Safari Web Inspector. Hypothesis 2026-05-06: KML
-        // fetch from Firebase Storage may fail CORS on capacitor:// origin
-        // — same root cause as Mapbox token issue, different surface.
-        if(typeof window._reportError === 'function'){
-          window._reportError({
-            type: 'kml-toggle-failed',
-            message: 'KML toggle ON failed: ' + (err && err.message ? err.message : String(err)),
-            stack: err && err.stack ? err.stack : null,
-            kmlLayerId: layer.id,
-            kmlLayerName: layer.name,
-            kmlStoragePath: layer.storagePath
-          });
+    if(!_mapInstance.getSource(layer.id)){
+      if(layer.features && layer.features.length){
+        mapReaddKmlLayer(layer, layer.features);
+      } else if(layer.storagePath && storage){
+        try{
+          const url = await storage.ref(layer.storagePath).getDownloadURL();
+          const res = await fetch(url);
+          if(!res.ok) throw new Error('HTTP ' + res.status + ' ' + (res.statusText||''));
+          const kmlText = await res.text();
+          const features = kmlParseLayerById(kmlText, layer.name);
+          mapReaddKmlLayer(layer, features);
+        }catch(err){
+          console.warn('mapToggleKmlLayerById:', err.message);
+          if(typeof window._reportError === 'function'){
+            window._reportError({
+              type: 'kml-toggle-failed',
+              message: 'KML toggle ON failed: ' + (err && err.message ? err.message : String(err)),
+              stack: err && err.stack ? err.stack : null,
+              kmlLayerId: layer.id,
+              kmlLayerName: layer.name,
+              kmlStoragePath: layer.storagePath
+            });
+          }
         }
       }
     }
