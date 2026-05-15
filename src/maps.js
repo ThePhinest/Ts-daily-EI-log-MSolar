@@ -371,7 +371,7 @@ function mapRenderPhotoPins(){
         </div>
       `);
 
-    el.addEventListener('click', e => e.stopPropagation());
+    el.classList.add('_photo-marker');
 
     const marker = new mapboxgl.Marker({ element:el, anchor:'bottom' })
       .setLngLat([p.lng, p.lat])
@@ -1832,6 +1832,9 @@ function mapRenderTrackerLayers(){
     _trackerClickHandlerRegistered=true;
     _mapInstance.on('click',e=>{
       if(_drawMode) return;
+      // Don't open tracker popup when user clicked a photo pin
+      const clickTarget=e.originalEvent&&e.originalEvent.target;
+      if(clickTarget&&clickTarget.closest&&clickTarget.closest('._photo-marker')) return;
       const bbox=[[e.point.x-22,e.point.y-22],[e.point.x+22,e.point.y+22]];
       const style=_mapInstance.getStyle();
       if(!style||!style.layers) return;

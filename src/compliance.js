@@ -92,7 +92,7 @@ function clRender(){
   if(el) el.textContent = openCount;
   if(et) et.textContent = _clEntries.length;
 
-  clRenderTrackerCard(search);
+  clRenderTrackerCard();
   const list = document.getElementById('cl-list');
   if(!list) return;
 

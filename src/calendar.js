@@ -54,8 +54,8 @@ function calGetIndicators(record){
   // a different project's entry on the same date doesn't surface here.
   const _calPid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
   try{
-    const trEntries=(typeof trGetEntriesForDate==='function')?trGetEntriesForDate(record._archivedDate||'',_calPid):[];
-    if(trEntries.length) indicators.push('<span title="Tracker entries">📍</span>');
+    const trEntries=(typeof trGetEntriesForDate==='function')?trGetEntriesForDate(record._archivedDate||'',_calPid).filter(e=>!e.deletedAt):[];
+    if(trEntries.length) indicators.push('<span title="Tracker entries">❗</span>');
   }catch{}
   const tsE=tsGetEntry(record._archivedDate||'',_calPid);
   if(tsE&&tsE.miles){
@@ -168,6 +168,31 @@ function calOpenDay(date){
     }
   }catch{}
 
+  let trackerSection='';
+  try{
+    const _trDayPid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+    const trEntries=(typeof trGetEntriesForDate==='function')?trGetEntriesForDate(date,_trDayPid).filter(e=>!e.deletedAt):[];
+    if(trEntries.length>0){
+      const rows=trEntries.map(e=>{
+        const catName=(typeof tcGetName==='function')?tcGetName(e.categoryId,_trDayPid):(e.categoryName||'Unknown');
+        const meta=[];
+        if(e.acres) meta.push(e.acres+' ac');
+        if(e.notes) meta.push(e.notes.slice(0,40));
+        return `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border)">
+          <span style="font-family:var(--mono);font-size:11px;color:var(--text);flex:1">${catName}</span>
+          <span style="font-family:var(--mono);font-size:10px;color:var(--muted)">${meta.join(' · ')}</span>
+        </div>`;
+      }).join('');
+      trackerSection=`<div class="cal-day-section" style="flex-direction:column;align-items:flex-start">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;width:100%">
+          <div class="cal-day-icon">❗</div>
+          <div class="cal-day-label">Tracker — ${trEntries.length} entr${trEntries.length===1?'y':'ies'}</div>
+        </div>
+        <div style="width:100%;padding-left:32px">${rows}</div>
+      </div>`;
+    }
+  }catch{}
+
   let photoSection='';
   try{
     const ph=JSON.parse(localStorage.getItem('ph_photos')||'[]');
@@ -229,6 +254,7 @@ function calOpenDay(date){
         <div><div class="cal-day-label">Inspection Summary</div><div class="cal-day-val" style="white-space:pre-line">${summary.length>300?summary.substring(0,300)+'…':summary}</div></div>
       </div>
       ${compSection}
+      ${trackerSection}
       ${photoSection}
       ${editSection}
     </div>
@@ -326,6 +352,11 @@ function calGetDotIndicators(record){
   try{
     const cl=JSON.parse(localStorage.getItem('cl_entries')||'[]');
     if(cl.some(e=>e.date===record._archivedDate)) dots.push('<span class="cal-dot" title="Compliance">❗</span>');
+  }catch{}
+  try{
+    const _dotPid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+    const trEntries=(typeof trGetEntriesForDate==='function')?trGetEntriesForDate(record._archivedDate||'',_dotPid).filter(e=>!e.deletedAt):[];
+    if(trEntries.length) dots.push('<span class="cal-dot" title="Tracker entries">❗</span>');
   }catch{}
   try{
     const ph=JSON.parse(localStorage.getItem('ph_photos')||'[]');
