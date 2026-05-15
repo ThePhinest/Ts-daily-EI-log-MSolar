@@ -1010,7 +1010,7 @@ function mapUpdateKmlLayerList(){
   // visibility checkbox, edit button, and delete button.
   const _trPid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
   const _trCats=(typeof tcGetCategories==='function')?tcGetCategories(_trPid):[];
-  const _trAllEntries=(typeof trGetEntriesForProject==='function')?trGetEntriesForProject(_trPid):[];
+  const _trAllEntries=(typeof trGetEntriesForProject==='function')?trGetEntriesForProject(_trPid).filter(e=>!e.archivedFromMap):[];
   if(_trCats.length>0 && _trAllEntries.length>0){
     const sep=document.createElement('div');
     sep.style.cssText='margin:10px 0 6px;border-top:1px solid var(--border);padding-top:8px;font-family:var(--mono);font-size:9px;color:var(--muted);letter-spacing:.08em;text-transform:uppercase;';
@@ -1676,7 +1676,7 @@ function mapSaveTrackerEntry(){
     notes:document.getElementById('map-tr-notes').value.trim()||null
   };
   // Editing an existing entry — preserve id so trSaveEntry updates in place
-  if(_editingEntryId){ entry.id=_editingEntryId; entry.deletedFromMap=false; }
+  if(_editingEntryId){ entry.id=_editingEntryId; entry.deletedFromMap=false; entry.archivedFromMap=false; }
   _editingEntryId=null;
   if(typeof trSaveEntry==='function') trSaveEntry(entry,pid);
   _pendingDrawFeature=null;
@@ -1784,7 +1784,7 @@ function mapRenderTrackerLayers(){
   }
 
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
-  const entries=(typeof trGetEntriesForProject==='function')?trGetEntriesForProject(pid).filter(e=>!e.deletedFromMap):[];
+  const entries=(typeof trGetEntriesForProject==='function')?trGetEntriesForProject(pid).filter(e=>!e.deletedFromMap&&!e.archivedFromMap):[];
   const cats=(typeof tcGetCategories==='function')?tcGetCategories(pid):[];
 
   const byCategory={};
@@ -1929,9 +1929,10 @@ function mapDeleteTrackerEntryFromPanel(entryId){
   ov.style.cssText='z-index:9000';
   ov.innerHTML=`<div class="modal-box" style="max-width:300px;width:88%">
     <div class="modal-title" style="margin-bottom:10px">Remove Entry</div>
-    <div style="font-family:var(--mono);font-size:12px;color:var(--muted);margin-bottom:16px;line-height:1.5">Hide from the map only, or delete the record entirely (removes from compliance too)?</div>
+    <div style="font-family:var(--mono);font-size:12px;color:var(--muted);margin-bottom:16px;line-height:1.5">How would you like to remove this entry?</div>
     <div class="modal-btns" style="flex-direction:column;gap:8px">
       <button id="_trpHide" class="modal-confirm" style="width:100%">Hide from Map</button>
+      <button id="_trpArchive" class="modal-confirm" style="width:100%;background:#5a6a7a;">Keep in Compliance Only</button>
       <button id="_trpDel" class="modal-confirm" style="width:100%;background:#c0392b;">Delete Entirely</button>
       <button id="_trpCancel" class="modal-cancel" style="width:100%">Cancel</button>
     </div>
@@ -1941,6 +1942,12 @@ function mapDeleteTrackerEntryFromPanel(entryId){
   document.getElementById('_trpHide').onclick=()=>{
     ov.remove();
     if(typeof trMarkDeletedFromMap==='function') trMarkDeletedFromMap(entryId,pid);
+    mapRenderTrackerLayers();
+    mapUpdateKmlLayerList();
+  };
+  document.getElementById('_trpArchive').onclick=()=>{
+    ov.remove();
+    if(typeof trArchiveFromMap==='function') trArchiveFromMap(entryId,pid);
     mapRenderTrackerLayers();
     mapUpdateKmlLayerList();
   };

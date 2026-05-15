@@ -127,6 +127,28 @@ function trMarkDeletedFromMap(entryId, projectId){
   return true;
 }
 
+// Archive from map: hides from map AND layer panel, keeps compliance record.
+// Different from deletedFromMap (which keeps an unchecked row in the panel).
+// Restore via compliance detail → Edit on Map.
+function trArchiveFromMap(entryId, projectId){
+  const pid = projectId || ((typeof _activeProjectId === 'function') ? _activeProjectId() : 'default');
+  const data = _trLoadRaw(pid);
+  const idx = data.entries.findIndex(e => e.id === entryId);
+  if(idx < 0) return false;
+  const ts = Date.now();
+  data.entries[idx].archivedFromMap = true;
+  data.entries[idx].updatedAt = ts;
+  _trSaveRaw(pid, data);
+  if(typeof _udb === 'function' && typeof _fbReady !== 'undefined' && _fbReady && typeof _currentUser !== 'undefined' && _currentUser){
+    try {
+      _udb().collection('projects').doc(pid).collection('trackerEntries').doc(entryId)
+        .set(data.entries[idx])
+        .catch(e => console.warn('trArchiveFromMap Firestore:', e.message));
+    } catch(e){ /* silent */ }
+  }
+  return true;
+}
+
 // Set map visibility without touching deletedAt (entry stays in compliance).
 function trSetMapVisibility(entryId, visible, projectId){
   const pid = projectId || ((typeof _activeProjectId === 'function') ? _activeProjectId() : 'default');
@@ -195,6 +217,7 @@ if(typeof window !== 'undefined'){
   window.trGenId = trGenId;
   window.trGetEntriesForProject = trGetEntriesForProject;
   window.trMarkDeletedFromMap = trMarkDeletedFromMap;
+  window.trArchiveFromMap = trArchiveFromMap;
   window.trSetMapVisibility = trSetMapVisibility;
   window.trGetEntriesForDate = trGetEntriesForDate;
   window.trGetEntriesForCategory = trGetEntriesForCategory;
