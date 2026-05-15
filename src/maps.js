@@ -306,7 +306,7 @@ let _mapPinFilter = 'today';
 function mapSetPinFilter(filter){
   _mapPinFilter = filter;
   document.getElementById('map-pin-range-inputs').style.display = 'none';
-  ['all','today','range'].forEach(f => {
+  ['all','today','range','none'].forEach(f => {
     const btn = document.getElementById('map-pin-'+f);
     if(btn) btn.classList.toggle('active', f === filter);
   });
@@ -315,7 +315,7 @@ function mapSetPinFilter(filter){
 
 function mapTogglePinDateRange(){
   _mapPinFilter = 'range';
-  ['all','today','range'].forEach(f => {
+  ['all','today','range','none'].forEach(f => {
     const btn = document.getElementById('map-pin-'+f);
     if(btn) btn.classList.toggle('active', f === 'range');
   });
@@ -331,14 +331,16 @@ function mapRenderPhotoPins(){
   _mapPhotoMarkers.forEach(m => m.remove());
   _mapPhotoMarkers = [];
 
+  if(_mapPinFilter === 'none') return;
+
   const today = new Date().toISOString().split('T')[0];
   const fromDate = document.getElementById('map-pin-from')?.value || '';
   const toDate   = document.getElementById('map-pin-to')?.value || '';
 
   const pid = (typeof _activeProjectId === 'function') ? _activeProjectId() : 'default';
-  const photos = _phPhotos.filter(p => {
+  const photos = (window._phPhotos || []).filter(p => {
     if(!p.lat || !p.lng) return false;
-    if(p.projectId && p.projectId !== pid) return false;
+    if(pid && p.projectId !== pid) return false;
     if(_mapPinFilter === 'today') return p.date === today;
     if(_mapPinFilter === 'range'){
       if(fromDate && p.date < fromDate) return false;
@@ -894,18 +896,25 @@ async function kmlLoadLayers(){
       }
     }
 
-    // Register all layers, render only visible ones
+    // Register all layers, cache features for ALL (not just visible) so future
+    // toggles skip Storage fetch + re-parse. Flat KMLs store root-level features
+    // under '' in folderFeatures but layer.name is the base filename — fall back
+    // to '' before using all features as last resort.
     layers.forEach(layer=>{
       if(_mapKmlLayers.find(l=>l.id===layer.id)) return;
       const layerObj = { ...layer };
       _mapKmlLayers.push(layerObj);
-      if(layer.visible && kmlText){
-        const features = folderFeatures
-          ? (folderFeatures.get(layer.name) || [])
-          : kmlParseLayerById(kmlText, layer.name);
+      if(kmlText){
+        let features;
+        if(folderFeatures){
+          features = folderFeatures.get(layer.name) || [];
+          if(!features.length) features = folderFeatures.get('') || [];
+        } else {
+          features = kmlParseLayerById(kmlText, layer.name);
+        }
         if(features.length){
-          layerObj.features = features; // restore in-memory so future toggles skip Storage
-          mapReaddKmlLayer(layerObj, features);
+          layerObj.features = features;
+          if(layer.visible) mapReaddKmlLayer(layerObj, features);
         }
       }
     });
@@ -1073,6 +1082,33 @@ function mapUpdateKmlLayerList(){
     });
   }
 }
+// Reparse a KML text through parseKmlOrKmzFile (preserves fill/stroke + _paletteIdx).
+// Falls back to kmlParseLayerById only when the full parser is unavailable.
+// Handles flat KMLs where root features land under '' but layer.name is the base filename.
+async function _kmlReparseFeaturesForLayer(kmlText, layer){
+  if(typeof window.parseKmlOrKmzFile !== 'function')
+    return kmlParseLayerById(kmlText, layer.name);
+  try{
+    const kmlFile = new File([kmlText], 'restore.kml', {type:'text/xml'});
+    const reparsed = await window.parseKmlOrKmzFile(kmlFile);
+    const folderMap = new Map();
+    reparsed.features.forEach(f => {
+      const fp = (f.properties||{})._folderPath||'';
+      const segs = fp.split(' / ');
+      const leafName = segs[segs.length-1]||'';
+      if(!folderMap.has(leafName)) folderMap.set(leafName,[]);
+      folderMap.get(leafName).push(f);
+    });
+    let features = folderMap.get(layer.name)||[];
+    if(!features.length) features = folderMap.get('')||[];
+    if(!features.length) features = reparsed.features;
+    return features;
+  }catch(e){
+    console.warn('_kmlReparseFeaturesForLayer fell back:', e.message);
+    return kmlParseLayerById(kmlText, layer.name);
+  }
+}
+
 async function kmlToggleFolderVisibility(folderName, visible){
   const layers = _mapKmlLayers.filter(l=>l.folderName===folderName);
   for(const layer of layers){
@@ -1089,7 +1125,8 @@ async function kmlToggleFolderVisibility(folderName, visible){
             const url = await storage.ref(layer.storagePath).getDownloadURL();
             const res = await fetch(url);
             const kmlText = await res.text();
-            const features = kmlParseLayerById(kmlText, layer.name);
+            const features = await _kmlReparseFeaturesForLayer(kmlText, layer);
+            layer.features = features;
             mapReaddKmlLayer(layer, features);
           }catch(err){ console.warn('kmlToggleFolderVisibility:', err.message); }
         }
@@ -1120,7 +1157,8 @@ async function mapToggleKmlLayer(i, visible){
           const url = await storage.ref(layer.storagePath).getDownloadURL();
           const res = await fetch(url);
           const kmlText = await res.text();
-          const features = kmlParseLayerById(kmlText, layer.name);
+          const features = await _kmlReparseFeaturesForLayer(kmlText, layer);
+          layer.features = features;
           mapReaddKmlLayer(layer, features);
         }catch(err){ console.warn('mapToggleKmlLayer fetch failed:', err.message); }
       }
@@ -1168,7 +1206,8 @@ async function mapToggleKmlLayerById(id, visible){
           const res = await fetch(url);
           if(!res.ok) throw new Error('HTTP ' + res.status + ' ' + (res.statusText||''));
           const kmlText = await res.text();
-          const features = kmlParseLayerById(kmlText, layer.name);
+          const features = await _kmlReparseFeaturesForLayer(kmlText, layer);
+          layer.features = features;
           mapReaddKmlLayer(layer, features);
         }catch(err){
           console.warn('mapToggleKmlLayerById:', err.message);
@@ -1219,7 +1258,7 @@ function mapExportKml(){
   const date = new Date().toISOString().split('T')[0];
   let placemarks = '';
   if(incPhotos){
-    _phPhotos.filter(p=>p.lat&&p.lng).forEach(p=>{
+    (window._phPhotos||[]).filter(p=>p.lat&&p.lng).forEach(p=>{
       placemarks += `  <Placemark><name>${(p.caption||p.date||'Photo').replace(/&/g,'&amp;')}</name><Point><coordinates>${p.lng},${p.lat},0</coordinates></Point></Placemark>\n`;
     });
   }

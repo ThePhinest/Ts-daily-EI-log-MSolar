@@ -53,6 +53,10 @@ function calGetIndicators(record){
   // entry for that date. With multi-project state isolation (E1.1 Option C),
   // a different project's entry on the same date doesn't surface here.
   const _calPid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  try{
+    const trEntries=(typeof trGetEntriesForDate==='function')?trGetEntriesForDate(record._archivedDate||'',_calPid):[];
+    if(trEntries.length) indicators.push('<span title="Tracker entries">📍</span>');
+  }catch{}
   const tsE=tsGetEntry(record._archivedDate||'',_calPid);
   if(tsE&&tsE.miles){
     indicators.push('<span title="Miles logged">🚚</span>');

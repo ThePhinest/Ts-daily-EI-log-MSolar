@@ -128,11 +128,11 @@ body.theme-light{
 .map-tc-edit-color,.map-tc-add-color{width:20px;height:20px;border-radius:50%;flex-shrink:0;border:2px solid rgba(255,255,255,.25);cursor:pointer}
 .map-tc-name{flex:1;font-family:var(--mono);font-size:12px;color:var(--text)}
 .map-tc-name-input{flex:1;background:var(--s1);border:1px solid var(--amber);border-radius:5px;color:var(--text);font-family:var(--mono);font-size:12px;padding:5px 8px;min-width:0}
-.map-tc-btn{background:none;border:none;color:var(--muted);font-family:var(--mono);font-size:11px;cursor:pointer;padding:4px 6px;border-radius:4px;white-space:nowrap;transition:color .12s}
+.map-tc-btn{background:none;border:none;color:var(--muted);font-family:var(--mono);font-size:11px;cursor:pointer;padding:10px 10px;min-height:36px;border-radius:4px;white-space:nowrap;transition:color .12s;display:inline-flex;align-items:center;justify-content:center}
 .map-tc-btn.dim{opacity:0.35}
 .map-tc-btn.danger:hover{color:#e05555}
-.map-tc-save-btn{background:var(--amber);border:none;color:#111;padding:5px 10px;border-radius:6px;font-family:var(--mono);font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap}
-.map-tc-cancel-btn{background:var(--s2);border:1px solid var(--border);color:var(--muted);padding:5px 8px;border-radius:6px;font-family:var(--mono);font-size:11px;cursor:pointer;white-space:nowrap}
+.map-tc-save-btn{background:var(--amber);border:none;color:#111;padding:9px 14px;border-radius:6px;font-family:var(--mono);font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;min-height:36px}
+.map-tc-cancel-btn{background:var(--s2);border:1px solid var(--border);color:var(--muted);padding:9px 12px;border-radius:6px;font-family:var(--mono);font-size:11px;cursor:pointer;white-space:nowrap;min-height:36px}
 #map-tracker-sheet-add{display:none;align-items:center;gap:8px;padding:10px 4px;border-top:1px solid var(--border);background:var(--s1);margin:0 -14px;padding-left:14px;padding-right:14px;padding-bottom:calc(10px + env(safe-area-inset-bottom))}
 #map-tracker-sheet-add.open{display:flex}
 .gl-tracker-popup .mapboxgl-popup-content{background:#0F1F2E;color:#e8e8e8;padding:12px;border-radius:8px;border:1px solid rgba(255,255,255,.12)}
@@ -296,7 +296,7 @@ select{cursor:pointer}
 
 /* PRESET CHIPS */
 .preset-strip{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:7px}
-.preset-chip{font-family:var(--body);font-size:14px;font-weight:500;background:var(--s3);border:1px solid var(--border2);color:var(--muted2);border-radius:20px;padding:3px 11px;cursor:pointer;transition:all .12s;white-space:nowrap}
+.preset-chip{font-family:var(--body);font-size:14px;font-weight:500;background:var(--s3);border:1px solid var(--border2);color:var(--muted2);border-radius:20px;padding:3px 11px;cursor:pointer;transition:all .12s;white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis}
 .preset-chip:hover{border-color:var(--amber);color:var(--amber);background:var(--amber-bg)}
 body.theme-light .preset-chip{background:var(--amber-bg);color:var(--amber);border-color:rgba(0,76,84,0.3)}
 body.theme-light .preset-chip:hover{background:rgba(0,76,84,0.18);border-color:var(--amber);color:var(--amber2)}
@@ -519,7 +519,7 @@ body.theme-light .preset-chip:hover{background:rgba(0,76,84,0.18);border-color:v
 .ph-empty{font-family:var(--mono);font-size:12px;color:var(--muted);text-align:center;padding:40px 20px}
 .ph-load-more{width:100%;margin-top:8px}
 /* Lightbox */
-.ph-lightbox{position:fixed;inset:0;z-index:800;background:rgba(0,0,0,.92);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px}
+.ph-lightbox{position:fixed;inset:0;z-index:7000;background:rgba(0,0,0,.92);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px}
 .ph-lightbox.hidden{display:none}
 .ph-lb-img{max-width:100%;max-height:60vh;border-radius:var(--r);object-fit:contain}
 .ph-lb-caption-wrap{margin-top:14px;width:100%;max-width:500px;display:flex;flex-direction:column;gap:8px}
@@ -721,6 +721,9 @@ body.is-native select { font-size: 16px !important; }
 </style>
 </head>
 <body>
+
+<!-- iOS safe-area top cover: solid bg behind Dynamic Island / status bar on full-screen PWA -->
+<div id="safe-area-top-cover" style="position:fixed;top:0;left:0;right:0;height:env(safe-area-inset-top);background:var(--header-bg);z-index:9999;pointer-events:none"></div>
 
 <!-- APP BAR -->
 <div class="app-bar" style="justify-content:space-between">
@@ -1725,6 +1728,7 @@ Anticipated rain — AM weather monitoring expected"></textarea>
         <button class="map-style-btn" id="map-pin-all" onclick="mapSetPinFilter('all')">📸 All</button>
         <button class="map-style-btn active" id="map-pin-today" onclick="mapSetPinFilter('today')">Today</button>
         <button class="map-style-btn" id="map-pin-range" onclick="mapTogglePinDateRange()">Date Range</button>
+        <button class="map-style-btn" id="map-pin-none" onclick="mapSetPinFilter('none')">Hide</button>
       </div>
       <div id="map-pin-range-inputs" style="display:none;gap:6px;align-items:center;padding:6px 0 2px;flex-wrap:wrap">
         <input type="date" id="map-pin-from" style="background:var(--s1);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--mono);font-size:11px;padding:5px 8px" onchange="mapRenderPhotoPins()">
@@ -1825,8 +1829,8 @@ Anticipated rain — AM weather monitoring expected"></textarea>
       <div style="font-family:var(--cond);font-weight:700;font-size:14px;letter-spacing:.05em;text-transform:uppercase;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;flex-shrink:0">
         Tracker Categories
         <div style="display:flex;gap:8px;align-items:center">
-          <button onclick="mapTrackerShowAdd()" style="background:var(--amber);border:none;color:#111;width:26px;height:26px;border-radius:50%;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;font-weight:700;line-height:1">+</button>
-          <button onclick="mapCloseTrackerSheet()" style="background:none;border:none;color:var(--muted);font-size:18px;cursor:pointer;">✕</button>
+          <button onclick="mapTrackerShowAdd()" style="background:var(--amber);border:none;color:#111;width:36px;height:36px;border-radius:50%;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;font-weight:700;line-height:1">+</button>
+          <button onclick="mapCloseTrackerSheet()" style="background:none;border:none;color:var(--muted);font-size:18px;cursor:pointer;width:36px;height:36px;display:flex;align-items:center;justify-content:center;">✕</button>
         </div>
       </div>
       <div id="map-tracker-cat-list"></div>
@@ -2015,9 +2019,15 @@ Anticipated rain — AM weather monitoring expected"></textarea>
     </div>
   </div>
 
+  <!-- Compliance log section separator -->
+  <div style="display:flex;align-items:center;gap:10px;margin:4px 0 12px">
+    <span style="font-family:var(--mono);font-size:9.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;white-space:nowrap">Compliance Log</span>
+    <div style="flex:1;height:1px;background:var(--border)"></div>
+  </div>
+
   <!-- Filter bar -->
   <div class="cl-filter-bar">
-    <input type="text" id="cl-search" placeholder="🔍 Search location or description…" oninput="clRender()">
+    <input type="text" id="cl-search" placeholder="🔍 Search entries…" oninput="clRender()">
     <select id="cl-filter-level" onchange="clRender()">
       <option value="">All Levels</option>
       <option value="1">Level 1 — Observation</option>

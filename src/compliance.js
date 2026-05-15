@@ -92,7 +92,7 @@ function clRender(){
   if(el) el.textContent = openCount;
   if(et) et.textContent = _clEntries.length;
 
-  clRenderTrackerCard();
+  clRenderTrackerCard(search);
   const list = document.getElementById('cl-list');
   if(!list) return;
 
@@ -310,12 +310,21 @@ async function _glMigrateCompliancePhaseD() {
 }
 
 // ── Today's Tracker Activity card ──
-function clRenderTrackerCard(){
+function clRenderTrackerCard(search){
   const el=document.getElementById('cl-tracker-card');
   if(!el) return;
   const today=new Date().toISOString().split('T')[0];
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
-  const entries=(typeof trGetEntriesForDate==='function')?trGetEntriesForDate(today,pid):[];
+  let entries=(typeof trGetEntriesForDate==='function')?trGetEntriesForDate(today,pid):[];
+  if(search){
+    entries=entries.filter(e=>
+      (e.categoryName||'').toLowerCase().includes(search)||
+      (e.location||'').toLowerCase().includes(search)||
+      (e.notes||'').toLowerCase().includes(search)||
+      (e.date||'').includes(search)||
+      String(e.acres||'').includes(search)
+    );
+  }
   if(!entries.length){ el.style.display='none'; return; }
   const rows=entries.map(e=>{
     const catColor=(typeof tcGetColor==='function')?tcGetColor(e.categoryId,pid):'#888';
