@@ -92,6 +92,7 @@ function clRender(){
   if(el) el.textContent = openCount;
   if(et) et.textContent = _clEntries.length;
 
+  clRenderTrackerCard();
   const list = document.getElementById('cl-list');
   if(!list) return;
 
@@ -308,6 +309,29 @@ async function _glMigrateCompliancePhaseD() {
   localStorage.setItem('gl_phaseD_cl_migrated', '1');
 }
 
+// ── Today's Tracker Activity card ──
+function clRenderTrackerCard(){
+  const el=document.getElementById('cl-tracker-card');
+  if(!el) return;
+  const today=new Date().toISOString().split('T')[0];
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const entries=(typeof trGetEntriesForDate==='function')?trGetEntriesForDate(today,pid):[];
+  if(!entries.length){ el.style.display='none'; return; }
+  const colors=window.TR_CATEGORY_COLORS||{};
+  const labels=window.TR_CATEGORY_LABELS||{};
+  const rows=entries.map(e=>`
+    <div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border)">
+      <div style="width:10px;height:10px;border-radius:50%;background:${colors[e.category]||'#888'};flex-shrink:0"></div>
+      <span style="font-family:var(--mono);font-size:11px;color:var(--text);flex:1">${labels[e.category]||e.category}</span>
+      ${e.acres?`<span style="font-family:var(--mono);font-size:11px;color:var(--muted)">${e.acres} ac</span>`:''}
+    </div>`).join('');
+  el.innerHTML=`<div class="card" style="cursor:pointer" onclick="showPage('map')">
+    <div class="card-head"><span class="card-num">🗺️</span><span class="card-title">Today's Tracker Activity</span><span class="card-badge">${entries.length}</span></div>
+    <div class="card-body" style="padding-top:4px">${rows}</div>
+  </div>`;
+  el.style.display='block';
+}
+
 // ── Init compliance log ──
 async function clInit(){
   clLoadLocal();
@@ -328,3 +352,4 @@ window.clToggleResolvedDate = clToggleResolvedDate;
 window.clSubmitForm = clSubmitForm;
 window.clEditEntry = clEditEntry;
 window.clConfirmDelete = clConfirmDelete;
+window.clRenderTrackerCard = clRenderTrackerCard;

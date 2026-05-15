@@ -87,6 +87,30 @@ body.theme-light{
 .mapboxgl-ctrl-bottom-left{bottom:calc(80px + env(safe-area-inset-bottom))!important}
 #mapbox-map{width:100%;height:calc(100dvh - 60px - env(safe-area-inset-bottom))}
 #map-loading,#map-no-token{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:var(--bg);z-index:20;padding:32px;text-align:center}
+/* FAB + palette */
+#map-fab{position:absolute;bottom:calc(20px + env(safe-area-inset-bottom));right:16px;z-index:16;width:52px;height:52px;border-radius:50%;background:var(--amber);border:none;color:#111;font-size:22px;cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;transition:transform .18s}
+#map-fab.open{transform:rotate(45deg)}
+#map-fab-palette{position:absolute;bottom:calc(84px + env(safe-area-inset-bottom));right:16px;z-index:15;display:flex;flex-direction:column;align-items:flex-end;gap:8px;pointer-events:none;opacity:0;transform:translateY(10px);transition:opacity .18s,transform .18s}
+#map-fab-palette.open{pointer-events:auto;opacity:1;transform:translateY(0)}
+.map-fab-row{display:flex;align-items:center;gap:8px}
+.map-fab-lbl{font-family:var(--mono);font-size:10px;color:var(--text);background:var(--bg);padding:3px 8px;border-radius:6px;border:1px solid var(--border);white-space:nowrap}
+.map-fab-btn{width:40px;height:40px;border-radius:50%;background:var(--s1);border:1px solid var(--border2);color:var(--text);font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:background .15s}
+.map-fab-btn.active{background:var(--amber);color:#111;border-color:var(--amber)}
+/* draw mode indicator */
+#map-draw-bar{position:absolute;top:8px;left:50%;transform:translateX(-50%);z-index:16;display:none;background:var(--s1);border:1px solid var(--amber);border-radius:20px;padding:5px 14px;gap:10px;align-items:center;font-family:var(--mono);font-size:11px;color:var(--amber)}
+#map-draw-bar.show{display:flex}
+/* measure chip */
+#map-measure-chip{position:absolute;bottom:calc(84px + env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);z-index:16;display:none;background:var(--bg);border:1px solid var(--border);border-radius:20px;padding:6px 16px;font-family:var(--mono);font-size:12px;color:var(--text);white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,.4)}
+#map-measure-chip.show{display:block}
+/* tracker entry modal */
+#map-tracker-modal{position:absolute;bottom:0;left:0;right:0;z-index:30;background:var(--bg);border-top:1px solid var(--border);border-radius:16px 16px 0 0;padding:16px 16px calc(16px + env(safe-area-inset-bottom));transform:translateY(100%);transition:transform .25s;max-height:80dvh;overflow-y:auto}
+#map-tracker-modal.open{transform:translateY(0)}
+/* category sheet */
+#map-category-sheet{position:absolute;bottom:0;left:0;right:0;z-index:28;background:var(--bg);border-top:1px solid var(--border);border-radius:16px 16px 0 0;padding:14px 14px calc(14px + env(safe-area-inset-bottom));transform:translateY(100%);transition:transform .25s}
+#map-category-sheet.open{transform:translateY(0)}
+.map-cat-pill{display:flex;align-items:center;gap:8px;padding:9px 12px;border-radius:8px;border:1px solid var(--border);background:var(--s1);margin-bottom:6px;cursor:pointer;font-family:var(--mono);font-size:12px;color:var(--text);transition:background .12s}
+.map-cat-pill:hover{background:var(--s2)}
+.map-cat-dot{width:12px;height:12px;border-radius:50%;flex-shrink:0}
 #map-no-token{display:none}
 .map-controls{position:absolute;top:12px;left:12px;z-index:10;display:flex;gap:6px;flex-wrap:wrap}
 .map-style-btn{font-family:var(--mono);font-size:10px;padding:5px 10px;border-radius:20px;border:1px solid var(--border2);background:var(--s1);color:var(--amber);cursor:pointer;transition:all .15s;letter-spacing:.04em}
@@ -1694,7 +1718,7 @@ Anticipated rain — AM weather monitoring expected"></textarea>
   <div style="padding:10px;padding-bottom:95px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:8px;">
     <label style="display:flex;align-items:center;gap:8px;background:var(--s1);padding:8px 10px;border-radius:6px;cursor:pointer;font-family:var(--mono);font-size:11px;color:var(--text);">
       📂 Import KML
-      <input type="file" id="map-kml-input" accept=".kml" style="display:none;" onchange="mapImportKml(this)">
+      <input type="file" id="map-kml-input" accept=".kml,.kmz" style="display:none;" onchange="mapImportKml(this)">
     </label>
     <button onclick="mapShowExportModal()" style="background:var(--s1);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:6px;font-family:var(--mono);font-size:11px;cursor:pointer;text-align:left;">⬇️ Export KML</button>
   </div>
@@ -1727,6 +1751,68 @@ Anticipated rain — AM weather monitoring expected"></textarea>
     <button onclick="mapExportKml()" style="flex:1;background:#006B75;border:none;color:#fff;padding:8px;border-radius:6px;font-family:var(--mono);font-size:11px;cursor:pointer;font-weight:600;">Export</button>
   </div>
 </div>
+
+    <!-- FAB -->
+    <button id="map-fab" onclick="mapToggleFab()" title="Tracker tools">✚</button>
+    <div id="map-fab-palette">
+      <div class="map-fab-row"><span class="map-fab-lbl">Import KML</span><button class="map-fab-btn" onclick="mapFabImportKml()" title="Import KML/KMZ">📂</button></div>
+      <div class="map-fab-row"><span class="map-fab-lbl">Layers</span><button class="map-fab-btn" onclick="mapFabLayers()" title="Layers">🗂️</button></div>
+      <div class="map-fab-row"><span class="map-fab-lbl">Draw</span><button class="map-fab-btn" id="map-fab-draw-btn" onclick="mapFabDraw()" title="Draw tracker entry">✏️</button></div>
+      <div class="map-fab-row"><span class="map-fab-lbl">Measure</span><button class="map-fab-btn" id="map-fab-measure-btn" onclick="mapFabMeasure()" title="Measure area / distance">📏</button></div>
+      <div class="map-fab-row"><span class="map-fab-lbl">GPS Follow</span><button class="map-fab-btn" id="map-fab-gps-btn" onclick="mapFabGps()" title="GPS follow">🎯</button></div>
+    </div>
+
+    <!-- Draw mode indicator bar -->
+    <div id="map-draw-bar">
+      <span id="map-draw-bar-label">Drawing</span>
+      <button onclick="mapDeactivateDrawMode()" style="background:none;border:none;color:var(--amber);font-family:var(--mono);font-size:11px;cursor:pointer;padding:0;text-decoration:underline">✕ Cancel</button>
+    </div>
+
+    <!-- Measure readout chip -->
+    <div id="map-measure-chip"></div>
+
+    <!-- Category picker sheet -->
+    <div id="map-category-sheet">
+      <div style="font-family:var(--cond);font-weight:700;font-size:14px;letter-spacing:.05em;text-transform:uppercase;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;">
+        Select Category
+        <button onclick="mapCloseCategorySheet()" style="background:none;border:none;color:var(--muted);font-size:18px;cursor:pointer;">✕</button>
+      </div>
+      <div id="map-category-list"></div>
+    </div>
+
+    <!-- Tracker entry modal -->
+    <div id="map-tracker-modal">
+      <div style="font-family:var(--cond);font-weight:700;font-size:14px;letter-spacing:.05em;text-transform:uppercase;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;">
+        New Tracker Entry
+        <button onclick="mapCancelTrackerEntry()" style="background:none;border:none;color:var(--muted);font-size:18px;cursor:pointer;">✕</button>
+      </div>
+      <div id="map-tracker-cat-row" style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
+        <div id="map-tracker-cat-dot" style="width:14px;height:14px;border-radius:50%;flex-shrink:0;background:#ccc"></div>
+        <span id="map-tracker-cat-label" style="font-family:var(--mono);font-size:12px;color:var(--amber);font-weight:600;letter-spacing:.04em"></span>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+        <div>
+          <label style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;display:block;margin-bottom:4px">Date</label>
+          <input type="date" id="map-tr-date" style="width:100%;box-sizing:border-box;background:var(--s1);border:1px solid var(--border);border-radius:6px;padding:7px 9px;color:var(--text);font-family:var(--mono);font-size:12px">
+        </div>
+        <div>
+          <label style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;display:block;margin-bottom:4px">Acres</label>
+          <input type="number" id="map-tr-acres" step="0.01" min="0" placeholder="—" style="width:100%;box-sizing:border-box;background:var(--s1);border:1px solid var(--border);border-radius:6px;padding:7px 9px;color:var(--text);font-family:var(--mono);font-size:12px">
+        </div>
+      </div>
+      <div style="margin-bottom:10px">
+        <label style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;display:block;margin-bottom:4px">Location (description)</label>
+        <input type="text" id="map-tr-location" placeholder="Area name or GPS ref" style="width:100%;box-sizing:border-box;background:var(--s1);border:1px solid var(--border);border-radius:6px;padding:7px 9px;color:var(--text);font-family:var(--mono);font-size:12px">
+      </div>
+      <div style="margin-bottom:14px">
+        <label style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;display:block;margin-bottom:4px">Notes</label>
+        <textarea id="map-tr-notes" rows="2" placeholder="Seed mix, applicator, conditions…" style="width:100%;box-sizing:border-box;background:var(--s1);border:1px solid var(--border);border-radius:6px;padding:7px 9px;color:var(--text);font-family:var(--mono);font-size:12px;resize:vertical"></textarea>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button onclick="mapCancelTrackerEntry()" style="flex:1;background:var(--s1);border:1px solid var(--border);color:var(--text);padding:10px;border-radius:8px;font-family:var(--mono);font-size:12px;cursor:pointer">Cancel</button>
+        <button onclick="mapSaveTrackerEntry()" style="flex:2;background:var(--amber);border:none;color:#111;padding:10px;border-radius:8px;font-family:var(--mono);font-size:12px;cursor:pointer;font-weight:700">Save Entry</button>
+      </div>
+    </div>
 
     <!-- Loading state -->
     <div id="map-loading">
@@ -1834,6 +1920,9 @@ Anticipated rain — AM weather monitoring expected"></textarea>
     </div>
     <button class="btn btn-amber" onclick="clShowForm()">+ Add Entry</button>
   </div>
+
+  <!-- Today's Tracker Activity card (populated by clRenderTrackerCard) -->
+  <div id="cl-tracker-card" style="display:none;margin-bottom:12px"></div>
 
   <!-- Auto-detect banner (shown when daily log has unlogged issues) -->
   <div class="cl-auto-banner" id="cl-auto-banner" style="display:none">

@@ -528,6 +528,8 @@ async function loadProject(projectId, projDataOverride) {
     // project's mounted layers + state, then reload from the new project's
     // per-project metadata cache.
     if(typeof mapClearKmlLayers === 'function') mapClearKmlLayers();
+    if(typeof mapResetGpsFollow === 'function') mapResetGpsFollow();
+    if(typeof mapDeactivateDrawMode === 'function') mapDeactivateDrawMode();
     if(typeof kmlLoadLayers === 'function'){
       // Fire-and-forget — kmlLoadLayers is async but project switch must not
       // block on Storage fetches.

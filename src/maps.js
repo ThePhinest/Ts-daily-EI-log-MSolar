@@ -1,8 +1,29 @@
 ﻿// ═══════════════════════════════════════════
 // FIELD MAP — MAPBOX
 // ═══════════════════════════════════════════
+import MapboxDraw from '@mapbox/mapbox-gl-draw';
+import '@mapbox/mapbox-gl-draw/dist/mapbox-gl-draw.css';
+
 let _mapInstance=null, _mapGpsMarker=null, _mapGpsWatch=null;
 let _mapCurrentStyle=localStorage.getItem('gl_map_style')||'satellite-streets-v11';
+
+// B2 — Draw / Measure / FAB / GPS state
+let _drawInstance=null, _drawMode=null, _drawCategory=null;
+let _fabOpen=false, _gpsFollowActive=false, _gpsFollowWatch=null;
+let _pendingDrawFeature=null;
+
+const TR_CATEGORY_COLORS={
+  'pre-seeding':'#7CCD7C','temp-seeding':'#A8D8A8','cover-crop':'#C8E6C8',
+  'perm-seeding':'#27AE60','ag-seeding':'#F0A500','wetland-adj-seeding':'#4A90E2',
+  'active-disturbance':'#E67E22','stabilized':'#8E9BA3',
+  'cleaning-station':'#9B59B6','rock-stockpile':'#D35400','spill':'#F4E200'
+};
+const TR_CATEGORY_LABELS={
+  'pre-seeding':'Pre-Seeding','temp-seeding':'Temp Seeding','cover-crop':'Cover Crop',
+  'perm-seeding':'Perm Seeding','ag-seeding':'Ag Seeding','wetland-adj-seeding':'Wetland Adj.',
+  'active-disturbance':'Active Disturbance','stabilized':'Stabilized',
+  'cleaning-station':'Cleaning Station','rock-stockpile':'Rock Stockpile','spill':'⚠️ Spill'
+};
 
 // Two-token architecture (locked 2026-05-06 — see [[cost-tracker]] Mapbox row,
 // memory feedback_operate_as_if_multi_tenant.md):
@@ -321,8 +342,10 @@ function mapRenderPhotoPins(){
   const fromDate = document.getElementById('map-pin-from')?.value || '';
   const toDate   = document.getElementById('map-pin-to')?.value || '';
 
+  const pid = (typeof _activeProjectId === 'function') ? _activeProjectId() : 'default';
   const photos = _phPhotos.filter(p => {
     if(!p.lat || !p.lng) return false;
+    if(p.projectId && p.projectId !== pid) return false;
     if(_mapPinFilter === 'today') return p.date === today;
     if(_mapPinFilter === 'range'){
       if(fromDate && p.date < fromDate) return false;
@@ -1195,6 +1218,280 @@ async function mapLoadSettingsFields(){
 
 function mapResize(){ if(_mapInstance) _mapInstance.resize(); }
 
+// ═══════════════════════════════════════════
+// B2 — FAB + TRACKER DRAW + MEASURE + GPS
+// ═══════════════════════════════════════════
+
+// ── FAB ──────────────────────────────────
+function mapToggleFab(){
+  _fabOpen=!_fabOpen;
+  document.getElementById('map-fab').classList.toggle('open',_fabOpen);
+  document.getElementById('map-fab-palette').classList.toggle('open',_fabOpen);
+}
+function mapCloseFab(){
+  _fabOpen=false;
+  document.getElementById('map-fab').classList.remove('open');
+  document.getElementById('map-fab-palette').classList.remove('open');
+}
+function mapFabImportKml(){
+  mapCloseFab();
+  document.getElementById('map-kml-input').click();
+}
+function mapFabLayers(){
+  mapCloseFab();
+  mapToggleLayerPanel();
+}
+function mapFabDraw(){
+  mapCloseFab();
+  mapShowCategorySheet();
+}
+function mapFabMeasure(){
+  if(_drawMode==='measure'){ mapDeactivateDrawMode(); return; }
+  mapCloseFab();
+  mapActivateMeasure();
+}
+function mapFabGps(){
+  mapCloseFab();
+  mapToggleGpsFollow();
+}
+
+// ── Category picker ──────────────────────
+function mapShowCategorySheet(){
+  const list=document.getElementById('map-category-list');
+  const cats=window.TR_CATEGORIES||['pre-seeding','temp-seeding','cover-crop','perm-seeding','ag-seeding','wetland-adj-seeding','active-disturbance','stabilized','cleaning-station','rock-stockpile','spill'];
+  list.innerHTML=cats.map(c=>`
+    <div class="map-cat-pill" onclick="mapActivateDrawMode('${c}')">
+      <div class="map-cat-dot" style="background:${TR_CATEGORY_COLORS[c]||'#888'}"></div>
+      <span>${TR_CATEGORY_LABELS[c]||c}</span>
+    </div>`).join('');
+  document.getElementById('map-category-sheet').classList.add('open');
+}
+function mapCloseCategorySheet(){
+  document.getElementById('map-category-sheet').classList.remove('open');
+}
+
+// ── Draw mode ────────────────────────────
+function mapActivateDrawMode(category){
+  mapCloseCategorySheet();
+  if(!_mapInstance) return;
+  _drawCategory=category;
+  _drawMode='draw';
+  if(!_drawInstance){
+    _drawInstance=new MapboxDraw({
+      displayControlsDefault:false,
+      controls:{polygon:true,line_string:true,point:true,trash:true}
+    });
+    _mapInstance.addControl(_drawInstance,'top-left');
+    _mapInstance.on('draw.create',_onDrawCreate);
+    _mapInstance.on('draw.delete',_onDrawDelete);
+    _mapInstance.on('draw.modechange',_onDrawModeChange);
+  }
+  const bar=document.getElementById('map-draw-bar');
+  document.getElementById('map-draw-bar-label').textContent=
+    `Drawing: ${TR_CATEGORY_LABELS[category]||category}`;
+  bar.classList.add('show');
+  bar.style.borderColor=TR_CATEGORY_COLORS[category]||'var(--amber)';
+  document.getElementById('map-fab-draw-btn').classList.add('active');
+}
+
+function mapDeactivateDrawMode(){
+  _drawMode=null;
+  _drawCategory=null;
+  _pendingDrawFeature=null;
+  if(_drawInstance){
+    _drawInstance.deleteAll();
+    try{ _mapInstance.removeControl(_drawInstance); }catch{}
+    _drawInstance=null;
+  }
+  document.getElementById('map-draw-bar').classList.remove('show');
+  document.getElementById('map-fab-draw-btn').classList.remove('active');
+  document.getElementById('map-fab-measure-btn').classList.remove('active');
+  document.getElementById('map-measure-chip').classList.remove('show');
+  mapCloseTrackerModal();
+}
+
+function _onDrawCreate(e){
+  if(!e.features||!e.features.length) return;
+  const feat=e.features[0];
+  if(_drawMode==='measure'){
+    _showMeasureReadout(feat);
+    return;
+  }
+  _pendingDrawFeature=feat;
+  mapShowTrackerModal(feat,_drawCategory);
+}
+function _onDrawDelete(){ /* no action needed */ }
+function _onDrawModeChange(){ /* no action needed */ }
+
+// ── Geometry helpers ──────────────────────
+function _geoAreaAcres(feat){
+  if(!feat||feat.geometry.type!=='Polygon') return null;
+  const coords=feat.geometry.coordinates[0];
+  if(coords.length<3) return null;
+  let area=0;
+  const n=coords.length;
+  const toRad=d=>d*Math.PI/180;
+  for(let i=0;i<n-1;i++){
+    area+=(toRad(coords[i+1][0])-toRad(coords[i][0]))*(
+      2+Math.sin(toRad(coords[i][1]))+Math.sin(toRad(coords[i+1][1]))
+    );
+  }
+  const m2=Math.abs(area*6371000*6371000/2);
+  return (m2*0.000247105).toFixed(2);
+}
+
+function _geoLengthFt(feat){
+  if(!feat||feat.geometry.type!=='LineString') return null;
+  const coords=feat.geometry.coordinates;
+  let total=0;
+  for(let i=0;i<coords.length-1;i++){
+    const [lng1,lat1]=coords[i],[lng2,lat2]=coords[i+1];
+    const R=6371000,toRad=d=>d*Math.PI/180;
+    const dLat=toRad(lat2-lat1),dLng=toRad(lng2-lng1);
+    const a=Math.sin(dLat/2)**2+Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLng/2)**2;
+    total+=R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+  }
+  return (total*3.28084).toFixed(0);
+}
+
+function _geoCentroid(feat){
+  const coords=feat.geometry.type==='Polygon'
+    ? feat.geometry.coordinates[0]
+    : feat.geometry.type==='LineString'
+      ? feat.geometry.coordinates
+      : [feat.geometry.coordinates];
+  if(!coords||!coords.length) return null;
+  const sum=coords.reduce((a,c)=>[a[0]+c[0],a[1]+c[1]],[0,0]);
+  return {lng:sum[0]/coords.length,lat:sum[1]/coords.length};
+}
+
+// ── Tracker entry modal ───────────────────
+function mapShowTrackerModal(feat,category){
+  const today=new Date().toISOString().split('T')[0];
+  document.getElementById('map-tr-date').value=today;
+  const acres=_geoAreaAcres(feat);
+  document.getElementById('map-tr-acres').value=acres||'';
+  const centroid=_geoCentroid(feat);
+  document.getElementById('map-tr-location').value=
+    centroid ? `${centroid.lat.toFixed(5)}, ${centroid.lng.toFixed(5)}` : '';
+  document.getElementById('map-tr-notes').value='';
+  const color=TR_CATEGORY_COLORS[category]||'#888';
+  document.getElementById('map-tracker-cat-dot').style.background=color;
+  document.getElementById('map-tracker-cat-label').textContent=
+    TR_CATEGORY_LABELS[category]||category;
+  document.getElementById('map-tracker-modal').classList.add('open');
+}
+
+function mapCloseTrackerModal(){
+  document.getElementById('map-tracker-modal').classList.remove('open');
+}
+
+function mapCancelTrackerEntry(){
+  if(_drawInstance) _drawInstance.deleteAll();
+  _pendingDrawFeature=null;
+  mapCloseTrackerModal();
+  // Stay in draw mode so user can try again
+}
+
+function mapSaveTrackerEntry(){
+  const feat=_pendingDrawFeature;
+  if(!feat) return;
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const today=new Date().toISOString().split('T')[0];
+  const acres=parseFloat(document.getElementById('map-tr-acres').value)||null;
+  const centroid=_geoCentroid(feat);
+  const entry={
+    date:document.getElementById('map-tr-date').value||today,
+    category:_drawCategory||'active-disturbance',
+    geometry:feat.geometry,
+    centroidLng:centroid?centroid.lng:null,
+    centroidLat:centroid?centroid.lat:null,
+    acres,
+    location:document.getElementById('map-tr-location').value.trim()||null,
+    fields:{},
+    notes:document.getElementById('map-tr-notes').value.trim()||null
+  };
+  if(typeof trSaveEntry==='function') trSaveEntry(entry,pid);
+  _pendingDrawFeature=null;
+  mapCloseTrackerModal();
+  // Clear drawn shape — the category layers act as the persistent visual
+  if(_drawInstance) _drawInstance.deleteAll();
+  // Refresh compliance card
+  if(typeof clRenderTrackerCard==='function') clRenderTrackerCard();
+}
+
+// ── Measure mode ──────────────────────────
+function mapActivateMeasure(){
+  if(!_mapInstance) return;
+  _drawMode='measure';
+  if(!_drawInstance){
+    _drawInstance=new MapboxDraw({
+      displayControlsDefault:false,
+      controls:{polygon:true,line_string:true,trash:true}
+    });
+    _mapInstance.addControl(_drawInstance,'top-left');
+    _mapInstance.on('draw.create',_onDrawCreate);
+    _mapInstance.on('draw.delete',_onDrawDelete);
+    _mapInstance.on('draw.modechange',_onDrawModeChange);
+  }
+  const bar=document.getElementById('map-draw-bar');
+  document.getElementById('map-draw-bar-label').textContent='Measure — draw shape';
+  bar.classList.add('show');
+  bar.style.borderColor='#4A90E2';
+  document.getElementById('map-fab-measure-btn').classList.add('active');
+}
+
+function _showMeasureReadout(feat){
+  const chip=document.getElementById('map-measure-chip');
+  let text='';
+  if(feat.geometry.type==='Polygon'){
+    const ac=_geoAreaAcres(feat);
+    text=ac ? `Area: ${ac} ac` : 'Area: —';
+  } else if(feat.geometry.type==='LineString'){
+    const ft=_geoLengthFt(feat);
+    if(ft){
+      const mi=(parseInt(ft)/5280).toFixed(2);
+      text=`Length: ${ft} ft (${mi} mi)`;
+    } else { text='Length: —'; }
+  }
+  chip.textContent=text;
+  chip.classList.add('show');
+}
+
+// ── GPS Follow ────────────────────────────
+function mapToggleGpsFollow(){
+  const btn=document.getElementById('map-fab-gps-btn');
+  if(_gpsFollowActive){
+    _gpsFollowActive=false;
+    if(_gpsFollowWatch) navigator.geolocation.clearWatch(_gpsFollowWatch);
+    _gpsFollowWatch=null;
+    if(btn) btn.classList.remove('active');
+  } else {
+    if(!navigator.geolocation) return;
+    _gpsFollowActive=true;
+    if(btn) btn.classList.add('active');
+    // Fly to current position immediately
+    navigator.geolocation.getCurrentPosition(pos=>{
+      if(!_mapInstance||!_gpsFollowActive) return;
+      _mapInstance.flyTo({center:[pos.coords.longitude,pos.coords.latitude],zoom:17,duration:800});
+    },null,{enableHighAccuracy:true});
+    // Then keep centered on updates
+    _gpsFollowWatch=navigator.geolocation.watchPosition(pos=>{
+      if(!_mapInstance||!_gpsFollowActive) return;
+      _mapInstance.easeTo({center:[pos.coords.longitude,pos.coords.latitude],duration:300});
+    },null,{enableHighAccuracy:true,maximumAge:3000});
+  }
+}
+
+function mapResetGpsFollow(){
+  if(!_gpsFollowActive) return;
+  _gpsFollowActive=false;
+  if(_gpsFollowWatch) navigator.geolocation.clearWatch(_gpsFollowWatch);
+  _gpsFollowWatch=null;
+  const btn=document.getElementById('map-fab-gps-btn');
+  if(btn) btn.classList.remove('active');
+}
+
 // ── Expose to window for HTML onclick handlers and cross-module calls ──
 window.getMapInstance = () => _mapInstance;
 window.mapInit = mapInit;
@@ -1235,3 +1532,24 @@ window.mapBulkDeleteSelected = mapBulkDeleteSelected;
 window.mapShowExportModal = mapShowExportModal;
 window.mapExportKml = mapExportKml;
 window.mapLoadSettingsFields = mapLoadSettingsFields;
+// B2
+window.mapToggleFab = mapToggleFab;
+window.mapCloseFab = mapCloseFab;
+window.mapFabImportKml = mapFabImportKml;
+window.mapFabLayers = mapFabLayers;
+window.mapFabDraw = mapFabDraw;
+window.mapFabMeasure = mapFabMeasure;
+window.mapFabGps = mapFabGps;
+window.mapShowCategorySheet = mapShowCategorySheet;
+window.mapCloseCategorySheet = mapCloseCategorySheet;
+window.mapActivateDrawMode = mapActivateDrawMode;
+window.mapDeactivateDrawMode = mapDeactivateDrawMode;
+window.mapShowTrackerModal = mapShowTrackerModal;
+window.mapCloseTrackerModal = mapCloseTrackerModal;
+window.mapCancelTrackerEntry = mapCancelTrackerEntry;
+window.mapSaveTrackerEntry = mapSaveTrackerEntry;
+window.mapActivateMeasure = mapActivateMeasure;
+window.mapToggleGpsFollow = mapToggleGpsFollow;
+window.mapResetGpsFollow = mapResetGpsFollow;
+window.TR_CATEGORY_COLORS = TR_CATEGORY_COLORS;
+window.TR_CATEGORY_LABELS = TR_CATEGORY_LABELS;
