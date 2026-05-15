@@ -1826,12 +1826,15 @@ Anticipated rain — AM weather monitoring expected"></textarea>
       </div>
       <div id="map-tracker-cat-list"></div>
       <div id="map-tracker-sheet-add">
-        <div class="map-tc-add-color" id="map-tc-add-preview" onclick="mapTrackerCycleAddColor()"></div>
+        <div class="map-tc-add-color" id="map-tc-add-preview" onclick="mapShowColorPicker('add',this)"></div>
         <input id="map-tc-add-name" class="map-tc-name-input" placeholder="Category name" autocomplete="off" maxlength="32" onkeydown="if(event.key==='Enter')mapTrackerSaveAdd()">
         <button onclick="mapTrackerSaveAdd()" class="map-tc-save-btn">Add</button>
         <button onclick="mapTrackerHideAdd()" class="map-tc-cancel-btn">✕</button>
       </div>
     </div>
+
+    <!-- Color picker popover (shared by tracker category edit + add) -->
+    <div id="map-tc-color-popover" style="display:none;position:fixed;z-index:9999;background:#1a2a3a;border:1px solid rgba(255,255,255,.18);border-radius:10px;padding:10px;flex-wrap:wrap;gap:8px;width:168px;box-shadow:0 8px 24px rgba(0,0,0,.6)"></div>
 
     <!-- Tracker entry modal -->
     <div id="map-tracker-modal">

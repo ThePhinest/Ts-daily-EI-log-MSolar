@@ -355,17 +355,22 @@ function clShowTrackerDetail(entryId){
       ${entry.location?`<div><span style="color:var(--muted);text-transform:uppercase;font-size:10px;letter-spacing:.06em">Location</span><div style="margin-top:2px">${entry.location}</div></div>`:''}
       ${entry.notes?`<div><span style="color:var(--muted);text-transform:uppercase;font-size:10px;letter-spacing:.06em">Notes</span><div style="margin-top:2px;line-height:1.5">${entry.notes}</div></div>`:''}
     </div>
-    <div class="modal-btns">
+    <div class="modal-btns" style="flex-wrap:wrap;gap:8px">
       <button class="modal-cancel" id="_cltrclose">Close</button>
+      <button class="modal-cancel" id="_cltrdelete" style="color:#e74c3c">Delete</button>
       <button class="modal-confirm" id="_cltredit">Edit on Map</button>
     </div>
   </div>`;
   document.body.appendChild(ov);
   document.getElementById('_cltrclose').onclick=()=>ov.remove();
+  document.getElementById('_cltrdelete').onclick=async()=>{
+    if(typeof trDeleteEntry==='function') await trDeleteEntry(entryId,pid);
+    ov.remove();
+    if(typeof clRenderTrackerCard==='function') clRenderTrackerCard();
+  };
   document.getElementById('_cltredit').onclick=()=>{
     ov.remove();
     if(typeof showPage==='function') showPage('map');
-    // Brief delay for map page to mount, then open the edit modal
     setTimeout(()=>{
       if(typeof mapEditTrackerEntry==='function') mapEditTrackerEntry(entryId);
     },350);

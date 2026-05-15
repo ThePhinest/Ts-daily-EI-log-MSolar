@@ -1282,10 +1282,13 @@ function mapCloseCategorySheet(){
 }
 
 // ── Tracker sheet (category management) ──
-let _tcLayerVisible={};    // { [catId]: boolean } — default true
-let _tcEditingCatId=null;  // id of category being inline-edited
-let _tcEditingColor=null;  // color staged for edit row (hex string)
-let _tcAddingColor=null;   // color staged for add row (hex string)
+const TC_COLORS=['#E67E22','#27AE60','#4A90E2','#9B59B6','#F4E200','#D35400','#7CCD7C','#E74C3C','#8E9BA3','#A8D8A8'];
+let _tcLayerVisible={};       // { [catId]: boolean } — default true
+let _tcEditingCatId=null;     // id of category being inline-edited
+let _tcEditingColor=null;     // color staged for edit row (hex string)
+let _tcAddingColor=null;      // color staged for add row (hex string)
+let _tcConfirmDeleteId=null;  // id of category awaiting inline delete confirm
+let _tcColorTarget=null;      // 'add'|'edit' — which swatch the picker is serving
 
 function mapShowTrackerSheet(){
   mapCloseFab();
@@ -1313,10 +1316,18 @@ function _renderTrackerSheet(){
     const visible=_tcLayerVisible[c.id]!==false;
     if(_tcEditingCatId===c.id){
       return `<div class="map-tc-row editing">
-        <div class="map-tc-edit-color" id="map-tc-edit-preview" style="background:${_tcEditingColor||c.color||'#888'}" onclick="mapTrackerCycleEditColor()"></div>
+        <div class="map-tc-edit-color" id="map-tc-edit-preview" style="background:${_tcEditingColor||c.color||'#888'}" onclick="mapShowColorPicker('edit',this)"></div>
         <input id="map-tc-edit-name" class="map-tc-name-input" value="${c.name}" placeholder="Name" autocomplete="off" maxlength="32">
         <button onclick="mapTrackerSaveEdit('${c.id}')" class="map-tc-save-btn">Save</button>
         <button onclick="mapTrackerCancelEdit()" class="map-tc-cancel-btn">✕</button>
+      </div>`;
+    }
+    if(_tcConfirmDeleteId===c.id){
+      return `<div class="map-tc-row" style="background:rgba(220,50,50,.08)">
+        <div class="map-tc-dot" style="background:${c.color||'#888'}"></div>
+        <span class="map-tc-name" style="color:var(--muted)">Delete "${c.name}"?</span>
+        <button onclick="mapTrackerConfirmDelete('${c.id}')" class="map-tc-save-btn" style="background:#c0392b;color:#fff">Yes</button>
+        <button onclick="mapTrackerCancelDelete()" class="map-tc-cancel-btn">No</button>
       </div>`;
     }
     return `<div class="map-tc-row">
@@ -1324,7 +1335,7 @@ function _renderTrackerSheet(){
       <span class="map-tc-name">${c.name}</span>
       <button class="map-tc-btn ${visible?'':'dim'}" onclick="mapTrackerToggleLayer('${c.id}')" title="${visible?'Hide':'Show'} layer">${visible?'●':'○'}</button>
       <button class="map-tc-btn" onclick="mapTrackerStartEdit('${c.id}')">Edit</button>
-      <button class="map-tc-btn danger" onclick="mapTrackerDeleteCategory('${c.id}')">✕</button>
+      <button class="map-tc-btn danger" onclick="mapTrackerAskDelete('${c.id}')">✕</button>
     </div>`;
   }).join('');
 }
@@ -1362,27 +1373,66 @@ async function mapTrackerSaveEdit(catId){
   _renderTrackerSheet();
   mapRenderTrackerLayers();
 }
-function mapTrackerCycleEditColor(){
-  const colors=['#E67E22','#27AE60','#4A90E2','#9B59B6','#F4E200','#D35400','#7CCD7C','#E74C3C','#8E9BA3','#A8D8A8'];
-  const idx=colors.indexOf(_tcEditingColor);
-  _tcEditingColor=colors[(idx+1)%colors.length];
-  const el=document.getElementById('map-tc-edit-preview');
-  if(el) el.style.background=_tcEditingColor;
+function mapTrackerAskDelete(catId){
+  _tcConfirmDeleteId=catId;
+  _renderTrackerSheet();
 }
-async function mapTrackerDeleteCategory(catId){
-  if(!confirm('Delete this category? Existing entries keep their names.')) return;
+function mapTrackerCancelDelete(){
+  _tcConfirmDeleteId=null;
+  _renderTrackerSheet();
+}
+async function mapTrackerConfirmDelete(catId){
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
   if(typeof tcDeleteCategory==='function') await tcDeleteCategory(catId,pid);
+  _tcConfirmDeleteId=null;
   delete _tcLayerVisible[catId];
-  // Remove layers from map
   const src='tracker-'+catId;
   if(_mapInstance){
     [src+'-fill',src+'-line',src+'-circle'].forEach(lid=>{
-      if(_mapInstance.getLayer(lid)) _mapInstance.removeLayer(lid);
+      try{ if(_mapInstance.getLayer(lid)) _mapInstance.removeLayer(lid); }catch{}
     });
-    if(_mapInstance.getSource(src)) _mapInstance.removeSource(src);
+    try{ if(_mapInstance.getSource(src)) _mapInstance.removeSource(src); }catch{}
   }
   _renderTrackerSheet();
+}
+
+// ── Color picker popover ──────────────────
+function mapShowColorPicker(target, swatchEl){
+  _tcColorTarget=target;
+  const picker=document.getElementById('map-tc-color-popover');
+  if(!picker) return;
+  picker.innerHTML=TC_COLORS.map(c=>`
+    <div onclick="mapSelectColor('${c}')" style="width:30px;height:30px;border-radius:50%;background:${c};cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,.45);flex-shrink:0;border:2px solid rgba(255,255,255,.15)"></div>`
+  ).join('');
+  picker.style.display='flex';
+  const rect=swatchEl.getBoundingClientRect();
+  const pickerW=216; // 5 cols × (30+12) - 12 + 2×padding
+  const left=Math.max(8, Math.min(rect.left, window.innerWidth-pickerW-8));
+  picker.style.left=left+'px';
+  picker.style.top=(rect.top-picker.offsetHeight-10)+'px';
+  // Reposition after layout
+  requestAnimationFrame(()=>{
+    const h=picker.offsetHeight;
+    picker.style.top=(rect.top-h-10)+'px';
+  });
+}
+function mapSelectColor(hex){
+  if(_tcColorTarget==='add'){
+    _tcAddingColor=hex;
+    const el=document.getElementById('map-tc-add-preview');
+    if(el) el.style.background=hex;
+  } else if(_tcColorTarget==='edit'){
+    _tcEditingColor=hex;
+    const el=document.getElementById('map-tc-edit-preview');
+    if(el) el.style.background=hex;
+  }
+  document.getElementById('map-tc-color-popover').style.display='none';
+  _tcColorTarget=null;
+}
+function mapHideColorPicker(){
+  const picker=document.getElementById('map-tc-color-popover');
+  if(picker) picker.style.display='none';
+  _tcColorTarget=null;
 }
 
 function mapTrackerShowAdd(){
@@ -1399,13 +1449,6 @@ function mapTrackerShowAdd(){
 function mapTrackerHideAdd(){
   document.getElementById('map-tracker-sheet-add').classList.remove('open');
   _tcAddingColor=null;
-}
-function mapTrackerCycleAddColor(){
-  const colors=['#E67E22','#27AE60','#4A90E2','#9B59B6','#F4E200','#D35400','#7CCD7C','#E74C3C','#8E9BA3','#A8D8A8'];
-  const idx=colors.indexOf(_tcAddingColor);
-  _tcAddingColor=colors[(idx+1)%colors.length];
-  const el=document.getElementById('map-tc-add-preview');
-  if(el) el.style.background=_tcAddingColor;
 }
 async function mapTrackerSaveAdd(){
   const nameEl=document.getElementById('map-tc-add-name');
@@ -1866,12 +1909,15 @@ window.mapTrackerToggleLayer = mapTrackerToggleLayer;
 window.mapTrackerStartEdit = mapTrackerStartEdit;
 window.mapTrackerCancelEdit = mapTrackerCancelEdit;
 window.mapTrackerSaveEdit = mapTrackerSaveEdit;
-window.mapTrackerCycleEditColor = mapTrackerCycleEditColor;
-window.mapTrackerDeleteCategory = mapTrackerDeleteCategory;
+window.mapTrackerAskDelete = mapTrackerAskDelete;
+window.mapTrackerCancelDelete = mapTrackerCancelDelete;
+window.mapTrackerConfirmDelete = mapTrackerConfirmDelete;
 window.mapTrackerShowAdd = mapTrackerShowAdd;
 window.mapTrackerHideAdd = mapTrackerHideAdd;
-window.mapTrackerCycleAddColor = mapTrackerCycleAddColor;
 window.mapTrackerSaveAdd = mapTrackerSaveAdd;
+window.mapShowColorPicker = mapShowColorPicker;
+window.mapSelectColor = mapSelectColor;
+window.mapHideColorPicker = mapHideColorPicker;
 window.mapRenderTrackerLayers = mapRenderTrackerLayers;
 window.mapDeleteTrackerEntry = mapDeleteTrackerEntry;
 window.mapEditTrackerEntry = mapEditTrackerEntry;
