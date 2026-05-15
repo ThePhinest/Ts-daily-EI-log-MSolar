@@ -168,6 +168,7 @@ function mapSetup(token){
     mapRenderPhotoPins();
     mapRenderFieldMarkers();
     kmlLoadLayers();
+    mapRenderTrackerLayers();
 // Long press — desktop
 let _lpTimer = null, _lpStartPos = null;
 _mapInstance.on('mousedown', e => {
@@ -177,7 +178,7 @@ _mapInstance.on('mousedown', e => {
 });
 _mapInstance.on('mousemove', ()=> clearTimeout(_lpTimer));
 _mapInstance.on('mouseup', ()=> clearTimeout(_lpTimer));
-_mapInstance.on('dragstart', ()=>{ clearTimeout(_lpTimer); _lpStartPos=null; });
+_mapInstance.on('dragstart', ()=>{ clearTimeout(_lpTimer); _lpStartPos=null; mapResetGpsFollow(); });
 // Long press — touch
 _mapInstance.on('touchstart', e => {
   if(e.originalEvent.touches.length !== 1) return;
@@ -1415,9 +1416,8 @@ function mapSaveTrackerEntry(){
   if(typeof trSaveEntry==='function') trSaveEntry(entry,pid);
   _pendingDrawFeature=null;
   mapCloseTrackerModal();
-  // Clear drawn shape — the category layers act as the persistent visual
   if(_drawInstance) _drawInstance.deleteAll();
-  // Refresh compliance card
+  mapRenderTrackerLayers();
   if(typeof clRenderTrackerCard==='function') clRenderTrackerCard();
 }
 
@@ -1493,6 +1493,86 @@ function mapResetGpsFollow(){
   if(btn) btn.classList.remove('active');
 }
 
+// ── Tracker entry map layers ──────────────
+let _trackerPopup=null;
+
+function mapRenderTrackerLayers(){
+  if(!_mapInstance||!_mapInstance.isStyleLoaded()) return;
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const entries=(typeof trGetEntriesForProject==='function')?trGetEntriesForProject(pid):[];
+  const cats=window.TR_CATEGORIES||Object.keys(TR_CATEGORY_COLORS);
+
+  const byCategory={};
+  cats.forEach(c=>{byCategory[c]=[];});
+  entries.forEach(e=>{
+    if(e.geometry&&byCategory[e.category]!==undefined) byCategory[e.category].push(e);
+  });
+
+  cats.forEach(cat=>{
+    const src='tracker-'+cat;
+    const color=TR_CATEGORY_COLORS[cat]||'#888';
+    const geojson={type:'FeatureCollection',features:byCategory[cat].map(e=>({
+      type:'Feature',
+      id:e.id,
+      properties:{id:e.id,category:e.category,date:e.date,acres:e.acres,notes:e.notes,location:e.location},
+      geometry:e.geometry
+    }))};
+
+    if(_mapInstance.getSource(src)){
+      _mapInstance.getSource(src).setData(geojson);
+    } else {
+      _mapInstance.addSource(src,{type:'geojson',data:geojson});
+      _mapInstance.addLayer({id:src+'-fill',type:'fill',source:src,
+        filter:['==',['geometry-type'],'Polygon'],
+        paint:{'fill-color':color,'fill-opacity':0.35}});
+      _mapInstance.addLayer({id:src+'-line',type:'line',source:src,
+        filter:['any',['==',['geometry-type'],'Polygon'],['==',['geometry-type'],'LineString']],
+        paint:{'line-color':color,'line-width':2,'line-opacity':0.9}});
+      _mapInstance.addLayer({id:src+'-circle',type:'circle',source:src,
+        filter:['==',['geometry-type'],'Point'],
+        paint:{'circle-color':color,'circle-radius':7,'circle-opacity':0.9,
+               'circle-stroke-color':'#fff','circle-stroke-width':1.5}});
+
+      [src+'-fill',src+'-line',src+'-circle'].forEach(lid=>{
+        _mapInstance.on('click',lid,e=>{
+          if(!e.features||!e.features.length) return;
+          e.preventDefault();
+          _showTrackerEntryPopup(e.lngLat,e.features[0].properties);
+        });
+        _mapInstance.on('mouseenter',lid,()=>{_mapInstance.getCanvas().style.cursor='pointer';});
+        _mapInstance.on('mouseleave',lid,()=>{_mapInstance.getCanvas().style.cursor='';});
+      });
+    }
+  });
+}
+
+function _showTrackerEntryPopup(lngLat,props){
+  if(_trackerPopup){_trackerPopup.remove();_trackerPopup=null;}
+  const label=TR_CATEGORY_LABELS[props.category]||props.category;
+  const color=TR_CATEGORY_COLORS[props.category]||'#888';
+  const html=`<div style="font-family:var(--mono);font-size:12px;min-width:170px">
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
+      <div style="width:10px;height:10px;border-radius:50%;background:${color};flex-shrink:0"></div>
+      <strong>${label}</strong>
+    </div>
+    ${props.date?`<div>📅 ${props.date}</div>`:''}
+    ${props.acres?`<div>📐 ${props.acres} ac</div>`:''}
+    ${props.location?`<div>📍 ${props.location}</div>`:''}
+    ${props.notes?`<div style="margin-top:4px;opacity:.75">${props.notes}</div>`:''}
+    <button onclick="mapDeleteTrackerEntry('${props.id}')" style="margin-top:8px;width:100%;background:#c0392b;border:none;color:#fff;padding:6px;border-radius:6px;font-family:var(--mono);font-size:11px;cursor:pointer">🗑 Delete Entry</button>
+  </div>`;
+  _trackerPopup=new mapboxgl.Popup({closeButton:true,closeOnClick:false})
+    .setLngLat(lngLat).setHTML(html).addTo(_mapInstance);
+}
+
+function mapDeleteTrackerEntry(entryId){
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  if(typeof trDeleteEntry==='function') trDeleteEntry(entryId,pid);
+  if(_trackerPopup){_trackerPopup.remove();_trackerPopup=null;}
+  mapRenderTrackerLayers();
+  if(typeof clRenderTrackerCard==='function') clRenderTrackerCard();
+}
+
 // ── Expose to window for HTML onclick handlers and cross-module calls ──
 window.getMapInstance = () => _mapInstance;
 window.mapInit = mapInit;
@@ -1554,3 +1634,5 @@ window.mapToggleGpsFollow = mapToggleGpsFollow;
 window.mapResetGpsFollow = mapResetGpsFollow;
 window.TR_CATEGORY_COLORS = TR_CATEGORY_COLORS;
 window.TR_CATEGORY_LABELS = TR_CATEGORY_LABELS;
+window.mapRenderTrackerLayers = mapRenderTrackerLayers;
+window.mapDeleteTrackerEntry = mapDeleteTrackerEntry;
