@@ -1440,11 +1440,13 @@ function _renderTrackerSheet(){
         <button onclick="mapTrackerCancelDelete()" class="map-tc-cancel-btn">No</button>
       </div>`;
     }
+    const hasDetails=c.productName||c.targetRate||(c.amendmentType&&c.amendmentType!=='None');
     return `<div class="map-tc-row">
       <div class="map-tc-dot" style="background:${c.color||'#888'}"></div>
       <span class="map-tc-name">${c.name}</span>
       <button class="map-tc-btn ${visible?'':'dim'}" onclick="mapTrackerToggleLayer('${c.id}')" title="${visible?'Hide':'Show'} layer">${visible?'●':'○'}</button>
       <button class="map-tc-btn" onclick="mapTrackerStartEdit('${c.id}')">Edit</button>
+      <button class="map-tc-btn" onclick="mapShowCategoryDetails('${c.id}')" title="Category details" style="${hasDetails?'color:var(--amber)':''}">⚙</button>
       <button class="map-tc-btn danger" onclick="mapTrackerAskDelete('${c.id}')">✕</button>
     </div>`;
   }).join('');
@@ -1503,6 +1505,73 @@ async function mapTrackerConfirmDelete(catId){
     });
     try{ if(_mapInstance.getSource(src)) _mapInstance.removeSource(src); }catch{}
   }
+  _renderTrackerSheet();
+}
+
+// ── Category details modal ────────────────
+function mapShowCategoryDetails(catId){
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const cat=(typeof tcGetCategory==='function')?tcGetCategory(catId,pid):null;
+  if(!cat) return;
+  if(document.getElementById('_cat-details-ov')) return;
+  const typeOptions=['None','Seeding','Lime','Fertilizer','Mulch','Other'];
+  const unitOptions=['lbs/ac','tons/ac','gal/ac','bags/ac'];
+  const ov=document.createElement('div');
+  ov.className='modal-overlay';
+  ov.id='_cat-details-ov';
+  ov.style.cssText='z-index:5000';
+  ov.innerHTML=`<div class="modal-box" style="max-width:320px;width:90%">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px">
+      <div style="width:12px;height:12px;border-radius:50%;background:${cat.color||'#888'};flex-shrink:0"></div>
+      <div class="modal-title" style="margin:0">${cat.name}</div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:12px;margin-bottom:16px">
+      <div>
+        <label style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:4px">Amendment Type</label>
+        <select id="_cd-type" style="width:100%;box-sizing:border-box;background:var(--s1);border:1px solid var(--border);border-radius:6px;padding:7px 9px;color:var(--text);font-family:var(--mono);font-size:12px">
+          ${typeOptions.map(t=>`<option value="${t}"${(cat.amendmentType||'None')===t?' selected':''}>${t}</option>`).join('')}
+        </select>
+      </div>
+      <div>
+        <label style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:4px">Product Name</label>
+        <input type="text" id="_cd-product" value="${cat.productName||''}" placeholder="Seed mix, product, formula…" style="width:100%;box-sizing:border-box;background:var(--s1);border:1px solid var(--border);border-radius:6px;padding:7px 9px;color:var(--text);font-family:var(--mono);font-size:12px">
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div>
+          <label style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:4px">Target Rate</label>
+          <input type="number" id="_cd-rate" value="${cat.targetRate||''}" step="0.1" min="0" placeholder="e.g. 30" style="width:100%;box-sizing:border-box;background:var(--s1);border:1px solid var(--border);border-radius:6px;padding:7px 9px;color:var(--text);font-family:var(--mono);font-size:12px">
+        </div>
+        <div>
+          <label style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:4px">Unit</label>
+          <select id="_cd-unit" style="width:100%;box-sizing:border-box;background:var(--s1);border:1px solid var(--border);border-radius:6px;padding:7px 9px;color:var(--text);font-family:var(--mono);font-size:12px">
+            ${unitOptions.map(u=>`<option value="${u}"${(cat.targetRateUnit||'lbs/ac')===u?' selected':''}>${u}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+    </div>
+    <div class="modal-btns">
+      <button class="modal-cancel" id="_cd-cancel">Cancel</button>
+      <button class="modal-confirm" id="_cd-save">Save</button>
+    </div>
+  </div>`;
+  document.body.appendChild(ov);
+  document.getElementById('_cd-cancel').onclick=()=>ov.remove();
+  document.getElementById('_cd-save').onclick=()=>mapSaveCategoryDetails(catId,ov);
+}
+
+async function mapSaveCategoryDetails(catId, ov){
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const existing=(typeof tcGetCategory==='function')?tcGetCategory(catId,pid):null;
+  if(!existing) return;
+  const updated={
+    ...existing,
+    amendmentType: document.getElementById('_cd-type')?.value||'None',
+    productName:   document.getElementById('_cd-product')?.value.trim()||null,
+    targetRate:    parseFloat(document.getElementById('_cd-rate')?.value)||null,
+    targetRateUnit:document.getElementById('_cd-unit')?.value||'lbs/ac'
+  };
+  if(typeof tcSaveCategory==='function') await tcSaveCategory(updated,pid);
+  ov.remove();
   _renderTrackerSheet();
 }
 
@@ -2301,6 +2370,8 @@ window.mapTrackerSaveEdit = mapTrackerSaveEdit;
 window.mapTrackerAskDelete = mapTrackerAskDelete;
 window.mapTrackerCancelDelete = mapTrackerCancelDelete;
 window.mapTrackerConfirmDelete = mapTrackerConfirmDelete;
+window.mapShowCategoryDetails = mapShowCategoryDetails;
+window.mapSaveCategoryDetails = mapSaveCategoryDetails;
 window.mapTrackerShowAdd = mapTrackerShowAdd;
 window.mapTrackerHideAdd = mapTrackerHideAdd;
 window.mapTrackerSaveAdd = mapTrackerSaveAdd;
