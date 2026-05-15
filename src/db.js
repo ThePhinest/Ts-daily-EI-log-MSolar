@@ -261,6 +261,19 @@ function resetForm() {
   });
 }
 
+// Load tracker categories + entries from Firestore on startup, then re-render map/panel/compliance.
+function _trackerStartupLoad(){
+  if(typeof tcLoadForProject !== 'function') return;
+  tcLoadForProject()
+    .then(()=>{ if(typeof trLoadFromFirestore==='function') return trLoadFromFirestore(); })
+    .then(()=>{
+      if(typeof mapRenderTrackerLayers==='function') mapRenderTrackerLayers();
+      if(typeof mapUpdateKmlLayerList==='function') mapUpdateKmlLayerList();
+      if(typeof clRenderTrackerCard==='function') clRenderTrackerCard();
+    })
+    .catch(e => console.warn('tcLoad/trLoad (startup):', e.message));
+}
+
 // ── Firebase init load — runs async after page restores from localStorage ──
 async function initFirebaseLoad() {
   if (!db) { setSyncStatus('offline');  return; }
@@ -349,6 +362,7 @@ async function initFirebaseLoad() {
       checkNewDay();
       loadChecklistCloud();
       loadFlagsCloud();
+      _trackerStartupLoad();
       return;
     }
 
@@ -413,6 +427,7 @@ async function initFirebaseLoad() {
     loadFlagsCloud();
   }
   window._fbReady = true; // allow cloudSave from this point forward
+  _trackerStartupLoad();
 }
 
 // ── User namespace helper — all post-migration paths use this ──

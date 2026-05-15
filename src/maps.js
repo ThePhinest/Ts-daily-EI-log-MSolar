@@ -1828,6 +1828,9 @@ function mapRenderTrackerLayers(){
 
     if(_mapInstance.getSource(src)){
       _mapInstance.getSource(src).setData(geojson);
+      _mapInstance.setPaintProperty(src+'-fill','fill-color',color);
+      _mapInstance.setPaintProperty(src+'-line','line-color',color);
+      _mapInstance.setPaintProperty(src+'-circle','circle-color',color);
     } else {
       _mapInstance.addSource(src,{type:'geojson',data:geojson});
       _mapInstance.addLayer({id:src+'-fill',type:'fill',source:src,
@@ -1847,6 +1850,47 @@ function mapRenderTrackerLayers(){
       });
     }
   });
+
+  // Render entries whose category isn't in cache yet (startup before tcLoadForProject completes).
+  // Uses snapshotted categoryName + gray fill; colors update when categories load and re-render fires.
+  const orphans=byCategory['__orphan']||[];
+  if(orphans.length>0){
+    const orphanByCat={};
+    orphans.forEach(e=>{
+      const cid=e.categoryId||e.category||'__unk';
+      if(!orphanByCat[cid]) orphanByCat[cid]={name:e.categoryName||cid,entries:[]};
+      orphanByCat[cid].entries.push(e);
+    });
+    Object.entries(orphanByCat).forEach(([cid,group])=>{
+      const src='tracker-'+cid;
+      const color='#888';
+      const visible=_tcLayerVisible[cid]!==false;
+      const geojson={type:'FeatureCollection',features:(visible?group.entries:[]).map(e=>({
+        type:'Feature',id:e.id,
+        properties:{id:e.id,categoryId:e.categoryId||e.category,categoryName:e.categoryName||e.category,date:e.date,acres:e.acres,notes:e.notes,location:e.location},
+        geometry:e.geometry
+      }))};
+      if(_mapInstance.getSource(src)){
+        _mapInstance.getSource(src).setData(geojson);
+      } else {
+        _mapInstance.addSource(src,{type:'geojson',data:geojson});
+        _mapInstance.addLayer({id:src+'-fill',type:'fill',source:src,
+          filter:['==',['geometry-type'],'Polygon'],
+          paint:{'fill-color':color,'fill-opacity':0.35}});
+        _mapInstance.addLayer({id:src+'-line',type:'line',source:src,
+          filter:['any',['==',['geometry-type'],'Polygon'],['==',['geometry-type'],'LineString']],
+          paint:{'line-color':color,'line-width':2,'line-opacity':0.9}});
+        _mapInstance.addLayer({id:src+'-circle',type:'circle',source:src,
+          filter:['==',['geometry-type'],'Point'],
+          paint:{'circle-color':color,'circle-radius':7,'circle-opacity':0.9,
+                 'circle-stroke-color':'#fff','circle-stroke-width':1.5}});
+        [src+'-fill',src+'-line',src+'-circle'].forEach(lid=>{
+          _mapInstance.on('mouseenter',lid,()=>{_mapInstance.getCanvas().style.cursor='pointer';});
+          _mapInstance.on('mouseleave',lid,()=>{_mapInstance.getCanvas().style.cursor='';});
+        });
+      }
+    });
+  }
 }
 
 function _showTrackerEntryPopup(lngLat,props){
