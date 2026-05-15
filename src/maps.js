@@ -1760,11 +1760,13 @@ function mapShowTrackerModal(feat,category){
   document.getElementById('map-tr-notes').value='';
   _pendingPhotoIds=[];
   mapRefreshEntryPhotoStrip();
-  const rateEl=document.getElementById('map-tr-rate');
-  if(rateEl) rateEl.value='';
-  const calcEl=document.getElementById('map-tr-calc-result');
-  if(calcEl) calcEl.textContent='—';
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const catDetails=(typeof tcGetCategory==='function')?tcGetCategory(category,pid):null;
+  const rateEl=document.getElementById('map-tr-rate');
+  const calcEl=document.getElementById('map-tr-calc-result');
+  if(rateEl) rateEl.value=catDetails?.targetRate||'';
+  if(calcEl) calcEl.textContent='—';
+  if(catDetails?.targetRate) mapTrackerCalc();
   const catColor=(typeof tcGetColor==='function')?tcGetColor(category,pid):'#888';
   const catName=(typeof tcGetName==='function')?tcGetName(category,pid):(category||'Unknown');
   document.getElementById('map-tracker-cat-dot').style.background=catColor;
@@ -2098,13 +2100,19 @@ function mapEditTrackerEntry(entryId){
   document.getElementById('map-tracker-modal').classList.add('open');
 }
 
+function _catUnit(){
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const cat=(typeof tcGetCategory==='function')?tcGetCategory(_drawCategory,pid):null;
+  return cat?.targetRateUnit||'lbs/ac';
+}
 function mapTrackerCalc(){
   const acres=parseFloat(document.getElementById('map-tr-acres')?.value)||0;
   const rate=parseFloat(document.getElementById('map-tr-rate')?.value)||0;
   const el=document.getElementById('map-tr-calc-result');
   if(!el) return;
   if(acres>0&&rate>0){
-    el.textContent=Math.round(acres*rate).toLocaleString('en-US')+' lbs';
+    const unit=_catUnit();
+    el.textContent=Math.round(acres*rate).toLocaleString('en-US')+' '+unit.split('/')[0];
   } else {
     el.textContent='—';
   }
@@ -2113,10 +2121,11 @@ function mapTrackerCalcInsert(){
   const rate=parseFloat(document.getElementById('map-tr-rate')?.value)||0;
   const acres=parseFloat(document.getElementById('map-tr-acres')?.value)||0;
   if(!rate||!acres) return;
+  const unit=_catUnit();
   const total=Math.round(acres*rate).toLocaleString('en-US');
   const notesEl=document.getElementById('map-tr-notes');
   if(!notesEl) return;
-  const line=`${rate} lbs/ac × ${acres} ac = ${total} lbs`;
+  const line=`${rate} ${unit} × ${acres} ac = ${total} ${unit.split('/')[0]}`;
   notesEl.value=notesEl.value?(notesEl.value+'\n'+line):line;
 }
 function mapDeleteTrackerEntry(entryId){
