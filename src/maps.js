@@ -1596,7 +1596,7 @@ function _showTrackerEntryPopup(lngLat,props){
     ${props.notes?`<div style="margin-top:6px;color:#c8d8e8;border-top:1px solid rgba(255,255,255,.1);padding-top:6px">${props.notes}</div>`:''}
     <div style="display:flex;gap:6px;margin-top:8px">
       <button onclick="mapEditTrackerEntry('${props.id}')" style="flex:1;background:var(--amber,#D97706);border:none;color:#111;padding:6px;border-radius:6px;font-family:var(--mono);font-size:11px;cursor:pointer;font-weight:700">✏️ Edit</button>
-      <button onclick="mapDeleteTrackerEntry('${props.id}')" style="flex:1;background:#3d1414;border:1px solid #6b2020;color:#ff8080;padding:6px;border-radius:6px;font-family:var(--mono);font-size:11px;cursor:pointer;">Remove</button>
+      <button onclick="mapDeleteTrackerEntry('${props.id}')" style="flex:1;background:var(--s2);border:1px solid var(--border);color:var(--muted);padding:6px;border-radius:6px;font-family:var(--mono);font-size:11px;cursor:pointer;">Hide</button>
     </div>
   </div>`;
   _trackerPopup=new mapboxgl.Popup({closeButton:true,closeOnClick:false,className:'gl-tracker-popup'})

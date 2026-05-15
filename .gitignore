@@ -10,3 +10,7 @@ dist/
 .env
 .env.local
 .env.*.local
+
+# Firebase CLI artifacts
+firebase-debug.log
+.firebase/
