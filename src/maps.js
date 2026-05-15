@@ -1002,8 +1002,72 @@ function mapUpdateKmlLayerList(){
     list.appendChild(folderWrap);
   });
   noFolder.forEach(layer => list.appendChild(makeLayerRow(layer)));
-  // Sync edit-mode buttons (Edit/Cancel/Delete/SelectAll helper)
   mapUpdateKmlEditUI();
+
+  // ── Tracker Drawings ─────────────────────────────────────────────────────
+  // Append tracker categories as folders using the same visual pattern as KML.
+  // Each category = folder header; each non-deleted entry = layer row with
+  // visibility checkbox, edit button, and delete button.
+  const _trPid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const _trCats=(typeof tcGetCategories==='function')?tcGetCategories(_trPid):[];
+  const _trAllEntries=(typeof trGetEntriesForProject==='function')?trGetEntriesForProject(_trPid):[];
+  if(_trCats.length>0 && _trAllEntries.length>0){
+    const sep=document.createElement('div');
+    sep.style.cssText='margin:10px 0 6px;border-top:1px solid var(--border);padding-top:8px;font-family:var(--mono);font-size:9px;color:var(--muted);letter-spacing:.08em;text-transform:uppercase;';
+    sep.textContent='Tracker Drawings';
+    list.appendChild(sep);
+    _trCats.forEach(cat=>{
+      const catEntries=_trAllEntries.filter(e=>e.categoryId===cat.id);
+      if(!catEntries.length) return;
+      const fid='tr-folder-'+cat.id.replace(/[^a-z0-9]/gi,'_');
+      const allVisible=catEntries.every(e=>!e.deletedFromMap);
+      const folderWrap=document.createElement('div');
+      folderWrap.style.cssText='margin-bottom:6px;border:1px solid var(--border2);border-radius:6px;overflow:hidden;';
+      const hdr=document.createElement('div');
+      hdr.style.cssText='display:flex;align-items:center;gap:6px;padding:6px 8px;background:var(--s2);cursor:pointer;';
+      hdr.innerHTML=`
+        <span id="${fid}-chev" style="font-size:10px;color:var(--muted2);">▾</span>
+        <input type="checkbox" ${allVisible?'checked':''} style="accent-color:${cat.color||'#888'};width:14px;height:14px;flex-shrink:0;" id="${fid}-cb">
+        <div style="width:10px;height:10px;border-radius:50%;background:${cat.color||'#888'};flex-shrink:0;"></div>
+        <span style="font-family:var(--mono);font-size:11px;color:var(--text);font-weight:600;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${cat.name}</span>
+        <span style="font-family:var(--mono);font-size:9px;color:var(--muted);">${catEntries.length}</span>`;
+      const kids=document.createElement('div');
+      kids.id=fid+'-children';
+      kids.style.cssText='padding:4px 6px 4px 16px;';
+      catEntries.forEach(e=>{
+        const visible=!e.deletedFromMap;
+        const row=document.createElement('div');
+        row.style.cssText='display:flex;align-items:center;gap:6px;padding:5px 8px;background:var(--s1);border-radius:6px;margin-bottom:4px;';
+        const parts=[];
+        if(e.date){const p=e.date.split('-');parts.push(`${parseInt(p[1])}/${parseInt(p[2])}/${p[0].slice(2)}`);}
+        if(e.acres) parts.push(`${e.acres} ac`);
+        else if(e.location) parts.push(e.location);
+        const label=parts.join(' · ')||e.id.slice(0,8);
+        row.innerHTML=`
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-family:var(--mono);font-size:11px;color:${visible?'var(--text)':'var(--muted)'};flex:1;min-width:0;">
+            <input type="checkbox" ${visible?'checked':''} onchange="mapToggleTrackerEntryVisibility('${e.id}',this.checked)">
+            <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${label}</span>
+          </label>
+          <button onclick="mapEditTrackerEntry('${e.id}')" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:11px;padding:0 4px;" title="Edit">✏</button>
+          <button onclick="mapDeleteTrackerEntryFromPanel('${e.id}')" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;padding:0;" title="Delete">✕</button>`;
+        kids.appendChild(row);
+      });
+      hdr.addEventListener('click',function(ev){
+        if(ev.target.type==='checkbox') return;
+        const collapsed=kids.style.display==='none';
+        kids.style.display=collapsed?'':'none';
+        const chev=document.getElementById(fid+'-chev');
+        if(chev) chev.textContent=collapsed?'▾':'▸';
+      });
+      hdr.querySelector(`#${fid}-cb`).addEventListener('click',function(ev){
+        ev.stopPropagation();
+        mapToggleTrackerCategoryVisibility(cat.id,this.checked);
+      });
+      folderWrap.appendChild(hdr);
+      folderWrap.appendChild(kids);
+      list.appendChild(folderWrap);
+    });
+  }
 }
 async function kmlToggleFolderVisibility(folderName, visible){
   const layers = _mapKmlLayers.filter(l=>l.folderName===folderName);
@@ -1619,6 +1683,7 @@ function mapSaveTrackerEntry(){
   mapCloseTrackerModal();
   if(_drawInstance) _drawInstance.deleteAll();
   mapRenderTrackerLayers();
+  mapUpdateKmlLayerList();
   if(typeof clRenderTrackerCard==='function') clRenderTrackerCard();
 }
 
@@ -1839,6 +1904,29 @@ function mapDeleteTrackerEntry(entryId){
   if(typeof trMarkDeletedFromMap==='function') trMarkDeletedFromMap(entryId,pid);
   if(_trackerPopup){_trackerPopup.remove();_trackerPopup=null;}
   mapRenderTrackerLayers();
+  mapUpdateKmlLayerList();
+  if(typeof clRenderTrackerCard==='function') clRenderTrackerCard();
+}
+function mapToggleTrackerEntryVisibility(entryId, visible){
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  if(typeof trSetMapVisibility==='function') trSetMapVisibility(entryId,visible,pid);
+  mapRenderTrackerLayers();
+  mapUpdateKmlLayerList();
+}
+function mapToggleTrackerCategoryVisibility(catId, visible){
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const entries=(typeof trGetEntriesForProject==='function')?trGetEntriesForProject(pid):[];
+  entries.filter(e=>e.categoryId===catId).forEach(e=>{
+    if(typeof trSetMapVisibility==='function') trSetMapVisibility(e.id,visible,pid);
+  });
+  mapRenderTrackerLayers();
+  mapUpdateKmlLayerList();
+}
+function mapDeleteTrackerEntryFromPanel(entryId){
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  if(typeof trDeleteEntry==='function') trDeleteEntry(entryId,pid);
+  mapRenderTrackerLayers();
+  mapUpdateKmlLayerList();
   if(typeof clRenderTrackerCard==='function') clRenderTrackerCard();
 }
 
@@ -1920,6 +2008,9 @@ window.mapSelectColor = mapSelectColor;
 window.mapHideColorPicker = mapHideColorPicker;
 window.mapRenderTrackerLayers = mapRenderTrackerLayers;
 window.mapDeleteTrackerEntry = mapDeleteTrackerEntry;
+window.mapToggleTrackerEntryVisibility = mapToggleTrackerEntryVisibility;
+window.mapToggleTrackerCategoryVisibility = mapToggleTrackerCategoryVisibility;
+window.mapDeleteTrackerEntryFromPanel = mapDeleteTrackerEntryFromPanel;
 window.mapEditTrackerEntry = mapEditTrackerEntry;
 window.mapTrackerCalc = mapTrackerCalc;
 window.mapTrackerCalcInsert = mapTrackerCalcInsert;

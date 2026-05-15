@@ -127,6 +127,26 @@ function trMarkDeletedFromMap(entryId, projectId){
   return true;
 }
 
+// Set map visibility without touching deletedAt (entry stays in compliance).
+function trSetMapVisibility(entryId, visible, projectId){
+  const pid = projectId || ((typeof _activeProjectId === 'function') ? _activeProjectId() : 'default');
+  const data = _trLoadRaw(pid);
+  const idx = data.entries.findIndex(e => e.id === entryId);
+  if(idx < 0) return false;
+  const ts = Date.now();
+  data.entries[idx].deletedFromMap = !visible;
+  data.entries[idx].updatedAt = ts;
+  _trSaveRaw(pid, data);
+  if(typeof _udb === 'function' && typeof _fbReady !== 'undefined' && _fbReady && typeof _currentUser !== 'undefined' && _currentUser){
+    try {
+      _udb().collection('projects').doc(pid).collection('trackerEntries').doc(entryId)
+        .update({ deletedFromMap: !visible, updatedAt: ts })
+        .catch(e => console.warn('trSetMapVisibility Firestore:', e.message));
+    } catch(e){ /* silent */ }
+  }
+  return true;
+}
+
 // Soft-delete: stamps deletedAt + updatedAt. Returns true if found.
 function trDeleteEntry(entryId, projectId){
   const pid = projectId || ((typeof _activeProjectId === 'function') ? _activeProjectId() : 'default');
@@ -175,6 +195,7 @@ if(typeof window !== 'undefined'){
   window.trGenId = trGenId;
   window.trGetEntriesForProject = trGetEntriesForProject;
   window.trMarkDeletedFromMap = trMarkDeletedFromMap;
+  window.trSetMapVisibility = trSetMapVisibility;
   window.trGetEntriesForDate = trGetEntriesForDate;
   window.trGetEntriesForCategory = trGetEntriesForCategory;
   window.trGetEntry = trGetEntry;
