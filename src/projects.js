@@ -540,11 +540,19 @@ async function loadProject(projectId, projDataOverride) {
     if(typeof tcLoadForProject === 'function'){
       tcLoadForProject(projectId)
         .then(()=>{ if(typeof trLoadFromFirestore==='function') return trLoadFromFirestore(projectId); })
-        .then(()=>{ if(typeof mapRenderTrackerLayers==='function') mapRenderTrackerLayers(); })
+        .then(()=>{
+          if(typeof mapRenderTrackerLayers==='function') mapRenderTrackerLayers();
+          if(typeof mapUpdateKmlLayerList==='function') mapUpdateKmlLayerList();
+          if(typeof clRenderTrackerCard==='function') clRenderTrackerCard();
+        })
         .catch(e => console.warn('tcLoad/trLoad (project switch):', e.message));
     } else if(typeof trLoadFromFirestore === 'function'){
       trLoadFromFirestore(projectId)
-        .then(()=>{ if(typeof mapRenderTrackerLayers==='function') mapRenderTrackerLayers(); })
+        .then(()=>{
+          if(typeof mapRenderTrackerLayers==='function') mapRenderTrackerLayers();
+          if(typeof mapUpdateKmlLayerList==='function') mapUpdateKmlLayerList();
+          if(typeof clRenderTrackerCard==='function') clRenderTrackerCard();
+        })
         .catch(e => console.warn('trLoadFromFirestore (project switch):', e.message));
     }
 
