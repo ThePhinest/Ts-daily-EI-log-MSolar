@@ -26,12 +26,17 @@
 //     createdAt, updatedAt, createdBy, deletedAt
 //   }
 //
-// Categories — locked 2026-05-14 (see seeding-tracking-moraine wiki):
-const TR_CATEGORIES = [
-  'pre-seeding','temp-seeding','cover-crop','perm-seeding','ag-seeding','wetland-adj-seeding',
-  'active-disturbance','stabilized',
-  'cleaning-station','rock-stockpile','spill'
-];
+// Entry shape (forward-compatible with Phase 4 §2 unified engine):
+//   {
+//     id, projectId, date,
+//     categoryId,      <- reference to trackerCategories/{catId}
+//     categoryName,    <- snapshot at creation time (compliance record — immutable)
+//     geometry: { type, coordinates },
+//     centroidLng, centroidLat, acres, location,
+//     fields: { /* category-specific key/value pairs */ },
+//     notes,
+//     createdAt, updatedAt, createdBy, deletedAt, deletedFromMap
+//   }
 
 function _trStorageKey(projectId){
   const pid = projectId || ((typeof _activeProjectId === 'function') ? _activeProjectId() : 'default');
@@ -167,7 +172,6 @@ async function trLoadFromFirestore(projectId){
 
 // Window exposure — mirrors the pattern in db.js / timesheet.js.
 if(typeof window !== 'undefined'){
-  window.TR_CATEGORIES = TR_CATEGORIES;
   window.trGenId = trGenId;
   window.trGetEntriesForProject = trGetEntriesForProject;
   window.trMarkDeletedFromMap = trMarkDeletedFromMap;

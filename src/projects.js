@@ -535,9 +535,14 @@ async function loadProject(projectId, projDataOverride) {
       // block on Storage fetches.
       kmlLoadLayers().catch(e => console.warn('kmlLoadLayers (project switch):', e.message));
     }
-    // Same for tracker entries (Stage 1.2 helper).
+    // Load tracker categories first (needed for color/name lookups), then entries.
     if(typeof mapRenderTrackerLayers === 'function') mapRenderTrackerLayers();
-    if(typeof trLoadFromFirestore === 'function'){
+    if(typeof tcLoadForProject === 'function'){
+      tcLoadForProject(projectId)
+        .then(()=>{ if(typeof trLoadFromFirestore==='function') return trLoadFromFirestore(projectId); })
+        .then(()=>{ if(typeof mapRenderTrackerLayers==='function') mapRenderTrackerLayers(); })
+        .catch(e => console.warn('tcLoad/trLoad (project switch):', e.message));
+    } else if(typeof trLoadFromFirestore === 'function'){
       trLoadFromFirestore(projectId)
         .then(()=>{ if(typeof mapRenderTrackerLayers==='function') mapRenderTrackerLayers(); })
         .catch(e => console.warn('trLoadFromFirestore (project switch):', e.message));

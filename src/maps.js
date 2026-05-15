@@ -12,18 +12,9 @@ let _drawInstance=null, _drawMode=null, _drawCategory=null;
 let _fabOpen=false, _viewFabOpen=false, _gpsFollowActive=false, _gpsFollowWatch=null;
 let _pendingDrawFeature=null;
 
-const TR_CATEGORY_COLORS={
-  'pre-seeding':'#7CCD7C','temp-seeding':'#A8D8A8','cover-crop':'#C8E6C8',
-  'perm-seeding':'#27AE60','ag-seeding':'#F0A500','wetland-adj-seeding':'#4A90E2',
-  'active-disturbance':'#E67E22','stabilized':'#8E9BA3',
-  'cleaning-station':'#9B59B6','rock-stockpile':'#D35400','spill':'#F4E200'
-};
-const TR_CATEGORY_LABELS={
-  'pre-seeding':'Pre-Seeding','temp-seeding':'Temp Seeding','cover-crop':'Cover Crop',
-  'perm-seeding':'Perm Seeding','ag-seeding':'Ag Seeding','wetland-adj-seeding':'Wetland Adj.',
-  'active-disturbance':'Active Disturbance','stabilized':'Stabilized',
-  'cleaning-station':'Cleaning Station','rock-stockpile':'Rock Stockpile','spill':'⚠️ Spill'
-};
+// Category colors/labels are project-scoped and user-defined.
+// All lookups go through tcGetColor() / tcGetName() in trackerCategories.js.
+// No hardcoded category data lives here.
 
 // Two-token architecture (locked 2026-05-06 — see [[cost-tracker]] Mapbox row,
 // memory feedback_operate_as_if_multi_tenant.md):
@@ -1270,27 +1261,168 @@ function mapFabGps(){
   mapToggleGpsFollow();
 }
 
-// ── Category picker ──────────────────────
+// ── Category picker (draw flow) ───────────
 function mapShowCategorySheet(){
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const cats=(typeof tcGetCategories==='function')?tcGetCategories(pid):[];
   const list=document.getElementById('map-category-list');
-  const cats=window.TR_CATEGORIES||['pre-seeding','temp-seeding','cover-crop','perm-seeding','ag-seeding','wetland-adj-seeding','active-disturbance','stabilized','cleaning-station','rock-stockpile','spill'];
-  list.innerHTML=cats.map(c=>`
-    <div class="map-cat-pill" onclick="mapActivateDrawMode('${c}')">
-      <div class="map-cat-dot" style="background:${TR_CATEGORY_COLORS[c]||'#888'}"></div>
-      <span>${TR_CATEGORY_LABELS[c]||c}</span>
-    </div>`).join('');
+  if(!cats.length){
+    list.innerHTML='<div style="font-family:var(--mono);font-size:12px;color:var(--muted);text-align:center;padding:16px 0">No categories yet.<br>Use Tracker to add your first.</div>';
+  } else {
+    list.innerHTML=cats.map(c=>`
+      <div class="map-cat-pill" onclick="mapActivateDrawMode('${c.id}')">
+        <div class="map-cat-dot" style="background:${c.color||'#888'}"></div>
+        <span>${c.name}</span>
+      </div>`).join('');
+  }
   document.getElementById('map-category-sheet').classList.add('open');
 }
 function mapCloseCategorySheet(){
   document.getElementById('map-category-sheet').classList.remove('open');
 }
 
+// ── Tracker sheet (category management) ──
+let _tcLayerVisible={};   // { [catId]: boolean } — default true
+let _tcEditingCatId=null; // id of category being inline-edited
+let _tcAddingColor=null;  // color staged for new-category add row
+
+function mapShowTrackerSheet(){
+  mapCloseFab();
+  _tcEditingCatId=null;
+  _tcAddingColor=null;
+  _renderTrackerSheet();
+  document.getElementById('map-tracker-sheet').classList.add('open');
+}
+function mapCloseTrackerSheet(){
+  _tcEditingCatId=null;
+  _tcAddingColor=null;
+  document.getElementById('map-tracker-sheet').classList.remove('open');
+  document.getElementById('map-tracker-sheet-add').classList.remove('open');
+}
+
+function _renderTrackerSheet(){
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const cats=(typeof tcGetCategories==='function')?tcGetCategories(pid):[];
+  const list=document.getElementById('map-tracker-cat-list');
+  if(!cats.length){
+    list.innerHTML='<div style="font-family:var(--mono);font-size:12px;color:var(--muted);text-align:center;padding:20px 0">No categories yet.<br>Tap + to create your first.</div>';
+    return;
+  }
+  list.innerHTML=cats.map(c=>{
+    const visible=_tcLayerVisible[c.id]!==false;
+    if(_tcEditingCatId===c.id){
+      return `<div class="map-tc-row editing">
+        <div class="map-tc-edit-color" id="map-tc-edit-preview" style="background:${c.color||'#888'}" onclick="mapTrackerCycleEditColor('${c.id}')"></div>
+        <input id="map-tc-edit-name" class="map-tc-name-input" value="${c.name}" placeholder="Name" autocomplete="off" maxlength="32">
+        <button onclick="mapTrackerSaveEdit('${c.id}')" class="map-tc-save-btn">Save</button>
+        <button onclick="mapTrackerCancelEdit()" class="map-tc-cancel-btn">✕</button>
+      </div>`;
+    }
+    return `<div class="map-tc-row">
+      <div class="map-tc-dot" style="background:${c.color||'#888'}"></div>
+      <span class="map-tc-name">${c.name}</span>
+      <button class="map-tc-btn ${visible?'':'dim'}" onclick="mapTrackerToggleLayer('${c.id}')" title="${visible?'Hide':'Show'} layer">${visible?'●':'○'}</button>
+      <button class="map-tc-btn" onclick="mapTrackerStartEdit('${c.id}')">Edit</button>
+      <button class="map-tc-btn danger" onclick="mapTrackerDeleteCategory('${c.id}')">✕</button>
+    </div>`;
+  }).join('');
+}
+
+function mapTrackerToggleLayer(catId){
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  _tcLayerVisible[catId]=(_tcLayerVisible[catId]===false)?true:false;
+  _renderTrackerSheet();
+  mapRenderTrackerLayers();
+}
+
+function mapTrackerStartEdit(catId){
+  _tcEditingCatId=catId;
+  _renderTrackerSheet();
+  const input=document.getElementById('map-tc-edit-name');
+  if(input){ input.focus(); input.select(); }
+}
+function mapTrackerCancelEdit(){
+  _tcEditingCatId=null;
+  _renderTrackerSheet();
+}
+async function mapTrackerSaveEdit(catId){
+  const nameEl=document.getElementById('map-tc-edit-name');
+  const previewEl=document.getElementById('map-tc-edit-preview');
+  const name=(nameEl?nameEl.value.trim():'');
+  if(!name) return;
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const existing=(typeof tcGetCategory==='function')?tcGetCategory(catId,pid):null;
+  if(!existing) return;
+  const color=previewEl?previewEl.style.background:existing.color;
+  await tcSaveCategory({...existing,name,color},pid);
+  _tcEditingCatId=null;
+  _renderTrackerSheet();
+  mapRenderTrackerLayers();
+}
+function mapTrackerCycleEditColor(catId){
+  const colors=['#E67E22','#27AE60','#4A90E2','#9B59B6','#F4E200','#D35400','#7CCD7C','#E74C3C','#8E9BA3','#A8D8A8'];
+  const el=document.getElementById('map-tc-edit-preview');
+  if(!el) return;
+  const cur=el.style.background;
+  const idx=colors.indexOf(cur);
+  el.style.background=colors[(idx+1)%colors.length];
+}
+async function mapTrackerDeleteCategory(catId){
+  if(!confirm('Delete this category? Existing entries keep their names.')) return;
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  if(typeof tcDeleteCategory==='function') await tcDeleteCategory(catId,pid);
+  delete _tcLayerVisible[catId];
+  // Remove layers from map
+  const src='tracker-'+catId;
+  if(_mapInstance){
+    [src+'-fill',src+'-line',src+'-circle'].forEach(lid=>{
+      if(_mapInstance.getLayer(lid)) _mapInstance.removeLayer(lid);
+    });
+    if(_mapInstance.getSource(src)) _mapInstance.removeSource(src);
+  }
+  _renderTrackerSheet();
+}
+
+function mapTrackerShowAdd(){
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  _tcAddingColor=(typeof tcNextColor==='function')?tcNextColor(pid):'#E67E22';
+  const add=document.getElementById('map-tracker-sheet-add');
+  const preview=document.getElementById('map-tc-add-preview');
+  const input=document.getElementById('map-tc-add-name');
+  if(preview) preview.style.background=_tcAddingColor;
+  if(input){ input.value=''; }
+  add.classList.add('open');
+  if(input) setTimeout(()=>input.focus(),50);
+}
+function mapTrackerHideAdd(){
+  document.getElementById('map-tracker-sheet-add').classList.remove('open');
+  _tcAddingColor=null;
+}
+function mapTrackerCycleAddColor(){
+  const colors=['#E67E22','#27AE60','#4A90E2','#9B59B6','#F4E200','#D35400','#7CCD7C','#E74C3C','#8E9BA3','#A8D8A8'];
+  const el=document.getElementById('map-tc-add-preview');
+  if(!el) return;
+  const cur=el.style.background;
+  const idx=colors.indexOf(cur);
+  _tcAddingColor=colors[(idx+1)%colors.length];
+  el.style.background=_tcAddingColor;
+}
+async function mapTrackerSaveAdd(){
+  const nameEl=document.getElementById('map-tc-add-name');
+  const name=(nameEl?nameEl.value.trim():'');
+  if(!name) return;
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  await tcSaveCategory({name,color:_tcAddingColor||'#E67E22'},pid);
+  mapTrackerHideAdd();
+  _renderTrackerSheet();
+}
+
 // ── Draw mode ────────────────────────────
-function mapActivateDrawMode(category){
+function mapActivateDrawMode(categoryId){
   mapCloseCategorySheet();
   mapResetGpsFollow();
   if(!_mapInstance) return;
-  _drawCategory=category;
+  _drawCategory=categoryId;
   _drawMode='draw';
   if(!_drawInstance){
     _drawInstance=new MapboxDraw({
@@ -1302,11 +1434,13 @@ function mapActivateDrawMode(category){
     _mapInstance.on('draw.delete',_onDrawDelete);
     _mapInstance.on('draw.modechange',_onDrawModeChange);
   }
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const catName=(typeof tcGetName==='function')?tcGetName(categoryId,pid):(categoryId||'Shape');
+  const catColor=(typeof tcGetColor==='function')?tcGetColor(categoryId,pid):'var(--amber)';
   const bar=document.getElementById('map-draw-bar');
-  document.getElementById('map-draw-bar-label').textContent=
-    `Drawing: ${TR_CATEGORY_LABELS[category]||category}`;
+  document.getElementById('map-draw-bar-label').textContent=`Drawing: ${catName}`;
   bar.classList.add('show');
-  bar.style.borderColor=TR_CATEGORY_COLORS[category]||'var(--amber)';
+  bar.style.borderColor=catColor;
   document.getElementById('map-fab-draw-btn').classList.add('active');
 }
 
@@ -1395,10 +1529,11 @@ function mapShowTrackerModal(feat,category){
   if(rateEl) rateEl.value='';
   const calcEl=document.getElementById('map-tr-calc-result');
   if(calcEl) calcEl.textContent='—';
-  const color=TR_CATEGORY_COLORS[category]||'#888';
-  document.getElementById('map-tracker-cat-dot').style.background=color;
-  document.getElementById('map-tracker-cat-label').textContent=
-    TR_CATEGORY_LABELS[category]||category;
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const catColor=(typeof tcGetColor==='function')?tcGetColor(category,pid):'#888';
+  const catName=(typeof tcGetName==='function')?tcGetName(category,pid):(category||'Unknown');
+  document.getElementById('map-tracker-cat-dot').style.background=catColor;
+  document.getElementById('map-tracker-cat-label').textContent=catName;
   document.getElementById('map-tracker-modal').classList.add('open');
 }
 
@@ -1420,9 +1555,11 @@ function mapSaveTrackerEntry(){
   const today=new Date().toISOString().split('T')[0];
   const acres=parseFloat(document.getElementById('map-tr-acres').value)||null;
   const centroid=_geoCentroid(feat);
+  const catName=(typeof tcGetName==='function')?tcGetName(_drawCategory,pid):(_drawCategory||'Unknown');
   const entry={
     date:document.getElementById('map-tr-date').value||today,
-    category:_drawCategory||'active-disturbance',
+    categoryId:_drawCategory||null,
+    categoryName:catName,
     geometry:feat.geometry,
     centroidLng:centroid?centroid.lng:null,
     centroidLat:centroid?centroid.lat:null,
@@ -1540,21 +1677,26 @@ function mapRenderTrackerLayers(){
 
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
   const entries=(typeof trGetEntriesForProject==='function')?trGetEntriesForProject(pid).filter(e=>!e.deletedFromMap):[];
-  const cats=window.TR_CATEGORIES||Object.keys(TR_CATEGORY_COLORS);
+  const cats=(typeof tcGetCategories==='function')?tcGetCategories(pid):[];
 
   const byCategory={};
-  cats.forEach(c=>{byCategory[c]=[];});
+  cats.forEach(c=>{byCategory[c.id]=[];});
   entries.forEach(e=>{
-    if(e.geometry&&byCategory[e.category]!==undefined) byCategory[e.category].push(e);
+    const cid=e.categoryId||e.category;
+    if(e.geometry){
+      if(byCategory[cid]!==undefined) byCategory[cid].push(e);
+      else { if(!byCategory['__orphan']) byCategory['__orphan']=[]; byCategory['__orphan'].push(e); }
+    }
   });
 
   cats.forEach(cat=>{
-    const src='tracker-'+cat;
-    const color=TR_CATEGORY_COLORS[cat]||'#888';
-    const geojson={type:'FeatureCollection',features:byCategory[cat].map(e=>({
+    const src='tracker-'+cat.id;
+    const color=cat.color||'#888';
+    const visible=_tcLayerVisible[cat.id]!==false;
+    const geojson={type:'FeatureCollection',features:(visible?byCategory[cat.id]:[]).map(e=>({
       type:'Feature',
       id:e.id,
-      properties:{id:e.id,category:e.category,date:e.date,acres:e.acres,notes:e.notes,location:e.location},
+      properties:{id:e.id,categoryId:e.categoryId||e.category,categoryName:e.categoryName||e.category,date:e.date,acres:e.acres,notes:e.notes,location:e.location},
       geometry:e.geometry
     }))};
 
@@ -1583,8 +1725,9 @@ function mapRenderTrackerLayers(){
 
 function _showTrackerEntryPopup(lngLat,props){
   if(_trackerPopup){_trackerPopup.remove();_trackerPopup=null;}
-  const label=TR_CATEGORY_LABELS[props.category]||props.category;
-  const color=TR_CATEGORY_COLORS[props.category]||'#888';
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const label=props.categoryName||(typeof tcGetName==='function'?tcGetName(props.categoryId,pid):(props.categoryId||'Unknown'));
+  const color=(typeof tcGetColor==='function')?tcGetColor(props.categoryId,pid):'#888';
   const html=`<div style="font-family:var(--mono);font-size:12px;min-width:180px;color:#e8e8e8">
     <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
       <div style="width:10px;height:10px;border-radius:50%;background:${color};flex-shrink:0"></div>
@@ -1610,7 +1753,7 @@ function mapEditTrackerEntry(entryId){
   if(_trackerPopup){_trackerPopup.remove();_trackerPopup=null;}
   _editingEntryId=entryId;
   _pendingDrawFeature={geometry:entry.geometry};
-  _drawCategory=entry.category;
+  _drawCategory=entry.categoryId||entry.category;
   document.getElementById('map-tr-date').value=entry.date||'';
   document.getElementById('map-tr-acres').value=entry.acres||'';
   document.getElementById('map-tr-location').value=entry.location||'';
@@ -1619,9 +1762,11 @@ function mapEditTrackerEntry(entryId){
   if(rateEl) rateEl.value='';
   const calcEl=document.getElementById('map-tr-calc-result');
   if(calcEl) calcEl.textContent='—';
-  const color=TR_CATEGORY_COLORS[entry.category]||'#888';
-  document.getElementById('map-tracker-cat-dot').style.background=color;
-  document.getElementById('map-tracker-cat-label').textContent=TR_CATEGORY_LABELS[entry.category]||entry.category;
+  const editPid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const editColor=(typeof tcGetColor==='function')?tcGetColor(_drawCategory,editPid):'#888';
+  const editName=(typeof tcGetName==='function')?tcGetName(_drawCategory,editPid):(entry.categoryName||_drawCategory||'Unknown');
+  document.getElementById('map-tracker-cat-dot').style.background=editColor;
+  document.getElementById('map-tracker-cat-label').textContent=editName;
   document.getElementById('map-tracker-modal').classList.add('open');
 }
 
@@ -1715,8 +1860,18 @@ window.mapSaveTrackerEntry = mapSaveTrackerEntry;
 window.mapActivateMeasure = mapActivateMeasure;
 window.mapToggleGpsFollow = mapToggleGpsFollow;
 window.mapResetGpsFollow = mapResetGpsFollow;
-window.TR_CATEGORY_COLORS = TR_CATEGORY_COLORS;
-window.TR_CATEGORY_LABELS = TR_CATEGORY_LABELS;
+window.mapShowTrackerSheet = mapShowTrackerSheet;
+window.mapCloseTrackerSheet = mapCloseTrackerSheet;
+window.mapTrackerToggleLayer = mapTrackerToggleLayer;
+window.mapTrackerStartEdit = mapTrackerStartEdit;
+window.mapTrackerCancelEdit = mapTrackerCancelEdit;
+window.mapTrackerSaveEdit = mapTrackerSaveEdit;
+window.mapTrackerCycleEditColor = mapTrackerCycleEditColor;
+window.mapTrackerDeleteCategory = mapTrackerDeleteCategory;
+window.mapTrackerShowAdd = mapTrackerShowAdd;
+window.mapTrackerHideAdd = mapTrackerHideAdd;
+window.mapTrackerCycleAddColor = mapTrackerCycleAddColor;
+window.mapTrackerSaveAdd = mapTrackerSaveAdd;
 window.mapRenderTrackerLayers = mapRenderTrackerLayers;
 window.mapDeleteTrackerEntry = mapDeleteTrackerEntry;
 window.mapEditTrackerEntry = mapEditTrackerEntry;

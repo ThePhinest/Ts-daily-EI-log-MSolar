@@ -113,12 +113,28 @@ body.theme-light{
 /* tracker entry modal */
 #map-tracker-modal{position:fixed;bottom:calc(95px + env(safe-area-inset-bottom));left:0;right:0;z-index:251;background:var(--bg);border-top:1px solid var(--border);border-radius:16px 16px 0 0;padding:16px 16px 16px;transform:translateY(100%);transition:transform .25s;max-height:80dvh;overflow-y:auto}
 #map-tracker-modal.open{transform:translateY(0)}
-/* category sheet */
+/* category picker sheet (draw flow) */
 #map-category-sheet{position:fixed;bottom:calc(95px + env(safe-area-inset-bottom));left:0;right:0;z-index:251;background:var(--bg);border-top:1px solid var(--border);border-radius:16px 16px 0 0;padding:14px 14px 14px;transform:translateY(100%);transition:transform .25s}
 #map-category-sheet.open{transform:translateY(0)}
 .map-cat-pill{display:flex;align-items:center;gap:8px;padding:9px 12px;border-radius:8px;border:1px solid var(--border);background:var(--s1);margin-bottom:6px;cursor:pointer;font-family:var(--mono);font-size:12px;color:var(--text);transition:background .12s}
 .map-cat-pill:hover{background:var(--s2)}
 .map-cat-dot{width:12px;height:12px;border-radius:50%;flex-shrink:0}
+/* tracker management sheet */
+#map-tracker-sheet{position:fixed;bottom:calc(95px + env(safe-area-inset-bottom));left:0;right:0;z-index:251;background:var(--bg);border-top:1px solid var(--border);border-radius:16px 16px 0 0;padding:14px 14px 0;transform:translateY(100%);transition:transform .25s;max-height:75dvh;display:flex;flex-direction:column}
+#map-tracker-sheet.open{transform:translateY(0)}
+#map-tracker-cat-list{flex:1;overflow-y:auto;padding:0 0 8px}
+.map-tc-row{display:flex;align-items:center;gap:8px;padding:9px 4px;border-bottom:1px solid var(--border)}
+.map-tc-dot{width:12px;height:12px;border-radius:50%;flex-shrink:0}
+.map-tc-edit-color,.map-tc-add-color{width:20px;height:20px;border-radius:50%;flex-shrink:0;border:2px solid rgba(255,255,255,.25);cursor:pointer}
+.map-tc-name{flex:1;font-family:var(--mono);font-size:12px;color:var(--text)}
+.map-tc-name-input{flex:1;background:var(--s1);border:1px solid var(--amber);border-radius:5px;color:var(--text);font-family:var(--mono);font-size:12px;padding:5px 8px;min-width:0}
+.map-tc-btn{background:none;border:none;color:var(--muted);font-family:var(--mono);font-size:11px;cursor:pointer;padding:4px 6px;border-radius:4px;white-space:nowrap;transition:color .12s}
+.map-tc-btn.dim{opacity:0.35}
+.map-tc-btn.danger:hover{color:#e05555}
+.map-tc-save-btn{background:var(--amber);border:none;color:#111;padding:5px 10px;border-radius:6px;font-family:var(--mono);font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap}
+.map-tc-cancel-btn{background:var(--s2);border:1px solid var(--border);color:var(--muted);padding:5px 8px;border-radius:6px;font-family:var(--mono);font-size:11px;cursor:pointer;white-space:nowrap}
+#map-tracker-sheet-add{display:none;align-items:center;gap:8px;padding:10px 4px;border-top:1px solid var(--border);background:var(--s1);margin:0 -14px;padding-left:14px;padding-right:14px;padding-bottom:calc(10px + env(safe-area-inset-bottom))}
+#map-tracker-sheet-add.open{display:flex}
 .gl-tracker-popup .mapboxgl-popup-content{background:#0F1F2E;color:#e8e8e8;padding:12px;border-radius:8px;border:1px solid rgba(255,255,255,.12)}
 .gl-tracker-popup.mapboxgl-popup-anchor-bottom .mapboxgl-popup-tip{border-top-color:#0F1F2E}
 .gl-tracker-popup.mapboxgl-popup-anchor-top .mapboxgl-popup-tip{border-bottom-color:#0F1F2E}
@@ -1715,6 +1731,8 @@ Anticipated rain — AM weather monitoring expected"></textarea>
         <span style="font-family:var(--mono);font-size:10px;color:var(--muted)">to</span>
         <input type="date" id="map-pin-to" style="background:var(--s1);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--mono);font-size:11px;padding:5px 8px" onchange="mapRenderPhotoPins()">
       </div>
+      <div class="map-vf-label">FIELD MARKERS</div>
+      <div id="map-field-marker-list" style="font-size:11px;color:var(--muted);margin-bottom:4px;">No markers placed.</div>
     </div>
     <!-- Layer panel -->
 <div id="map-layer-panel" style="position:absolute;top:0;right:0;width:260px;height:100%;background:var(--bg);border-left:1px solid var(--border);z-index:20;transform:translateX(100%);transition:transform .3s;display:flex;flex-direction:column;overflow:hidden;">
@@ -1723,8 +1741,6 @@ Anticipated rain — AM weather monitoring expected"></textarea>
     <button onclick="mapToggleLayerPanel()" style="background:none;border:none;color:var(--text);font-size:18px;cursor:pointer;">✕</button>
   </div>
   <div style="flex:1;overflow-y:auto;padding:10px;">
-    <div style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px;">Field Markers</div>
-    <div id="map-field-marker-list" style="margin-bottom:16px;font-size:11px;color:var(--muted);">No markers placed.</div>
     <div id="map-kml-section-header" style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;">
       <span style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;flex:1;">KML Layers</span>
       <button id="map-kml-edit-btn" onclick="mapToggleKmlEditMode()" style="display:none;background:none;border:1px solid var(--border);color:var(--muted);padding:3px 8px;border-radius:4px;font-family:var(--mono);font-size:9px;cursor:pointer;text-transform:uppercase;letter-spacing:.05em;white-space:nowrap;">✏️ Edit</button>
@@ -1778,6 +1794,7 @@ Anticipated rain — AM weather monitoring expected"></textarea>
       <div class="map-fab-row"><span class="map-fab-lbl">Draw</span><button class="map-fab-btn" id="map-fab-draw-btn" onclick="mapFabDraw()" title="Draw tracker entry">✏️</button></div>
       <div class="map-fab-row"><span class="map-fab-lbl">Measure</span><button class="map-fab-btn" id="map-fab-measure-btn" onclick="mapFabMeasure()" title="Measure area / distance">📏</button></div>
       <div class="map-fab-row"><span class="map-fab-lbl">Location</span><button class="map-fab-btn" id="map-fab-gps-btn" onclick="mapFabGps()" title="Follow my location">🎯</button></div>
+      <div class="map-fab-row"><span class="map-fab-lbl">Tracker</span><button class="map-fab-btn" id="map-fab-tracker-btn" onclick="mapShowTrackerSheet()" title="Manage tracker categories">☰</button></div>
     </div>
 
     <!-- Draw mode indicator bar -->
@@ -1789,13 +1806,31 @@ Anticipated rain — AM weather monitoring expected"></textarea>
     <!-- Measure readout chip -->
     <div id="map-measure-chip"></div>
 
-    <!-- Category picker sheet -->
+    <!-- Category picker sheet (draw flow) -->
     <div id="map-category-sheet">
       <div style="font-family:var(--cond);font-weight:700;font-size:14px;letter-spacing:.05em;text-transform:uppercase;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;">
         Select Category
         <button onclick="mapCloseCategorySheet()" style="background:none;border:none;color:var(--muted);font-size:18px;cursor:pointer;">✕</button>
       </div>
       <div id="map-category-list"></div>
+    </div>
+
+    <!-- Tracker management sheet -->
+    <div id="map-tracker-sheet">
+      <div style="font-family:var(--cond);font-weight:700;font-size:14px;letter-spacing:.05em;text-transform:uppercase;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;flex-shrink:0">
+        Tracker Categories
+        <div style="display:flex;gap:8px;align-items:center">
+          <button onclick="mapTrackerShowAdd()" style="background:var(--amber);border:none;color:#111;width:26px;height:26px;border-radius:50%;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;font-weight:700;line-height:1">+</button>
+          <button onclick="mapCloseTrackerSheet()" style="background:none;border:none;color:var(--muted);font-size:18px;cursor:pointer;">✕</button>
+        </div>
+      </div>
+      <div id="map-tracker-cat-list"></div>
+      <div id="map-tracker-sheet-add">
+        <div class="map-tc-add-color" id="map-tc-add-preview" onclick="mapTrackerCycleAddColor()"></div>
+        <input id="map-tc-add-name" class="map-tc-name-input" placeholder="Category name" autocomplete="off" maxlength="32" onkeydown="if(event.key==='Enter')mapTrackerSaveAdd()">
+        <button onclick="mapTrackerSaveAdd()" class="map-tc-save-btn">Add</button>
+        <button onclick="mapTrackerHideAdd()" class="map-tc-cancel-btn">✕</button>
+      </div>
     </div>
 
     <!-- Tracker entry modal -->
