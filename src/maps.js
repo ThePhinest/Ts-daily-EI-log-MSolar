@@ -1515,10 +1515,26 @@ function mapResetGpsFollow(){
 }
 
 // ── Tracker entry map layers ──────────────
-let _trackerPopup=null;
+let _trackerPopup=null,_trackerClickHandlerRegistered=false;
 
 function mapRenderTrackerLayers(){
   if(!_mapInstance||!_mapInstance.isStyleLoaded()) return;
+
+  if(!_trackerClickHandlerRegistered){
+    _trackerClickHandlerRegistered=true;
+    _mapInstance.on('click',e=>{
+      if(_drawMode) return;
+      const bbox=[[e.point.x-22,e.point.y-22],[e.point.x+22,e.point.y+22]];
+      const style=_mapInstance.getStyle();
+      if(!style||!style.layers) return;
+      const lids=style.layers.map(l=>l.id).filter(id=>/^tracker-.+-(fill|line|circle)$/.test(id));
+      if(!lids.length) return;
+      const features=_mapInstance.queryRenderedFeatures(bbox,{layers:lids});
+      if(!features.length) return;
+      _showTrackerEntryPopup(e.lngLat,features[0].properties);
+    });
+  }
+
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
   const entries=(typeof trGetEntriesForProject==='function')?trGetEntriesForProject(pid):[];
   const cats=window.TR_CATEGORIES||Object.keys(TR_CATEGORY_COLORS);
@@ -1555,11 +1571,6 @@ function mapRenderTrackerLayers(){
                'circle-stroke-color':'#fff','circle-stroke-width':1.5}});
 
       [src+'-fill',src+'-line',src+'-circle'].forEach(lid=>{
-        _mapInstance.on('click',lid,e=>{
-          if(!e.features||!e.features.length) return;
-          e.preventDefault();
-          _showTrackerEntryPopup(e.lngLat,e.features[0].properties);
-        });
         _mapInstance.on('mouseenter',lid,()=>{_mapInstance.getCanvas().style.cursor='pointer';});
         _mapInstance.on('mouseleave',lid,()=>{_mapInstance.getCanvas().style.cursor='';});
       });
