@@ -9,7 +9,8 @@ initializeApp();
 const WEBHOOK = defineSecret('DISCORD_ERROR_WEBHOOK_URL');
 
 async function postToDiscord(webhookUrl, payload) {
-  const res = await fetch(webhookUrl, {
+  const cleanUrl = webhookUrl.replace(/^﻿/, '').trim();
+  const res = await fetch(cleanUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
