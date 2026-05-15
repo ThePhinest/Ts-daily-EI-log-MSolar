@@ -9,7 +9,7 @@ let _mapCurrentStyle=localStorage.getItem('gl_map_style')||'satellite-streets-v1
 
 // B2 — Draw / Measure / FAB / GPS state
 let _drawInstance=null, _drawMode=null, _drawCategory=null;
-let _fabOpen=false, _gpsFollowActive=false, _gpsFollowWatch=null;
+let _fabOpen=false, _viewFabOpen=false, _gpsFollowActive=false, _gpsFollowWatch=null;
 let _pendingDrawFeature=null;
 
 const TR_CATEGORY_COLORS={
@@ -1225,6 +1225,7 @@ function mapResize(){ if(_mapInstance) _mapInstance.resize(); }
 
 // ── FAB ──────────────────────────────────
 function mapToggleFab(){
+  mapCloseViewFab();
   _fabOpen=!_fabOpen;
   document.getElementById('map-fab').classList.toggle('open',_fabOpen);
   document.getElementById('map-fab-palette').classList.toggle('open',_fabOpen);
@@ -1233,6 +1234,19 @@ function mapCloseFab(){
   _fabOpen=false;
   document.getElementById('map-fab').classList.remove('open');
   document.getElementById('map-fab-palette').classList.remove('open');
+}
+function mapToggleViewFab(){
+  mapCloseFab();
+  _viewFabOpen=!_viewFabOpen;
+  document.getElementById('map-view-fab').classList.toggle('open',_viewFabOpen);
+  document.getElementById('map-view-palette').classList.toggle('open',_viewFabOpen);
+}
+function mapCloseViewFab(){
+  _viewFabOpen=false;
+  const vf=document.getElementById('map-view-fab');
+  const vp=document.getElementById('map-view-palette');
+  if(vf) vf.classList.remove('open');
+  if(vp) vp.classList.remove('open');
 }
 function mapFabImportKml(){
   mapCloseFab();
@@ -1619,6 +1633,8 @@ window.mapLoadSettingsFields = mapLoadSettingsFields;
 // B2
 window.mapToggleFab = mapToggleFab;
 window.mapCloseFab = mapCloseFab;
+window.mapToggleViewFab = mapToggleViewFab;
+window.mapCloseViewFab = mapCloseViewFab;
 window.mapFabImportKml = mapFabImportKml;
 window.mapFabLayers = mapFabLayers;
 window.mapFabDraw = mapFabDraw;

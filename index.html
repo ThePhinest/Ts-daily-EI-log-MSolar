@@ -88,8 +88,19 @@ body.theme-light{
 #mapbox-map{width:100%;height:calc(100dvh - 60px - env(safe-area-inset-bottom))}
 #map-loading,#map-no-token{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:var(--bg);z-index:20;padding:32px;text-align:center}
 /* FAB + palette */
-#map-fab{position:fixed;bottom:calc(105px + env(safe-area-inset-bottom));right:16px;z-index:250;width:52px;height:52px;border-radius:50%;background:var(--amber);border:none;color:#111;font-size:22px;cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;transition:transform .18s}
-#map-fab.open{transform:rotate(45deg)}
+#map-fab{position:fixed;bottom:calc(105px + env(safe-area-inset-bottom));right:16px;z-index:250;width:52px;height:52px;border-radius:50%;background:var(--amber);border:none;cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;transition:background .18s}
+#map-fab.open{background:var(--s2)}
+#map-fab .fab-logo{display:flex}
+#map-fab .fab-close{display:none;font-size:18px;color:#e8e8e8;line-height:1}
+#map-fab.open .fab-logo{display:none}
+#map-fab.open .fab-close{display:flex}
+#map-view-fab.open{background:var(--bg);border-color:var(--amber)}
+#map-view-fab{position:fixed;bottom:calc(105px + env(safe-area-inset-bottom));left:16px;z-index:250;width:48px;height:48px;border-radius:50%;background:var(--s2);border:1px solid var(--border2);cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:0}
+#map-view-palette{position:fixed;bottom:calc(163px + env(safe-area-inset-bottom));left:16px;z-index:249;background:var(--bg);border:1px solid var(--border2);border-radius:12px;padding:10px 12px;min-width:210px;pointer-events:none;opacity:0;transform:translateY(10px);transition:opacity .18s,transform .18s}
+#map-view-palette.open{pointer-events:auto;opacity:1;transform:translateY(0)}
+.map-vf-label{font-family:var(--mono);font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:5px;margin-top:8px}
+.map-vf-label:first-child{margin-top:0}
+.map-vf-row{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:2px}
 #map-fab-palette{position:fixed;bottom:calc(167px + env(safe-area-inset-bottom));right:16px;z-index:249;display:flex;flex-direction:column;align-items:flex-end;gap:8px;pointer-events:none;opacity:0;transform:translateY(10px);transition:opacity .18s,transform .18s}
 #map-fab-palette.open{pointer-events:auto;opacity:1;transform:translateY(0)}
 .map-fab-row{display:flex;align-items:center;gap:8px}
@@ -1677,26 +1688,31 @@ Anticipated rain — AM weather monitoring expected"></textarea>
     <div id="mapbox-map"></div>
 
     <!-- Style toggle controls -->
-    <div class="map-controls">
-      <button class="map-style-btn active" id="map-btn-satellite" onclick="mapSetStyle('satellite-streets-v11')">🛰 Satellite</button>
-      <button class="map-style-btn" id="map-btn-streets" onclick="mapSetStyle('streets-v11')">🗺 Streets</button>
-      <button class="map-style-btn" id="map-btn-outdoors" onclick="mapSetStyle('outdoors-v11')">🏔 Topo</button>
-    </div>
-
     <!-- Locate me -->
-    <button class="map-locate-btn" id="map-layers-btn" onclick="mapToggleLayerPanel()" title="Layers" style="top:52px">🗂️</button>
+    <button class="map-locate-btn" id="map-layers-btn" onclick="mapToggleLayerPanel()" title="Layers" style="top:112px;right:10px;bottom:auto">🗂️</button>
 
-    <!-- Photo pin filter bar -->
-    <div id="map-pin-bar" style="position:absolute;top:52px;left:12px;z-index:10;display:flex;gap:6px;flex-wrap:wrap">
-      <button class="map-style-btn active" id="map-pin-all" onclick="mapSetPinFilter('all')">📸 All</button>
-      <button class="map-style-btn" id="map-pin-today" onclick="mapSetPinFilter('today')">Today</button>
-      <button class="map-style-btn" id="map-pin-range" onclick="mapTogglePinDateRange()">Date Range</button>
-    </div>
-    <!-- Date range inputs (hidden by default) -->
-    <div id="map-pin-range-inputs" style="position:absolute;top:90px;left:12px;z-index:10;display:none;gap:6px;align-items:center;background:var(--s1);padding:8px 10px;border-radius:8px;border:1px solid var(--border2)">
-      <input type="date" id="map-pin-from" style="background:var(--bg);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--mono);font-size:11px;padding:5px 8px" onchange="mapRenderPhotoPins()">
-      <span style="font-family:var(--mono);font-size:10px;color:var(--muted)">to</span>
-      <input type="date" id="map-pin-to" style="background:var(--bg);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--mono);font-size:11px;padding:5px 8px" onchange="mapRenderPhotoPins()">
+    <!-- View / Filter FAB (bottom-left) -->
+    <button id="map-view-fab" onclick="mapToggleViewFab()" title="Map view &amp; filters">
+      <img src="/gl-icon.svg" style="width:26px;height:26px;filter:brightness(0) invert(1);opacity:.85">
+    </button>
+    <div id="map-view-palette">
+      <div class="map-vf-label">MAP STYLE</div>
+      <div class="map-vf-row">
+        <button class="map-style-btn active" id="map-btn-satellite" onclick="mapSetStyle('satellite-streets-v11')">🛰 Satellite</button>
+        <button class="map-style-btn" id="map-btn-streets" onclick="mapSetStyle('streets-v11')">🗺 Streets</button>
+        <button class="map-style-btn" id="map-btn-outdoors" onclick="mapSetStyle('outdoors-v11')">🏔 Topo</button>
+      </div>
+      <div class="map-vf-label">PHOTO FILTER</div>
+      <div class="map-vf-row">
+        <button class="map-style-btn active" id="map-pin-all" onclick="mapSetPinFilter('all')">📸 All</button>
+        <button class="map-style-btn" id="map-pin-today" onclick="mapSetPinFilter('today')">Today</button>
+        <button class="map-style-btn" id="map-pin-range" onclick="mapTogglePinDateRange()">Date Range</button>
+      </div>
+      <div id="map-pin-range-inputs" style="display:none;gap:6px;align-items:center;padding:6px 0 2px;flex-wrap:wrap">
+        <input type="date" id="map-pin-from" style="background:var(--s1);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--mono);font-size:11px;padding:5px 8px" onchange="mapRenderPhotoPins()">
+        <span style="font-family:var(--mono);font-size:10px;color:var(--muted)">to</span>
+        <input type="date" id="map-pin-to" style="background:var(--s1);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--mono);font-size:11px;padding:5px 8px" onchange="mapRenderPhotoPins()">
+      </div>
     </div>
     <!-- Layer panel -->
 <div id="map-layer-panel" style="position:absolute;top:0;right:0;width:260px;height:100%;background:var(--bg);border-left:1px solid var(--border);z-index:20;transform:translateX(100%);transition:transform .3s;display:flex;flex-direction:column;overflow:hidden;">
@@ -1755,9 +1771,11 @@ Anticipated rain — AM weather monitoring expected"></textarea>
 </div>
 
     <!-- FAB -->
-    <button id="map-fab" onclick="mapToggleFab()" title="Tracker tools">✚</button>
+    <button id="map-fab" onclick="mapToggleFab()" title="Tracker tools">
+      <img class="fab-logo" src="/gl-icon.svg" style="width:28px;height:28px;filter:brightness(0) invert(1);opacity:.9">
+      <span class="fab-close">✕</span>
+    </button>
     <div id="map-fab-palette">
-      <div class="map-fab-row"><span class="map-fab-lbl">Import KML</span><button class="map-fab-btn" onclick="mapFabImportKml()" title="Import KML/KMZ">📂</button></div>
       <div class="map-fab-row"><span class="map-fab-lbl">Layers</span><button class="map-fab-btn" onclick="mapFabLayers()" title="Layers">🗂️</button></div>
       <div class="map-fab-row"><span class="map-fab-lbl">Draw</span><button class="map-fab-btn" id="map-fab-draw-btn" onclick="mapFabDraw()" title="Draw tracker entry">✏️</button></div>
       <div class="map-fab-row"><span class="map-fab-lbl">Measure</span><button class="map-fab-btn" id="map-fab-measure-btn" onclick="mapFabMeasure()" title="Measure area / distance">📏</button></div>
