@@ -309,7 +309,7 @@ const _mapEmojiList = [
   {emoji:'🏗️', label:'Active Work Area'},
   {emoji:'🧱', label:'Erosion Control'}
 ];
-let _mapPinFilter = 'all';
+let _mapPinFilter = 'today';
 
 function mapSetPinFilter(filter){
   _mapPinFilter = filter;

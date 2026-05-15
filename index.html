@@ -88,12 +88,8 @@ body.theme-light{
 #mapbox-map{width:100%;height:calc(100dvh - 60px - env(safe-area-inset-bottom))}
 #map-loading,#map-no-token{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:var(--bg);z-index:20;padding:32px;text-align:center}
 /* FAB + palette */
-#map-fab{position:fixed;bottom:calc(105px + env(safe-area-inset-bottom));right:16px;z-index:250;width:52px;height:52px;border-radius:50%;background:var(--amber);border:none;cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;transition:background .18s}
-#map-fab.open{background:var(--s2)}
-#map-fab .fab-logo{display:flex}
-#map-fab .fab-close{display:none;font-size:18px;color:#e8e8e8;line-height:1}
-#map-fab.open .fab-logo{display:none}
-#map-fab.open .fab-close{display:flex}
+#map-fab{position:fixed;bottom:calc(105px + env(safe-area-inset-bottom));right:16px;z-index:250;width:52px;height:52px;border-radius:50%;background:var(--amber);border:none;color:#111;font-size:22px;cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;transition:background .18s,transform .18s}
+#map-fab.open{background:var(--s2);color:#e8e8e8;transform:rotate(45deg)}
 #map-view-fab.open{background:var(--bg);border-color:var(--amber)}
 #map-view-fab{position:fixed;bottom:calc(105px + env(safe-area-inset-bottom));left:16px;z-index:250;width:48px;height:48px;border-radius:50%;background:var(--s2);border:1px solid var(--border2);cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:0}
 #map-view-palette{position:fixed;bottom:calc(163px + env(safe-area-inset-bottom));left:16px;z-index:249;background:var(--bg);border:1px solid var(--border2);border-radius:12px;padding:10px 12px;min-width:210px;pointer-events:none;opacity:0;transform:translateY(10px);transition:opacity .18s,transform .18s}
@@ -1689,11 +1685,14 @@ Anticipated rain — AM weather monitoring expected"></textarea>
 
     <!-- Style toggle controls -->
     <!-- Locate me -->
-    <button class="map-locate-btn" id="map-layers-btn" onclick="mapToggleLayerPanel()" title="Layers" style="top:112px;right:10px;bottom:auto">🗂️</button>
+    <button class="map-locate-btn" id="map-layers-btn" onclick="mapToggleLayerPanel()" title="Layers" style="top:124px;right:10px;bottom:auto">🗂️</button>
 
     <!-- View / Filter FAB (bottom-left) -->
     <button id="map-view-fab" onclick="mapToggleViewFab()" title="Map view &amp; filters">
-      <img src="/gl-icon.svg" style="width:26px;height:26px;filter:brightness(0) invert(1);opacity:.85">
+      <div style="display:flex;flex-direction:column;align-items:center;gap:1px;pointer-events:none">
+        <span style="font-family:'Oswald','Barlow Condensed',sans-serif;font-weight:300;font-size:8px;letter-spacing:1.5px;text-transform:uppercase;color:var(--text)">GROUND</span>
+        <span style="font-family:'Oswald','Barlow Condensed',sans-serif;font-weight:700;font-size:10px;letter-spacing:-0.5px;text-transform:uppercase;color:var(--s3)">LOG</span>
+      </div>
     </button>
     <div id="map-view-palette">
       <div class="map-vf-label">MAP STYLE</div>
@@ -1704,8 +1703,8 @@ Anticipated rain — AM weather monitoring expected"></textarea>
       </div>
       <div class="map-vf-label">PHOTO FILTER</div>
       <div class="map-vf-row">
-        <button class="map-style-btn active" id="map-pin-all" onclick="mapSetPinFilter('all')">📸 All</button>
-        <button class="map-style-btn" id="map-pin-today" onclick="mapSetPinFilter('today')">Today</button>
+        <button class="map-style-btn" id="map-pin-all" onclick="mapSetPinFilter('all')">📸 All</button>
+        <button class="map-style-btn active" id="map-pin-today" onclick="mapSetPinFilter('today')">Today</button>
         <button class="map-style-btn" id="map-pin-range" onclick="mapTogglePinDateRange()">Date Range</button>
       </div>
       <div id="map-pin-range-inputs" style="display:none;gap:6px;align-items:center;padding:6px 0 2px;flex-wrap:wrap">
@@ -1771,12 +1770,8 @@ Anticipated rain — AM weather monitoring expected"></textarea>
 </div>
 
     <!-- FAB -->
-    <button id="map-fab" onclick="mapToggleFab()" title="Tracker tools">
-      <img class="fab-logo" src="/gl-icon.svg" style="width:28px;height:28px;filter:brightness(0) invert(1);opacity:.9">
-      <span class="fab-close">✕</span>
-    </button>
+    <button id="map-fab" onclick="mapToggleFab()" title="Tracker tools">✚</button>
     <div id="map-fab-palette">
-      <div class="map-fab-row"><span class="map-fab-lbl">Layers</span><button class="map-fab-btn" onclick="mapFabLayers()" title="Layers">🗂️</button></div>
       <div class="map-fab-row"><span class="map-fab-lbl">Draw</span><button class="map-fab-btn" id="map-fab-draw-btn" onclick="mapFabDraw()" title="Draw tracker entry">✏️</button></div>
       <div class="map-fab-row"><span class="map-fab-lbl">Measure</span><button class="map-fab-btn" id="map-fab-measure-btn" onclick="mapFabMeasure()" title="Measure area / distance">📏</button></div>
       <div class="map-fab-row"><span class="map-fab-lbl">Location</span><button class="map-fab-btn" id="map-fab-gps-btn" onclick="mapFabGps()" title="Follow my location">🎯</button></div>
