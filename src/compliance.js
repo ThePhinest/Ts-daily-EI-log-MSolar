@@ -317,15 +317,16 @@ function clRenderTrackerCard(){
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
   const entries=(typeof trGetEntriesForDate==='function')?trGetEntriesForDate(today,pid):[];
   if(!entries.length){ el.style.display='none'; return; }
-  const colors=window.TR_CATEGORY_COLORS||{};
-  const labels=window.TR_CATEGORY_LABELS||{};
-  const rows=entries.map(e=>`
-    <div onclick="clShowTrackerDetail('${e.id}')" style="display:flex;align-items:center;gap:8px;padding:7px 4px;border-bottom:1px solid var(--border);cursor:pointer;border-radius:4px">
-      <div style="width:10px;height:10px;border-radius:50%;background:${colors[e.category]||'#888'};flex-shrink:0"></div>
-      <span style="font-family:var(--mono);font-size:11px;color:var(--text);flex:1">${labels[e.category]||e.category}</span>
+  const rows=entries.map(e=>{
+    const catColor=(typeof tcGetColor==='function')?tcGetColor(e.categoryId,pid):'#888';
+    const catName=e.categoryName||(typeof tcGetName==='function'?tcGetName(e.categoryId,pid):'Unknown');
+    return `<div onclick="clShowTrackerDetail('${e.id}')" style="display:flex;align-items:center;gap:8px;padding:7px 4px;border-bottom:1px solid var(--border);cursor:pointer;border-radius:4px">
+      <div style="width:10px;height:10px;border-radius:50%;background:${catColor};flex-shrink:0"></div>
+      <span style="font-family:var(--mono);font-size:11px;color:var(--text);flex:1">${catName}</span>
       ${e.acres?`<span style="font-family:var(--mono);font-size:11px;color:var(--muted)">${e.acres} ac</span>`:''}
       <span style="font-family:var(--mono);font-size:10px;color:var(--muted)">›</span>
-    </div>`).join('');
+    </div>`;
+  }).join('');
   el.innerHTML=`<div class="card">
     <div class="card-head"><span class="card-num">🗺️</span><span class="card-title">Today's Tracker Activity</span><span class="card-badge">${entries.length}</span></div>
     <div class="card-body" style="padding-top:4px">${rows}</div>
@@ -338,10 +339,8 @@ function clShowTrackerDetail(entryId){
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
   const entry=(typeof trGetEntry==='function')?trGetEntry(entryId,pid):null;
   if(!entry) return;
-  const colors=window.TR_CATEGORY_COLORS||{};
-  const labels=window.TR_CATEGORY_LABELS||{};
-  const label=labels[entry.category]||entry.category;
-  const color=colors[entry.category]||'#888';
+  const label=entry.categoryName||(typeof tcGetName==='function'?tcGetName(entry.categoryId,pid):'Unknown');
+  const color=(typeof tcGetColor==='function')?tcGetColor(entry.categoryId,pid):'#888';
   const ov=document.createElement('div');
   ov.className='modal-overlay';
   ov.style.cssText='z-index:5000';

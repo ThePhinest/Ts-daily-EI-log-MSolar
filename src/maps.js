@@ -1282,9 +1282,10 @@ function mapCloseCategorySheet(){
 }
 
 // ── Tracker sheet (category management) ──
-let _tcLayerVisible={};   // { [catId]: boolean } — default true
-let _tcEditingCatId=null; // id of category being inline-edited
-let _tcAddingColor=null;  // color staged for new-category add row
+let _tcLayerVisible={};    // { [catId]: boolean } — default true
+let _tcEditingCatId=null;  // id of category being inline-edited
+let _tcEditingColor=null;  // color staged for edit row (hex string)
+let _tcAddingColor=null;   // color staged for add row (hex string)
 
 function mapShowTrackerSheet(){
   mapCloseFab();
@@ -1312,7 +1313,7 @@ function _renderTrackerSheet(){
     const visible=_tcLayerVisible[c.id]!==false;
     if(_tcEditingCatId===c.id){
       return `<div class="map-tc-row editing">
-        <div class="map-tc-edit-color" id="map-tc-edit-preview" style="background:${c.color||'#888'}" onclick="mapTrackerCycleEditColor('${c.id}')"></div>
+        <div class="map-tc-edit-color" id="map-tc-edit-preview" style="background:${_tcEditingColor||c.color||'#888'}" onclick="mapTrackerCycleEditColor()"></div>
         <input id="map-tc-edit-name" class="map-tc-name-input" value="${c.name}" placeholder="Name" autocomplete="off" maxlength="32">
         <button onclick="mapTrackerSaveEdit('${c.id}')" class="map-tc-save-btn">Save</button>
         <button onclick="mapTrackerCancelEdit()" class="map-tc-cancel-btn">✕</button>
@@ -1337,6 +1338,9 @@ function mapTrackerToggleLayer(catId){
 
 function mapTrackerStartEdit(catId){
   _tcEditingCatId=catId;
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const cat=(typeof tcGetCategory==='function')?tcGetCategory(catId,pid):null;
+  _tcEditingColor=cat?cat.color:'#E67E22';
   _renderTrackerSheet();
   const input=document.getElementById('map-tc-edit-name');
   if(input){ input.focus(); input.select(); }
@@ -1347,25 +1351,23 @@ function mapTrackerCancelEdit(){
 }
 async function mapTrackerSaveEdit(catId){
   const nameEl=document.getElementById('map-tc-edit-name');
-  const previewEl=document.getElementById('map-tc-edit-preview');
   const name=(nameEl?nameEl.value.trim():'');
   if(!name) return;
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
   const existing=(typeof tcGetCategory==='function')?tcGetCategory(catId,pid):null;
   if(!existing) return;
-  const color=previewEl?previewEl.style.background:existing.color;
-  await tcSaveCategory({...existing,name,color},pid);
+  await tcSaveCategory({...existing,name,color:_tcEditingColor||existing.color},pid);
   _tcEditingCatId=null;
+  _tcEditingColor=null;
   _renderTrackerSheet();
   mapRenderTrackerLayers();
 }
-function mapTrackerCycleEditColor(catId){
+function mapTrackerCycleEditColor(){
   const colors=['#E67E22','#27AE60','#4A90E2','#9B59B6','#F4E200','#D35400','#7CCD7C','#E74C3C','#8E9BA3','#A8D8A8'];
+  const idx=colors.indexOf(_tcEditingColor);
+  _tcEditingColor=colors[(idx+1)%colors.length];
   const el=document.getElementById('map-tc-edit-preview');
-  if(!el) return;
-  const cur=el.style.background;
-  const idx=colors.indexOf(cur);
-  el.style.background=colors[(idx+1)%colors.length];
+  if(el) el.style.background=_tcEditingColor;
 }
 async function mapTrackerDeleteCategory(catId){
   if(!confirm('Delete this category? Existing entries keep their names.')) return;
@@ -1400,12 +1402,10 @@ function mapTrackerHideAdd(){
 }
 function mapTrackerCycleAddColor(){
   const colors=['#E67E22','#27AE60','#4A90E2','#9B59B6','#F4E200','#D35400','#7CCD7C','#E74C3C','#8E9BA3','#A8D8A8'];
-  const el=document.getElementById('map-tc-add-preview');
-  if(!el) return;
-  const cur=el.style.background;
-  const idx=colors.indexOf(cur);
+  const idx=colors.indexOf(_tcAddingColor);
   _tcAddingColor=colors[(idx+1)%colors.length];
-  el.style.background=_tcAddingColor;
+  const el=document.getElementById('map-tc-add-preview');
+  if(el) el.style.background=_tcAddingColor;
 }
 async function mapTrackerSaveAdd(){
   const nameEl=document.getElementById('map-tc-add-name');
