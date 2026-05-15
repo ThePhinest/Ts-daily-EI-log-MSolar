@@ -370,6 +370,9 @@ function clShowTrackerDetail(entryId){
       ${entry.date?`<div><span style="color:var(--muted);text-transform:uppercase;font-size:10px;letter-spacing:.06em">Date</span><div style="margin-top:2px">${entry.date}</div></div>`:''}
       ${entry.acres?`<div><span style="color:var(--muted);text-transform:uppercase;font-size:10px;letter-spacing:.06em">Area</span><div style="margin-top:2px">${entry.acres} acres</div></div>`:''}
       ${entry.location?`<div><span style="color:var(--muted);text-transform:uppercase;font-size:10px;letter-spacing:.06em">Location</span><div style="margin-top:2px">${entry.location}</div></div>`:''}
+      ${(entry.phase&&entry.phase!=='N/A')?`<div><span style="color:var(--muted);text-transform:uppercase;font-size:10px;letter-spacing:.06em">Application Phase</span><div style="margin-top:2px">${entry.phase}</div></div>`:''}
+      ${(entry.method&&entry.method!=='N/A')?`<div><span style="color:var(--muted);text-transform:uppercase;font-size:10px;letter-spacing:.06em">Application Method</span><div style="margin-top:2px">${entry.method}</div></div>`:''}
+      ${entry.contractor?`<div><span style="color:var(--muted);text-transform:uppercase;font-size:10px;letter-spacing:.06em">Contractor / Applicator</span><div style="margin-top:2px">${entry.contractor}</div></div>`:''}
       ${entry.notes?`<div><span style="color:var(--muted);text-transform:uppercase;font-size:10px;letter-spacing:.06em">Notes</span><div style="margin-top:2px;line-height:1.5">${entry.notes}</div></div>`:''}
     </div>
     <div style="margin-bottom:14px">
@@ -592,10 +595,11 @@ function clShowTrackerLog(){
         const gPhotos=g.entries.reduce((s,e)=>s+(Array.isArray(e.photoIds)?e.photoIds.length:0),0);
         const rows=g.entries.map(e=>{
           const pc=Array.isArray(e.photoIds)?e.photoIds.length:0;
-          const label=(e.location||e.notes||'').slice(0,42)||(e.location||e.notes||'').length>42?'…':'';
+          const phaseBadge=(e.phase&&e.phase!=='N/A')?`<span style="font-family:var(--mono);font-size:9px;color:var(--muted);white-space:nowrap;flex-shrink:0;background:var(--s1);border:1px solid var(--border);border-radius:3px;padding:1px 4px">${e.phase}</span>`:'';
           return `<div onclick="clShowTrackerDetail('${e.id}')" style="display:flex;align-items:center;gap:8px;padding:9px 16px 9px 30px;border-top:1px solid var(--border);cursor:pointer">
             <span style="font-family:var(--mono);font-size:10px;color:var(--muted);white-space:nowrap;flex-shrink:0;min-width:68px">${e.date||'—'}</span>
             <span style="font-family:var(--mono);font-size:11px;color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${(e.location||e.notes||'—').slice(0,42)}</span>
+            ${phaseBadge}
             ${e.acres?`<span style="font-family:var(--mono);font-size:10px;color:var(--muted);white-space:nowrap;flex-shrink:0">${e.acres} ac</span>`:''}
             ${pc?`<span style="font-size:10px;flex-shrink:0;color:var(--muted)">📷 ${pc}</span>`:''}
             <span style="color:var(--muted);flex-shrink:0;font-size:12px">›</span>
@@ -618,7 +622,8 @@ function clShowTrackerLog(){
         const catName=cached?cached.name:(e.categoryName&&!e.categoryName.startsWith('cat-')?e.categoryName:'Unknown');
         const cat=cached||{color:'#888',name:catName};
         const pc=Array.isArray(e.photoIds)?e.photoIds.length:0;
-        const sub=[e.date||'',e.location||e.notes||''].filter(Boolean).join(' · ');
+        const phasePart=(e.phase&&e.phase!=='N/A')?e.phase:'';
+        const sub=[e.date||'',phasePart,e.location||e.notes||''].filter(Boolean).join(' · ');
         return `<div onclick="clShowTrackerDetail('${e.id}')" style="display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--border);cursor:pointer">
           <div style="width:10px;height:10px;border-radius:50%;background:${cat.color};flex-shrink:0"></div>
           <div style="flex:1;min-width:0">

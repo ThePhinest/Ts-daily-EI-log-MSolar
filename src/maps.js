@@ -1700,7 +1700,23 @@ function mapShowTrackerModal(feat,category){
   const catName=(typeof tcGetName==='function')?tcGetName(category,pid):(category||'Unknown');
   document.getElementById('map-tracker-cat-dot').style.background=catColor;
   document.getElementById('map-tracker-cat-label').textContent=catName;
+  _populateEntryDropdowns();
+  const phaseEl=document.getElementById('map-tr-phase');
+  const methodEl=document.getElementById('map-tr-method');
+  const conEl=document.getElementById('map-tr-contractor');
+  if(phaseEl) phaseEl.value='N/A';
+  if(methodEl) methodEl.value='N/A';
+  if(conEl) conEl.value='';
   document.getElementById('map-tracker-modal').classList.add('open');
+}
+
+function _populateEntryDropdowns(){
+  const phases=window._amendmentPhases||['N/A'];
+  const methods=window._amendmentMethods||['N/A'];
+  const phaseEl=document.getElementById('map-tr-phase');
+  const methodEl=document.getElementById('map-tr-method');
+  if(phaseEl){ phaseEl.innerHTML=phases.map(p=>`<option value="${p}">${p}</option>`).join(''); }
+  if(methodEl){ methodEl.innerHTML=methods.map(m=>`<option value="${m}">${m}</option>`).join(''); }
 }
 
 function mapCloseTrackerModal(){
@@ -1733,6 +1749,9 @@ function mapSaveTrackerEntry(){
     centroidLat:centroid?centroid.lat:null,
     acres,
     location:document.getElementById('map-tr-location').value.trim()||null,
+    phase:(document.getElementById('map-tr-phase')?.value||'N/A'),
+    method:(document.getElementById('map-tr-method')?.value||'N/A'),
+    contractor:document.getElementById('map-tr-contractor')?.value.trim()||null,
     fields:{},
     notes:document.getElementById('map-tr-notes').value.trim()||null,
     photoIds:[..._pendingPhotoIds]
@@ -1964,6 +1983,9 @@ function _showTrackerEntryPopup(lngLat,props){
     ${props.date?`<div style="color:#dce8f4">📅 ${props.date}</div>`:''}
     ${props.acres?`<div style="color:#dce8f4">📐 ${props.acres} ac</div>`:''}
     ${props.location?`<div style="color:#dce8f4">📍 ${props.location}</div>`:''}
+    ${(props.phase&&props.phase!=='N/A')?`<div style="color:#dce8f4">🌱 ${props.phase}</div>`:''}
+    ${(props.method&&props.method!=='N/A')?`<div style="color:#dce8f4">⚙️ ${props.method}</div>`:''}
+    ${props.contractor?`<div style="color:#dce8f4">👷 ${props.contractor}</div>`:''}
     ${props.notes?`<div style="margin-top:6px;color:#c8d8e8;border-top:1px solid rgba(255,255,255,.1);padding-top:6px">${props.notes}</div>`:''}
     <div style="display:flex;gap:6px;margin-top:8px">
       <button onclick="mapEditTrackerEntry('${props.id}')" style="flex:1;background:var(--amber,#D97706);border:none;color:#111;padding:6px;border-radius:6px;font-family:var(--mono);font-size:11px;cursor:pointer;font-weight:700">✏️ Edit</button>
@@ -1986,6 +2008,13 @@ function mapEditTrackerEntry(entryId){
   document.getElementById('map-tr-acres').value=entry.acres||'';
   document.getElementById('map-tr-location').value=entry.location||'';
   document.getElementById('map-tr-notes').value=entry.notes||'';
+  _populateEntryDropdowns();
+  const phaseEl=document.getElementById('map-tr-phase');
+  const methodEl=document.getElementById('map-tr-method');
+  const conEl=document.getElementById('map-tr-contractor');
+  if(phaseEl) phaseEl.value=entry.phase||'N/A';
+  if(methodEl) methodEl.value=entry.method||'N/A';
+  if(conEl) conEl.value=entry.contractor||'';
   const rateEl=document.getElementById('map-tr-rate');
   if(rateEl) rateEl.value='';
   const calcEl=document.getElementById('map-tr-calc-result');

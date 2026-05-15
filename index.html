@@ -1872,6 +1872,20 @@ Anticipated rain — AM weather monitoring expected"></textarea>
         <label style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;display:block;margin-bottom:4px">Location (description)</label>
         <input type="text" id="map-tr-location" placeholder="Area name or GPS ref" style="width:100%;box-sizing:border-box;background:var(--s1);border:1px solid var(--border);border-radius:6px;padding:7px 9px;color:var(--text);font-family:var(--mono);font-size:12px">
       </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+        <div>
+          <label style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;display:block;margin-bottom:4px">Application Phase</label>
+          <select id="map-tr-phase" style="width:100%;box-sizing:border-box;background:var(--s1);border:1px solid var(--border);border-radius:6px;padding:7px 9px;color:var(--text);font-family:var(--mono);font-size:12px"></select>
+        </div>
+        <div>
+          <label style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;display:block;margin-bottom:4px">Application Method</label>
+          <select id="map-tr-method" style="width:100%;box-sizing:border-box;background:var(--s1);border:1px solid var(--border);border-radius:6px;padding:7px 9px;color:var(--text);font-family:var(--mono);font-size:12px"></select>
+        </div>
+      </div>
+      <div style="margin-bottom:10px">
+        <label style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;display:block;margin-bottom:4px">Contractor / Applicator</label>
+        <input type="text" id="map-tr-contractor" placeholder="Name or company" style="width:100%;box-sizing:border-box;background:var(--s1);border:1px solid var(--border);border-radius:6px;padding:7px 9px;color:var(--text);font-family:var(--mono);font-size:12px">
+      </div>
       <div style="margin-bottom:14px">
         <label style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;display:block;margin-bottom:4px">Notes</label>
         <textarea id="map-tr-notes" rows="2" placeholder="Seed mix, applicator, conditions…" style="width:100%;box-sizing:border-box;background:var(--s1);border:1px solid var(--border);border-radius:6px;padding:7px 9px;color:var(--text);font-family:var(--mono);font-size:12px;resize:vertical"></textarea>
@@ -2351,6 +2365,31 @@ Anticipated rain — AM weather monitoring expected"></textarea>
       </div>
       <button class="btn btn-amber" style="font-size:11px;padding:7px 14px;margin-top:12px" onclick="saveFlagsConfig()">Save &amp; Apply</button>
       <span id="cfg-flags-status" style="font-family:var(--mono);font-size:11px;color:var(--green);margin-left:12px;opacity:0;transition:opacity .4s"></span>
+    </div>
+  </div>
+
+  <div class="config-section" id="cfg-amendment">
+    <div class="config-head" onclick="toggleSection('cfg-amendment')"><span class="config-title">Amendment Tracking</span><span class="config-sub">Configure phases &amp; methods</span><span class="card-chevron">▾</span></div>
+    <div class="config-body">
+      <p class="config-hint">Customize the dropdown options for Application Phase and Application Method. These are project-specific — each project can have its own list.</p>
+      <div style="margin-bottom:16px">
+        <div style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px">Application Phases</div>
+        <ul class="preset-list" id="list-amendment-phases"></ul>
+        <div class="add-preset-row">
+          <input type="text" id="new-amendment-phase" placeholder="Add phase…" style="flex:1;background:var(--bg);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--mono);font-size:12px;padding:6px 10px">
+          <button class="btn btn-amber" style="font-size:11px;padding:6px 12px" onclick="addAmendmentPhase()">+ Add</button>
+        </div>
+      </div>
+      <div style="margin-bottom:12px">
+        <div style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px">Application Methods</div>
+        <ul class="preset-list" id="list-amendment-methods"></ul>
+        <div class="add-preset-row">
+          <input type="text" id="new-amendment-method" placeholder="Add method…" style="flex:1;background:var(--bg);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--mono);font-size:12px;padding:6px 10px">
+          <button class="btn btn-amber" style="font-size:11px;padding:6px 12px" onclick="addAmendmentMethod()">+ Add</button>
+        </div>
+      </div>
+      <button class="btn btn-amber" style="font-size:11px;padding:7px 14px;margin-top:4px" onclick="saveAmendmentConfig()">Save &amp; Apply</button>
+      <span id="cfg-amendment-status" style="font-family:var(--mono);font-size:11px;color:var(--green);margin-left:12px;opacity:0;transition:opacity .4s"></span>
     </div>
   </div>
 

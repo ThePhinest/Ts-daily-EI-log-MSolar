@@ -460,6 +460,16 @@ function _applyProjectSettings(data) {
     loadCardTitles(data.cardTitles);
     try { localStorage.setItem('gl_cardTitles', JSON.stringify(data.cardTitles)); } catch {}
   }
+  if (data.amendmentPhases) {
+    window._amendmentPhases = data.amendmentPhases;
+    if (typeof saveAmendmentLocal === 'function') saveAmendmentLocal();
+    if (typeof renderAmendmentConfig === 'function') renderAmendmentConfig();
+  }
+  if (data.amendmentMethods) {
+    window._amendmentMethods = data.amendmentMethods;
+    if (typeof saveAmendmentLocal === 'function') saveAmendmentLocal();
+    if (typeof renderAmendmentConfig === 'function') renderAmendmentConfig();
+  }
   if (data.tsConfig) {
     const cfg = Object.assign({}, TS_DEFAULTS, data.tsConfig);
     // Per-project key (E1.1 Option C — Stage 3 primary path).
@@ -601,8 +611,10 @@ async function createProject(name, location, contractor) {
     presets:         Object.assign({}, DEFAULT_PRESETS),
     phases:          [...DEFAULT_PHASES],
     cardTitles:      {},
-    tsConfig:        Object.assign({}, TS_DEFAULTS),
-    phaseC_migrated: true
+    tsConfig:          Object.assign({}, TS_DEFAULTS),
+    amendmentPhases:   [...(window._amendmentPhases||['N/A','Initial','1st Reseed','2nd Reseed','3rd Reseed','Final'])],
+    amendmentMethods:  [...(window._amendmentMethods||['N/A','Hydro Seeding','Drill Seeding','Broadcast Seeding','Hand Seeding','Lime Application','Fertilizer Application','Mulch Application'])],
+    phaseC_migrated:   true
   };
   try {
     await _udb().collection('settings').doc(projectId).set(projData);

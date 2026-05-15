@@ -190,9 +190,60 @@ async function saveFlagsConfig(){
   const s=document.getElementById('cfg-flags-status');
   if(s){s.textContent='Saved!';s.style.opacity='1';setTimeout(()=>s.style.opacity='0',2000);}
 }
+// ═══════════════════════════════════════════
+// AMENDMENT TRACKING CONFIG
+// ═══════════════════════════════════════════
+const DEFAULT_AMENDMENT_PHASES  = ['N/A','Initial','1st Reseed','2nd Reseed','3rd Reseed','Final'];
+const DEFAULT_AMENDMENT_METHODS = ['N/A','Hydro Seeding','Drill Seeding','Broadcast Seeding','Hand Seeding','Lime Application','Fertilizer Application','Mulch Application'];
+window._amendmentPhases  = [...DEFAULT_AMENDMENT_PHASES];
+window._amendmentMethods = [...DEFAULT_AMENDMENT_METHODS];
+
+function loadAmendmentConfig(){
+  try{const raw=localStorage.getItem('gl_amendment_config');if(raw){const d=JSON.parse(raw);window._amendmentPhases=d.phases||[...DEFAULT_AMENDMENT_PHASES];window._amendmentMethods=d.methods||[...DEFAULT_AMENDMENT_METHODS];}}catch{}
+}
+function saveAmendmentLocal(){
+  try{localStorage.setItem('gl_amendment_config',JSON.stringify({phases:window._amendmentPhases,methods:window._amendmentMethods}));}catch{}
+}
+function saveAmendmentCloud(){
+  if(typeof _saveProjectSettings==='function') _saveProjectSettings({amendmentPhases:window._amendmentPhases,amendmentMethods:window._amendmentMethods});
+}
+function renderAmendmentConfig(){
+  ['phases','methods'].forEach(type=>{
+    const ul=document.getElementById('list-amendment-'+type);
+    if(!ul) return;
+    const arr=type==='phases'?window._amendmentPhases:window._amendmentMethods;
+    ul.innerHTML='';
+    (arr||[]).forEach((item,i)=>{
+      const li=document.createElement('li');
+      li.innerHTML=`<span class="p-text">${item}</span><button class="del-p" onclick="${type==='phases'?'removeAmendmentPhase':'removeAmendmentMethod'}(${i})">✕</button>`;
+      ul.appendChild(li);
+    });
+  });
+}
+function addAmendmentPhase(){
+  const t=document.getElementById('new-amendment-phase');if(!t||!t.value.trim())return;
+  window._amendmentPhases.push(t.value.trim());t.value='';saveAmendmentLocal();saveAmendmentCloud();renderAmendmentConfig();
+}
+function removeAmendmentPhase(idx){
+  window._amendmentPhases.splice(idx,1);saveAmendmentLocal();saveAmendmentCloud();renderAmendmentConfig();
+}
+function addAmendmentMethod(){
+  const t=document.getElementById('new-amendment-method');if(!t||!t.value.trim())return;
+  window._amendmentMethods.push(t.value.trim());t.value='';saveAmendmentLocal();saveAmendmentCloud();renderAmendmentConfig();
+}
+function removeAmendmentMethod(idx){
+  window._amendmentMethods.splice(idx,1);saveAmendmentLocal();saveAmendmentCloud();renderAmendmentConfig();
+}
+async function saveAmendmentConfig(){
+  saveAmendmentLocal();saveAmendmentCloud();renderAmendmentConfig();
+  const s=document.getElementById('cfg-amendment-status');
+  if(s){s.textContent='Saved!';s.style.opacity='1';setTimeout(()=>s.style.opacity='0',2000);}
+}
+
 // ── Init checklist + flags on load ──
 loadChecklistConfig();
 loadFlagsConfig();
+loadAmendmentConfig();
 buildChecklist();
 buildFlags();
 // Cloud load deferred — called after Firebase ready (see initFirebaseLoad)
@@ -432,6 +483,7 @@ function renderConfig(){
   ['obs','act','env','comms','look'].forEach(k=>renderPresetList(k));
   renderChecklistList();
   renderFlagsList();
+  renderAmendmentConfig();
   renderKnownProjectsDatalist();
 }
 function renderPhaseList(){
@@ -693,6 +745,15 @@ window.savePhaseLabel = savePhaseLabel;
 window.tsLoadConfigFields = tsLoadConfigFields;
 window.applyTheme = applyTheme;
 window.toggleTheme = toggleTheme;
+window.loadAmendmentConfig = loadAmendmentConfig;
+window.saveAmendmentLocal = saveAmendmentLocal;
+window.saveAmendmentCloud = saveAmendmentCloud;
+window.renderAmendmentConfig = renderAmendmentConfig;
+window.addAmendmentPhase = addAmendmentPhase;
+window.removeAmendmentPhase = removeAmendmentPhase;
+window.addAmendmentMethod = addAmendmentMethod;
+window.removeAmendmentMethod = removeAmendmentMethod;
+window.saveAmendmentConfig = saveAmendmentConfig;
 
 // ═══════════════════════════════════════════
 // BOOT CALLS (functions called at sync init, now deferred to module load)
