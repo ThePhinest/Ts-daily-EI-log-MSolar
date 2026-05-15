@@ -4,7 +4,7 @@ import * as Sentry from '@sentry/capacitor'
 
 // ── Module-level state (onboarding carousel) ──
 let _obSlideIndex = 0;
-let _obTotalSlides = 8;
+let _obTotalSlides = 9;
 
 // ═══════════════════════════════════════════
 // ONBOARDING
