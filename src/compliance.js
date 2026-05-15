@@ -385,9 +385,13 @@ function clShowTrackerDetail(entryId){
   </div>`;
   document.body.appendChild(ov);
   document.getElementById('_cltrclose').onclick=()=>ov.remove();
-  document.getElementById('_cltrdelete').onclick=async()=>{
-    if(typeof trDeleteEntry==='function') await trDeleteEntry(entryId,pid);
+  document.getElementById('_cltrdelete').onclick=()=>{
+    if(typeof trDeleteEntry==='function') trDeleteEntry(entryId,pid);
     ov.remove();
+    const tlogOv=document.querySelector('._tlog-modal');
+    if(tlogOv&&tlogOv._tlogRefresh) tlogOv._tlogRefresh();
+    if(typeof mapRenderTrackerLayers==='function') mapRenderTrackerLayers();
+    if(typeof mapUpdateKmlLayerList==='function') mapUpdateKmlLayerList();
     if(typeof clRenderTrackerCard==='function') clRenderTrackerCard();
   };
   document.getElementById('_cltrattach').onclick=()=>clShowPhotoAttachPicker(entryId);
@@ -481,23 +485,25 @@ function clRefreshDetailPhotoStrip(entryId){
 // ── Tracker Log modal ── full searchable database of all tracker entries
 function clShowTrackerLog(){
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
-  const allEntries=(typeof trGetEntriesForProject==='function')
-    ? trGetEntriesForProject(pid).filter(e=>!e.deletedAt&&!e.archivedFromMap)
-    : [];
-  const cats=(typeof tcGetCategories==='function')?tcGetCategories(pid):[];
+  function _getEntries(){
+    return (typeof trGetEntriesForProject==='function')
+      ? trGetEntriesForProject(pid).filter(e=>!e.deletedAt&&!e.archivedFromMap)
+      : [];
+  }
 
   let _tlSearch='';
   let _tlCat='';
   let _tlFrom='';
   let _tlTo='';
 
+  const initCats=(typeof tcGetCategories==='function')?tcGetCategories(pid):[];
   const chipHtml=[
     `<button class="_tlog-chip active" data-cat="">All</button>`,
-    ...cats.map(c=>`<button class="_tlog-chip" data-cat="${c.id}">${c.name}</button>`)
+    ...initCats.map(c=>`<button class="_tlog-chip" data-cat="${c.id}">${c.name}</button>`)
   ].join('');
 
   const ov=document.createElement('div');
-  ov.className='modal-overlay';
+  ov.className='modal-overlay _tlog-modal';
   ov.style.cssText='z-index:4500;align-items:flex-end;padding:0';
   ov.innerHTML=`
     <div style="width:100%;max-height:92dvh;background:var(--bg);border-top:1px solid var(--border);border-radius:16px 16px 0 0;display:flex;flex-direction:column;overflow:hidden;padding-bottom:env(safe-area-inset-bottom)">
@@ -528,9 +534,10 @@ function clShowTrackerLog(){
     </div>
   `;
   document.body.appendChild(ov);
+  ov._tlogRefresh = () => _tlogRender();
 
   function _tlogFilter(){
-    return allEntries.filter(e=>{
+    return _getEntries().filter(e=>{
       if(_tlCat && e.categoryId!==_tlCat) return false;
       if(_tlFrom && e.date<_tlFrom) return false;
       if(_tlTo && e.date>_tlTo) return false;
@@ -550,6 +557,7 @@ function clShowTrackerLog(){
 
   function _tlogRender(){
     const entries=_tlogFilter();
+    const liveCats=(typeof tcGetCategories==='function')?tcGetCategories(pid):[];
     const totalAcres=entries.reduce((s,e)=>s+(parseFloat(e.acres)||0),0);
     const totalPhotos=entries.reduce((s,e)=>s+(Array.isArray(e.photoIds)?e.photoIds.length:0),0);
     const res=document.getElementById('_tlog-results');
@@ -570,7 +578,9 @@ function clShowTrackerLog(){
       entries.forEach(e=>{
         const cid=e.categoryId||'_unknown';
         if(!groups[cid]){
-          const cat=cats.find(c=>c.id===cid)||{id:cid,name:e.categoryName||'Unknown',color:'#888'};
+          const cached=liveCats.find(c=>c.id===cid);
+          const name=cached?cached.name:(e.categoryName&&!e.categoryName.startsWith('cat-')?e.categoryName:'Unknown');
+          const cat=cached||{id:cid,name,color:'#888'};
           groups[cid]={cat,entries:[]};
           order.push(cid);
         }
@@ -604,7 +614,9 @@ function clShowTrackerLog(){
     } else {
       // Flat list — search/filter active
       res.innerHTML=entries.map(e=>{
-        const cat=cats.find(c=>c.id===e.categoryId)||{color:'#888',name:e.categoryName||'Unknown'};
+        const cached=liveCats.find(c=>c.id===e.categoryId);
+        const catName=cached?cached.name:(e.categoryName&&!e.categoryName.startsWith('cat-')?e.categoryName:'Unknown');
+        const cat=cached||{color:'#888',name:catName};
         const pc=Array.isArray(e.photoIds)?e.photoIds.length:0;
         const sub=[e.date||'',e.location||e.notes||''].filter(Boolean).join(' · ');
         return `<div onclick="clShowTrackerDetail('${e.id}')" style="display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--border);cursor:pointer">
@@ -620,10 +632,11 @@ function clShowTrackerLog(){
       }).join('');
     }
 
+    const all=_getEntries();
     const parts=[`${entries.length} ${entries.length===1?'entry':'entries'}`];
     if(totalAcres>0) parts.push(`${totalAcres.toFixed(2)} ac total`);
     if(totalPhotos>0) parts.push(`📷 ${totalPhotos}`);
-    if(entries.length<allEntries.length) parts.push(`of ${allEntries.length} total`);
+    if(entries.length<all.length) parts.push(`of ${all.length} total`);
     foot.textContent=parts.join(' · ');
   }
 

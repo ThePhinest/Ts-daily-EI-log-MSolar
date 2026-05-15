@@ -371,6 +371,8 @@ function mapRenderPhotoPins(){
         </div>
       `);
 
+    el.addEventListener('click', e => e.stopPropagation());
+
     const marker = new mapboxgl.Marker({ element:el, anchor:'bottom' })
       .setLngLat([p.lng, p.lat])
       .setPopup(popup)
