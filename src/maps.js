@@ -383,6 +383,7 @@ function mapRenderPhotoPins(){
 function mapToggleLayerPanel(){
   _layerPanelOpen = !_layerPanelOpen;
   document.getElementById('map-layer-panel').style.transform = _layerPanelOpen ? 'translateX(0%)' : 'translateX(100%)';
+  if(_layerPanelOpen) mapUpdateKmlLayerList();
 }
 
 function mapShowMarkerModal(lngLat){
@@ -2244,6 +2245,7 @@ window.mapActivateMeasure = mapActivateMeasure;
 window.mapToggleGpsFollow = mapToggleGpsFollow;
 window.mapResetGpsFollow = mapResetGpsFollow;
 window.mapShowTrackerSheet = mapShowTrackerSheet;
+window._renderTrackerSheet = _renderTrackerSheet;
 window.mapCloseTrackerSheet = mapCloseTrackerSheet;
 window.mapTrackerToggleLayer = mapTrackerToggleLayer;
 window.mapTrackerStartEdit = mapTrackerStartEdit;

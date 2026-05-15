@@ -269,6 +269,7 @@ function _trackerStartupLoad(){
     .then(()=>{
       if(typeof mapRenderTrackerLayers==='function') mapRenderTrackerLayers();
       if(typeof mapUpdateKmlLayerList==='function') mapUpdateKmlLayerList();
+      if(typeof window._renderTrackerSheet==='function') window._renderTrackerSheet();
       if(typeof clRenderTrackerCard==='function') clRenderTrackerCard();
     })
     .catch(e => console.warn('tcLoad/trLoad (startup):', e.message));
