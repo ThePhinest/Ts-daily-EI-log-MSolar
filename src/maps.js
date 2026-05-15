@@ -11,6 +11,7 @@ let _mapCurrentStyle=localStorage.getItem('gl_map_style')||'satellite-streets-v1
 let _drawInstance=null, _drawMode=null, _drawCategory=null;
 let _fabOpen=false, _viewFabOpen=false, _gpsFollowActive=false, _gpsFollowWatch=null;
 let _pendingDrawFeature=null;
+let _pendingPhotoIds=[];
 
 // Category colors/labels are project-scoped and user-defined.
 // All lookups go through tcGetColor() / tcGetName() in trackerCategories.js.
@@ -1535,15 +1536,13 @@ function mapActivateDrawMode(categoryId){
   _drawCategory=categoryId;
   _drawMode='draw';
   if(!_drawInstance){
-    _drawInstance=new MapboxDraw({
-      displayControlsDefault:false,
-      controls:{polygon:true,line_string:true,point:true,trash:true}
-    });
+    _drawInstance=new MapboxDraw({ displayControlsDefault:false, controls:{} });
     _mapInstance.addControl(_drawInstance,'top-left');
     _mapInstance.on('draw.create',_onDrawCreate);
     _mapInstance.on('draw.delete',_onDrawDelete);
     _mapInstance.on('draw.modechange',_onDrawModeChange);
   }
+  _drawInstance.changeMode('draw_polygon');
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
   const catName=(typeof tcGetName==='function')?tcGetName(categoryId,pid):(categoryId||'Shape');
   const catColor=(typeof tcGetColor==='function')?tcGetColor(categoryId,pid):'var(--amber)';
@@ -1635,6 +1634,8 @@ function mapShowTrackerModal(feat,category){
   document.getElementById('map-tr-location').value=
     centroid ? `${centroid.lat.toFixed(5)}, ${centroid.lng.toFixed(5)}` : '';
   document.getElementById('map-tr-notes').value='';
+  _pendingPhotoIds=[];
+  mapRefreshEntryPhotoStrip();
   const rateEl=document.getElementById('map-tr-rate');
   if(rateEl) rateEl.value='';
   const calcEl=document.getElementById('map-tr-calc-result');
@@ -1654,6 +1655,8 @@ function mapCloseTrackerModal(){
 function mapCancelTrackerEntry(){
   if(_drawInstance) _drawInstance.deleteAll();
   _pendingDrawFeature=null;
+  _pendingPhotoIds=[];
+  mapRefreshEntryPhotoStrip();
   mapCloseTrackerModal();
   // Stay in draw mode so user can try again
 }
@@ -1676,11 +1679,13 @@ function mapSaveTrackerEntry(){
     acres,
     location:document.getElementById('map-tr-location').value.trim()||null,
     fields:{},
-    notes:document.getElementById('map-tr-notes').value.trim()||null
+    notes:document.getElementById('map-tr-notes').value.trim()||null,
+    photoIds:[..._pendingPhotoIds]
   };
   // Editing an existing entry — preserve id so trSaveEntry updates in place
   if(_editingEntryId){ entry.id=_editingEntryId; entry.deletedFromMap=false; entry.archivedFromMap=false; }
   _editingEntryId=null;
+  _pendingPhotoIds=[];
   if(typeof trSaveEntry==='function') trSaveEntry(entry,pid);
   _pendingDrawFeature=null;
   mapCloseTrackerModal();
@@ -1695,10 +1700,7 @@ function mapActivateMeasure(){
   if(!_mapInstance) return;
   _drawMode='measure';
   if(!_drawInstance){
-    _drawInstance=new MapboxDraw({
-      displayControlsDefault:false,
-      controls:{polygon:true,trash:true}
-    });
+    _drawInstance=new MapboxDraw({ displayControlsDefault:false, controls:{} });
     _mapInstance.addControl(_drawInstance,'top-left');
     _mapInstance.on('draw.create',_onDrawCreate);
     _mapInstance.on('draw.delete',_onDrawDelete);
@@ -1878,6 +1880,8 @@ function mapEditTrackerEntry(entryId){
   const editName=(typeof tcGetName==='function')?tcGetName(_drawCategory,editPid):(entry.categoryName||_drawCategory||'Unknown');
   document.getElementById('map-tracker-cat-dot').style.background=editColor;
   document.getElementById('map-tracker-cat-label').textContent=editName;
+  _pendingPhotoIds=[...(entry.photoIds||[])];
+  mapRefreshEntryPhotoStrip();
   document.getElementById('map-tracker-modal').classList.add('open');
 }
 
@@ -1961,6 +1965,66 @@ function mapDeleteTrackerEntryFromPanel(entryId){
     mapUpdateKmlLayerList();
     if(typeof clRenderTrackerCard==='function') clRenderTrackerCard();
   };
+}
+
+// ── Photo attachment for new / edit tracker entry modal ──────────────────────
+function mapShowEntryPhotoPicker(){
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const projectPhotos=(window._phPhotos||[]).filter(p=>!p.projectId||p.projectId===pid)
+    .sort((a,b)=>b.date>a.date?1:b.date<a.date?-1:b.uploadedAt-a.uploadedAt);
+  const ov=document.createElement('div');
+  ov.className='modal-overlay';
+  ov.style.cssText='z-index:9500';
+  if(!projectPhotos.length){
+    ov.innerHTML=`<div class="modal-box" style="max-width:300px;width:88%">
+      <div class="modal-title" style="margin-bottom:10px">No Photos</div>
+      <div style="font-family:var(--mono);font-size:12px;color:var(--muted);margin-bottom:16px;line-height:1.5">Upload photos on the Photos page first, then attach them here.</div>
+      <div class="modal-btns"><button class="modal-cancel" onclick="this.closest('.modal-overlay').remove()">OK</button></div>
+    </div>`;
+    document.body.appendChild(ov);
+    return;
+  }
+  const thumbs=projectPhotos.map(p=>{
+    const linked=_pendingPhotoIds.includes(p.id);
+    return `<div id="mtrph-${p.id}" onclick="mapToggleEntryPhoto('${p.id}',this)"
+      style="position:relative;cursor:pointer;border-radius:6px;border:2px solid ${linked?'var(--amber)':'transparent'};overflow:hidden;flex-shrink:0;width:80px;height:60px">
+      <img src="${p.thumb}" style="width:80px;height:60px;object-fit:cover;display:block">
+      <div id="mtrph-chk-${p.id}" style="position:absolute;top:2px;right:2px;width:16px;height:16px;border-radius:50%;background:${linked?'var(--amber)':'rgba(0,0,0,.45)'};display:flex;align-items:center;justify-content:center;font-size:9px;color:#fff">${linked?'✓':''}</div>
+    </div>`;
+  }).join('');
+  ov.innerHTML=`<div class="modal-box" style="max-width:360px;width:92%;max-height:80vh;display:flex;flex-direction:column">
+    <div class="modal-title" style="margin-bottom:12px">Attach Photos</div>
+    <div style="display:flex;flex-wrap:wrap;gap:6px;overflow-y:auto;flex:1;margin-bottom:12px">${thumbs}</div>
+    <div class="modal-btns"><button class="modal-confirm" onclick="this.closest('.modal-overlay').remove();mapRefreshEntryPhotoStrip()">Done</button></div>
+  </div>`;
+  document.body.appendChild(ov);
+}
+function mapToggleEntryPhoto(photoId, el){
+  if(_pendingPhotoIds.includes(photoId)){
+    _pendingPhotoIds=_pendingPhotoIds.filter(id=>id!==photoId);
+    el.style.borderColor='transparent';
+    const chk=document.getElementById('mtrph-chk-'+photoId);
+    if(chk){chk.style.background='rgba(0,0,0,.45)';chk.textContent='';}
+  } else {
+    _pendingPhotoIds.push(photoId);
+    el.style.borderColor='var(--amber)';
+    const chk=document.getElementById('mtrph-chk-'+photoId);
+    if(chk){chk.style.background='var(--amber)';chk.textContent='✓';}
+  }
+}
+function mapRefreshEntryPhotoStrip(){
+  const strip=document.getElementById('map-tr-photo-strip');
+  if(!strip) return;
+  const photos=_pendingPhotoIds.map(id=>(window._phPhotos||[]).find(p=>p.id===id)).filter(Boolean);
+  strip.innerHTML=photos.map(p=>`
+    <div style="position:relative;display:inline-block;flex-shrink:0">
+      <img src="${p.thumb}" style="width:64px;height:48px;object-fit:cover;border-radius:4px;display:block">
+      <button onclick="mapRemoveEntryPhoto('${p.id}')" style="position:absolute;top:-5px;right:-5px;background:#c0392b;border:none;border-radius:50%;width:16px;height:16px;font-size:9px;color:#fff;cursor:pointer;padding:0;display:flex;align-items:center;justify-content:center">✕</button>
+    </div>`).join('');
+}
+function mapRemoveEntryPhoto(photoId){
+  _pendingPhotoIds=_pendingPhotoIds.filter(id=>id!==photoId);
+  mapRefreshEntryPhotoStrip();
 }
 
 // ── Photo → Tracker entry linking ────────────────────────────────────────────
@@ -2099,6 +2163,10 @@ window.mapSelectColor = mapSelectColor;
 window.mapHideColorPicker = mapHideColorPicker;
 window.mapShowPhotoLinkPicker = mapShowPhotoLinkPicker;
 window.mapLinkPhotoToEntry = mapLinkPhotoToEntry;
+window.mapShowEntryPhotoPicker = mapShowEntryPhotoPicker;
+window.mapToggleEntryPhoto = mapToggleEntryPhoto;
+window.mapRefreshEntryPhotoStrip = mapRefreshEntryPhotoStrip;
+window.mapRemoveEntryPhoto = mapRemoveEntryPhoto;
 window.mapRenderTrackerLayers = mapRenderTrackerLayers;
 window.mapDeleteTrackerEntry = mapDeleteTrackerEntry;
 window.mapToggleTrackerEntryVisibility = mapToggleTrackerEntryVisibility;
