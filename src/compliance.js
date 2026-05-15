@@ -320,16 +320,57 @@ function clRenderTrackerCard(){
   const colors=window.TR_CATEGORY_COLORS||{};
   const labels=window.TR_CATEGORY_LABELS||{};
   const rows=entries.map(e=>`
-    <div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border)">
+    <div onclick="clShowTrackerDetail('${e.id}')" style="display:flex;align-items:center;gap:8px;padding:7px 4px;border-bottom:1px solid var(--border);cursor:pointer;border-radius:4px">
       <div style="width:10px;height:10px;border-radius:50%;background:${colors[e.category]||'#888'};flex-shrink:0"></div>
       <span style="font-family:var(--mono);font-size:11px;color:var(--text);flex:1">${labels[e.category]||e.category}</span>
       ${e.acres?`<span style="font-family:var(--mono);font-size:11px;color:var(--muted)">${e.acres} ac</span>`:''}
+      <span style="font-family:var(--mono);font-size:10px;color:var(--muted)">›</span>
     </div>`).join('');
-  el.innerHTML=`<div class="card" style="cursor:pointer" onclick="showPage('map')">
+  el.innerHTML=`<div class="card">
     <div class="card-head"><span class="card-num">🗺️</span><span class="card-title">Today's Tracker Activity</span><span class="card-badge">${entries.length}</span></div>
     <div class="card-body" style="padding-top:4px">${rows}</div>
   </div>`;
   el.style.display='block';
+}
+
+// ── Tracker entry detail modal (opened from compliance card rows) ──
+function clShowTrackerDetail(entryId){
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const entry=(typeof trGetEntry==='function')?trGetEntry(entryId,pid):null;
+  if(!entry) return;
+  const colors=window.TR_CATEGORY_COLORS||{};
+  const labels=window.TR_CATEGORY_LABELS||{};
+  const label=labels[entry.category]||entry.category;
+  const color=colors[entry.category]||'#888';
+  const ov=document.createElement('div');
+  ov.className='modal-overlay';
+  ov.style.cssText='z-index:5000';
+  ov.innerHTML=`<div class="modal-box" style="max-width:340px;width:90%">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
+      <div style="width:12px;height:12px;border-radius:50%;background:${color};flex-shrink:0"></div>
+      <div class="modal-title" style="margin:0">${label}</div>
+    </div>
+    <div style="font-family:var(--mono);font-size:12px;color:var(--text);display:flex;flex-direction:column;gap:7px;margin-bottom:16px">
+      ${entry.date?`<div><span style="color:var(--muted);text-transform:uppercase;font-size:10px;letter-spacing:.06em">Date</span><div style="margin-top:2px">${entry.date}</div></div>`:''}
+      ${entry.acres?`<div><span style="color:var(--muted);text-transform:uppercase;font-size:10px;letter-spacing:.06em">Area</span><div style="margin-top:2px">${entry.acres} acres</div></div>`:''}
+      ${entry.location?`<div><span style="color:var(--muted);text-transform:uppercase;font-size:10px;letter-spacing:.06em">Location</span><div style="margin-top:2px">${entry.location}</div></div>`:''}
+      ${entry.notes?`<div><span style="color:var(--muted);text-transform:uppercase;font-size:10px;letter-spacing:.06em">Notes</span><div style="margin-top:2px;line-height:1.5">${entry.notes}</div></div>`:''}
+    </div>
+    <div class="modal-btns">
+      <button class="modal-cancel" id="_cltrclose">Close</button>
+      <button class="modal-confirm" id="_cltredit">Edit on Map</button>
+    </div>
+  </div>`;
+  document.body.appendChild(ov);
+  document.getElementById('_cltrclose').onclick=()=>ov.remove();
+  document.getElementById('_cltredit').onclick=()=>{
+    ov.remove();
+    if(typeof showPage==='function') showPage('map');
+    // Brief delay for map page to mount, then open the edit modal
+    setTimeout(()=>{
+      if(typeof mapEditTrackerEntry==='function') mapEditTrackerEntry(entryId);
+    },350);
+  };
 }
 
 // ── Init compliance log ──
@@ -353,3 +394,4 @@ window.clSubmitForm = clSubmitForm;
 window.clEditEntry = clEditEntry;
 window.clConfirmDelete = clConfirmDelete;
 window.clRenderTrackerCard = clRenderTrackerCard;
+window.clShowTrackerDetail = clShowTrackerDetail;

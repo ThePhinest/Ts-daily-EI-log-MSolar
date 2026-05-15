@@ -1431,6 +1431,9 @@ function mapSaveTrackerEntry(){
     fields:{},
     notes:document.getElementById('map-tr-notes').value.trim()||null
   };
+  // Editing an existing entry — preserve id so trSaveEntry updates in place
+  if(_editingEntryId){ entry.id=_editingEntryId; entry.deletedFromMap=false; }
+  _editingEntryId=null;
   if(typeof trSaveEntry==='function') trSaveEntry(entry,pid);
   _pendingDrawFeature=null;
   mapCloseTrackerModal();
@@ -1515,7 +1518,7 @@ function mapResetGpsFollow(){
 }
 
 // ── Tracker entry map layers ──────────────
-let _trackerPopup=null,_trackerClickHandlerRegistered=false;
+let _trackerPopup=null,_trackerClickHandlerRegistered=false,_editingEntryId=null;
 
 function mapRenderTrackerLayers(){
   if(!_mapInstance||!_mapInstance.isStyleLoaded()) return;
@@ -1536,7 +1539,7 @@ function mapRenderTrackerLayers(){
   }
 
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
-  const entries=(typeof trGetEntriesForProject==='function')?trGetEntriesForProject(pid):[];
+  const entries=(typeof trGetEntriesForProject==='function')?trGetEntriesForProject(pid).filter(e=>!e.deletedFromMap):[];
   const cats=window.TR_CATEGORIES||Object.keys(TR_CATEGORY_COLORS);
 
   const byCategory={};
@@ -1582,7 +1585,7 @@ function _showTrackerEntryPopup(lngLat,props){
   if(_trackerPopup){_trackerPopup.remove();_trackerPopup=null;}
   const label=TR_CATEGORY_LABELS[props.category]||props.category;
   const color=TR_CATEGORY_COLORS[props.category]||'#888';
-  const html=`<div style="font-family:var(--mono);font-size:12px;min-width:170px;color:#e8e8e8">
+  const html=`<div style="font-family:var(--mono);font-size:12px;min-width:180px;color:#e8e8e8">
     <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
       <div style="width:10px;height:10px;border-radius:50%;background:${color};flex-shrink:0"></div>
       <strong style="color:#fff">${label}</strong>
@@ -1591,10 +1594,35 @@ function _showTrackerEntryPopup(lngLat,props){
     ${props.acres?`<div style="color:#dce8f4">📐 ${props.acres} ac</div>`:''}
     ${props.location?`<div style="color:#dce8f4">📍 ${props.location}</div>`:''}
     ${props.notes?`<div style="margin-top:6px;color:#c8d8e8;border-top:1px solid rgba(255,255,255,.1);padding-top:6px">${props.notes}</div>`:''}
-    <button onclick="mapDeleteTrackerEntry('${props.id}')" style="margin-top:8px;width:100%;background:#c0392b;border:none;color:#fff;padding:6px;border-radius:6px;font-family:var(--mono);font-size:11px;cursor:pointer;font-weight:700">🗑 Delete Entry</button>
+    <div style="display:flex;gap:6px;margin-top:8px">
+      <button onclick="mapEditTrackerEntry('${props.id}')" style="flex:1;background:var(--amber,#D97706);border:none;color:#111;padding:6px;border-radius:6px;font-family:var(--mono);font-size:11px;cursor:pointer;font-weight:700">✏️ Edit</button>
+      <button onclick="mapDeleteTrackerEntry('${props.id}')" style="flex:1;background:#3d1414;border:1px solid #6b2020;color:#ff8080;padding:6px;border-radius:6px;font-family:var(--mono);font-size:11px;cursor:pointer;">Remove</button>
+    </div>
   </div>`;
   _trackerPopup=new mapboxgl.Popup({closeButton:true,closeOnClick:false,className:'gl-tracker-popup'})
     .setLngLat(lngLat).setHTML(html).addTo(_mapInstance);
+}
+
+function mapEditTrackerEntry(entryId){
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const entry=(typeof trGetEntry==='function')?trGetEntry(entryId,pid):null;
+  if(!entry) return;
+  if(_trackerPopup){_trackerPopup.remove();_trackerPopup=null;}
+  _editingEntryId=entryId;
+  _pendingDrawFeature={geometry:entry.geometry};
+  _drawCategory=entry.category;
+  document.getElementById('map-tr-date').value=entry.date||'';
+  document.getElementById('map-tr-acres').value=entry.acres||'';
+  document.getElementById('map-tr-location').value=entry.location||'';
+  document.getElementById('map-tr-notes').value=entry.notes||'';
+  const rateEl=document.getElementById('map-tr-rate');
+  if(rateEl) rateEl.value='';
+  const calcEl=document.getElementById('map-tr-calc-result');
+  if(calcEl) calcEl.textContent='—';
+  const color=TR_CATEGORY_COLORS[entry.category]||'#888';
+  document.getElementById('map-tracker-cat-dot').style.background=color;
+  document.getElementById('map-tracker-cat-label').textContent=TR_CATEGORY_LABELS[entry.category]||entry.category;
+  document.getElementById('map-tracker-modal').classList.add('open');
 }
 
 function mapTrackerCalc(){
@@ -1620,7 +1648,7 @@ function mapTrackerCalcInsert(){
 }
 function mapDeleteTrackerEntry(entryId){
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
-  if(typeof trDeleteEntry==='function') trDeleteEntry(entryId,pid);
+  if(typeof trMarkDeletedFromMap==='function') trMarkDeletedFromMap(entryId,pid);
   if(_trackerPopup){_trackerPopup.remove();_trackerPopup=null;}
   mapRenderTrackerLayers();
   if(typeof clRenderTrackerCard==='function') clRenderTrackerCard();
@@ -1691,5 +1719,6 @@ window.TR_CATEGORY_COLORS = TR_CATEGORY_COLORS;
 window.TR_CATEGORY_LABELS = TR_CATEGORY_LABELS;
 window.mapRenderTrackerLayers = mapRenderTrackerLayers;
 window.mapDeleteTrackerEntry = mapDeleteTrackerEntry;
+window.mapEditTrackerEntry = mapEditTrackerEntry;
 window.mapTrackerCalc = mapTrackerCalc;
 window.mapTrackerCalcInsert = mapTrackerCalcInsert;

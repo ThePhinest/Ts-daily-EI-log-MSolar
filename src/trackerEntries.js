@@ -100,6 +100,28 @@ function trSaveEntry(entry, projectId){
   return entry;
 }
 
+// Map-only removal: stamps deletedFromMap:true but NOT deletedAt.
+// Entry stays visible in compliance; mapRenderTrackerLayers filters it out.
+// Use trDeleteEntry (below) only when deleting from compliance itself.
+function trMarkDeletedFromMap(entryId, projectId){
+  const pid = projectId || ((typeof _activeProjectId === 'function') ? _activeProjectId() : 'default');
+  const data = _trLoadRaw(pid);
+  const idx = data.entries.findIndex(e => e.id === entryId);
+  if(idx < 0) return false;
+  const ts = Date.now();
+  data.entries[idx].deletedFromMap = true;
+  data.entries[idx].updatedAt = ts;
+  _trSaveRaw(pid, data);
+  if(typeof _udb === 'function' && typeof _fbReady !== 'undefined' && _fbReady && typeof _currentUser !== 'undefined' && _currentUser){
+    try {
+      _udb().collection('projects').doc(pid).collection('trackerEntries').doc(entryId)
+        .update({ deletedFromMap: true, updatedAt: ts })
+        .catch(e => console.warn('trMarkDeletedFromMap Firestore:', e.message));
+    } catch(e){ /* silent */ }
+  }
+  return true;
+}
+
 // Soft-delete: stamps deletedAt + updatedAt. Returns true if found.
 function trDeleteEntry(entryId, projectId){
   const pid = projectId || ((typeof _activeProjectId === 'function') ? _activeProjectId() : 'default');
@@ -148,6 +170,7 @@ if(typeof window !== 'undefined'){
   window.TR_CATEGORIES = TR_CATEGORIES;
   window.trGenId = trGenId;
   window.trGetEntriesForProject = trGetEntriesForProject;
+  window.trMarkDeletedFromMap = trMarkDeletedFromMap;
   window.trGetEntriesForDate = trGetEntriesForDate;
   window.trGetEntriesForCategory = trGetEntriesForCategory;
   window.trGetEntry = trGetEntry;
