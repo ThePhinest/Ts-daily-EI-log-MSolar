@@ -536,6 +536,8 @@ async function loadProject(projectId, projDataOverride) {
       // block on Storage fetches.
       kmlLoadLayers().catch(e => console.warn('kmlLoadLayers (project switch):', e.message));
     }
+    // Clear old project's tracker layers before loading new project's.
+    if(typeof mapClearTrackerLayers === 'function') mapClearTrackerLayers();
     // Load tracker categories first (needed for color/name lookups), then entries.
     if(typeof mapRenderTrackerLayers === 'function') mapRenderTrackerLayers();
     if(typeof tcLoadForProject === 'function'){

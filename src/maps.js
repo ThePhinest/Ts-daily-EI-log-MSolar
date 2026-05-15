@@ -1825,6 +1825,19 @@ function mapResetGpsFollow(){
 // ── Tracker entry map layers ──────────────
 let _trackerPopup=null,_trackerClickHandlerRegistered=false,_editingEntryId=null;
 
+function mapClearTrackerLayers(){
+  if(!_mapInstance||!_mapInstance.isStyleLoaded()) return;
+  const style=_mapInstance.getStyle();
+  if(!style) return;
+  (style.layers||[]).forEach(l=>{
+    if(/^tracker-.+-(fill|line|circle)$/.test(l.id)) try{ _mapInstance.removeLayer(l.id); }catch{}
+  });
+  Object.keys(style.sources||{}).forEach(s=>{
+    if(/^tracker-/.test(s)) try{ _mapInstance.removeSource(s); }catch{}
+  });
+  if(_trackerPopup){ _trackerPopup.remove(); _trackerPopup=null; }
+}
+
 function mapRenderTrackerLayers(){
   if(!_mapInstance||!_mapInstance.isStyleLoaded()) return;
 
@@ -1954,7 +1967,7 @@ function _showTrackerEntryPopup(lngLat,props){
     ${props.notes?`<div style="margin-top:6px;color:#c8d8e8;border-top:1px solid rgba(255,255,255,.1);padding-top:6px">${props.notes}</div>`:''}
     <div style="display:flex;gap:6px;margin-top:8px">
       <button onclick="mapEditTrackerEntry('${props.id}')" style="flex:1;background:var(--amber,#D97706);border:none;color:#111;padding:6px;border-radius:6px;font-family:var(--mono);font-size:11px;cursor:pointer;font-weight:700">✏️ Edit</button>
-      <button onclick="mapDeleteTrackerEntry('${props.id}')" style="flex:1;background:var(--s2);border:1px solid var(--border);color:var(--muted);padding:6px;border-radius:6px;font-family:var(--mono);font-size:11px;cursor:pointer;">Hide</button>
+      <button onclick="mapDeleteTrackerEntryFromPanel('${props.id}')" style="flex:1;background:var(--s2);border:1px solid var(--border);color:var(--muted);padding:6px;border-radius:6px;font-family:var(--mono);font-size:11px;cursor:pointer;">✕ Remove</button>
     </div>
   </div>`;
   _trackerPopup=new mapboxgl.Popup({closeButton:true,closeOnClick:false,className:'gl-tracker-popup'})
@@ -2271,6 +2284,7 @@ window.mapShowEntryPhotoPicker = mapShowEntryPhotoPicker;
 window.mapToggleEntryPhoto = mapToggleEntryPhoto;
 window.mapRefreshEntryPhotoStrip = mapRefreshEntryPhotoStrip;
 window.mapRemoveEntryPhoto = mapRemoveEntryPhoto;
+window.mapClearTrackerLayers = mapClearTrackerLayers;
 window.mapRenderTrackerLayers = mapRenderTrackerLayers;
 window.mapDeleteTrackerEntry = mapDeleteTrackerEntry;
 window.mapToggleTrackerEntryVisibility = mapToggleTrackerEntryVisibility;
