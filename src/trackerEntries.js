@@ -189,6 +189,46 @@ function trDeleteEntry(entryId, projectId){
   return true;
 }
 
+// Photo linking — adds/removes a photoId from the entry's photoIds array.
+function trAddPhotoLink(entryId, photoId, projectId){
+  const pid = projectId || ((typeof _activeProjectId === 'function') ? _activeProjectId() : 'default');
+  const data = _trLoadRaw(pid);
+  const idx = data.entries.findIndex(e => e.id === entryId);
+  if(idx < 0) return false;
+  if(!Array.isArray(data.entries[idx].photoIds)) data.entries[idx].photoIds = [];
+  if(data.entries[idx].photoIds.includes(photoId)) return true;
+  data.entries[idx].photoIds.push(photoId);
+  data.entries[idx].updatedAt = Date.now();
+  _trSaveRaw(pid, data);
+  if(typeof _udb === 'function' && typeof _fbReady !== 'undefined' && _fbReady && typeof _currentUser !== 'undefined' && _currentUser){
+    try {
+      _udb().collection('projects').doc(pid).collection('trackerEntries').doc(entryId)
+        .set(data.entries[idx])
+        .catch(e => console.warn('trAddPhotoLink Firestore:', e.message));
+    } catch(e){ /* silent */ }
+  }
+  return true;
+}
+
+function trRemovePhotoLink(entryId, photoId, projectId){
+  const pid = projectId || ((typeof _activeProjectId === 'function') ? _activeProjectId() : 'default');
+  const data = _trLoadRaw(pid);
+  const idx = data.entries.findIndex(e => e.id === entryId);
+  if(idx < 0) return false;
+  if(!Array.isArray(data.entries[idx].photoIds)) return true;
+  data.entries[idx].photoIds = data.entries[idx].photoIds.filter(id => id !== photoId);
+  data.entries[idx].updatedAt = Date.now();
+  _trSaveRaw(pid, data);
+  if(typeof _udb === 'function' && typeof _fbReady !== 'undefined' && _fbReady && typeof _currentUser !== 'undefined' && _currentUser){
+    try {
+      _udb().collection('projects').doc(pid).collection('trackerEntries').doc(entryId)
+        .set(data.entries[idx])
+        .catch(e => console.warn('trRemovePhotoLink Firestore:', e.message));
+    } catch(e){ /* silent */ }
+  }
+  return true;
+}
+
 // Pull all tracker entries for a project from Firestore into localStorage.
 // Called on auth-ready and on project switch. Last-write-wins by updatedAt.
 async function trLoadFromFirestore(projectId){
@@ -222,6 +262,8 @@ if(typeof window !== 'undefined'){
   window.trGetEntriesForDate = trGetEntriesForDate;
   window.trGetEntriesForCategory = trGetEntriesForCategory;
   window.trGetEntry = trGetEntry;
+  window.trAddPhotoLink = trAddPhotoLink;
+  window.trRemovePhotoLink = trRemovePhotoLink;
   window.trSaveEntry = trSaveEntry;
   window.trDeleteEntry = trDeleteEntry;
   window.trLoadFromFirestore = trLoadFromFirestore;

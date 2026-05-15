@@ -320,10 +320,12 @@ function clRenderTrackerCard(){
   const rows=entries.map(e=>{
     const catColor=(typeof tcGetColor==='function')?tcGetColor(e.categoryId,pid):'#888';
     const catName=e.categoryName||(typeof tcGetName==='function'?tcGetName(e.categoryId,pid):'Unknown');
+    const photoCount=Array.isArray(e.photoIds)?e.photoIds.length:0;
     return `<div onclick="clShowTrackerDetail('${e.id}')" style="display:flex;align-items:center;gap:8px;padding:7px 4px;border-bottom:1px solid var(--border);cursor:pointer;border-radius:4px">
       <div style="width:10px;height:10px;border-radius:50%;background:${catColor};flex-shrink:0"></div>
       <span style="font-family:var(--mono);font-size:11px;color:var(--text);flex:1">${catName}</span>
       ${e.acres?`<span style="font-family:var(--mono);font-size:11px;color:var(--muted)">${e.acres} ac</span>`:''}
+      ${photoCount?`<span style="font-family:var(--mono);font-size:10px;color:var(--muted)">📷${photoCount}</span>`:''}
       <span style="font-family:var(--mono);font-size:10px;color:var(--muted)">›</span>
     </div>`;
   }).join('');
@@ -341,6 +343,12 @@ function clShowTrackerDetail(entryId){
   if(!entry) return;
   const label=entry.categoryName||(typeof tcGetName==='function'?tcGetName(entry.categoryId,pid):'Unknown');
   const color=(typeof tcGetColor==='function')?tcGetColor(entry.categoryId,pid):'#888';
+  const linkedPhotos=(entry.photoIds||[]).map(id=>(window._phPhotos||[]).find(p=>p.id===id)).filter(Boolean);
+  const photoStrip=linkedPhotos.map(p=>`
+    <div style="position:relative;display:inline-block;flex-shrink:0">
+      <img src="${p.thumb}" style="width:64px;height:48px;object-fit:cover;border-radius:4px;cursor:pointer;display:block" onclick="phOpenLightbox('${p.id}')">
+      <button onclick="clUnlinkPhoto('${entryId}','${p.id}')" style="position:absolute;top:-5px;right:-5px;background:#c0392b;border:none;border-radius:50%;width:16px;height:16px;font-size:9px;color:#fff;cursor:pointer;padding:0;line-height:16px;display:flex;align-items:center;justify-content:center">✕</button>
+    </div>`).join('');
   const ov=document.createElement('div');
   ov.className='modal-overlay';
   ov.style.cssText='z-index:5000';
@@ -349,11 +357,16 @@ function clShowTrackerDetail(entryId){
       <div style="width:12px;height:12px;border-radius:50%;background:${color};flex-shrink:0"></div>
       <div class="modal-title" style="margin:0">${label}</div>
     </div>
-    <div style="font-family:var(--mono);font-size:12px;color:var(--text);display:flex;flex-direction:column;gap:7px;margin-bottom:16px">
+    <div style="font-family:var(--mono);font-size:12px;color:var(--text);display:flex;flex-direction:column;gap:7px;margin-bottom:14px">
       ${entry.date?`<div><span style="color:var(--muted);text-transform:uppercase;font-size:10px;letter-spacing:.06em">Date</span><div style="margin-top:2px">${entry.date}</div></div>`:''}
       ${entry.acres?`<div><span style="color:var(--muted);text-transform:uppercase;font-size:10px;letter-spacing:.06em">Area</span><div style="margin-top:2px">${entry.acres} acres</div></div>`:''}
       ${entry.location?`<div><span style="color:var(--muted);text-transform:uppercase;font-size:10px;letter-spacing:.06em">Location</span><div style="margin-top:2px">${entry.location}</div></div>`:''}
       ${entry.notes?`<div><span style="color:var(--muted);text-transform:uppercase;font-size:10px;letter-spacing:.06em">Notes</span><div style="margin-top:2px;line-height:1.5">${entry.notes}</div></div>`:''}
+    </div>
+    <div style="margin-bottom:14px">
+      <span style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em">Photos</span>
+      <div id="_cltr-photo-strip" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">${photoStrip}</div>
+      <button id="_cltrattach" style="margin-top:8px;background:none;border:1px solid var(--border);border-radius:6px;padding:5px 10px;font-family:var(--mono);font-size:11px;color:var(--muted);cursor:pointer;width:100%;text-align:center">+ Attach Photo</button>
     </div>
     <div class="modal-btns" style="flex-wrap:wrap;gap:8px">
       <button class="modal-cancel" id="_cltrclose">Close</button>
@@ -368,6 +381,7 @@ function clShowTrackerDetail(entryId){
     ov.remove();
     if(typeof clRenderTrackerCard==='function') clRenderTrackerCard();
   };
+  document.getElementById('_cltrattach').onclick=()=>clShowPhotoAttachPicker(entryId);
   document.getElementById('_cltredit').onclick=()=>{
     ov.remove();
     if(typeof showPage==='function') showPage('map');
@@ -375,6 +389,84 @@ function clShowTrackerDetail(entryId){
       if(typeof mapEditTrackerEntry==='function') mapEditTrackerEntry(entryId);
     },350);
   };
+}
+
+// ── Photo attach picker (opened from tracker detail modal) ──
+function clShowPhotoAttachPicker(entryId){
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const entry=(typeof trGetEntry==='function')?trGetEntry(entryId,pid):null;
+  if(!entry) return;
+  const projectPhotos=(window._phPhotos||[]).filter(p=>!p.projectId||p.projectId===pid)
+    .sort((a,b)=>b.date>a.date?1:b.date<a.date?-1:b.uploadedAt-a.uploadedAt);
+  const ov=document.createElement('div');
+  ov.className='modal-overlay';
+  ov.style.cssText='z-index:6000';
+  if(!projectPhotos.length){
+    ov.innerHTML=`<div class="modal-box" style="max-width:300px;width:88%">
+      <div class="modal-title" style="margin-bottom:10px">No Photos</div>
+      <div style="font-family:var(--mono);font-size:12px;color:var(--muted);margin-bottom:16px;line-height:1.5">Upload photos on the Photos page first, then attach them here.</div>
+      <div class="modal-btns"><button class="modal-cancel" onclick="this.closest('.modal-overlay').remove()">OK</button></div>
+    </div>`;
+    document.body.appendChild(ov);
+    return;
+  }
+  const linkedIds=new Set(entry.photoIds||[]);
+  const thumbs=projectPhotos.map(p=>{
+    const linked=linkedIds.has(p.id);
+    return `<div id="clatph-${p.id}" onclick="clTogglePhotoLink('${entryId}','${p.id}',this)"
+      style="position:relative;cursor:pointer;border-radius:6px;border:2px solid ${linked?'var(--amber)':'transparent'};overflow:hidden;flex-shrink:0;width:80px;height:60px">
+      <img src="${p.thumb}" style="width:80px;height:60px;object-fit:cover;display:block">
+      <div id="clatph-chk-${p.id}" style="position:absolute;top:2px;right:2px;width:16px;height:16px;border-radius:50%;background:${linked?'var(--amber)':'rgba(0,0,0,.45)'};display:flex;align-items:center;justify-content:center;font-size:9px;color:#fff">${linked?'✓':''}</div>
+    </div>`;
+  }).join('');
+  ov.innerHTML=`<div class="modal-box" style="max-width:360px;width:92%;max-height:80vh;display:flex;flex-direction:column">
+    <div class="modal-title" style="margin-bottom:12px">Attach Photos</div>
+    <div style="display:flex;flex-wrap:wrap;gap:6px;overflow-y:auto;flex:1;margin-bottom:12px">${thumbs}</div>
+    <div class="modal-btns">
+      <button class="modal-confirm" onclick="this.closest('.modal-overlay').remove()">Done</button>
+    </div>
+  </div>`;
+  document.body.appendChild(ov);
+}
+
+function clTogglePhotoLink(entryId, photoId, el){
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const entry=(typeof trGetEntry==='function')?trGetEntry(entryId,pid):null;
+  const linked=entry&&Array.isArray(entry.photoIds)&&entry.photoIds.includes(photoId);
+  if(linked){
+    if(typeof trRemovePhotoLink==='function') trRemovePhotoLink(entryId,photoId,pid);
+    el.style.borderColor='transparent';
+    const chk=document.getElementById('clatph-chk-'+photoId);
+    if(chk){chk.style.background='rgba(0,0,0,.45)';chk.textContent='';}
+  } else {
+    if(typeof trAddPhotoLink==='function') trAddPhotoLink(entryId,photoId,pid);
+    el.style.borderColor='var(--amber)';
+    const chk=document.getElementById('clatph-chk-'+photoId);
+    if(chk){chk.style.background='var(--amber)';chk.textContent='✓';}
+  }
+  clRefreshDetailPhotoStrip(entryId);
+}
+
+function clUnlinkPhoto(entryId, photoId){
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  if(typeof trRemovePhotoLink==='function') trRemovePhotoLink(entryId,photoId,pid);
+  clRefreshDetailPhotoStrip(entryId);
+  clRenderTrackerCard();
+}
+
+function clRefreshDetailPhotoStrip(entryId){
+  const strip=document.getElementById('_cltr-photo-strip');
+  if(!strip) return;
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const entry=(typeof trGetEntry==='function')?trGetEntry(entryId,pid):null;
+  if(!entry) return;
+  const linked=(entry.photoIds||[]).map(id=>(window._phPhotos||[]).find(p=>p.id===id)).filter(Boolean);
+  strip.innerHTML=linked.map(p=>`
+    <div style="position:relative;display:inline-block;flex-shrink:0">
+      <img src="${p.thumb}" style="width:64px;height:48px;object-fit:cover;border-radius:4px;cursor:pointer;display:block" onclick="phOpenLightbox('${p.id}')">
+      <button onclick="clUnlinkPhoto('${entryId}','${p.id}')" style="position:absolute;top:-5px;right:-5px;background:#c0392b;border:none;border-radius:50%;width:16px;height:16px;font-size:9px;color:#fff;cursor:pointer;padding:0;line-height:16px;display:flex;align-items:center;justify-content:center">✕</button>
+    </div>`).join('');
+  clRenderTrackerCard();
 }
 
 // ── Init compliance log ──
@@ -399,3 +491,7 @@ window.clEditEntry = clEditEntry;
 window.clConfirmDelete = clConfirmDelete;
 window.clRenderTrackerCard = clRenderTrackerCard;
 window.clShowTrackerDetail = clShowTrackerDetail;
+window.clShowPhotoAttachPicker = clShowPhotoAttachPicker;
+window.clTogglePhotoLink = clTogglePhotoLink;
+window.clUnlinkPhoto = clUnlinkPhoto;
+window.clRefreshDetailPhotoStrip = clRefreshDetailPhotoStrip;

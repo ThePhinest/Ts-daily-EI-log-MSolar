@@ -362,6 +362,9 @@ function mapRenderPhotoPins(){
           <div style="color:#555;margin-bottom:2px">${p.date}</div>
           ${dirLabel ? `<div style="color:#555">📷 Facing ${dirLabel}</div>` : ''}
           ${p.software ? `<div style="color:#999;margin-top:2px;font-size:10px">${p.software}</div>` : ''}
+          <div style="margin-top:8px;padding-top:6px;border-top:1px solid #ddd">
+            <button onclick="mapShowPhotoLinkPicker('${p.id}')" style="background:none;border:none;color:#006B75;font-family:monospace;font-size:10px;cursor:pointer;padding:0;text-decoration:underline">🔗 Link to tracker entry</button>
+          </div>
         </div>
       `);
 
@@ -1960,6 +1963,64 @@ function mapDeleteTrackerEntryFromPanel(entryId){
   };
 }
 
+// ── Photo → Tracker entry linking ────────────────────────────────────────────
+function mapShowPhotoLinkPicker(photoId){
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const entries=(typeof trGetEntriesForProject==='function')?trGetEntriesForProject(pid).filter(e=>!e.archivedFromMap):[];
+  const ov=document.createElement('div');
+  ov.className='modal-overlay';
+  ov.style.cssText='z-index:9500';
+  if(!entries.length){
+    ov.innerHTML=`<div class="modal-box" style="max-width:300px;width:88%">
+      <div class="modal-title" style="margin-bottom:10px">No Tracker Entries</div>
+      <div style="font-family:var(--mono);font-size:12px;color:var(--muted);margin-bottom:16px;line-height:1.5">Draw a tracked area on the map first, then link photos to it.</div>
+      <div class="modal-btns"><button class="modal-cancel" onclick="this.closest('.modal-overlay').remove()">OK</button></div>
+    </div>`;
+    document.body.appendChild(ov);
+    return;
+  }
+  const rows=entries.map(e=>{
+    const catColor=(typeof tcGetColor==='function')?tcGetColor(e.categoryId,pid):'#888';
+    const catName=e.categoryName||(typeof tcGetName==='function'?tcGetName(e.categoryId,pid):'Unknown');
+    const parts=[];
+    if(e.date){const p=e.date.split('-');parts.push(`${parseInt(p[1])}/${parseInt(p[2])}/${p[0].slice(2)}`);}
+    if(e.acres) parts.push(`${e.acres} ac`);
+    const label=parts.join(' · ')||e.id.slice(0,8);
+    const linked=Array.isArray(e.photoIds)&&e.photoIds.includes(photoId);
+    return `<button id="mplp-${e.id}" onclick="mapLinkPhotoToEntry('${photoId}','${e.id}',this)"
+      style="display:flex;align-items:center;gap:8px;width:100%;background:${linked?'rgba(255,255,255,.08)':'var(--s1)'};border:1px solid ${linked?'var(--amber)':'var(--border)'};border-radius:6px;padding:8px 10px;margin-bottom:6px;cursor:pointer;text-align:left;box-sizing:border-box">
+      <div style="width:10px;height:10px;border-radius:50%;background:${catColor};flex-shrink:0"></div>
+      <div style="flex:1;min-width:0">
+        <div style="font-family:var(--mono);font-size:11px;color:var(--text);font-weight:600">${catName}</div>
+        <div style="font-family:var(--mono);font-size:10px;color:var(--muted)">${label}</div>
+      </div>
+      <div class="mplp-lbl" style="font-family:var(--mono);font-size:10px;color:var(--amber)">${linked?'✓':''}</div>
+    </button>`;
+  }).join('');
+  ov.innerHTML=`<div class="modal-box" style="max-width:320px;width:90%;max-height:70vh;display:flex;flex-direction:column">
+    <div class="modal-title" style="margin-bottom:12px">Link to Tracker Entry</div>
+    <div style="overflow-y:auto;flex:1;margin-bottom:12px">${rows}</div>
+    <div class="modal-btns"><button class="modal-cancel" onclick="this.closest('.modal-overlay').remove()">Done</button></div>
+  </div>`;
+  document.body.appendChild(ov);
+}
+function mapLinkPhotoToEntry(photoId, entryId, btn){
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const entry=(typeof trGetEntry==='function')?trGetEntry(entryId,pid):null;
+  const linked=entry&&Array.isArray(entry.photoIds)&&entry.photoIds.includes(photoId);
+  if(linked){
+    if(typeof trRemovePhotoLink==='function') trRemovePhotoLink(entryId,photoId,pid);
+    btn.style.background='var(--s1)';
+    btn.style.borderColor='var(--border)';
+    btn.querySelector('.mplp-lbl').textContent='';
+  } else {
+    if(typeof trAddPhotoLink==='function') trAddPhotoLink(entryId,photoId,pid);
+    btn.style.background='rgba(255,255,255,.08)';
+    btn.style.borderColor='var(--amber)';
+    btn.querySelector('.mplp-lbl').textContent='✓';
+  }
+}
+
 // ── Expose to window for HTML onclick handlers and cross-module calls ──
 window.getMapInstance = () => _mapInstance;
 window.mapInit = mapInit;
@@ -2036,6 +2097,8 @@ window.mapTrackerSaveAdd = mapTrackerSaveAdd;
 window.mapShowColorPicker = mapShowColorPicker;
 window.mapSelectColor = mapSelectColor;
 window.mapHideColorPicker = mapHideColorPicker;
+window.mapShowPhotoLinkPicker = mapShowPhotoLinkPicker;
+window.mapLinkPhotoToEntry = mapLinkPhotoToEntry;
 window.mapRenderTrackerLayers = mapRenderTrackerLayers;
 window.mapDeleteTrackerEntry = mapDeleteTrackerEntry;
 window.mapToggleTrackerEntryVisibility = mapToggleTrackerEntryVisibility;
