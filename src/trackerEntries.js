@@ -120,7 +120,7 @@ function trMarkDeletedFromMap(entryId, projectId){
   if(typeof _udb === 'function' && typeof _fbReady !== 'undefined' && _fbReady && typeof _currentUser !== 'undefined' && _currentUser){
     try {
       _udb().collection('projects').doc(pid).collection('trackerEntries').doc(entryId)
-        .update({ deletedFromMap: true, updatedAt: ts })
+        .set(data.entries[idx])
         .catch(e => console.warn('trMarkDeletedFromMap Firestore:', e.message));
     } catch(e){ /* silent */ }
   }
@@ -140,7 +140,7 @@ function trSetMapVisibility(entryId, visible, projectId){
   if(typeof _udb === 'function' && typeof _fbReady !== 'undefined' && _fbReady && typeof _currentUser !== 'undefined' && _currentUser){
     try {
       _udb().collection('projects').doc(pid).collection('trackerEntries').doc(entryId)
-        .update({ deletedFromMap: !visible, updatedAt: ts })
+        .set(data.entries[idx])
         .catch(e => console.warn('trSetMapVisibility Firestore:', e.message));
     } catch(e){ /* silent */ }
   }
@@ -160,7 +160,7 @@ function trDeleteEntry(entryId, projectId){
   if(typeof _udb === 'function' && typeof _fbReady !== 'undefined' && _fbReady && typeof _currentUser !== 'undefined' && _currentUser){
     try {
       _udb().collection('projects').doc(pid).collection('trackerEntries').doc(entryId)
-        .update({ deletedAt: ts, updatedAt: ts })
+        .set(data.entries[idx])
         .catch(e => console.warn('trDeleteEntry Firestore:', e.message));
     } catch(e){ /* silent */ }
   }
