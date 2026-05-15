@@ -1543,6 +1543,7 @@ function mapActivateDrawMode(categoryId){
     _mapInstance.on('draw.modechange',_onDrawModeChange);
   }
   _drawInstance.changeMode('draw_polygon');
+  mapDrawSetShape('polygon');
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
   const catName=(typeof tcGetName==='function')?tcGetName(categoryId,pid):(categoryId||'Shape');
   const catColor=(typeof tcGetColor==='function')?tcGetColor(categoryId,pid):'var(--amber)';
@@ -1567,6 +1568,18 @@ function mapDeactivateDrawMode(){
   document.getElementById('map-fab-measure-btn').classList.remove('active');
   document.getElementById('map-measure-chip').classList.remove('show');
   mapCloseTrackerModal();
+}
+function mapDrawSetShape(shape){
+  if(!_drawInstance) return;
+  if(shape==='polygon') _drawInstance.changeMode('draw_polygon');
+  else if(shape==='line') _drawInstance.changeMode('draw_line_string');
+  else if(shape==='point') _drawInstance.changeMode('draw_point');
+  ['polygon','line','point'].forEach(s=>{
+    const btn=document.getElementById('map-draw-'+s+'-btn');
+    if(!btn) return;
+    btn.style.background = s===shape ? 'rgba(0,0,0,.35)' : 'none';
+    btn.style.boxShadow = s===shape ? 'inset 0 1px 3px rgba(0,0,0,.4)' : 'none';
+  });
 }
 
 function _onDrawCreate(e){
@@ -2139,6 +2152,7 @@ window.mapShowCategorySheet = mapShowCategorySheet;
 window.mapCloseCategorySheet = mapCloseCategorySheet;
 window.mapActivateDrawMode = mapActivateDrawMode;
 window.mapDeactivateDrawMode = mapDeactivateDrawMode;
+window.mapDrawSetShape = mapDrawSetShape;
 window.mapShowTrackerModal = mapShowTrackerModal;
 window.mapCloseTrackerModal = mapCloseTrackerModal;
 window.mapCancelTrackerEntry = mapCancelTrackerEntry;

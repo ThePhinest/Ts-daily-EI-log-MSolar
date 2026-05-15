@@ -1800,6 +1800,11 @@ Anticipated rain — AM weather monitoring expected"></textarea>
     <!-- Draw mode indicator bar -->
     <div id="map-draw-bar">
       <span id="map-draw-bar-label">Drawing</span>
+      <div style="display:flex;gap:3px;margin:0 4px">
+        <button id="map-draw-poly-btn" onclick="mapDrawSetShape('polygon')" title="Polygon" style="background:rgba(0,0,0,.25);border:none;border-radius:6px;color:#111;font-size:13px;width:28px;height:24px;cursor:pointer;display:flex;align-items:center;justify-content:center;font-weight:700">⬡</button>
+        <button id="map-draw-line-btn" onclick="mapDrawSetShape('line')" title="Line" style="background:none;border:none;border-radius:6px;color:#111;font-size:13px;width:28px;height:24px;cursor:pointer;display:flex;align-items:center;justify-content:center;font-weight:700">╱</button>
+        <button id="map-draw-point-btn" onclick="mapDrawSetShape('point')" title="Point" style="background:none;border:none;border-radius:6px;color:#111;font-size:16px;width:28px;height:24px;cursor:pointer;display:flex;align-items:center;justify-content:center;font-weight:700">•</button>
+      </div>
       <button id="map-draw-bar-exit" onclick="mapDeactivateDrawMode()">✕ EXIT</button>
     </div>
 
