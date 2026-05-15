@@ -1924,10 +1924,33 @@ function mapToggleTrackerCategoryVisibility(catId, visible){
 }
 function mapDeleteTrackerEntryFromPanel(entryId){
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
-  if(typeof trDeleteEntry==='function') trDeleteEntry(entryId,pid);
-  mapRenderTrackerLayers();
-  mapUpdateKmlLayerList();
-  if(typeof clRenderTrackerCard==='function') clRenderTrackerCard();
+  const ov=document.createElement('div');
+  ov.className='modal-overlay';
+  ov.style.cssText='z-index:9000';
+  ov.innerHTML=`<div class="modal-box" style="max-width:300px;width:88%">
+    <div class="modal-title" style="margin-bottom:10px">Remove Entry</div>
+    <div style="font-family:var(--mono);font-size:12px;color:var(--muted);margin-bottom:16px;line-height:1.5">Hide from the map only, or delete the record entirely (removes from compliance too)?</div>
+    <div class="modal-btns" style="flex-direction:column;gap:8px">
+      <button id="_trpHide" class="modal-confirm" style="width:100%">Hide from Map</button>
+      <button id="_trpDel" class="modal-confirm" style="width:100%;background:#c0392b;">Delete Entirely</button>
+      <button id="_trpCancel" class="modal-cancel" style="width:100%">Cancel</button>
+    </div>
+  </div>`;
+  document.body.appendChild(ov);
+  document.getElementById('_trpCancel').onclick=()=>ov.remove();
+  document.getElementById('_trpHide').onclick=()=>{
+    ov.remove();
+    if(typeof trMarkDeletedFromMap==='function') trMarkDeletedFromMap(entryId,pid);
+    mapRenderTrackerLayers();
+    mapUpdateKmlLayerList();
+  };
+  document.getElementById('_trpDel').onclick=()=>{
+    ov.remove();
+    if(typeof trDeleteEntry==='function') trDeleteEntry(entryId,pid);
+    mapRenderTrackerLayers();
+    mapUpdateKmlLayerList();
+    if(typeof clRenderTrackerCard==='function') clRenderTrackerCard();
+  };
 }
 
 // ── Expose to window for HTML onclick handlers and cross-module calls ──
