@@ -1428,7 +1428,7 @@ function mapActivateMeasure(){
   if(!_drawInstance){
     _drawInstance=new MapboxDraw({
       displayControlsDefault:false,
-      controls:{polygon:true,line_string:true,trash:true}
+      controls:{polygon:true,trash:true}
     });
     _mapInstance.addControl(_drawInstance,'top-left');
     _mapInstance.on('draw.create',_onDrawCreate);
@@ -1436,7 +1436,7 @@ function mapActivateMeasure(){
     _mapInstance.on('draw.modechange',_onDrawModeChange);
   }
   const bar=document.getElementById('map-draw-bar');
-  document.getElementById('map-draw-bar-label').textContent='Measure — draw shape';
+  document.getElementById('map-draw-bar-label').textContent='Click points — double-click to close';
   bar.classList.add('show');
   bar.style.borderColor='#4A90E2';
   document.getElementById('map-fab-measure-btn').classList.add('active');
@@ -1447,12 +1447,15 @@ function _showMeasureReadout(feat){
   let text='';
   if(feat.geometry.type==='Polygon'){
     const ac=_geoAreaAcres(feat);
-    text=ac ? `Area: ${ac} ac` : 'Area: —';
+    const perimFeat={geometry:{type:'LineString',coordinates:feat.geometry.coordinates[0]}};
+    const ft=_geoLengthFt(perimFeat);
+    const mi=ft?(parseInt(ft)/5280).toFixed(2):null;
+    text=`${ac?`${ac} ac`:'—'}  ·  ${ft?`${ft} ft (${mi} mi) perimeter`:'—'}`;
   } else if(feat.geometry.type==='LineString'){
     const ft=_geoLengthFt(feat);
     if(ft){
       const mi=(parseInt(ft)/5280).toFixed(2);
-      text=`Length: ${ft} ft (${mi} mi)`;
+      text=`${ft} ft  ·  ${mi} mi`;
     } else { text='Length: —'; }
   }
   chip.textContent=text;
@@ -1550,16 +1553,16 @@ function _showTrackerEntryPopup(lngLat,props){
   if(_trackerPopup){_trackerPopup.remove();_trackerPopup=null;}
   const label=TR_CATEGORY_LABELS[props.category]||props.category;
   const color=TR_CATEGORY_COLORS[props.category]||'#888';
-  const html=`<div style="font-family:var(--mono);font-size:12px;min-width:170px">
+  const html=`<div style="font-family:var(--mono);font-size:12px;min-width:170px;color:#e8e8e8">
     <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
       <div style="width:10px;height:10px;border-radius:50%;background:${color};flex-shrink:0"></div>
-      <strong>${label}</strong>
+      <strong style="color:#fff">${label}</strong>
     </div>
-    ${props.date?`<div>📅 ${props.date}</div>`:''}
-    ${props.acres?`<div>📐 ${props.acres} ac</div>`:''}
-    ${props.location?`<div>📍 ${props.location}</div>`:''}
-    ${props.notes?`<div style="margin-top:4px;opacity:.75">${props.notes}</div>`:''}
-    <button onclick="mapDeleteTrackerEntry('${props.id}')" style="margin-top:8px;width:100%;background:#c0392b;border:none;color:#fff;padding:6px;border-radius:6px;font-family:var(--mono);font-size:11px;cursor:pointer">🗑 Delete Entry</button>
+    ${props.date?`<div style="color:#c8d8e8">📅 ${props.date}</div>`:''}
+    ${props.acres?`<div style="color:#c8d8e8">📐 ${props.acres} ac</div>`:''}
+    ${props.location?`<div style="color:#c8d8e8">📍 ${props.location}</div>`:''}
+    ${props.notes?`<div style="margin-top:4px;color:#8899aa">${props.notes}</div>`:''}
+    <button onclick="mapDeleteTrackerEntry('${props.id}')" style="margin-top:8px;width:100%;background:#c0392b;border:none;color:#fff;padding:6px;border-radius:6px;font-family:var(--mono);font-size:11px;cursor:pointer;font-weight:700">🗑 Delete Entry</button>
   </div>`;
   _trackerPopup=new mapboxgl.Popup({closeButton:true,closeOnClick:false})
     .setLngLat(lngLat).setHTML(html).addTo(_mapInstance);

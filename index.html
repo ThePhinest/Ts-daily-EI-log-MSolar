@@ -111,6 +111,9 @@ body.theme-light{
 .map-cat-pill{display:flex;align-items:center;gap:8px;padding:9px 12px;border-radius:8px;border:1px solid var(--border);background:var(--s1);margin-bottom:6px;cursor:pointer;font-family:var(--mono);font-size:12px;color:var(--text);transition:background .12s}
 .map-cat-pill:hover{background:var(--s2)}
 .map-cat-dot{width:12px;height:12px;border-radius:50%;flex-shrink:0}
+.gl-tracker-popup .mapboxgl-popup-content{background:#0F1F2E;color:#e8e8e8;padding:12px;border-radius:8px;border:1px solid rgba(255,255,255,.12)}
+.gl-tracker-popup.mapboxgl-popup-anchor-bottom .mapboxgl-popup-tip{border-top-color:#0F1F2E}
+.gl-tracker-popup.mapboxgl-popup-anchor-top .mapboxgl-popup-tip{border-bottom-color:#0F1F2E}
 #map-no-token{display:none}
 .map-controls{position:absolute;top:12px;left:12px;z-index:10;display:flex;gap:6px;flex-wrap:wrap}
 .map-style-btn{font-family:var(--mono);font-size:10px;padding:5px 10px;border-radius:20px;border:1px solid var(--border2);background:var(--s1);color:var(--amber);cursor:pointer;transition:all .15s;letter-spacing:.04em}
@@ -1681,7 +1684,6 @@ Anticipated rain — AM weather monitoring expected"></textarea>
     </div>
 
     <!-- Locate me -->
-    <button class="map-locate-btn" onclick="mapLocateMe()" title="Locate me">🥾</button>
     <button class="map-locate-btn" id="map-layers-btn" onclick="mapToggleLayerPanel()" title="Layers" style="top:52px">🗂️</button>
 
     <!-- Photo pin filter bar -->
@@ -1759,7 +1761,7 @@ Anticipated rain — AM weather monitoring expected"></textarea>
       <div class="map-fab-row"><span class="map-fab-lbl">Layers</span><button class="map-fab-btn" onclick="mapFabLayers()" title="Layers">🗂️</button></div>
       <div class="map-fab-row"><span class="map-fab-lbl">Draw</span><button class="map-fab-btn" id="map-fab-draw-btn" onclick="mapFabDraw()" title="Draw tracker entry">✏️</button></div>
       <div class="map-fab-row"><span class="map-fab-lbl">Measure</span><button class="map-fab-btn" id="map-fab-measure-btn" onclick="mapFabMeasure()" title="Measure area / distance">📏</button></div>
-      <div class="map-fab-row"><span class="map-fab-lbl">GPS Follow</span><button class="map-fab-btn" id="map-fab-gps-btn" onclick="mapFabGps()" title="GPS follow">🎯</button></div>
+      <div class="map-fab-row"><span class="map-fab-lbl">Location</span><button class="map-fab-btn" id="map-fab-gps-btn" onclick="mapFabGps()" title="Follow my location">🎯</button></div>
     </div>
 
     <!-- Draw mode indicator bar -->
