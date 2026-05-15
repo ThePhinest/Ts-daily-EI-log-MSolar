@@ -339,7 +339,7 @@ function clRenderTrackerCard(search){
     </div>`;
   }).join('');
   el.innerHTML=`<div class="card">
-    <div class="card-head"><span class="card-num">🗺️</span><span class="card-title">Today's Tracker Activity</span><span class="card-badge">${entries.length}</span></div>
+    <div class="card-head"><span class="card-num">🗺️</span><span class="card-title">Today's Tracker Activity</span><span class="card-badge">${entries.length}</span><button onclick="clShowTrackerLog()" style="margin-left:auto;background:none;border:none;color:var(--amber);font-family:var(--mono);font-size:11px;cursor:pointer;padding:2px 4px;letter-spacing:.04em">View All →</button></div>
     <div class="card-body" style="padding-top:4px">${rows}</div>
   </div>`;
   el.style.display='block';
@@ -478,6 +478,205 @@ function clRefreshDetailPhotoStrip(entryId){
   clRenderTrackerCard();
 }
 
+// ── Tracker Log modal ── full searchable database of all tracker entries
+function clShowTrackerLog(){
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const allEntries=(typeof trGetEntriesForProject==='function')
+    ? trGetEntriesForProject(pid).filter(e=>!e.deletedAt&&!e.archivedFromMap)
+    : [];
+  const cats=(typeof tcGetCategories==='function')?tcGetCategories(pid):[];
+
+  let _tlSearch='';
+  let _tlCat='';
+  let _tlFrom='';
+  let _tlTo='';
+
+  const chipHtml=[
+    `<button class="_tlog-chip active" data-cat="">All</button>`,
+    ...cats.map(c=>`<button class="_tlog-chip" data-cat="${c.id}">${c.name}</button>`)
+  ].join('');
+
+  const ov=document.createElement('div');
+  ov.className='modal-overlay';
+  ov.style.cssText='z-index:4500;align-items:flex-end;padding:0';
+  ov.innerHTML=`
+    <div style="width:100%;max-height:92dvh;background:var(--bg);border-top:1px solid var(--border);border-radius:16px 16px 0 0;display:flex;flex-direction:column;overflow:hidden;padding-bottom:env(safe-area-inset-bottom)">
+      <!-- Header -->
+      <div style="display:flex;align-items:center;gap:8px;padding:14px 16px 12px;border-bottom:1px solid var(--border);flex-shrink:0">
+        <span style="font-family:var(--cond);font-weight:700;font-size:15px;letter-spacing:.06em;text-transform:uppercase;flex:1">Tracker Log</span>
+        <button id="_tlog-export" style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--amber);font-family:var(--mono);font-size:11px;padding:7px 12px;cursor:pointer;min-height:36px">⬇ CSV</button>
+        <button id="_tlog-close" style="background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;width:36px;height:36px;display:flex;align-items:center;justify-content:center">✕</button>
+      </div>
+      <!-- Search -->
+      <div style="padding:10px 16px 8px;flex-shrink:0">
+        <input type="text" id="_tlog-search" placeholder="🔍 Search category, location, notes, date…" style="width:100%;box-sizing:border-box;background:var(--s1);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--body);font-size:16px;padding:8px 12px;outline:none;transition:border-color .15s">
+      </div>
+      <!-- Category chips -->
+      <div id="_tlog-chips" style="display:flex;gap:6px;flex-wrap:nowrap;overflow-x:auto;padding:0 16px 10px;flex-shrink:0;scrollbar-width:none">${chipHtml}</div>
+      <!-- Date range -->
+      <div style="display:flex;gap:8px;align-items:center;padding:0 16px 10px;flex-shrink:0">
+        <span style="font-family:var(--mono);font-size:10px;color:var(--muted);white-space:nowrap">From</span>
+        <input type="date" id="_tlog-from" style="flex:1;background:var(--s1);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--mono);font-size:11px;padding:5px 8px">
+        <span style="font-family:var(--mono);font-size:10px;color:var(--muted)">to</span>
+        <input type="date" id="_tlog-to" style="flex:1;background:var(--s1);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--mono);font-size:11px;padding:5px 8px">
+        <button id="_tlog-clear-dates" style="background:none;border:none;color:var(--amber);font-family:var(--mono);font-size:10px;cursor:pointer;padding:4px 6px;white-space:nowrap">Clear</button>
+      </div>
+      <!-- Results -->
+      <div id="_tlog-results" style="flex:1;overflow-y:auto;border-top:1px solid var(--border)"></div>
+      <!-- Footer -->
+      <div id="_tlog-footer" style="padding:8px 16px;border-top:1px solid var(--border);flex-shrink:0;font-family:var(--mono);font-size:10px;color:var(--muted);text-align:center"></div>
+    </div>
+  `;
+  document.body.appendChild(ov);
+
+  function _tlogFilter(){
+    return allEntries.filter(e=>{
+      if(_tlCat && e.categoryId!==_tlCat) return false;
+      if(_tlFrom && e.date<_tlFrom) return false;
+      if(_tlTo && e.date>_tlTo) return false;
+      if(_tlSearch){
+        const s=_tlSearch;
+        if(!(
+          (e.categoryName||'').toLowerCase().includes(s)||
+          (e.location||'').toLowerCase().includes(s)||
+          (e.notes||'').toLowerCase().includes(s)||
+          (e.date||'').includes(s)||
+          String(e.acres||'').includes(s)
+        )) return false;
+      }
+      return true;
+    }).sort((a,b)=>b.date>a.date?1:b.date<a.date?-1:0);
+  }
+
+  function _tlogRender(){
+    const entries=_tlogFilter();
+    const totalAcres=entries.reduce((s,e)=>s+(parseFloat(e.acres)||0),0);
+    const totalPhotos=entries.reduce((s,e)=>s+(Array.isArray(e.photoIds)?e.photoIds.length:0),0);
+    const res=document.getElementById('_tlog-results');
+    const foot=document.getElementById('_tlog-footer');
+
+    if(!entries.length){
+      res.innerHTML=`<div style="font-family:var(--mono);font-size:12px;color:var(--muted);text-align:center;padding:40px 20px">No entries match.</div>`;
+      foot.textContent='';
+      return;
+    }
+
+    const isGrouped=!_tlSearch&&!_tlFrom&&!_tlTo&&!_tlCat;
+
+    if(isGrouped){
+      // Group by category, newest entry first within each group
+      const order=[];
+      const groups={};
+      entries.forEach(e=>{
+        const cid=e.categoryId||'_unknown';
+        if(!groups[cid]){
+          const cat=cats.find(c=>c.id===cid)||{id:cid,name:e.categoryName||'Unknown',color:'#888'};
+          groups[cid]={cat,entries:[]};
+          order.push(cid);
+        }
+        groups[cid].entries.push(e);
+      });
+      res.innerHTML=order.map(cid=>{
+        const g=groups[cid];
+        const gAcres=g.entries.reduce((s,e)=>s+(parseFloat(e.acres)||0),0);
+        const gPhotos=g.entries.reduce((s,e)=>s+(Array.isArray(e.photoIds)?e.photoIds.length:0),0);
+        const rows=g.entries.map(e=>{
+          const pc=Array.isArray(e.photoIds)?e.photoIds.length:0;
+          const label=(e.location||e.notes||'').slice(0,42)||(e.location||e.notes||'').length>42?'…':'';
+          return `<div onclick="clShowTrackerDetail('${e.id}')" style="display:flex;align-items:center;gap:8px;padding:9px 16px 9px 30px;border-top:1px solid var(--border);cursor:pointer">
+            <span style="font-family:var(--mono);font-size:10px;color:var(--muted);white-space:nowrap;flex-shrink:0;min-width:68px">${e.date||'—'}</span>
+            <span style="font-family:var(--mono);font-size:11px;color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${(e.location||e.notes||'—').slice(0,42)}</span>
+            ${e.acres?`<span style="font-family:var(--mono);font-size:10px;color:var(--muted);white-space:nowrap;flex-shrink:0">${e.acres} ac</span>`:''}
+            ${pc?`<span style="font-size:10px;flex-shrink:0;color:var(--muted)">📷 ${pc}</span>`:''}
+            <span style="color:var(--muted);flex-shrink:0;font-size:12px">›</span>
+          </div>`;
+        }).join('');
+        const meta=[gAcres>0?`${gAcres.toFixed(2)} ac`:'',gPhotos>0?`📷 ${gPhotos}`:'',`${g.entries.length} ${g.entries.length===1?'entry':'entries'}`].filter(Boolean).join(' · ');
+        return `<div style="border-bottom:1px solid var(--border)">
+          <div style="display:flex;align-items:center;gap:8px;padding:10px 16px;background:var(--s1)">
+            <div style="width:10px;height:10px;border-radius:50%;background:${g.cat.color};flex-shrink:0"></div>
+            <span style="font-family:var(--cond);font-weight:700;font-size:13px;letter-spacing:.04em;flex:1">${g.cat.name}</span>
+            <span style="font-family:var(--mono);font-size:10px;color:var(--muted);white-space:nowrap">${meta}</span>
+          </div>
+          ${rows}
+        </div>`;
+      }).join('');
+    } else {
+      // Flat list — search/filter active
+      res.innerHTML=entries.map(e=>{
+        const cat=cats.find(c=>c.id===e.categoryId)||{color:'#888',name:e.categoryName||'Unknown'};
+        const pc=Array.isArray(e.photoIds)?e.photoIds.length:0;
+        const sub=[e.date||'',e.location||e.notes||''].filter(Boolean).join(' · ');
+        return `<div onclick="clShowTrackerDetail('${e.id}')" style="display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--border);cursor:pointer">
+          <div style="width:10px;height:10px;border-radius:50%;background:${cat.color};flex-shrink:0"></div>
+          <div style="flex:1;min-width:0">
+            <div style="font-family:var(--mono);font-size:11px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${cat.name}</div>
+            <div style="font-family:var(--mono);font-size:10px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${sub.slice(0,52)}</div>
+          </div>
+          ${e.acres?`<span style="font-family:var(--mono);font-size:11px;color:var(--muted);white-space:nowrap;flex-shrink:0">${e.acres} ac</span>`:''}
+          ${pc?`<span style="font-size:10px;flex-shrink:0;color:var(--muted)">📷 ${pc}</span>`:''}
+          <span style="color:var(--muted);flex-shrink:0;font-size:12px">›</span>
+        </div>`;
+      }).join('');
+    }
+
+    const parts=[`${entries.length} ${entries.length===1?'entry':'entries'}`];
+    if(totalAcres>0) parts.push(`${totalAcres.toFixed(2)} ac total`);
+    if(totalPhotos>0) parts.push(`📷 ${totalPhotos}`);
+    if(entries.length<allEntries.length) parts.push(`of ${allEntries.length} total`);
+    foot.textContent=parts.join(' · ');
+  }
+
+  _tlogRender();
+
+  // Chip handlers
+  ov.querySelectorAll('._tlog-chip').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+      _tlCat=btn.dataset.cat;
+      ov.querySelectorAll('._tlog-chip').forEach(b=>b.classList.toggle('active',b.dataset.cat===_tlCat));
+      _tlogRender();
+    });
+  });
+
+  document.getElementById('_tlog-search').addEventListener('input',e=>{
+    _tlSearch=e.target.value.toLowerCase().trim();
+    _tlogRender();
+  });
+  document.getElementById('_tlog-from').addEventListener('change',e=>{_tlFrom=e.target.value;_tlogRender();});
+  document.getElementById('_tlog-to').addEventListener('change',e=>{_tlTo=e.target.value;_tlogRender();});
+  document.getElementById('_tlog-clear-dates').addEventListener('click',()=>{
+    document.getElementById('_tlog-from').value='';
+    document.getElementById('_tlog-to').value='';
+    _tlFrom=''; _tlTo='';
+    _tlogRender();
+  });
+  document.getElementById('_tlog-close').onclick=()=>ov.remove();
+
+  // CSV export — always exports currently filtered view
+  document.getElementById('_tlog-export').onclick=()=>{
+    const rows=[['Date','Category','Acres','Location','Notes','Photos (count)']];
+    _tlogFilter().forEach(e=>{
+      const catName=e.categoryName||(typeof tcGetName==='function'?tcGetName(e.categoryId,pid):'Unknown');
+      rows.push([
+        e.date||'',
+        catName,
+        e.acres||'',
+        e.location||'',
+        e.notes||'',
+        Array.isArray(e.photoIds)?e.photoIds.length:0
+      ]);
+    });
+    const csv=rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\n');
+    const blob=new Blob([csv],{type:'text/csv'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url;
+    a.download=`tracker-log-${pid}-${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+}
+
 // ── Init compliance log ──
 async function clInit(){
   clLoadLocal();
@@ -500,6 +699,7 @@ window.clEditEntry = clEditEntry;
 window.clConfirmDelete = clConfirmDelete;
 window.clRenderTrackerCard = clRenderTrackerCard;
 window.clShowTrackerDetail = clShowTrackerDetail;
+window.clShowTrackerLog = clShowTrackerLog;
 window.clShowPhotoAttachPicker = clShowPhotoAttachPicker;
 window.clTogglePhotoLink = clTogglePhotoLink;
 window.clUnlinkPhoto = clUnlinkPhoto;
