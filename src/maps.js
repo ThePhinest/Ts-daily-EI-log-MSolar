@@ -159,7 +159,7 @@ function mapSetup(token){
   } catch (_) { /* never let instrumentation break map setup */ }
 
   _mapInstance.addControl(new mapboxgl.AttributionControl({compact:true}),'bottom-left');
-  _mapInstance.addControl(new mapboxgl.NavigationControl({showCompass:true}),'bottom-right');
+  _mapInstance.addControl(new mapboxgl.NavigationControl({showCompass:true}),'top-right');
   _mapInstance.on('load',()=>{
     document.getElementById('map-loading').style.display='none';
     setTimeout(()=>_mapInstance.resize(),100);
@@ -1273,6 +1273,7 @@ function mapCloseCategorySheet(){
 // ── Draw mode ────────────────────────────
 function mapActivateDrawMode(category){
   mapCloseCategorySheet();
+  mapResetGpsFollow();
   if(!_mapInstance) return;
   _drawCategory=category;
   _drawMode='draw';
