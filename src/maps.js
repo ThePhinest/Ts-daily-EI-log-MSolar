@@ -1391,6 +1391,10 @@ function mapShowTrackerModal(feat,category){
   document.getElementById('map-tr-location').value=
     centroid ? `${centroid.lat.toFixed(5)}, ${centroid.lng.toFixed(5)}` : '';
   document.getElementById('map-tr-notes').value='';
+  const rateEl=document.getElementById('map-tr-rate');
+  if(rateEl) rateEl.value='';
+  const calcEl=document.getElementById('map-tr-calc-result');
+  if(calcEl) calcEl.textContent='—';
   const color=TR_CATEGORY_COLORS[category]||'#888';
   document.getElementById('map-tracker-cat-dot').style.background=color;
   document.getElementById('map-tracker-cat-label').textContent=
@@ -1572,16 +1576,37 @@ function _showTrackerEntryPopup(lngLat,props){
       <div style="width:10px;height:10px;border-radius:50%;background:${color};flex-shrink:0"></div>
       <strong style="color:#fff">${label}</strong>
     </div>
-    ${props.date?`<div style="color:#c8d8e8">📅 ${props.date}</div>`:''}
-    ${props.acres?`<div style="color:#c8d8e8">📐 ${props.acres} ac</div>`:''}
-    ${props.location?`<div style="color:#c8d8e8">📍 ${props.location}</div>`:''}
-    ${props.notes?`<div style="margin-top:4px;color:#8899aa">${props.notes}</div>`:''}
+    ${props.date?`<div style="color:#dce8f4">📅 ${props.date}</div>`:''}
+    ${props.acres?`<div style="color:#dce8f4">📐 ${props.acres} ac</div>`:''}
+    ${props.location?`<div style="color:#dce8f4">📍 ${props.location}</div>`:''}
+    ${props.notes?`<div style="margin-top:6px;color:#c8d8e8;border-top:1px solid rgba(255,255,255,.1);padding-top:6px">${props.notes}</div>`:''}
     <button onclick="mapDeleteTrackerEntry('${props.id}')" style="margin-top:8px;width:100%;background:#c0392b;border:none;color:#fff;padding:6px;border-radius:6px;font-family:var(--mono);font-size:11px;cursor:pointer;font-weight:700">🗑 Delete Entry</button>
   </div>`;
-  _trackerPopup=new mapboxgl.Popup({closeButton:true,closeOnClick:false})
+  _trackerPopup=new mapboxgl.Popup({closeButton:true,closeOnClick:false,className:'gl-tracker-popup'})
     .setLngLat(lngLat).setHTML(html).addTo(_mapInstance);
 }
 
+function mapTrackerCalc(){
+  const acres=parseFloat(document.getElementById('map-tr-acres')?.value)||0;
+  const rate=parseFloat(document.getElementById('map-tr-rate')?.value)||0;
+  const el=document.getElementById('map-tr-calc-result');
+  if(!el) return;
+  if(acres>0&&rate>0){
+    el.textContent=Math.round(acres*rate).toLocaleString('en-US')+' lbs';
+  } else {
+    el.textContent='—';
+  }
+}
+function mapTrackerCalcInsert(){
+  const rate=parseFloat(document.getElementById('map-tr-rate')?.value)||0;
+  const acres=parseFloat(document.getElementById('map-tr-acres')?.value)||0;
+  if(!rate||!acres) return;
+  const total=Math.round(acres*rate).toLocaleString('en-US');
+  const notesEl=document.getElementById('map-tr-notes');
+  if(!notesEl) return;
+  const line=`${rate} lbs/ac × ${acres} ac = ${total} lbs`;
+  notesEl.value=notesEl.value?(notesEl.value+'\n'+line):line;
+}
 function mapDeleteTrackerEntry(entryId){
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
   if(typeof trDeleteEntry==='function') trDeleteEntry(entryId,pid);
@@ -1655,3 +1680,5 @@ window.TR_CATEGORY_COLORS = TR_CATEGORY_COLORS;
 window.TR_CATEGORY_LABELS = TR_CATEGORY_LABELS;
 window.mapRenderTrackerLayers = mapRenderTrackerLayers;
 window.mapDeleteTrackerEntry = mapDeleteTrackerEntry;
+window.mapTrackerCalc = mapTrackerCalc;
+window.mapTrackerCalcInsert = mapTrackerCalcInsert;
