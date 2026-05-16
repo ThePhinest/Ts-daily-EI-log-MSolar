@@ -272,10 +272,6 @@ async function trLoadFromFirestore(projectId){
         ref.doc(e.id).set(_trToFs(e)).catch(err => console.warn('trSync push:', err.message));
       }
     }
-    if(typeof showCloudBanner === 'function'){
-      const live = merged.filter(e => !e.deletedAt).length;
-      showCloudBanner('🗂 Tracker: loaded ' + live + ' entr' + (live===1?'y':'ies') + ' from cloud (pid: ' + pid.slice(-6) + ')');
-    }
   } catch(e){
     console.warn('trLoadFromFirestore:', e.message);
     if(typeof showCloudBanner === 'function') showCloudBanner('⚠ Tracker cloud load failed: ' + e.message);
