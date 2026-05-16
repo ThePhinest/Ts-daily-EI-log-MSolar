@@ -99,7 +99,10 @@ function trSaveEntry(entry, projectId){
   if(typeof _udb === 'function' && typeof _fbReady !== 'undefined' && _fbReady && typeof _currentUser !== 'undefined' && _currentUser){
     try {
       _udb().collection('projects').doc(pid).collection('trackerEntries').doc(entry.id).set(entry)
-        .catch(e => console.warn('trSaveEntry Firestore:', e.message));
+        .catch(e => {
+          console.warn('trSaveEntry Firestore:', e.message);
+          if(typeof showCloudBanner === 'function') showCloudBanner('⚠ Entry saved locally — cloud sync failed: ' + e.message);
+        });
     } catch(e){ /* silent — localStorage write already succeeded */ }
   }
   return entry;
@@ -239,7 +242,7 @@ async function trLoadFromFirestore(projectId){
     const snap = await _udb().collection('projects').doc(pid).collection('trackerEntries').get();
     const remote = [];
     snap.forEach(doc => { remote.push(doc.data()); });
-    if(remote.length === 0) return;
+    if(remote.length === 0 && _trLoadRaw(pid).entries.length === 0) return;
     // Merge: prefer the higher updatedAt on conflict.
     const local = _trLoadRaw(pid).entries;
     const byId = new Map();
@@ -248,8 +251,24 @@ async function trLoadFromFirestore(projectId){
       const prev = byId.get(e.id);
       if(!prev || (e.updatedAt||0) >= (prev.updatedAt||0)) byId.set(e.id, e);
     });
-    _trSaveRaw(pid, { entries: Array.from(byId.values()) });
-  } catch(e){ console.warn('trLoadFromFirestore:', e.message); }
+    const merged = Array.from(byId.values());
+    _trSaveRaw(pid, { entries: merged });
+    // Push any local-only entries to Firestore (recovery for silent write failures).
+    const ref = _udb().collection('projects').doc(pid).collection('trackerEntries');
+    for(const e of merged){
+      const rem = remote.find(r => r.id === e.id);
+      if(!rem || (e.updatedAt||0) > (rem.updatedAt||0)){
+        ref.doc(e.id).set(e).catch(err => console.warn('trSync push:', err.message));
+      }
+    }
+    if(typeof showCloudBanner === 'function'){
+      const live = merged.filter(e => !e.deletedAt).length;
+      showCloudBanner('🗂 Tracker: loaded ' + live + ' entr' + (live===1?'y':'ies') + ' from cloud (pid: ' + pid.slice(-6) + ')');
+    }
+  } catch(e){
+    console.warn('trLoadFromFirestore:', e.message);
+    if(typeof showCloudBanner === 'function') showCloudBanner('⚠ Tracker cloud load failed: ' + e.message);
+  }
 }
 
 // Window exposure — mirrors the pattern in db.js / timesheet.js.

@@ -1970,7 +1970,7 @@ function mapRenderTrackerLayers(){
     const geojson={type:'FeatureCollection',features:(visible?byCategory[cat.id]:[]).map(e=>({
       type:'Feature',
       id:e.id,
-      properties:{id:e.id,categoryId:e.categoryId||e.category,categoryName:e.categoryName||e.category,date:e.date,acres:e.acres,notes:e.notes,location:e.location},
+      properties:{id:e.id,categoryId:e.categoryId||e.category,categoryName:e.categoryName||e.category,date:e.date,acres:e.acres,notes:e.notes,location:e.location,phase:e.phase||null,method:e.method||null,contractor:e.contractor||null},
       geometry:e.geometry
     }))};
 
@@ -2015,7 +2015,7 @@ function mapRenderTrackerLayers(){
       const visible=_tcLayerVisible[cid]!==false;
       const geojson={type:'FeatureCollection',features:(visible?group.entries:[]).map(e=>({
         type:'Feature',id:e.id,
-        properties:{id:e.id,categoryId:e.categoryId||e.category,categoryName:e.categoryName||e.category,date:e.date,acres:e.acres,notes:e.notes,location:e.location},
+        properties:{id:e.id,categoryId:e.categoryId||e.category,categoryName:e.categoryName||e.category,date:e.date,acres:e.acres,notes:e.notes,location:e.location,phase:e.phase||null,method:e.method||null,contractor:e.contractor||null},
         geometry:e.geometry
       }))};
       if(_mapInstance.getSource(src)){

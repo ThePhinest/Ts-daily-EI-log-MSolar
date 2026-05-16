@@ -261,16 +261,39 @@ function resetForm() {
   });
 }
 
+// Re-sync tracker when app comes back to foreground (covers truck/field multi-device scenario).
+let _trackerVisibilityTs = 0;
+document.addEventListener('visibilitychange', function(){
+  if(document.visibilityState !== 'visible') return;
+  const now = Date.now();
+  if(now - _trackerVisibilityTs < 30000) return; // throttle: once per 30s
+  _trackerVisibilityTs = now;
+  if(typeof _fbReady !== 'undefined' && _fbReady) _trackerStartupLoad();
+});
+
 // Load tracker categories + entries from Firestore on startup, then re-render map/panel/compliance.
 function _trackerStartupLoad(){
   if(typeof tcLoadForProject !== 'function') return;
   tcLoadForProject()
     .then(()=>{ if(typeof trLoadFromFirestore==='function') return trLoadFromFirestore(); })
     .then(()=>{
-      if(typeof mapRenderTrackerLayers==='function') mapRenderTrackerLayers();
-      if(typeof mapUpdateKmlLayerList==='function') mapUpdateKmlLayerList();
+      // Non-map UI updates immediately.
       if(typeof window._renderTrackerSheet==='function') window._renderTrackerSheet();
       if(typeof clRenderTrackerCard==='function') clRenderTrackerCard();
+      // Map render — defer to idle if style not fully loaded yet (tiles still downloading on iOS).
+      if(typeof mapRenderTrackerLayers==='function'){
+        const map = typeof window.getMapInstance==='function' ? window.getMapInstance() : null;
+        if(map && map.isStyleLoaded()){
+          mapRenderTrackerLayers();
+          if(typeof mapUpdateKmlLayerList==='function') mapUpdateKmlLayerList();
+        } else if(map){
+          map.once('idle', ()=>{
+            mapRenderTrackerLayers();
+            if(typeof mapUpdateKmlLayerList==='function') mapUpdateKmlLayerList();
+          });
+        }
+        // if no map yet: style.load handler in maps.js calls mapRenderTrackerLayers when ready.
+      }
     })
     .catch(e => console.warn('tcLoad/trLoad (startup):', e.message));
 }
