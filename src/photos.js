@@ -37,7 +37,7 @@ function phParseFilename(name){
     return { date, caption };
   }
   // No date pattern found — leave caption blank
-  return { date: new Date().toISOString().split('T')[0], caption: '' };
+  return { date: new Date().toLocaleDateString('en-CA'), caption: '' };
 }
 
 // ── Parse EXIF data from original file ──

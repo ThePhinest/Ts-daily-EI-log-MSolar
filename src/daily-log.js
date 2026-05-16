@@ -179,7 +179,7 @@ async function downloadLog(){
   const stateJSON=JSON.stringify(state);
   let src=document.documentElement.outerHTML;
   src=src.replace('const SAVED_DATA = null;',`const SAVED_DATA = ${stateJSON};`);
-  const raw=document.getElementById('reportDate').value||new Date().toISOString().split('T')[0];
+  const raw=document.getElementById('reportDate').value||new Date().toLocaleDateString('en-CA');
   const [y,m,d]=raw.split('-');
   const _projName=(document.getElementById('cfg-projectName')?.value?.trim()||'GroundLog');
   const _projSlug=_projName.replace(/[^a-zA-Z0-9]+/g,'_').replace(/^_+|_+$/g,'')||'GroundLog';
@@ -716,7 +716,7 @@ async function dlConfirmLoad(){
   if(!record){ _ldPending=null; return; }
   // Track which date we loaded — edited flag set only if user actually changes something
   // Never flag today as edited just because it was auto-archived when loading another day
-  const _today = new Date().toISOString().split('T')[0];
+  const _today = new Date().toLocaleDateString('en-CA');
   window._editingArchivedDate = (record._archivedAt && _ldPending !== _today) ? _ldPending : null;
   // Restore into form
   document.getElementById('crewContainer').innerHTML='';

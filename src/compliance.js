@@ -141,7 +141,7 @@ function clRender(){
 function clShowForm(prefill){
   _clEditId = null;
   // Set defaults
-  document.getElementById('cl-f-date').value = new Date().toISOString().split('T')[0];
+  document.getElementById('cl-f-date').value = new Date().toLocaleDateString('en-CA');
   document.getElementById('cl-f-level').value = '1';
   document.getElementById('cl-f-location').value = '';
   document.getElementById('cl-f-corrective').value = '';
@@ -190,7 +190,7 @@ function clToggleResolvedDate(){
   const s = document.getElementById('cl-f-status').value;
   document.getElementById('cl-f-resolved-wrap').style.display = s==='Resolved'?'block':'none';
   if(s==='Resolved' && !document.getElementById('cl-f-resolved').value){
-    document.getElementById('cl-f-resolved').value = new Date().toISOString().split('T')[0];
+    document.getElementById('cl-f-resolved').value = new Date().toLocaleDateString('en-CA');
   }
 }
 
@@ -313,7 +313,7 @@ async function _glMigrateCompliancePhaseD() {
 function clRenderTrackerCard(search){
   const el=document.getElementById('cl-tracker-card');
   if(!el) return;
-  const today=new Date().toISOString().split('T')[0];
+  const today=new Date().toLocaleDateString('en-CA');
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
   let entries=(typeof trGetEntriesForDate==='function')?trGetEntriesForDate(today,pid):[];
   if(search){
@@ -689,7 +689,7 @@ function clShowTrackerLog(){
     const url=URL.createObjectURL(blob);
     const a=document.createElement('a');
     a.href=url;
-    a.download=`tracker-log-${pid}-${new Date().toISOString().split('T')[0]}.csv`;
+    a.download=`tracker-log-${pid}-${new Date().toLocaleDateString('en-CA')}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };

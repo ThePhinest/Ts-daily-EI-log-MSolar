@@ -333,7 +333,7 @@ function mapRenderPhotoPins(){
 
   if(_mapPinFilter === 'none') return;
 
-  const today = new Date().toISOString().split('T')[0];
+  const today = new Date().toLocaleDateString('en-CA');
   const fromDate = document.getElementById('map-pin-from')?.value || '';
   const toDate   = document.getElementById('map-pin-to')?.value || '';
 
@@ -1258,7 +1258,7 @@ function mapExportKml(){
   const incMarkers = document.getElementById('exp-field-markers').checked;
   const incKml = document.getElementById('exp-kml-layers').checked;
   const projectName = (JSON.parse(localStorage.getItem('msf_projectconfig')||'{}').projectName) || 'Project';
-  const date = new Date().toISOString().split('T')[0];
+  const date = new Date().toLocaleDateString('en-CA');
   let placemarks = '';
   if(incPhotos){
     (window._phPhotos||[]).filter(p=>p.lat&&p.lng).forEach(p=>{
@@ -1750,7 +1750,7 @@ function _geoCentroid(feat){
 
 // ── Tracker entry modal ───────────────────
 function mapShowTrackerModal(feat,category){
-  const today=new Date().toISOString().split('T')[0];
+  const today=new Date().toLocaleDateString('en-CA');
   document.getElementById('map-tr-date').value=today;
   const acres=_geoAreaAcres(feat);
   document.getElementById('map-tr-acres').value=acres||'';
@@ -1807,7 +1807,7 @@ function mapSaveTrackerEntry(){
   const feat=_pendingDrawFeature;
   if(!feat) return;
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
-  const today=new Date().toISOString().split('T')[0];
+  const today=new Date().toLocaleDateString('en-CA');
   const acres=parseFloat(document.getElementById('map-tr-acres').value)||null;
   const centroid=_geoCentroid(feat);
   const catName=(typeof tcGetName==='function')?tcGetName(_drawCategory,pid):(_drawCategory||'Unknown');
