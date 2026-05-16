@@ -38,6 +38,13 @@
 //     createdAt, updatedAt, createdBy, deletedAt, deletedFromMap
 //   }
 
+// Firestore does not support nested arrays (GeoJSON coordinates are arrays-of-arrays).
+// Serialize geometry to a JSON string before any Firestore write; deserialize on read.
+function _trToFs(entry){
+  if(!entry || !entry.geometry) return entry;
+  return {...entry, geometry: JSON.stringify(entry.geometry)};
+}
+
 function _trStorageKey(projectId){
   const pid = projectId || ((typeof _activeProjectId === 'function') ? _activeProjectId() : 'default');
   return 'msf_proj_' + pid + '_tracker_entries';
@@ -98,7 +105,7 @@ function trSaveEntry(entry, projectId){
   // Firestore mirror — fire-and-forget per polished-narrative cache pattern.
   if(typeof _udb === 'function' && typeof _fbReady !== 'undefined' && _fbReady && typeof _currentUser !== 'undefined' && _currentUser){
     try {
-      _udb().collection('projects').doc(pid).collection('trackerEntries').doc(entry.id).set(entry)
+      _udb().collection('projects').doc(pid).collection('trackerEntries').doc(entry.id).set(_trToFs(entry))
         .catch(e => {
           console.warn('trSaveEntry Firestore:', e.message);
           if(typeof showCloudBanner === 'function') showCloudBanner('⚠ Entry saved locally — cloud sync failed: ' + e.message);
@@ -123,7 +130,7 @@ function trMarkDeletedFromMap(entryId, projectId){
   if(typeof _udb === 'function' && typeof _fbReady !== 'undefined' && _fbReady && typeof _currentUser !== 'undefined' && _currentUser){
     try {
       _udb().collection('projects').doc(pid).collection('trackerEntries').doc(entryId)
-        .set(data.entries[idx])
+        .set(_trToFs(data.entries[idx]))
         .catch(e => console.warn('trMarkDeletedFromMap Firestore:', e.message));
     } catch(e){ /* silent */ }
   }
@@ -145,7 +152,7 @@ function trArchiveFromMap(entryId, projectId){
   if(typeof _udb === 'function' && typeof _fbReady !== 'undefined' && _fbReady && typeof _currentUser !== 'undefined' && _currentUser){
     try {
       _udb().collection('projects').doc(pid).collection('trackerEntries').doc(entryId)
-        .set(data.entries[idx])
+        .set(_trToFs(data.entries[idx]))
         .catch(e => console.warn('trArchiveFromMap Firestore:', e.message));
     } catch(e){ /* silent */ }
   }
@@ -165,7 +172,7 @@ function trSetMapVisibility(entryId, visible, projectId){
   if(typeof _udb === 'function' && typeof _fbReady !== 'undefined' && _fbReady && typeof _currentUser !== 'undefined' && _currentUser){
     try {
       _udb().collection('projects').doc(pid).collection('trackerEntries').doc(entryId)
-        .set(data.entries[idx])
+        .set(_trToFs(data.entries[idx]))
         .catch(e => console.warn('trSetMapVisibility Firestore:', e.message));
     } catch(e){ /* silent */ }
   }
@@ -185,7 +192,7 @@ function trDeleteEntry(entryId, projectId){
   if(typeof _udb === 'function' && typeof _fbReady !== 'undefined' && _fbReady && typeof _currentUser !== 'undefined' && _currentUser){
     try {
       _udb().collection('projects').doc(pid).collection('trackerEntries').doc(entryId)
-        .set(data.entries[idx])
+        .set(_trToFs(data.entries[idx]))
         .catch(e => console.warn('trDeleteEntry Firestore:', e.message));
     } catch(e){ /* silent */ }
   }
@@ -206,7 +213,7 @@ function trAddPhotoLink(entryId, photoId, projectId){
   if(typeof _udb === 'function' && typeof _fbReady !== 'undefined' && _fbReady && typeof _currentUser !== 'undefined' && _currentUser){
     try {
       _udb().collection('projects').doc(pid).collection('trackerEntries').doc(entryId)
-        .set(data.entries[idx])
+        .set(_trToFs(data.entries[idx]))
         .catch(e => console.warn('trAddPhotoLink Firestore:', e.message));
     } catch(e){ /* silent */ }
   }
@@ -225,7 +232,7 @@ function trRemovePhotoLink(entryId, photoId, projectId){
   if(typeof _udb === 'function' && typeof _fbReady !== 'undefined' && _fbReady && typeof _currentUser !== 'undefined' && _currentUser){
     try {
       _udb().collection('projects').doc(pid).collection('trackerEntries').doc(entryId)
-        .set(data.entries[idx])
+        .set(_trToFs(data.entries[idx]))
         .catch(e => console.warn('trRemovePhotoLink Firestore:', e.message));
     } catch(e){ /* silent */ }
   }
@@ -241,7 +248,11 @@ async function trLoadFromFirestore(projectId){
   try {
     const snap = await _udb().collection('projects').doc(pid).collection('trackerEntries').get();
     const remote = [];
-    snap.forEach(doc => { remote.push(doc.data()); });
+    snap.forEach(doc => {
+      const d = doc.data();
+      if(typeof d.geometry === 'string'){ try{ d.geometry = JSON.parse(d.geometry); }catch{} }
+      remote.push(d);
+    });
     if(remote.length === 0 && _trLoadRaw(pid).entries.length === 0) return;
     // Merge: prefer the higher updatedAt on conflict.
     const local = _trLoadRaw(pid).entries;
@@ -258,7 +269,7 @@ async function trLoadFromFirestore(projectId){
     for(const e of merged){
       const rem = remote.find(r => r.id === e.id);
       if(!rem || (e.updatedAt||0) > (rem.updatedAt||0)){
-        ref.doc(e.id).set(e).catch(err => console.warn('trSync push:', err.message));
+        ref.doc(e.id).set(_trToFs(e)).catch(err => console.warn('trSync push:', err.message));
       }
     }
     if(typeof showCloudBanner === 'function'){
