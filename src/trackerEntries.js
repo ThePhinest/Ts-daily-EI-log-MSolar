@@ -199,6 +199,20 @@ function trDeleteEntry(entryId, projectId){
   return true;
 }
 
+// Cumulative totals — total acres + entry count per category across all non-deleted entries.
+// Returns array sorted descending by totalAcres.
+function trGetCumulativeTotals(projectId){
+  const entries = trGetEntriesForProject(projectId);
+  const map = {};
+  entries.forEach(e => {
+    const key = e.categoryId || '__none';
+    if(!map[key]) map[key] = { categoryId: e.categoryId, categoryName: e.categoryName || 'Unknown', totalAcres: 0, entryCount: 0 };
+    map[key].totalAcres += parseFloat(e.acres) || 0;
+    map[key].entryCount++;
+  });
+  return Object.values(map).sort((a, b) => b.totalAcres - a.totalAcres);
+}
+
 // Photo linking — adds/removes a photoId from the entry's photoIds array.
 function trAddPhotoLink(entryId, photoId, projectId){
   const pid = projectId || ((typeof _activeProjectId === 'function') ? _activeProjectId() : 'default');
@@ -287,6 +301,7 @@ if(typeof window !== 'undefined'){
   window.trSetMapVisibility = trSetMapVisibility;
   window.trGetEntriesForDate = trGetEntriesForDate;
   window.trGetEntriesForCategory = trGetEntriesForCategory;
+  window.trGetCumulativeTotals = trGetCumulativeTotals;
   window.trGetEntry = trGetEntry;
   window.trAddPhotoLink = trAddPhotoLink;
   window.trRemovePhotoLink = trRemovePhotoLink;

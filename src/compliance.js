@@ -325,8 +325,11 @@ function clRenderTrackerCard(search){
       String(e.acres||'').includes(search)
     );
   }
-  if(!entries.length){ el.style.display='none'; return; }
-  const rows=entries.map(e=>{
+  const totals=(typeof trGetCumulativeTotals==='function')?trGetCumulativeTotals(pid):[];
+  const grandTotal=totals.reduce((s,t)=>s+t.totalAcres,0);
+  if(!entries.length && !totals.length){ el.style.display='none'; return; }
+
+  const todayRows=entries.map(e=>{
     const catColor=(typeof tcGetColor==='function')?tcGetColor(e.categoryId,pid):'#888';
     const catName=e.categoryName||(typeof tcGetName==='function'?tcGetName(e.categoryId,pid):'Unknown');
     const photoCount=Array.isArray(e.photoIds)?e.photoIds.length:0;
@@ -338,9 +341,29 @@ function clRenderTrackerCard(search){
       <span style="font-family:var(--mono);font-size:10px;color:var(--muted)">›</span>
     </div>`;
   }).join('');
+
+  const todaySection=entries.length?`<div style="padding:0 4px 4px">${todayRows}</div>`:'';
+
+  const totalsSection=totals.length?`<div style="border-top:${entries.length?'1px solid var(--border)':'none'};padding:8px 4px 2px">
+    <div style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Project Totals</div>
+    ${totals.map(t=>{
+      const catColor=(typeof tcGetColor==='function')?tcGetColor(t.categoryId,pid):'#888';
+      return `<div style="display:flex;align-items:center;gap:8px;padding:4px 0">
+        <div style="width:8px;height:8px;border-radius:50%;background:${catColor};flex-shrink:0"></div>
+        <span style="font-family:var(--mono);font-size:11px;color:var(--text);flex:1">${t.categoryName}</span>
+        <span style="font-family:var(--mono);font-size:10px;color:var(--muted)">${t.entryCount} ${t.entryCount===1?'entry':'entries'}</span>
+        <span style="font-family:var(--mono);font-size:11px;color:var(--amber);font-weight:600">${t.totalAcres.toFixed(2)} ac</span>
+      </div>`;
+    }).join('')}
+    <div style="display:flex;justify-content:flex-end;align-items:center;gap:4px;padding-top:5px;border-top:1px solid var(--border);margin-top:4px">
+      <span style="font-family:var(--mono);font-size:10px;color:var(--muted)">Project total</span>
+      <span style="font-family:var(--mono);font-size:12px;color:var(--amber);font-weight:700">${grandTotal.toFixed(2)} ac</span>
+    </div>
+  </div>`:'';
+
   el.innerHTML=`<div class="card">
-    <div class="card-head"><span class="card-num">🗺️</span><span class="card-title">Today's Tracker Activity</span><span class="card-badge">${entries.length}</span><button onclick="clShowTrackerLog()" style="margin-left:auto;background:none;border:none;color:var(--amber);font-family:var(--mono);font-size:11px;cursor:pointer;padding:2px 4px;letter-spacing:.04em">View All →</button></div>
-    <div class="card-body" style="padding-top:4px">${rows}</div>
+    <div class="card-head"><span class="card-num">🗺️</span><span class="card-title">Today's Tracker Activity</span>${entries.length?`<span class="card-badge">${entries.length}</span>`:''}<button onclick="clShowTrackerLog()" style="margin-left:auto;background:none;border:none;color:var(--amber);font-family:var(--mono);font-size:11px;cursor:pointer;padding:2px 4px;letter-spacing:.04em">View All →</button></div>
+    <div class="card-body" style="padding-top:4px">${todaySection}${totalsSection}</div>
   </div>`;
   el.style.display='block';
 }
