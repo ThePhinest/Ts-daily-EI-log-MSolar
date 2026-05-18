@@ -333,31 +333,31 @@ function clRenderTrackerCard(search){
     const catColor=(typeof tcGetColor==='function')?tcGetColor(e.categoryId,pid):'#888';
     const catName=e.categoryName||(typeof tcGetName==='function'?tcGetName(e.categoryId,pid):'Unknown');
     const photoCount=Array.isArray(e.photoIds)?e.photoIds.length:0;
-    return `<div onclick="clShowTrackerDetail('${e.id}')" style="display:flex;align-items:center;gap:8px;padding:7px 4px;border-bottom:1px solid var(--border);cursor:pointer;border-radius:4px">
-      <div style="width:10px;height:10px;border-radius:50%;background:${catColor};flex-shrink:0"></div>
-      <span style="font-family:var(--mono);font-size:11px;color:var(--text);flex:1">${catName}</span>
-      ${e.acres?`<span style="font-family:var(--mono);font-size:11px;color:var(--muted)">${e.acres} ac</span>`:''}
-      ${photoCount?`<span style="font-family:var(--mono);font-size:10px;color:var(--muted)">📷${photoCount}</span>`:''}
-      <span style="font-family:var(--mono);font-size:10px;color:var(--muted)">›</span>
+    return `<div onclick="clShowTrackerDetail('${e.id}')" style="display:flex;align-items:center;gap:10px;padding:9px 6px;border-bottom:1px solid var(--border);cursor:pointer;border-radius:4px">
+      <div style="width:12px;height:12px;border-radius:50%;background:${catColor};flex-shrink:0"></div>
+      <span style="font-family:var(--mono);font-size:12px;color:var(--text);flex:1">${catName}</span>
+      ${e.acres?`<span style="font-family:var(--mono);font-size:12px;color:var(--muted)">${e.acres} ac</span>`:''}
+      ${photoCount?`<span style="font-family:var(--mono);font-size:11px;color:var(--muted)">📷${photoCount}</span>`:''}
+      <span style="font-family:var(--mono);font-size:11px;color:var(--muted)">›</span>
     </div>`;
   }).join('');
 
   const todaySection=entries.length?`<div style="padding:0 4px 4px">${todayRows}</div>`:'';
 
-  const totalsSection=totals.length?`<div style="border-top:${entries.length?'1px solid var(--border)':'none'};padding:8px 4px 2px">
-    <div style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Project Totals</div>
+  const totalsSection=totals.length?`<div style="border-top:${entries.length?'2px solid var(--border2)':'none'};padding:10px 4px 4px">
+    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Project Totals</div>
     ${totals.map(t=>{
       const catColor=(typeof tcGetColor==='function')?tcGetColor(t.categoryId,pid):'#888';
-      return `<div style="display:flex;align-items:center;gap:8px;padding:4px 0">
-        <div style="width:8px;height:8px;border-radius:50%;background:${catColor};flex-shrink:0"></div>
-        <span style="font-family:var(--mono);font-size:11px;color:var(--text);flex:1">${t.categoryName}</span>
-        <span style="font-family:var(--mono);font-size:10px;color:var(--muted)">${t.entryCount} ${t.entryCount===1?'entry':'entries'}</span>
-        <span style="font-family:var(--mono);font-size:11px;color:var(--amber);font-weight:600">${t.totalAcres.toFixed(2)} ac</span>
+      return `<div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--border)">
+        <div style="width:10px;height:10px;border-radius:50%;background:${catColor};flex-shrink:0"></div>
+        <span style="font-family:var(--mono);font-size:12px;color:var(--text);flex:1">${t.categoryName}</span>
+        <span style="font-family:var(--mono);font-size:11px;color:var(--muted)">${t.entryCount} ${t.entryCount===1?'entry':'entries'}</span>
+        <span style="font-family:var(--mono);font-size:12px;color:var(--amber);font-weight:600">${t.totalAcres.toFixed(2)} ac</span>
       </div>`;
     }).join('')}
-    <div style="display:flex;justify-content:flex-end;align-items:center;gap:4px;padding-top:5px;border-top:1px solid var(--border);margin-top:4px">
-      <span style="font-family:var(--mono);font-size:10px;color:var(--muted)">Project total</span>
-      <span style="font-family:var(--mono);font-size:12px;color:var(--amber);font-weight:700">${grandTotal.toFixed(2)} ac</span>
+    <div style="display:flex;justify-content:flex-end;align-items:center;gap:6px;padding-top:8px;margin-top:2px">
+      <span style="font-family:var(--mono);font-size:11px;color:var(--muted)">Project total</span>
+      <span style="font-family:var(--mono);font-size:13px;color:var(--amber);font-weight:700">${grandTotal.toFixed(2)} ac</span>
     </div>
   </div>`:'';
 
