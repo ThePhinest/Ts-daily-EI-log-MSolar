@@ -1376,10 +1376,14 @@ function mapShowCategorySheet(){
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
   const cats=(typeof tcGetCategories==='function')?tcGetCategories(pid):[];
   const list=document.getElementById('map-category-list');
+  const noCatPill=`<div class="map-cat-pill" onclick="mapActivateDrawMode(null)" style="border-color:var(--border2);margin-bottom:8px">
+    <div class="map-cat-dot" style="background:#555"></div>
+    <span style="color:var(--muted)">No Category</span>
+  </div>`;
   if(!cats.length){
-    list.innerHTML='<div style="font-family:var(--mono);font-size:12px;color:var(--muted);text-align:center;padding:16px 0">No categories yet.<br>Use Tracker to add your first.</div>';
+    list.innerHTML=noCatPill+'<div style="font-family:var(--mono);font-size:12px;color:var(--muted);text-align:center;padding:16px 0">No categories yet.<br>Use Tracker to add your first.</div>';
   } else {
-    list.innerHTML=cats.map(c=>`
+    list.innerHTML=noCatPill+cats.map(c=>`
       <div class="map-cat-pill" onclick="mapActivateDrawMode('${c.id}')">
         <div class="map-cat-dot" style="background:${c.color||'#888'}"></div>
         <span>${c.name}</span>
@@ -1656,10 +1660,11 @@ function mapActivateDrawMode(categoryId){
   _drawInstance.changeMode('draw_polygon');
   mapDrawSetShape('polygon');
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
-  const catName=(typeof tcGetName==='function')?tcGetName(categoryId,pid):(categoryId||'Shape');
-  const catColor=(typeof tcGetColor==='function')?tcGetColor(categoryId,pid):'var(--amber)';
+  const catName=categoryId?((typeof tcGetName==='function')?tcGetName(categoryId,pid):categoryId):'Uncategorized';
+  const catColor=categoryId?((typeof tcGetColor==='function')?tcGetColor(categoryId,pid):'#888'):'#888';
   const bar=document.getElementById('map-draw-bar');
   document.getElementById('map-draw-bar-label').textContent=`Drawing: ${catName}`;
+  document.getElementById('map-draw-shape-btns').style.display='flex';
   bar.classList.add('show');
   bar.style.borderColor=catColor;
   document.getElementById('map-fab-draw-btn').classList.add('active');
@@ -1750,7 +1755,8 @@ function _geoCentroid(feat){
 
 // ── Tracker entry modal ───────────────────
 function mapShowTrackerModal(feat,category){
-  const today=new Date().toLocaleDateString('en-CA');
+  const activeLogDate=document.getElementById('reportDate')?.value;
+  const today=activeLogDate||new Date().toLocaleDateString('en-CA');
   document.getElementById('map-tr-date').value=today;
   const acres=_geoAreaAcres(feat);
   document.getElementById('map-tr-acres').value=acres||'';
@@ -1807,7 +1813,7 @@ function mapSaveTrackerEntry(){
   const feat=_pendingDrawFeature;
   if(!feat) return;
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
-  const today=new Date().toLocaleDateString('en-CA');
+  const today=document.getElementById('reportDate')?.value||new Date().toLocaleDateString('en-CA');
   const acres=parseFloat(document.getElementById('map-tr-acres').value)||null;
   const centroid=_geoCentroid(feat);
   const catName=(typeof tcGetName==='function')?tcGetName(_drawCategory,pid):(_drawCategory||'Unknown');
@@ -1851,8 +1857,10 @@ function mapActivateMeasure(){
     _mapInstance.on('draw.delete',_onDrawDelete);
     _mapInstance.on('draw.modechange',_onDrawModeChange);
   }
+  _drawInstance.changeMode('draw_polygon');
   const bar=document.getElementById('map-draw-bar');
-  document.getElementById('map-draw-bar-label').textContent='Click points — double-click to close';
+  document.getElementById('map-draw-bar-label').textContent='Tap points · double-tap to finish';
+  document.getElementById('map-draw-shape-btns').style.display='none';
   bar.classList.add('show');
   bar.style.borderColor='#4A90E2';
   document.getElementById('map-fab-measure-btn').classList.add('active');
