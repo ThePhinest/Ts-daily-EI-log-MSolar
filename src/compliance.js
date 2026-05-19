@@ -346,9 +346,6 @@ function clRenderTrackerCard(search){
 
   const todaySection=entries.length?`<div style="padding:0 4px 4px">${todayRows}</div>`:'';
 
-  // Grand total only makes sense for area-in-acres entries; skip if mixed units
-  const areaAcTotals=totals.filter(t=>(!t.measurementType||t.measurementType==='area')&&(!t.displayUnit||t.displayUnit==='ac'));
-  const grandTotal=areaAcTotals.reduce((s,t)=>s+(t.totalValue??t.totalAcres??0),0);
   const totalsSection=totals.length?`<div style="border-top:${entries.length?'2px solid var(--border2)':'none'};padding:10px 4px 4px">
     <div style="font-family:var(--mono);font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Project Totals</div>
     ${totals.map(t=>{
@@ -363,10 +360,6 @@ function clRenderTrackerCard(search){
         <span style="font-family:var(--mono);font-size:12px;color:var(--amber);font-weight:600">${totalFmt}</span>
       </div>`;
     }).join('')}
-    ${grandTotal>0?`<div style="display:flex;justify-content:flex-end;align-items:center;gap:6px;padding-top:8px;margin-top:2px">
-      <span style="font-family:var(--mono);font-size:11px;color:var(--muted)">Total area</span>
-      <span style="font-family:var(--mono);font-size:13px;color:var(--amber);font-weight:700">${grandTotal.toFixed(2)} ac</span>
-    </div>`:''}
   </div>`:'';
 
   el.innerHTML=`<div class="card">
