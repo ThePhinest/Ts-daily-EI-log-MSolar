@@ -285,6 +285,7 @@ let _mapPhotoMarkers = [];
 let _mapFieldMarkers = [];
 let _mapFieldMarkersData = [];
 let _fieldMarkersVisible = true;
+let _hiddenMarkerIds = new Set();
 let _mapKmlLayers = [];
 let _layerPanelOpen = false;
 let _mapPendingMarkerLngLat = null;
@@ -462,6 +463,7 @@ async function mapRenderFieldMarkers(){
       const el = document.createElement('div');
       el.textContent = m.emoji;
       el.style.cssText = 'font-size:26px;cursor:pointer;filter:drop-shadow(0 2px 4px rgba(0,0,0,.6));line-height:1;width:30px;height:30px;text-align:center;transform-origin:bottom center;';
+      el.dataset.markerId = doc.id;
       const popup = new mapboxgl.Popup({ offset:20, maxWidth:'200px', closeButton:true })
         .setHTML(`<div style="font-family:monospace;font-size:11px;color:#111">
           <div style="font-size:22px;margin-bottom:4px">${m.emoji}</div>
@@ -469,23 +471,34 @@ async function mapRenderFieldMarkers(){
           <div style="color:#555;margin-bottom:6px">${m.scope==='global'?'🌐 Global':'📌 This Project'}</div>
           <div style="display:flex;gap:6px">
             <button onclick="mapDeleteFieldMarker('${doc.id}')" style="background:#c00;color:#fff;border:none;padding:3px 8px;border-radius:4px;font-size:10px;cursor:pointer;">Delete</button>
-            <button onclick="mapToggleFieldMarkers()" style="background:#333;color:#fff;border:none;padding:3px 8px;border-radius:4px;font-size:10px;cursor:pointer;">Hide All</button>
+            <button onclick="mapHideFieldMarker('${doc.id}')" style="background:#333;color:#fff;border:none;padding:3px 8px;border-radius:4px;font-size:10px;cursor:pointer;">Hide</button>
           </div>
         </div>`);
       const marker = new mapboxgl.Marker({ element:el, anchor:'bottom' })
         .setLngLat([m.lng, m.lat]).setPopup(popup).addTo(_mapInstance);
-      if(!_fieldMarkersVisible) marker.getElement().style.display='none';
+      if(!_fieldMarkersVisible || _hiddenMarkerIds.has(doc.id)) marker.getElement().style.display='none';
       _mapFieldMarkers.push(marker);
     });
   } catch(e){ console.error('Render field markers failed:', e); }
   mapUpdateFieldMarkerList();
 }
 
+function mapHideFieldMarker(id){
+  _hiddenMarkerIds.add(id);
+  _mapFieldMarkers.forEach(m=>{
+    if(m.getElement().dataset.markerId===id) m.getElement().style.display='none';
+  });
+}
+
 function mapToggleFieldMarkers(){
   _fieldMarkersVisible=!_fieldMarkersVisible;
-  _mapFieldMarkers.forEach(m=>{
-    m.getElement().style.display=_fieldMarkersVisible?'':'none';
-  });
+  if(_fieldMarkersVisible){
+    // Show All — clear individual hides too
+    _hiddenMarkerIds.clear();
+    _mapFieldMarkers.forEach(m=>{ m.getElement().style.display=''; });
+  } else {
+    _mapFieldMarkers.forEach(m=>{ m.getElement().style.display='none'; });
+  }
   const btn=document.getElementById('map-vf-fm-toggle');
   if(btn) btn.textContent=_fieldMarkersVisible?'Hide':'Show';
 }
@@ -1487,7 +1500,9 @@ function _renderTrackerSheet(){
         <button onclick="mapTrackerCancelDelete()" class="map-tc-cancel-btn">No</button>
       </div>`;
     }
-    const hasDetails=c.productName||c.targetRate||(c.amendmentType&&c.amendmentType!=='None');
+    const hasDetails=c.measurementType==='linear'
+      ?(c.specification||c.supplier)
+      :(c.productName||c.targetRate||(c.amendmentType&&c.amendmentType!=='None'));
     const typeBadge=`<span style="font-family:var(--mono);font-size:9px;color:var(--muted);padding:2px 5px;border:1px solid var(--border);border-radius:3px;white-space:nowrap">${c.measurementType==='linear'?'LN':'AC'}</span>`;
     return `<div class="map-tc-row">
       <div class="map-tc-dot" style="background:${c.color||'#888'}"></div>
@@ -1563,13 +1578,33 @@ async function mapTrackerConfirmDelete(catId){
 }
 
 // ── Category details modal ────────────────
+const _INPUT_STYLE='width:100%;box-sizing:border-box;background:var(--s1);border:1px solid var(--border);border-radius:6px;padding:7px 9px;color:var(--text);font-family:var(--mono);font-size:12px';
+const _LABEL_STYLE='font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:4px';
+function _cdField(label,inner){return `<div><label style="${_LABEL_STYLE}">${label}</label>${inner}</div>`;}
+
 function mapShowCategoryDetails(catId){
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
   const cat=(typeof tcGetCategory==='function')?tcGetCategory(catId,pid):null;
   if(!cat) return;
   if(document.getElementById('_cat-details-ov')) return;
-  const typeOptions=['None','Seeding','Lime','Fertilizer','Mulch','Other'];
-  const unitOptions=['lbs/ac','tons/ac','gal/ac','bags/ac'];
+  const isLinear=cat.measurementType==='linear';
+  let fields;
+  if(isLinear){
+    fields=`
+      ${_cdField('Specification',`<input type="text" id="_cd-spec" value="${cat.specification||''}" placeholder="Standard, heavy duty, J-hook…" style="${_INPUT_STYLE}">`)}
+      ${_cdField('Supplier / Product',`<input type="text" id="_cd-supplier" value="${cat.supplier||''}" placeholder="Manufacturer or vendor name" style="${_INPUT_STYLE}">`)}
+      ${_cdField('Notes',`<input type="text" id="_cd-notes-det" value="${cat.detailNotes||''}" placeholder="Any additional details" style="${_INPUT_STYLE}">`)}`;
+  } else {
+    const typeOptions=['None','Seeding','Lime','Fertilizer','Mulch','Other'];
+    const unitOptions=['lbs/ac','tons/ac','gal/ac','bags/ac'];
+    fields=`
+      ${_cdField('Amendment Type',`<select id="_cd-type" style="${_INPUT_STYLE}">${typeOptions.map(t=>`<option value="${t}"${(cat.amendmentType||'None')===t?' selected':''}>${t}</option>`).join('')}</select>`)}
+      ${_cdField('Product Name',`<input type="text" id="_cd-product" value="${cat.productName||''}" placeholder="Seed mix, product, formula…" style="${_INPUT_STYLE}">`)}
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        ${_cdField('Target Rate',`<input type="number" id="_cd-rate" value="${cat.targetRate||''}" step="0.1" min="0" placeholder="e.g. 30" style="${_INPUT_STYLE}">`)}
+        ${_cdField('Unit',`<select id="_cd-unit" style="${_INPUT_STYLE}">${unitOptions.map(u=>`<option value="${u}"${(cat.targetRateUnit||'lbs/ac')===u?' selected':''}>${u}</option>`).join('')}</select>`)}
+      </div>`;
+  }
   const ov=document.createElement('div');
   ov.className='modal-overlay';
   ov.id='_cat-details-ov';
@@ -1579,30 +1614,7 @@ function mapShowCategoryDetails(catId){
       <div style="width:12px;height:12px;border-radius:50%;background:${cat.color||'#888'};flex-shrink:0"></div>
       <div class="modal-title" style="margin:0">${cat.name}</div>
     </div>
-    <div style="display:flex;flex-direction:column;gap:12px;margin-bottom:16px">
-      <div>
-        <label style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:4px">Amendment Type</label>
-        <select id="_cd-type" style="width:100%;box-sizing:border-box;background:var(--s1);border:1px solid var(--border);border-radius:6px;padding:7px 9px;color:var(--text);font-family:var(--mono);font-size:12px">
-          ${typeOptions.map(t=>`<option value="${t}"${(cat.amendmentType||'None')===t?' selected':''}>${t}</option>`).join('')}
-        </select>
-      </div>
-      <div>
-        <label style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:4px">Product Name</label>
-        <input type="text" id="_cd-product" value="${cat.productName||''}" placeholder="Seed mix, product, formula…" style="width:100%;box-sizing:border-box;background:var(--s1);border:1px solid var(--border);border-radius:6px;padding:7px 9px;color:var(--text);font-family:var(--mono);font-size:12px">
-      </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-        <div>
-          <label style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:4px">Target Rate</label>
-          <input type="number" id="_cd-rate" value="${cat.targetRate||''}" step="0.1" min="0" placeholder="e.g. 30" style="width:100%;box-sizing:border-box;background:var(--s1);border:1px solid var(--border);border-radius:6px;padding:7px 9px;color:var(--text);font-family:var(--mono);font-size:12px">
-        </div>
-        <div>
-          <label style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:4px">Unit</label>
-          <select id="_cd-unit" style="width:100%;box-sizing:border-box;background:var(--s1);border:1px solid var(--border);border-radius:6px;padding:7px 9px;color:var(--text);font-family:var(--mono);font-size:12px">
-            ${unitOptions.map(u=>`<option value="${u}"${(cat.targetRateUnit||'lbs/ac')===u?' selected':''}>${u}</option>`).join('')}
-          </select>
-        </div>
-      </div>
-    </div>
+    <div style="display:flex;flex-direction:column;gap:12px;margin-bottom:16px">${fields}</div>
     <div class="modal-btns">
       <button class="modal-cancel" id="_cd-cancel">Cancel</button>
       <button class="modal-confirm" id="_cd-save">Save</button>
@@ -1610,21 +1622,29 @@ function mapShowCategoryDetails(catId){
   </div>`;
   document.body.appendChild(ov);
   document.getElementById('_cd-cancel').onclick=()=>ov.remove();
-  document.getElementById('_cd-save').onclick=()=>mapSaveCategoryDetails(catId,ov);
+  document.getElementById('_cd-save').onclick=()=>mapSaveCategoryDetails(catId,ov,isLinear);
 }
 
-async function mapSaveCategoryDetails(catId, ov){
+async function mapSaveCategoryDetails(catId, ov, isLinear){
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
   const existing=(typeof tcGetCategory==='function')?tcGetCategory(catId,pid):null;
   if(!existing) return;
-  const updated={
-    ...existing,
-    amendmentType: document.getElementById('_cd-type')?.value||'None',
-    productName:   document.getElementById('_cd-product')?.value.trim()||null,
-    targetRate:    parseFloat(document.getElementById('_cd-rate')?.value)||null,
-    targetRateUnit:document.getElementById('_cd-unit')?.value||'lbs/ac'
-  };
-  if(typeof tcSaveCategory==='function') await tcSaveCategory(updated,pid);
+  let patch;
+  if(isLinear){
+    patch={
+      specification: document.getElementById('_cd-spec')?.value.trim()||null,
+      supplier:      document.getElementById('_cd-supplier')?.value.trim()||null,
+      detailNotes:   document.getElementById('_cd-notes-det')?.value.trim()||null
+    };
+  } else {
+    patch={
+      amendmentType: document.getElementById('_cd-type')?.value||'None',
+      productName:   document.getElementById('_cd-product')?.value.trim()||null,
+      targetRate:    parseFloat(document.getElementById('_cd-rate')?.value)||null,
+      targetRateUnit:document.getElementById('_cd-unit')?.value||'lbs/ac'
+    };
+  }
+  if(typeof tcSaveCategory==='function') await tcSaveCategory({...existing,...patch},pid);
   ov.remove();
   _renderTrackerSheet();
 }
@@ -2669,6 +2689,7 @@ window.mapCancelMarker = mapCancelMarker;
 window.mapConfirmMarker = mapConfirmMarker;
 window.mapRenderFieldMarkers = mapRenderFieldMarkers;
 window.mapDeleteFieldMarker = mapDeleteFieldMarker;
+window.mapHideFieldMarker = mapHideFieldMarker;
 window.mapToggleFieldMarkers = mapToggleFieldMarkers;
 window.mapUpdateFieldMarkerList = mapUpdateFieldMarkerList;
 window.mapImportKml = mapImportKml;
