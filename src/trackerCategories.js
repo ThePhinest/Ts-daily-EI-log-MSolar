@@ -10,10 +10,50 @@
 //   Firestore: users/{uid}/projects/{projectId}/trackerCategories/{catId}
 //
 // Category shape:
-//   { id, name, color, order, createdAt, updatedAt }
+//   { id, name, color, order, measurementType, defaultUnit, createdAt, updatedAt }
+//   measurementType: 'area' | 'linear'  (default 'area')
+//   defaultUnit: 'ac'|'sqft'|'sqyd'|'sqm'|'ha' for area
+//               'ft'|'yd'|'m'|'mi' for linear
 //
 // In-memory cache per project so map render calls don't await Firestore.
 // Cache is populated on project load and kept in sync on save/delete.
+
+const TC_AREA_UNITS   = ['ac','sqft','sqyd','sqm','ha'];
+const TC_LINEAR_UNITS = ['ft','yd','m','mi'];
+const TC_UNIT_LABELS  = {
+  ac:'Acres', sqft:'Sq Ft', sqyd:'Sq Yards', sqm:'Sq Meters', ha:'Hectares',
+  ft:'Feet',  yd:'Yards',   m:'Meters',       mi:'Miles'
+};
+// Normalize-to-base factors: area → acres, linear → feet
+const _TC_AREA_FACTORS   = { ac:1, sqft:1/43560, sqyd:1/4840, sqm:1/4046.856, ha:2.47105 };
+const _TC_LINEAR_FACTORS = { ft:1, yd:3, m:3.28084, mi:5280 };
+
+function tcConvertMeasurement(value, fromUnit, toUnit){
+  if(!value || fromUnit === toUnit) return value;
+  const af = _TC_AREA_FACTORS, lf = _TC_LINEAR_FACTORS;
+  if(af[fromUnit] !== undefined && af[toUnit] !== undefined)
+    return value * af[fromUnit] / af[toUnit];
+  if(lf[fromUnit] !== undefined && lf[toUnit] !== undefined)
+    return value * lf[fromUnit] / lf[toUnit];
+  return value;
+}
+
+function tcGetMeasurementType(catId, projectId){
+  const cat = tcGetCategory(catId, projectId);
+  return cat?.measurementType || 'area';
+}
+
+function tcGetDefaultUnit(catId, projectId){
+  const cat = tcGetCategory(catId, projectId);
+  if(cat?.defaultUnit) return cat.defaultUnit;
+  return cat?.measurementType === 'linear' ? 'ft' : 'ac';
+}
+
+function tcFormatMeasurement(value, unit, decimals){
+  if(value == null || value === '') return '—';
+  const d = decimals !== undefined ? decimals : (['ft','yd','m'].includes(unit) ? 0 : 2);
+  return parseFloat(value).toFixed(d) + ' ' + unit;
+}
 
 let _tcCache = {};   // { [projectId]: Category[] }
 let _tcLoaded = {};  // { [projectId]: boolean }
@@ -135,13 +175,20 @@ function tcClearCache(projectId){
 }
 
 if(typeof window !== 'undefined'){
-  window.tcLoadForProject  = tcLoadForProject;
-  window.tcGetCategories   = tcGetCategories;
-  window.tcGetCategory     = tcGetCategory;
-  window.tcGetColor        = tcGetColor;
-  window.tcGetName         = tcGetName;
-  window.tcNextColor       = tcNextColor;
-  window.tcSaveCategory    = tcSaveCategory;
-  window.tcDeleteCategory  = tcDeleteCategory;
-  window.tcClearCache      = tcClearCache;
+  window.tcLoadForProject       = tcLoadForProject;
+  window.tcGetCategories        = tcGetCategories;
+  window.tcGetCategory          = tcGetCategory;
+  window.tcGetColor             = tcGetColor;
+  window.tcGetName              = tcGetName;
+  window.tcNextColor            = tcNextColor;
+  window.tcSaveCategory         = tcSaveCategory;
+  window.tcDeleteCategory       = tcDeleteCategory;
+  window.tcClearCache           = tcClearCache;
+  window.tcConvertMeasurement   = tcConvertMeasurement;
+  window.tcGetMeasurementType   = tcGetMeasurementType;
+  window.tcGetDefaultUnit       = tcGetDefaultUnit;
+  window.tcFormatMeasurement    = tcFormatMeasurement;
+  window.TC_AREA_UNITS          = TC_AREA_UNITS;
+  window.TC_LINEAR_UNITS        = TC_LINEAR_UNITS;
+  window.TC_UNIT_LABELS         = TC_UNIT_LABELS;
 }

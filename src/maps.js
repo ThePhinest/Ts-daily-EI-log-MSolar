@@ -1403,6 +1403,7 @@ let _tcEditingColor=null;     // color staged for edit row (hex string)
 let _tcAddingColor=null;      // color staged for add row (hex string)
 let _tcConfirmDeleteId=null;  // id of category awaiting inline delete confirm
 let _tcColorTarget=null;      // 'add'|'edit' — which swatch the picker is serving
+let _tcAddingType='area';     // 'area'|'linear' — staged for add row
 
 function mapShowTrackerSheet(){
   mapCloseFab();
@@ -1429,11 +1430,22 @@ function _renderTrackerSheet(){
   list.innerHTML=cats.map(c=>{
     const visible=_tcLayerVisible[c.id]!==false;
     if(_tcEditingCatId===c.id){
-      return `<div class="map-tc-row editing">
-        <div class="map-tc-edit-color" id="map-tc-edit-preview" style="background:${_tcEditingColor||c.color||'#888'}" onclick="mapShowColorPicker('edit',this)"></div>
-        <input id="map-tc-edit-name" class="map-tc-name-input" value="${c.name}" placeholder="Name" autocomplete="off" maxlength="32">
-        <button onclick="mapTrackerSaveEdit('${c.id}')" class="map-tc-save-btn">Save</button>
-        <button onclick="mapTrackerCancelEdit()" class="map-tc-cancel-btn">✕</button>
+      const editType=c.measurementType||'area';
+      const editUnitOpts=(editType==='linear'
+        ?[['ft','Feet'],['yd','Yards'],['m','Meters'],['mi','Miles']]
+        :[['ac','Acres'],['sqft','Sq Ft'],['sqyd','Sq Yards'],['sqm','Sq Meters'],['ha','Hectares']]
+      ).map(([v,l])=>`<option value="${v}"${v===(c.defaultUnit||'ac')?' selected':''}>${l}</option>`).join('');
+      return `<div class="map-tc-row editing" style="flex-wrap:wrap;gap:6px">
+        <div style="display:flex;align-items:center;gap:8px;width:100%">
+          <div class="map-tc-edit-color" id="map-tc-edit-preview" style="background:${_tcEditingColor||c.color||'#888'}" onclick="mapShowColorPicker('edit',this)"></div>
+          <input id="map-tc-edit-name" class="map-tc-name-input" value="${c.name}" placeholder="Name" autocomplete="off" maxlength="32">
+          <button onclick="mapTrackerSaveEdit('${c.id}')" class="map-tc-save-btn">Save</button>
+          <button onclick="mapTrackerCancelEdit()" class="map-tc-cancel-btn">✕</button>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;padding-left:28px">
+          <span style="font-family:var(--mono);font-size:10px;color:var(--muted)">${editType==='linear'?'Linear':'Area'} ·</span>
+          <select id="map-tc-edit-unit" class="map-tc-unit-sel">${editUnitOpts}</select>
+        </div>
       </div>`;
     }
     if(_tcConfirmDeleteId===c.id){
@@ -1445,9 +1457,11 @@ function _renderTrackerSheet(){
       </div>`;
     }
     const hasDetails=c.productName||c.targetRate||(c.amendmentType&&c.amendmentType!=='None');
+    const typeBadge=`<span style="font-family:var(--mono);font-size:9px;color:var(--muted);padding:2px 5px;border:1px solid var(--border);border-radius:3px;white-space:nowrap">${c.measurementType==='linear'?'LN':'AC'}</span>`;
     return `<div class="map-tc-row">
       <div class="map-tc-dot" style="background:${c.color||'#888'}"></div>
       <span class="map-tc-name">${c.name}</span>
+      ${typeBadge}
       <button class="map-tc-btn ${visible?'':'dim'}" onclick="mapTrackerToggleLayer('${c.id}')" title="${visible?'Hide':'Show'} layer">${visible?'●':'○'}</button>
       <button class="map-tc-btn" onclick="mapTrackerStartEdit('${c.id}')">Edit</button>
       <button class="map-tc-btn" onclick="mapShowCategoryDetails('${c.id}')" title="Category details" style="${hasDetails?'color:var(--amber)':''}">⚙</button>
@@ -1483,7 +1497,8 @@ async function mapTrackerSaveEdit(catId){
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
   const existing=(typeof tcGetCategory==='function')?tcGetCategory(catId,pid):null;
   if(!existing) return;
-  await tcSaveCategory({...existing,name,color:_tcEditingColor||existing.color},pid);
+  const editedUnit=document.getElementById('map-tc-edit-unit')?.value||existing.defaultUnit||'ac';
+  await tcSaveCategory({...existing,name,color:_tcEditingColor||existing.color,defaultUnit:editedUnit},pid);
   _tcEditingCatId=null;
   _tcEditingColor=null;
   _renderTrackerSheet();
@@ -1618,9 +1633,23 @@ function mapHideColorPicker(){
   _tcColorTarget=null;
 }
 
+function mapTcSetAddType(type){
+  _tcAddingType=type;
+  document.getElementById('map-tc-add-type-area').classList.toggle('active',type==='area');
+  document.getElementById('map-tc-add-type-linear').classList.toggle('active',type==='linear');
+  const sel=document.getElementById('map-tc-add-unit');
+  if(!sel) return;
+  if(type==='linear'){
+    sel.innerHTML='<option value="ft">Feet</option><option value="yd">Yards</option><option value="m">Meters</option><option value="mi">Miles</option>';
+  } else {
+    sel.innerHTML='<option value="ac">Acres</option><option value="sqft">Sq Ft</option><option value="sqyd">Sq Yards</option><option value="sqm">Sq Meters</option><option value="ha">Hectares</option>';
+  }
+}
 function mapTrackerShowAdd(){
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
   _tcAddingColor=(typeof tcNextColor==='function')?tcNextColor(pid):'#E67E22';
+  _tcAddingType='area';
+  mapTcSetAddType('area');
   const add=document.getElementById('map-tracker-sheet-add');
   const preview=document.getElementById('map-tc-add-preview');
   const input=document.getElementById('map-tc-add-name');
@@ -1638,7 +1667,9 @@ async function mapTrackerSaveAdd(){
   const name=(nameEl?nameEl.value.trim():'');
   if(!name) return;
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
-  await tcSaveCategory({name,color:_tcAddingColor||'#E67E22'},pid);
+  const measurementType=_tcAddingType||'area';
+  const defaultUnit=document.getElementById('map-tc-add-unit')?.value||(measurementType==='linear'?'ft':'ac');
+  await tcSaveCategory({name,color:_tcAddingColor||'#E67E22',measurementType,defaultUnit},pid);
   mapTrackerHideAdd();
   _renderTrackerSheet();
 }
@@ -1657,9 +1688,21 @@ function mapActivateDrawMode(categoryId){
     _mapInstance.on('draw.delete',_onDrawDelete);
     _mapInstance.on('draw.modechange',_onDrawModeChange);
   }
-  _drawInstance.changeMode('draw_polygon');
-  mapDrawSetShape('polygon');
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const cat=categoryId?((typeof tcGetCategory==='function')?tcGetCategory(categoryId,pid):null):null;
+  const isLinear=cat?.measurementType==='linear';
+  if(isLinear){
+    _drawInstance.changeMode('draw_line_string');
+    mapDrawSetShape('line');
+  } else {
+    _drawInstance.changeMode('draw_polygon');
+    mapDrawSetShape('polygon');
+  }
+  // Restrict shape buttons for linear (line only); all shapes for area and no-category
+  const polyBtn=document.getElementById('map-draw-poly-btn');
+  const pointBtn=document.getElementById('map-draw-point-btn');
+  if(polyBtn){ polyBtn.disabled=isLinear; polyBtn.style.opacity=isLinear?'0.3':''; }
+  if(pointBtn){ pointBtn.disabled=isLinear; pointBtn.style.opacity=isLinear?'0.3':''; }
   const catName=categoryId?((typeof tcGetName==='function')?tcGetName(categoryId,pid):categoryId):'Uncategorized';
   const catColor=categoryId?((typeof tcGetColor==='function')?tcGetColor(categoryId,pid):'#888'):'#888';
   const bar=document.getElementById('map-draw-bar');
@@ -1683,6 +1726,11 @@ function mapDeactivateDrawMode(){
   document.getElementById('map-fab-draw-btn').classList.remove('active');
   document.getElementById('map-fab-measure-btn').classList.remove('active');
   document.getElementById('map-measure-chip').classList.remove('show');
+  // Restore all shape buttons to enabled state
+  ['poly','line','point'].forEach(s=>{
+    const btn=document.getElementById('map-draw-'+s+'-btn');
+    if(btn){ btn.disabled=false; btn.style.opacity=''; }
+  });
   mapCloseTrackerModal();
 }
 function mapDrawSetShape(shape){
@@ -1754,25 +1802,52 @@ function _geoCentroid(feat){
 }
 
 // ── Tracker entry modal ───────────────────
+function _buildUnitOpts(units,selected){
+  return units.map(u=>`<option value="${u}"${u===selected?' selected':''}>${TC_UNIT_LABELS?.[u]||u}</option>`).join('');
+}
 function mapShowTrackerModal(feat,category){
   const activeLogDate=document.getElementById('reportDate')?.value;
   const today=activeLogDate||new Date().toLocaleDateString('en-CA');
   document.getElementById('map-tr-date').value=today;
-  const acres=_geoAreaAcres(feat);
-  document.getElementById('map-tr-acres').value=acres||'';
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const catDetails=(typeof tcGetCategory==='function')?tcGetCategory(category,pid):null;
+  const measType=catDetails?.measurementType||'area';
+  const defaultUnit=catDetails?.defaultUnit||(measType==='linear'?'ft':'ac');
+  // Measurement field — populate label, unit dropdown, and computed value
+  const measLabel=document.getElementById('map-tr-meas-label');
+  const unitSel=document.getElementById('map-tr-unit');
+  const measInput=document.getElementById('map-tr-acres');
+  if(measLabel) measLabel.textContent=measType==='linear'?'Length':'Area';
+  if(unitSel){
+    const opts=measType==='linear'?TC_LINEAR_UNITS:TC_AREA_UNITS;
+    unitSel.innerHTML=_buildUnitOpts(opts,defaultUnit);
+  }
+  if(measInput){
+    if(measType==='linear'){
+      const rawFt=parseFloat(_geoLengthFt(feat));
+      const val=rawFt?(typeof tcConvertMeasurement==='function'?tcConvertMeasurement(rawFt,'ft',defaultUnit):rawFt):null;
+      measInput.value=val!=null?parseFloat(val.toFixed(['ft','yd','m'].includes(defaultUnit)?0:2)):'';
+    } else {
+      const rawAc=parseFloat(_geoAreaAcres(feat));
+      const val=rawAc?(typeof tcConvertMeasurement==='function'?tcConvertMeasurement(rawAc,'ac',defaultUnit):rawAc):null;
+      measInput.value=val!=null?parseFloat(val.toFixed(2)):'';
+    }
+    measInput.dataset.unit=defaultUnit;
+  }
   const centroid=_geoCentroid(feat);
   document.getElementById('map-tr-location').value=
     centroid ? `${centroid.lat.toFixed(5)}, ${centroid.lng.toFixed(5)}` : '';
   document.getElementById('map-tr-notes').value='';
   _pendingPhotoIds=[];
   mapRefreshEntryPhotoStrip();
-  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
-  const catDetails=(typeof tcGetCategory==='function')?tcGetCategory(category,pid):null;
+  // Seed calculator — only relevant for area categories
+  const calcSection=document.getElementById('map-tr-calc-section');
+  if(calcSection) calcSection.style.display=measType==='linear'?'none':'';
   const rateEl=document.getElementById('map-tr-rate');
   const calcEl=document.getElementById('map-tr-calc-result');
   if(rateEl) rateEl.value=catDetails?.targetRate||'';
   if(calcEl) calcEl.textContent='—';
-  if(catDetails?.targetRate) mapTrackerCalc();
+  if(catDetails?.targetRate&&measType!=='linear') mapTrackerCalc();
   const catColor=(typeof tcGetColor==='function')?tcGetColor(category,pid):'#888';
   const catName=(typeof tcGetName==='function')?tcGetName(category,pid):(category||'Unknown');
   document.getElementById('map-tracker-cat-dot').style.background=catColor;
@@ -1814,7 +1889,14 @@ function mapSaveTrackerEntry(){
   if(!feat) return;
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
   const today=document.getElementById('reportDate')?.value||new Date().toLocaleDateString('en-CA');
-  const acres=parseFloat(document.getElementById('map-tr-acres').value)||null;
+  const measInput=document.getElementById('map-tr-acres');
+  const unitSel=document.getElementById('map-tr-unit');
+  const measurementUnit=unitSel?.value||measInput?.dataset.unit||'ac';
+  const measurementValue=parseFloat(measInput?.value)||null;
+  // Backward compat: keep `acres` populated for area-in-acres entries
+  const acres=(measurementUnit==='ac')?measurementValue:
+    (TC_AREA_UNITS?.includes(measurementUnit)&&measurementValue&&typeof tcConvertMeasurement==='function'
+      ?parseFloat(tcConvertMeasurement(measurementValue,measurementUnit,'ac').toFixed(2)):null);
   const centroid=_geoCentroid(feat);
   const catName=(typeof tcGetName==='function')?tcGetName(_drawCategory,pid):(_drawCategory||'Unknown');
   const entry={
@@ -1825,6 +1907,8 @@ function mapSaveTrackerEntry(){
     centroidLng:centroid?centroid.lng:null,
     centroidLat:centroid?centroid.lat:null,
     acres,
+    measurementValue,
+    measurementUnit,
     location:document.getElementById('map-tr-location').value.trim()||null,
     phase:(document.getElementById('map-tr-phase')?.value||'N/A'),
     method:(document.getElementById('map-tr-method')?.value||'N/A'),
@@ -2084,7 +2168,6 @@ function mapEditTrackerEntry(entryId){
   _pendingDrawFeature={geometry:entry.geometry};
   _drawCategory=entry.categoryId||entry.category;
   document.getElementById('map-tr-date').value=entry.date||'';
-  document.getElementById('map-tr-acres').value=entry.acres||'';
   document.getElementById('map-tr-location').value=entry.location||'';
   document.getElementById('map-tr-notes').value=entry.notes||'';
   _populateEntryDropdowns();
@@ -2094,11 +2177,28 @@ function mapEditTrackerEntry(entryId){
   if(phaseEl) phaseEl.value=entry.phase||'N/A';
   if(methodEl) methodEl.value=entry.method||'N/A';
   if(conEl) conEl.value=entry.contractor||'';
+  // Populate measurement field from entry (new fields or legacy acres)
+  const editPid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const editCat=(typeof tcGetCategory==='function')?tcGetCategory(_drawCategory,editPid):null;
+  const editMeasType=editCat?.measurementType||'area';
+  const editDefUnit=editCat?.defaultUnit||(editMeasType==='linear'?'ft':'ac');
+  const entryUnit=entry.measurementUnit||(entry.acres!=null?'ac':'ft');
+  const entryValue=entry.measurementValue!==undefined?entry.measurementValue:entry.acres;
+  const measInput=document.getElementById('map-tr-acres');
+  const unitSel=document.getElementById('map-tr-unit');
+  const measLabel=document.getElementById('map-tr-meas-label');
+  if(measLabel) measLabel.textContent=editMeasType==='linear'?'Length':'Area';
+  if(unitSel){
+    const opts=editMeasType==='linear'?TC_LINEAR_UNITS:TC_AREA_UNITS;
+    unitSel.innerHTML=_buildUnitOpts(opts,entryUnit);
+  }
+  if(measInput){ measInput.value=entryValue||''; measInput.dataset.unit=entryUnit; }
+  const calcSection=document.getElementById('map-tr-calc-section');
+  if(calcSection) calcSection.style.display=editMeasType==='linear'?'none':'';
   const rateEl=document.getElementById('map-tr-rate');
   if(rateEl) rateEl.value='';
   const calcEl=document.getElementById('map-tr-calc-result');
   if(calcEl) calcEl.textContent='—';
-  const editPid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
   const editColor=(typeof tcGetColor==='function')?tcGetColor(_drawCategory,editPid):'#888';
   const editName=(typeof tcGetName==='function')?tcGetName(_drawCategory,editPid):(entry.categoryName||_drawCategory||'Unknown');
   document.getElementById('map-tracker-cat-dot').style.background=editColor;
@@ -2112,6 +2212,22 @@ function _catUnit(){
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
   const cat=(typeof tcGetCategory==='function')?tcGetCategory(_drawCategory,pid):null;
   return cat?.targetRateUnit||'lbs/ac';
+}
+function mapTrackerUnitChange(){
+  const unitSel=document.getElementById('map-tr-unit');
+  const measInput=document.getElementById('map-tr-acres');
+  if(!unitSel||!measInput) return;
+  const newUnit=unitSel.value;
+  const prevUnit=measInput.dataset.unit||newUnit;
+  if(prevUnit===newUnit) return;
+  const currentVal=parseFloat(measInput.value);
+  if(currentVal&&!isNaN(currentVal)&&(typeof tcConvertMeasurement==='function')){
+    const converted=tcConvertMeasurement(currentVal,prevUnit,newUnit);
+    const decimals=['ft','yd','m'].includes(newUnit)?0:2;
+    measInput.value=parseFloat(converted.toFixed(decimals));
+  }
+  measInput.dataset.unit=newUnit;
+  mapTrackerCalc();
 }
 function mapTrackerCalc(){
   const acres=parseFloat(document.getElementById('map-tr-acres')?.value)||0;
@@ -2392,6 +2508,8 @@ window.mapSaveCategoryDetails = mapSaveCategoryDetails;
 window.mapTrackerShowAdd = mapTrackerShowAdd;
 window.mapTrackerHideAdd = mapTrackerHideAdd;
 window.mapTrackerSaveAdd = mapTrackerSaveAdd;
+window.mapTcSetAddType   = mapTcSetAddType;
+window.mapTrackerUnitChange = mapTrackerUnitChange;
 window.mapShowColorPicker = mapShowColorPicker;
 window.mapSelectColor = mapSelectColor;
 window.mapHideColorPicker = mapHideColorPicker;

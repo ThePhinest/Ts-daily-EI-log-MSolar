@@ -134,8 +134,11 @@ body.theme-light{
 .map-tc-btn.danger:hover{color:#e05555}
 .map-tc-save-btn{background:var(--amber);border:none;color:#111;padding:9px 14px;border-radius:6px;font-family:var(--mono);font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;min-height:36px}
 .map-tc-cancel-btn{background:var(--s2);border:1px solid var(--border);color:var(--muted);padding:9px 12px;border-radius:6px;font-family:var(--mono);font-size:11px;cursor:pointer;white-space:nowrap;min-height:36px}
-#map-tracker-sheet-add{display:none;align-items:center;gap:8px;padding:10px 4px;border-top:1px solid var(--border);background:var(--s1);margin:0 -14px;padding-left:14px;padding-right:14px;padding-bottom:calc(10px + env(safe-area-inset-bottom))}
+#map-tracker-sheet-add{display:none;flex-direction:column;gap:0;padding:10px 14px;border-top:1px solid var(--border);background:var(--s1);margin:0 -14px;padding-bottom:calc(10px + env(safe-area-inset-bottom))}
 #map-tracker-sheet-add.open{display:flex}
+.tc-type-btn{background:none;border:1px solid var(--border);color:var(--muted);font-family:var(--mono);font-size:10px;padding:4px 10px;border-radius:4px;cursor:pointer;transition:all .12s;white-space:nowrap}
+.tc-type-btn.active{background:var(--amber);color:#111;border-color:var(--amber);font-weight:700}
+.map-tc-unit-sel{background:var(--s1);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--mono);font-size:11px;padding:4px 6px;cursor:pointer;min-width:0}
 .gl-tracker-popup .mapboxgl-popup-content{background:#0F1F2E;color:#e8e8e8;padding:12px;border-radius:8px;border:1px solid rgba(255,255,255,.12)}
 .gl-tracker-popup.mapboxgl-popup-anchor-bottom .mapboxgl-popup-tip{border-top-color:#0F1F2E}
 .gl-tracker-popup.mapboxgl-popup-anchor-top .mapboxgl-popup-tip{border-bottom-color:#0F1F2E}
@@ -1872,10 +1875,23 @@ Anticipated rain — AM weather monitoring expected"></textarea>
       </div>
       <div id="map-tracker-cat-list"></div>
       <div id="map-tracker-sheet-add">
-        <div class="map-tc-add-color" id="map-tc-add-preview" onclick="mapShowColorPicker('add',this)"></div>
-        <input id="map-tc-add-name" class="map-tc-name-input" placeholder="Category name" autocomplete="off" maxlength="32" onkeydown="if(event.key==='Enter')mapTrackerSaveAdd()">
-        <button onclick="mapTrackerSaveAdd()" class="map-tc-save-btn">Add</button>
-        <button onclick="mapTrackerHideAdd()" class="map-tc-cancel-btn">✕</button>
+        <div style="display:flex;align-items:center;gap:8px">
+          <div class="map-tc-add-color" id="map-tc-add-preview" onclick="mapShowColorPicker('add',this)"></div>
+          <input id="map-tc-add-name" class="map-tc-name-input" placeholder="Category name" autocomplete="off" maxlength="32" onkeydown="if(event.key==='Enter')mapTrackerSaveAdd()">
+          <button onclick="mapTrackerSaveAdd()" class="map-tc-save-btn">Add</button>
+          <button onclick="mapTrackerHideAdd()" class="map-tc-cancel-btn">✕</button>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;margin-top:8px;padding-left:28px">
+          <button id="map-tc-add-type-area" class="tc-type-btn active" onclick="mapTcSetAddType('area')">Area</button>
+          <button id="map-tc-add-type-linear" class="tc-type-btn" onclick="mapTcSetAddType('linear')">Linear</button>
+          <select id="map-tc-add-unit" class="map-tc-unit-sel">
+            <option value="ac">Acres</option>
+            <option value="sqft">Sq Ft</option>
+            <option value="sqyd">Sq Yards</option>
+            <option value="sqm">Sq Meters</option>
+            <option value="ha">Hectares</option>
+          </select>
+        </div>
       </div>
     </div>
 
@@ -1898,7 +1914,10 @@ Anticipated rain — AM weather monitoring expected"></textarea>
           <input type="date" id="map-tr-date" style="width:100%;box-sizing:border-box;background:var(--s1);border:1px solid var(--border);border-radius:6px;padding:7px 9px;color:var(--text);font-family:var(--mono);font-size:12px">
         </div>
         <div>
-          <label style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;display:block;margin-bottom:4px">Acres</label>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+            <label id="map-tr-meas-label" style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em">Area</label>
+            <select id="map-tr-unit" class="map-tc-unit-sel" style="font-size:10px;padding:2px 5px" onchange="mapTrackerUnitChange()"></select>
+          </div>
           <input type="number" id="map-tr-acres" step="0.01" min="0" placeholder="—" oninput="mapTrackerCalc()" style="width:100%;box-sizing:border-box;background:var(--s1);border:1px solid var(--border);border-radius:6px;padding:7px 9px;color:var(--text);font-family:var(--mono);font-size:12px">
         </div>
       </div>
@@ -1925,7 +1944,7 @@ Anticipated rain — AM weather monitoring expected"></textarea>
         <textarea id="map-tr-notes" rows="2" placeholder="Seed mix, applicator, conditions…" style="width:100%;box-sizing:border-box;background:var(--s1);border:1px solid var(--border);border-radius:6px;padding:7px 9px;color:var(--text);font-family:var(--mono);font-size:12px;resize:vertical"></textarea>
       </div>
       <!-- Seed / material calculator -->
-      <div style="margin-bottom:14px;background:var(--s1);border:1px solid var(--border);border-radius:8px;padding:10px 12px">
+      <div id="map-tr-calc-section" style="margin-bottom:14px;background:var(--s1);border:1px solid var(--border);border-radius:8px;padding:10px 12px">
         <div style="font-family:var(--mono);font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">Seed / Material Calc</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;align-items:center">
           <div>

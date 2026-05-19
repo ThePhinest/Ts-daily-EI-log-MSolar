@@ -199,18 +199,33 @@ function trDeleteEntry(entryId, projectId){
   return true;
 }
 
-// Cumulative totals — total acres + entry count per category across all non-deleted entries.
-// Returns array sorted descending by totalAcres.
+// Cumulative totals per category across all non-deleted entries.
+// Normalizes each entry's measurement to the category's defaultUnit.
+// Returns [{categoryId, categoryName, measurementType, totalValue, displayUnit, entryCount}]
+// sorted descending by totalValue (in display unit).
 function trGetCumulativeTotals(projectId){
-  const entries = trGetEntriesForProject(projectId);
+  const pid = projectId || ((typeof _activeProjectId === 'function') ? _activeProjectId() : 'default');
+  const entries = trGetEntriesForProject(pid);
   const map = {};
   entries.forEach(e => {
     const key = e.categoryId || '__none';
-    if(!map[key]) map[key] = { categoryId: e.categoryId, categoryName: e.categoryName || 'Unknown', totalAcres: 0, entryCount: 0 };
-    map[key].totalAcres += parseFloat(e.acres) || 0;
+    if(!map[key]){
+      const measType = (typeof tcGetMeasurementType === 'function') ? tcGetMeasurementType(e.categoryId, pid) : 'area';
+      const displayUnit = (typeof tcGetDefaultUnit === 'function') ? tcGetDefaultUnit(e.categoryId, pid) : (measType === 'linear' ? 'ft' : 'ac');
+      map[key] = { categoryId: e.categoryId, categoryName: e.categoryName || 'Unknown', measurementType: measType, totalValue: 0, displayUnit, entryCount: 0 };
+    }
+    // Resolve entry value + unit — new entries have measurementValue/measurementUnit; old have acres
+    const entryValue = e.measurementValue !== undefined ? parseFloat(e.measurementValue) : parseFloat(e.acres);
+    const entryUnit  = e.measurementUnit  || 'ac';
+    if(entryValue && !isNaN(entryValue)){
+      const normalized = (typeof tcConvertMeasurement === 'function')
+        ? tcConvertMeasurement(entryValue, entryUnit, map[key].displayUnit)
+        : entryValue;
+      map[key].totalValue += normalized || 0;
+    }
     map[key].entryCount++;
   });
-  return Object.values(map).sort((a, b) => b.totalAcres - a.totalAcres);
+  return Object.values(map).sort((a, b) => b.totalValue - a.totalValue);
 }
 
 // Photo linking — adds/removes a photoId from the entry's photoIds array.
