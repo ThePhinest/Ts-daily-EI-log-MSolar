@@ -284,6 +284,7 @@ async function mapSaveSettings(){
 let _mapPhotoMarkers = [];
 let _mapFieldMarkers = [];
 let _mapFieldMarkersData = [];
+let _fieldMarkersVisible = true;
 let _mapKmlLayers = [];
 let _layerPanelOpen = false;
 let _mapPendingMarkerLngLat = null;
@@ -466,14 +467,27 @@ async function mapRenderFieldMarkers(){
           <div style="font-size:22px;margin-bottom:4px">${m.emoji}</div>
           ${m.label ? `<div style="font-weight:600;margin-bottom:4px">${m.label}</div>` : ''}
           <div style="color:#555;margin-bottom:6px">${m.scope==='global'?'🌐 Global':'📌 This Project'}</div>
-          <button onclick="mapDeleteFieldMarker('${doc.id}')" style="background:#c00;color:#fff;border:none;padding:3px 8px;border-radius:4px;font-size:10px;cursor:pointer;">Delete</button>
+          <div style="display:flex;gap:6px">
+            <button onclick="mapDeleteFieldMarker('${doc.id}')" style="background:#c00;color:#fff;border:none;padding:3px 8px;border-radius:4px;font-size:10px;cursor:pointer;">Delete</button>
+            <button onclick="mapToggleFieldMarkers()" style="background:#333;color:#fff;border:none;padding:3px 8px;border-radius:4px;font-size:10px;cursor:pointer;">Hide All</button>
+          </div>
         </div>`);
       const marker = new mapboxgl.Marker({ element:el, anchor:'bottom' })
         .setLngLat([m.lng, m.lat]).setPopup(popup).addTo(_mapInstance);
+      if(!_fieldMarkersVisible) marker.getElement().style.display='none';
       _mapFieldMarkers.push(marker);
     });
   } catch(e){ console.error('Render field markers failed:', e); }
   mapUpdateFieldMarkerList();
+}
+
+function mapToggleFieldMarkers(){
+  _fieldMarkersVisible=!_fieldMarkersVisible;
+  _mapFieldMarkers.forEach(m=>{
+    m.getElement().style.display=_fieldMarkersVisible?'':'none';
+  });
+  const btn=document.getElementById('map-vf-fm-toggle');
+  if(btn) btn.textContent=_fieldMarkersVisible?'Hide':'Show';
 }
 
 async function mapDeleteFieldMarker(id){
@@ -1754,21 +1768,22 @@ function mapActivateDrawMode(categoryId){
 }
 
 function mapDeactivateDrawMode(){
+  const prevMode=_drawMode;
   _drawMode=null;
   _drawCategory=null;
   _pendingDrawFeature=null;
-  if(_drawInstance){
+  if(prevMode==='draw'&&_drawInstance){
     _drawInstance.deleteAll();
     try{ _mapInstance.removeControl(_drawInstance); }catch{}
     _drawInstance=null;
   }
+  if(prevMode==='measure') _deactivateMeasureMode();
   document.getElementById('map-draw-bar').classList.remove('show');
   document.getElementById('map-fab-draw-btn').classList.remove('active');
   document.getElementById('map-fab-measure-btn').classList.remove('active');
   document.getElementById('map-measure-chip').classList.remove('show');
   const measTypeBtns=document.getElementById('map-measure-type-btns');
   if(measTypeBtns) measTypeBtns.style.display='none';
-  // Restore all shape buttons to enabled state
   ['poly','line','point'].forEach(s=>{
     const btn=document.getElementById('map-draw-'+s+'-btn');
     if(btn){ btn.disabled=false; btn.style.opacity=''; }
@@ -1985,20 +2000,91 @@ function mapSaveTrackerEntry(){
 
 // ── Measure mode ──────────────────────────
 let _measureType='line';
+let _measurePoints=[], _measureClickHandler=null;
+
+function _initMeasureSource(){
+  if(!_mapInstance||!_mapInstance.isStyleLoaded()) return;
+  if(_mapInstance.getSource('measure-source')) return;
+  _mapInstance.addSource('measure-source',{type:'geojson',data:{type:'FeatureCollection',features:[]}});
+  _mapInstance.addLayer({id:'measure-fill',type:'fill',source:'measure-source',
+    filter:['==',['geometry-type'],'Polygon'],
+    paint:{'fill-color':'#4A90E2','fill-opacity':0.15}});
+  _mapInstance.addLayer({id:'measure-line',type:'line',source:'measure-source',
+    filter:['any',['==',['geometry-type'],'LineString'],['==',['geometry-type'],'Polygon']],
+    paint:{'line-color':'#4A90E2','line-width':2,'line-dasharray':[4,2]}});
+  _mapInstance.addLayer({id:'measure-points',type:'circle',source:'measure-source',
+    filter:['==',['geometry-type'],'Point'],
+    paint:{'circle-radius':4,'circle-color':'#fff','circle-stroke-color':'#4A90E2','circle-stroke-width':2}});
+}
+
+function _deactivateMeasureMode(){
+  if(_measureClickHandler){
+    _mapInstance.off('click',_measureClickHandler);
+    _measureClickHandler=null;
+  }
+  _measurePoints=[];
+  if(_mapInstance){
+    ['measure-points','measure-line','measure-fill'].forEach(id=>{
+      try{ if(_mapInstance.getLayer(id)) _mapInstance.removeLayer(id); }catch{}
+    });
+    try{ if(_mapInstance.getSource('measure-source')) _mapInstance.removeSource('measure-source'); }catch{}
+  }
+}
+
+function _measureGeoJson(){
+  const pts=_measurePoints.map(p=>[p.lng,p.lat]);
+  const features=[];
+  if(pts.length>=2){
+    if(_measureType==='polygon'&&pts.length>=3){
+      features.push({type:'Feature',geometry:{type:'Polygon',coordinates:[[...pts,pts[0]]]}});
+    } else {
+      features.push({type:'Feature',geometry:{type:'LineString',coordinates:pts}});
+    }
+  }
+  pts.forEach(p=>features.push({type:'Feature',geometry:{type:'Point',coordinates:p}}));
+  return {type:'FeatureCollection',features};
+}
+
+function _updateMeasureDisplay(){
+  const src=_mapInstance&&_mapInstance.getSource('measure-source');
+  if(src) src.setData(_measureGeoJson());
+  const label=document.getElementById('map-draw-bar-label');
+  if(!label) return;
+  const pts=_measurePoints;
+  if(pts.length<2){label.textContent=pts.length===1?'1 point — keep tapping':'Tap map to place points';return;}
+  if(_measureType==='polygon'&&pts.length>=3){
+    const coords=pts.map(p=>[p.lng,p.lat]);
+    const ac=_geoAreaAcres({geometry:{type:'Polygon',coordinates:[[...coords,coords[0]]]}});
+    const ft=_geoLengthFt({geometry:{type:'LineString',coordinates:[...coords,coords[0]]}});
+    const mi=ft?(parseInt(ft)/5280).toFixed(2):null;
+    label.textContent=`${ac||'—'} ac  ·  ${ft?parseInt(ft).toLocaleString()+' ft perim':'—'}${mi?' ('+mi+' mi)':''}`;
+  } else {
+    const ft=_geoLengthFt({geometry:{type:'LineString',coordinates:pts.map(p=>[p.lng,p.lat])}});
+    const mi=ft?(parseInt(ft)/5280).toFixed(2):null;
+    label.textContent=ft?`${parseInt(ft).toLocaleString()} ft  ·  ${mi} mi`:'Tap map to place points';
+  }
+}
+
+function mapNewMeasure(){
+  _measurePoints=[];
+  _updateMeasureDisplay();
+}
+
 function mapActivateMeasure(){
   if(!_mapInstance) return;
+  mapResetGpsFollow();
   _drawMode='measure';
   _measureType='line';
-  if(!_drawInstance){
-    _drawInstance=new MapboxDraw({ displayControlsDefault:false, controls:{} });
-    _mapInstance.addControl(_drawInstance,'top-left');
-    _mapInstance.on('draw.create',_onDrawCreate);
-    _mapInstance.on('draw.delete',_onDrawDelete);
-    _mapInstance.on('draw.modechange',_onDrawModeChange);
-  }
-  _drawInstance.changeMode('draw_line_string');
+  _measurePoints=[];
+  _initMeasureSource();
+  _measureClickHandler=e=>{
+    if(_drawMode!=='measure') return;
+    _measurePoints.push({lng:e.lngLat.lng,lat:e.lngLat.lat});
+    _updateMeasureDisplay();
+  };
+  _mapInstance.on('click',_measureClickHandler);
   const bar=document.getElementById('map-draw-bar');
-  document.getElementById('map-draw-bar-label').textContent='Measure';
+  document.getElementById('map-draw-bar-label').textContent='Tap map to place points';
   document.getElementById('map-draw-shape-btns').style.display='none';
   const measTypeBtns=document.getElementById('map-measure-type-btns');
   if(measTypeBtns) measTypeBtns.style.display='flex';
@@ -2007,46 +2093,20 @@ function mapActivateMeasure(){
   bar.style.borderColor='#4A90E2';
   document.getElementById('map-fab-measure-btn').classList.add('active');
 }
+
 function mapSetMeasureType(type){
-  if(!_drawInstance||_drawMode!=='measure') return;
+  if(_drawMode!=='measure') return;
   _measureType=type;
-  _drawInstance.deleteAll();
-  document.getElementById('map-measure-chip').classList.remove('show');
-  _drawInstance.changeMode(type==='polygon'?'draw_polygon':'draw_line_string');
+  _measurePoints=[];
+  _updateMeasureDisplay();
   _updateMeasureTypeBtns(type);
 }
+
 function _updateMeasureTypeBtns(type){
   const lineBtn=document.getElementById('map-meas-line-btn');
   const polyBtn=document.getElementById('map-meas-poly-btn');
   if(lineBtn) lineBtn.style.background=type==='line'?'rgba(0,0,0,.35)':'none';
   if(polyBtn) polyBtn.style.background=type==='polygon'?'rgba(0,0,0,.35)':'none';
-}
-
-function _showMeasureReadout(feat){
-  const chip=document.getElementById('map-measure-chip');
-  let text='';
-  if(feat.geometry.type==='Polygon'){
-    const ac=_geoAreaAcres(feat);
-    const perimFeat={geometry:{type:'LineString',coordinates:feat.geometry.coordinates[0]}};
-    const ft=_geoLengthFt(perimFeat);
-    const mi=ft?(parseInt(ft)/5280).toFixed(2):null;
-    text=`${ac?`${ac} ac`:'—'}  ·  ${ft?`${ft} ft (${mi} mi) perimeter`:'—'}`;
-  } else if(feat.geometry.type==='LineString'){
-    const ft=_geoLengthFt(feat);
-    if(ft){
-      const mi=(parseInt(ft)/5280).toFixed(2);
-      text=`${ft} ft  ·  ${mi} mi`;
-    } else { text='Length: —'; }
-  }
-  chip.textContent=text;
-  chip.classList.add('show');
-  // Restart draw mode so user can immediately measure again without pressing the button
-  setTimeout(()=>{
-    if(_drawMode==='measure'&&_drawInstance){
-      _drawInstance.deleteAll();
-      _drawInstance.changeMode(_measureType==='polygon'?'draw_polygon':'draw_line_string');
-    }
-  },100);
 }
 
 // ── GPS Follow ────────────────────────────
@@ -2609,6 +2669,7 @@ window.mapCancelMarker = mapCancelMarker;
 window.mapConfirmMarker = mapConfirmMarker;
 window.mapRenderFieldMarkers = mapRenderFieldMarkers;
 window.mapDeleteFieldMarker = mapDeleteFieldMarker;
+window.mapToggleFieldMarkers = mapToggleFieldMarkers;
 window.mapUpdateFieldMarkerList = mapUpdateFieldMarkerList;
 window.mapImportKml = mapImportKml;
 window.mapReaddKmlLayer = mapReaddKmlLayer;
@@ -2675,6 +2736,7 @@ window.mapHideColorPicker = mapHideColorPicker;
 window.mapHexColorInput = mapHexColorInput;
 window.mapApplyHexColor = mapApplyHexColor;
 window.mapSetMeasureType = mapSetMeasureType;
+window.mapNewMeasure = mapNewMeasure;
 window.mapShowPhotoLinkPicker = mapShowPhotoLinkPicker;
 window.mapLinkPhotoToEntry = mapLinkPhotoToEntry;
 window.mapShowEntryPhotoPicker = mapShowEntryPhotoPicker;
