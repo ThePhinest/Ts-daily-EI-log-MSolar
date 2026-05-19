@@ -1853,12 +1853,18 @@ function mapShowTrackerModal(feat,category){
   document.getElementById('map-tracker-cat-dot').style.background=catColor;
   document.getElementById('map-tracker-cat-label').textContent=catName;
   _populateEntryDropdowns();
+  const areaFields=document.getElementById('map-tr-area-fields');
+  const linearFields=document.getElementById('map-tr-linear-fields');
+  if(areaFields) areaFields.style.display=measType==='linear'?'none':'';
+  if(linearFields) linearFields.style.display=measType==='linear'?'':'none';
   const phaseEl=document.getElementById('map-tr-phase');
   const methodEl=document.getElementById('map-tr-method');
   const conEl=document.getElementById('map-tr-contractor');
+  const statusEl=document.getElementById('map-tr-status');
   if(phaseEl) phaseEl.value='N/A';
   if(methodEl) methodEl.value='N/A';
   if(conEl) conEl.value='';
+  if(statusEl) statusEl.value='Installed';
   document.getElementById('map-tracker-modal').classList.add('open');
 }
 
@@ -1897,12 +1903,16 @@ function mapSaveTrackerEntry(){
   const acres=(measurementUnit==='ac')?measurementValue:
     (TC_AREA_UNITS?.includes(measurementUnit)&&measurementValue&&typeof tcConvertMeasurement==='function'
       ?parseFloat(tcConvertMeasurement(measurementValue,measurementUnit,'ac').toFixed(2)):null);
+  const catDetails=(typeof tcGetCategory==='function')?tcGetCategory(_drawCategory,pid):null;
+  const measType=catDetails?.measurementType||'area';
+  const isLinear=measType==='linear';
   const centroid=_geoCentroid(feat);
   const catName=(typeof tcGetName==='function')?tcGetName(_drawCategory,pid):(_drawCategory||'Unknown');
   const entry={
     date:document.getElementById('map-tr-date').value||today,
     categoryId:_drawCategory||null,
     categoryName:catName,
+    measurementType:measType,
     geometry:feat.geometry,
     centroidLng:centroid?centroid.lng:null,
     centroidLat:centroid?centroid.lat:null,
@@ -1910,8 +1920,9 @@ function mapSaveTrackerEntry(){
     measurementValue,
     measurementUnit,
     location:document.getElementById('map-tr-location').value.trim()||null,
-    phase:(document.getElementById('map-tr-phase')?.value||'N/A'),
-    method:(document.getElementById('map-tr-method')?.value||'N/A'),
+    phase:isLinear?null:(document.getElementById('map-tr-phase')?.value||'N/A'),
+    method:isLinear?null:(document.getElementById('map-tr-method')?.value||'N/A'),
+    status:isLinear?(document.getElementById('map-tr-status')?.value||'Installed'):null,
     contractor:document.getElementById('map-tr-contractor')?.value.trim()||null,
     fields:{},
     notes:document.getElementById('map-tr-notes').value.trim()||null,
@@ -2174,14 +2185,20 @@ function mapEditTrackerEntry(entryId){
   const phaseEl=document.getElementById('map-tr-phase');
   const methodEl=document.getElementById('map-tr-method');
   const conEl=document.getElementById('map-tr-contractor');
+  const statusElEdit=document.getElementById('map-tr-status');
   if(phaseEl) phaseEl.value=entry.phase||'N/A';
   if(methodEl) methodEl.value=entry.method||'N/A';
   if(conEl) conEl.value=entry.contractor||'';
+  if(statusElEdit) statusElEdit.value=entry.status||'Installed';
   // Populate measurement field from entry (new fields or legacy acres)
   const editPid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
   const editCat=(typeof tcGetCategory==='function')?tcGetCategory(_drawCategory,editPid):null;
-  const editMeasType=editCat?.measurementType||'area';
+  const editMeasType=editCat?.measurementType||entry.measurementType||'area';
   const editDefUnit=editCat?.defaultUnit||(editMeasType==='linear'?'ft':'ac');
+  const editAreaFields=document.getElementById('map-tr-area-fields');
+  const editLinearFields=document.getElementById('map-tr-linear-fields');
+  if(editAreaFields) editAreaFields.style.display=editMeasType==='linear'?'none':'';
+  if(editLinearFields) editLinearFields.style.display=editMeasType==='linear'?'':'none';
   const entryUnit=entry.measurementUnit||(entry.acres!=null?'ac':'ft');
   const entryValue=entry.measurementValue!==undefined?entry.measurementValue:entry.acres;
   const measInput=document.getElementById('map-tr-acres');

@@ -399,8 +399,9 @@ function clShowTrackerDetail(entryId){
     </div>
     <div style="font-family:var(--mono);font-size:12px;color:var(--text);display:flex;flex-direction:column;gap:7px;margin-bottom:14px">
       ${entry.date?`<div><span style="color:var(--muted);text-transform:uppercase;font-size:10px;letter-spacing:.06em">Date</span><div style="margin-top:2px">${entry.date}</div></div>`:''}
-      ${entry.acres?`<div><span style="color:var(--muted);text-transform:uppercase;font-size:10px;letter-spacing:.06em">Area</span><div style="margin-top:2px">${entry.acres} acres</div></div>`:''}
+      ${(entry.measurementValue!=null&&entry.measurementUnit)?`<div><span style="color:var(--muted);text-transform:uppercase;font-size:10px;letter-spacing:.06em">${entry.measurementType==='linear'?'Length':'Area'}</span><div style="margin-top:2px">${(typeof tcFormatMeasurement==='function')?tcFormatMeasurement(entry.measurementValue,entry.measurementUnit):(entry.measurementValue+' '+entry.measurementUnit)}</div></div>`:entry.acres?`<div><span style="color:var(--muted);text-transform:uppercase;font-size:10px;letter-spacing:.06em">Area</span><div style="margin-top:2px">${entry.acres} acres</div></div>`:''}
       ${entry.location?`<div><span style="color:var(--muted);text-transform:uppercase;font-size:10px;letter-spacing:.06em">Location</span><div style="margin-top:2px">${entry.location}</div></div>`:''}
+      ${entry.status?`<div><span style="color:var(--muted);text-transform:uppercase;font-size:10px;letter-spacing:.06em">BMP Status</span><div style="margin-top:2px">${entry.status}</div></div>`:''}
       ${(entry.phase&&entry.phase!=='N/A')?`<div><span style="color:var(--muted);text-transform:uppercase;font-size:10px;letter-spacing:.06em">Application Phase</span><div style="margin-top:2px">${entry.phase}</div></div>`:''}
       ${(entry.method&&entry.method!=='N/A')?`<div><span style="color:var(--muted);text-transform:uppercase;font-size:10px;letter-spacing:.06em">Application Method</span><div style="margin-top:2px">${entry.method}</div></div>`:''}
       ${entry.contractor?`<div><span style="color:var(--muted);text-transform:uppercase;font-size:10px;letter-spacing:.06em">Contractor / Applicator</span><div style="margin-top:2px">${entry.contractor}</div></div>`:''}
@@ -626,12 +627,16 @@ function clShowTrackerLog(){
         const gPhotos=g.entries.reduce((s,e)=>s+(Array.isArray(e.photoIds)?e.photoIds.length:0),0);
         const rows=g.entries.map(e=>{
           const pc=Array.isArray(e.photoIds)?e.photoIds.length:0;
-          const phaseBadge=(e.phase&&e.phase!=='N/A')?`<span style="font-family:var(--mono);font-size:9px;color:var(--muted);white-space:nowrap;flex-shrink:0;background:var(--s1);border:1px solid var(--border);border-radius:3px;padding:1px 4px">${e.phase}</span>`:'';
+          const rowBadgeText=e.status||(e.phase&&e.phase!=='N/A'?e.phase:'');
+          const rowBadge=rowBadgeText?`<span style="font-family:var(--mono);font-size:9px;color:var(--muted);white-space:nowrap;flex-shrink:0;background:var(--s1);border:1px solid var(--border);border-radius:3px;padding:1px 4px">${rowBadgeText}</span>`:'';
+          const rowMeas=(e.measurementValue!=null&&e.measurementUnit)
+            ?`<span style="font-family:var(--mono);font-size:10px;color:var(--muted);white-space:nowrap;flex-shrink:0">${(typeof tcFormatMeasurement==='function')?tcFormatMeasurement(e.measurementValue,e.measurementUnit):(e.measurementValue+' '+e.measurementUnit)}</span>`
+            :e.acres?`<span style="font-family:var(--mono);font-size:10px;color:var(--muted);white-space:nowrap;flex-shrink:0">${e.acres} ac</span>`:'';
           return `<div onclick="clShowTrackerDetail('${e.id}')" style="display:flex;align-items:center;gap:8px;padding:9px 16px 9px 30px;border-top:1px solid var(--border);cursor:pointer">
             <span style="font-family:var(--mono);font-size:10px;color:var(--muted);white-space:nowrap;flex-shrink:0;min-width:68px">${e.date||'—'}</span>
             <span style="font-family:var(--mono);font-size:11px;color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${(e.location||e.notes||'—').slice(0,42)}</span>
-            ${phaseBadge}
-            ${e.acres?`<span style="font-family:var(--mono);font-size:10px;color:var(--muted);white-space:nowrap;flex-shrink:0">${e.acres} ac</span>`:''}
+            ${rowBadge}
+            ${rowMeas}
             ${pc?`<span style="font-size:10px;flex-shrink:0;color:var(--muted)">📷 ${pc}</span>`:''}
             <span style="color:var(--muted);flex-shrink:0;font-size:12px">›</span>
           </div>`;
@@ -653,15 +658,18 @@ function clShowTrackerLog(){
         const catName=cached?cached.name:(e.categoryName&&!e.categoryName.startsWith('cat-')?e.categoryName:'Unknown');
         const cat=cached||{color:'#888',name:catName};
         const pc=Array.isArray(e.photoIds)?e.photoIds.length:0;
-        const phasePart=(e.phase&&e.phase!=='N/A')?e.phase:'';
-        const sub=[e.date||'',phasePart,e.location||e.notes||''].filter(Boolean).join(' · ');
+        const statusPart=e.status||(e.phase&&e.phase!=='N/A'?e.phase:'');
+        const sub=[e.date||'',statusPart,e.location||e.notes||''].filter(Boolean).join(' · ');
+        const flatMeas=(e.measurementValue!=null&&e.measurementUnit)
+          ?`<span style="font-family:var(--mono);font-size:11px;color:var(--muted);white-space:nowrap;flex-shrink:0">${(typeof tcFormatMeasurement==='function')?tcFormatMeasurement(e.measurementValue,e.measurementUnit):(e.measurementValue+' '+e.measurementUnit)}</span>`
+          :e.acres?`<span style="font-family:var(--mono);font-size:11px;color:var(--muted);white-space:nowrap;flex-shrink:0">${e.acres} ac</span>`:'';
         return `<div onclick="clShowTrackerDetail('${e.id}')" style="display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--border);cursor:pointer">
           <div style="width:10px;height:10px;border-radius:50%;background:${cat.color};flex-shrink:0"></div>
           <div style="flex:1;min-width:0">
             <div style="font-family:var(--mono);font-size:11px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${cat.name}</div>
             <div style="font-family:var(--mono);font-size:10px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${sub.slice(0,52)}</div>
           </div>
-          ${e.acres?`<span style="font-family:var(--mono);font-size:11px;color:var(--muted);white-space:nowrap;flex-shrink:0">${e.acres} ac</span>`:''}
+          ${flatMeas}
           ${pc?`<span style="font-size:10px;flex-shrink:0;color:var(--muted)">📷 ${pc}</span>`:''}
           <span style="color:var(--muted);flex-shrink:0;font-size:12px">›</span>
         </div>`;
