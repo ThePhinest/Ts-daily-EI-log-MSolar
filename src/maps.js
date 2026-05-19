@@ -2073,7 +2073,7 @@ function mapRenderTrackerLayers(){
     const geojson={type:'FeatureCollection',features:(visible?byCategory[cat.id]:[]).map(e=>({
       type:'Feature',
       id:e.id,
-      properties:{id:e.id,categoryId:e.categoryId||e.category,categoryName:e.categoryName||e.category,date:e.date,acres:e.acres,notes:e.notes,location:e.location,phase:e.phase||null,method:e.method||null,contractor:e.contractor||null},
+      properties:{id:e.id,categoryId:e.categoryId||e.category,categoryName:e.categoryName||e.category,date:e.date,acres:e.acres,measurementValue:e.measurementValue??null,measurementUnit:e.measurementUnit||null,notes:e.notes,location:e.location,phase:e.phase||null,method:e.method||null,status:e.status||null,contractor:e.contractor||null},
       geometry:e.geometry
     }))};
 
@@ -2118,7 +2118,7 @@ function mapRenderTrackerLayers(){
       const visible=_tcLayerVisible[cid]!==false;
       const geojson={type:'FeatureCollection',features:(visible?group.entries:[]).map(e=>({
         type:'Feature',id:e.id,
-        properties:{id:e.id,categoryId:e.categoryId||e.category,categoryName:e.categoryName||e.category,date:e.date,acres:e.acres,notes:e.notes,location:e.location,phase:e.phase||null,method:e.method||null,contractor:e.contractor||null},
+        properties:{id:e.id,categoryId:e.categoryId||e.category,categoryName:e.categoryName||e.category,date:e.date,acres:e.acres,measurementValue:e.measurementValue??null,measurementUnit:e.measurementUnit||null,notes:e.notes,location:e.location,phase:e.phase||null,method:e.method||null,status:e.status||null,contractor:e.contractor||null},
         geometry:e.geometry
       }))};
       if(_mapInstance.getSource(src)){
@@ -2147,20 +2147,31 @@ function mapRenderTrackerLayers(){
 function _showTrackerEntryPopup(lngLat,props){
   if(_trackerPopup){_trackerPopup.remove();_trackerPopup=null;}
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const entry=(typeof trGetEntry==='function')?trGetEntry(props.id,pid):null;
   const label=props.categoryName||(typeof tcGetName==='function'?tcGetName(props.categoryId,pid):(props.categoryId||'Unknown'));
   const color=(typeof tcGetColor==='function')?tcGetColor(props.categoryId,pid):'#888';
+  const measText=(props.measurementValue!=null&&props.measurementUnit)
+    ?((typeof tcFormatMeasurement==='function')?tcFormatMeasurement(props.measurementValue,props.measurementUnit):(props.measurementValue+' '+props.measurementUnit))
+    :(props.acres?props.acres+' ac':'');
+  const photoIds=entry?.photoIds||[];
+  const photos=(window._phPhotos||[]).filter(p=>photoIds.includes(p.id));
+  const photoStrip=photos.length?`<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,.12)">
+    ${photos.map(p=>`<img src="${p.thumb}" onclick="phOpenLightbox('${p.id}')" style="width:56px;height:56px;object-fit:cover;border-radius:4px;cursor:pointer;border:2px solid rgba(255,255,255,.15)">`).join('')}
+  </div>`:'';
   const html=`<div style="font-family:var(--mono);font-size:12px;min-width:180px;color:#e8e8e8">
     <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
       <div style="width:10px;height:10px;border-radius:50%;background:${color};flex-shrink:0"></div>
       <strong style="color:#fff">${label}</strong>
     </div>
     ${props.date?`<div style="color:#dce8f4">📅 ${props.date}</div>`:''}
-    ${props.acres?`<div style="color:#dce8f4">📐 ${props.acres} ac</div>`:''}
+    ${measText?`<div style="color:#dce8f4">📐 ${measText}</div>`:''}
     ${props.location?`<div style="color:#dce8f4">📍 ${props.location}</div>`:''}
+    ${props.status?`<div style="color:#dce8f4">🔧 ${props.status}</div>`:''}
     ${(props.phase&&props.phase!=='N/A')?`<div style="color:#dce8f4">🌱 ${props.phase}</div>`:''}
     ${(props.method&&props.method!=='N/A')?`<div style="color:#dce8f4">⚙️ ${props.method}</div>`:''}
     ${props.contractor?`<div style="color:#dce8f4">👷 ${props.contractor}</div>`:''}
     ${props.notes?`<div style="margin-top:6px;color:#c8d8e8;border-top:1px solid rgba(255,255,255,.1);padding-top:6px">${props.notes}</div>`:''}
+    ${photoStrip}
     <div style="display:flex;gap:6px;margin-top:8px">
       <button onclick="mapEditTrackerEntry('${props.id}')" style="flex:1;background:var(--amber,#D97706);border:none;color:#111;padding:6px;border-radius:6px;font-family:var(--mono);font-size:11px;cursor:pointer;font-weight:700">✏️ Edit</button>
       <button onclick="mapDeleteTrackerEntryFromPanel('${props.id}')" style="flex:1;background:var(--s2);border:1px solid var(--border);color:var(--muted);padding:6px;border-radius:6px;font-family:var(--mono);font-size:11px;cursor:pointer;">✕ Remove</button>
