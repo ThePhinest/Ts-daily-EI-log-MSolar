@@ -1396,7 +1396,12 @@ function mapCloseCategorySheet(){
 }
 
 // ── Tracker sheet (category management) ──
-const TC_COLORS=['#E67E22','#27AE60','#4A90E2','#9B59B6','#F4E200','#D35400','#7CCD7C','#E74C3C','#8E9BA3','#A8D8A8'];
+const TC_COLORS=[
+  '#E74C3C','#D35400','#E67E22','#F39C12','#F4E200','#27AE60',
+  '#1ABC9C','#3498DB','#4A90E2','#2980B9','#9B59B6','#E91E8C',
+  '#7CCD7C','#A8D8A8','#82C4E8','#D7BDE2','#FFAB40','#FF7043',
+  '#8E9BA3','#BDC3C7','#7F8C8D','#2C3E50','#922B21','#1B5E20',
+];
 let _tcLayerVisible={};       // { [catId]: boolean } — default true
 let _tcEditingCatId=null;     // id of category being inline-edited
 let _tcEditingColor=null;     // color staged for edit row (hex string)
@@ -1615,9 +1620,12 @@ function mapShowColorPicker(target, swatchEl){
   _tcColorTarget=target;
   const picker=document.getElementById('map-tc-color-popover');
   if(!picker) return;
-  picker.innerHTML=TC_COLORS.map(c=>`
-    <div onclick="mapSelectColor('${c}')" style="width:30px;height:30px;border-radius:50%;background:${c};cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,.45);flex-shrink:0;border:2px solid rgba(255,255,255,.15)"></div>`
-  ).join('');
+  picker.innerHTML=TC_COLORS.map(c=>`<div onclick="mapSelectColor('${c}')" style="width:26px;height:26px;border-radius:50%;background:${c};cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,.45);flex-shrink:0;border:2px solid rgba(255,255,255,.12)"></div>`).join('')
+    +`<div style="width:100%;border-top:1px solid rgba(255,255,255,.12);padding-top:8px;display:flex;align-items:center;gap:6px">
+    <input id="_tc-hex-input" type="text" placeholder="#rrggbb" maxlength="7" style="flex:1;min-width:0;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.2);border-radius:5px;color:#fff;font-family:var(--mono);font-size:11px;padding:5px 8px" oninput="mapHexColorInput(this.value)" onkeydown="if(event.key==='Enter')mapApplyHexColor()">
+    <div id="_tc-hex-preview" style="width:24px;height:24px;border-radius:50%;background:#888;flex-shrink:0;border:2px solid rgba(255,255,255,.2)"></div>
+    <button onclick="mapApplyHexColor()" style="background:var(--amber,#D97706);border:none;color:#111;border-radius:4px;font-family:var(--mono);font-size:10px;padding:4px 8px;cursor:pointer;font-weight:700">✓</button>
+  </div>`;
   picker.style.display='flex';
   const rect=swatchEl.getBoundingClientRect();
   const pickerW=216; // 5 cols × (30+12) - 12 + 2×padding
@@ -1647,6 +1655,17 @@ function mapHideColorPicker(){
   const picker=document.getElementById('map-tc-color-popover');
   if(picker) picker.style.display='none';
   _tcColorTarget=null;
+}
+function mapHexColorInput(val){
+  const isValid=/^#[0-9A-Fa-f]{6}$/.test(val);
+  const preview=document.getElementById('_tc-hex-preview');
+  if(preview) preview.style.background=isValid?val:'#888';
+}
+function mapApplyHexColor(){
+  const input=document.getElementById('_tc-hex-input');
+  if(!input) return;
+  const val=input.value.trim();
+  if(/^#[0-9A-Fa-f]{6}$/.test(val)) mapSelectColor(val);
 }
 
 function mapTcSetAddType(type){
@@ -1747,6 +1766,8 @@ function mapDeactivateDrawMode(){
   document.getElementById('map-fab-draw-btn').classList.remove('active');
   document.getElementById('map-fab-measure-btn').classList.remove('active');
   document.getElementById('map-measure-chip').classList.remove('show');
+  const measTypeBtns=document.getElementById('map-measure-type-btns');
+  if(measTypeBtns) measTypeBtns.style.display='none';
   // Restore all shape buttons to enabled state
   ['poly','line','point'].forEach(s=>{
     const btn=document.getElementById('map-draw-'+s+'-btn');
@@ -1963,9 +1984,11 @@ function mapSaveTrackerEntry(){
 }
 
 // ── Measure mode ──────────────────────────
+let _measureType='line';
 function mapActivateMeasure(){
   if(!_mapInstance) return;
   _drawMode='measure';
+  _measureType='line';
   if(!_drawInstance){
     _drawInstance=new MapboxDraw({ displayControlsDefault:false, controls:{} });
     _mapInstance.addControl(_drawInstance,'top-left');
@@ -1973,13 +1996,30 @@ function mapActivateMeasure(){
     _mapInstance.on('draw.delete',_onDrawDelete);
     _mapInstance.on('draw.modechange',_onDrawModeChange);
   }
-  _drawInstance.changeMode('draw_polygon');
+  _drawInstance.changeMode('draw_line_string');
   const bar=document.getElementById('map-draw-bar');
-  document.getElementById('map-draw-bar-label').textContent='Tap points · double-tap to finish';
+  document.getElementById('map-draw-bar-label').textContent='Measure';
   document.getElementById('map-draw-shape-btns').style.display='none';
+  const measTypeBtns=document.getElementById('map-measure-type-btns');
+  if(measTypeBtns) measTypeBtns.style.display='flex';
+  _updateMeasureTypeBtns('line');
   bar.classList.add('show');
   bar.style.borderColor='#4A90E2';
   document.getElementById('map-fab-measure-btn').classList.add('active');
+}
+function mapSetMeasureType(type){
+  if(!_drawInstance||_drawMode!=='measure') return;
+  _measureType=type;
+  _drawInstance.deleteAll();
+  document.getElementById('map-measure-chip').classList.remove('show');
+  _drawInstance.changeMode(type==='polygon'?'draw_polygon':'draw_line_string');
+  _updateMeasureTypeBtns(type);
+}
+function _updateMeasureTypeBtns(type){
+  const lineBtn=document.getElementById('map-meas-line-btn');
+  const polyBtn=document.getElementById('map-meas-poly-btn');
+  if(lineBtn) lineBtn.style.background=type==='line'?'rgba(0,0,0,.35)':'none';
+  if(polyBtn) polyBtn.style.background=type==='polygon'?'rgba(0,0,0,.35)':'none';
 }
 
 function _showMeasureReadout(feat){
@@ -2000,6 +2040,13 @@ function _showMeasureReadout(feat){
   }
   chip.textContent=text;
   chip.classList.add('show');
+  // Restart draw mode so user can immediately measure again without pressing the button
+  setTimeout(()=>{
+    if(_drawMode==='measure'&&_drawInstance){
+      _drawInstance.deleteAll();
+      _drawInstance.changeMode(_measureType==='polygon'?'draw_polygon':'draw_line_string');
+    }
+  },100);
 }
 
 // ── GPS Follow ────────────────────────────
@@ -2055,14 +2102,15 @@ function mapClearTrackerLayers(){
 // ── Tracker layer style helpers ────────────────────────────────────────────
 const _TC_DASH_ARRAYS={solid:null,dashed:[5,3],dotted:[1,2.5],'dash-dot':[5,2,1,2]};
 
-function _generateHatchPattern(color,type){
-  const size=16;
+function _generateHatchPattern(color,type,opacity){
+  const size=32;
   const canvas=document.createElement('canvas');
   canvas.width=size; canvas.height=size;
   const ctx=canvas.getContext('2d');
   ctx.clearRect(0,0,size,size);
-  ctx.strokeStyle=color; ctx.lineWidth=1.5;
-  const sp=8;
+  ctx.globalAlpha=opacity!=null?opacity:0.7;
+  ctx.strokeStyle=color; ctx.lineWidth=2;
+  const sp=16;
   for(let i=-size;i<=size*2;i+=sp){ctx.beginPath();ctx.moveTo(i,0);ctx.lineTo(i+size,size);ctx.stroke();}
   if(type==='crosshatch'){
     for(let i=-size;i<=size*2;i+=sp){ctx.beginPath();ctx.moveTo(i,size);ctx.lineTo(i+size,0);ctx.stroke();}
@@ -2075,15 +2123,16 @@ function _ensureCategoryPatternImages(cats){
   cats.forEach(cat=>{
     const color=cat.color||'#888';
     const fs=cat.fillStyle||'solid';
+    const opacity=cat.fillOpacity!=null?cat.fillOpacity:0.7;
     if(fs==='hatch'||fs==='crosshatch'){
       const name='tr-hatch-'+cat.id;
-      const img=_generateHatchPattern(color,'hatch');
-      try{ if(_mapInstance.hasImage(name)) _mapInstance.updateImage(name,img); else _mapInstance.addImage(name,img,{pixelRatio:2}); }catch{}
+      const img=_generateHatchPattern(color,'hatch',opacity);
+      try{ if(_mapInstance.hasImage(name)) _mapInstance.updateImage(name,img); else _mapInstance.addImage(name,img); }catch{}
     }
     if(fs==='crosshatch'){
       const name='tr-xhatch-'+cat.id;
-      const img=_generateHatchPattern(color,'crosshatch');
-      try{ if(_mapInstance.hasImage(name)) _mapInstance.updateImage(name,img); else _mapInstance.addImage(name,img,{pixelRatio:2}); }catch{}
+      const img=_generateHatchPattern(color,'crosshatch',opacity);
+      try{ if(_mapInstance.hasImage(name)) _mapInstance.updateImage(name,img); else _mapInstance.addImage(name,img); }catch{}
     }
   });
 }
@@ -2401,20 +2450,21 @@ function mapDeleteTrackerEntryFromPanel(entryId){
   </div>`;
   document.body.appendChild(ov);
   document.getElementById('_trpCancel').onclick=()=>ov.remove();
+  const _closePopup=()=>{if(_trackerPopup){_trackerPopup.remove();_trackerPopup=null;}};
   document.getElementById('_trpHide').onclick=()=>{
-    ov.remove();
+    ov.remove(); _closePopup();
     if(typeof trMarkDeletedFromMap==='function') trMarkDeletedFromMap(entryId,pid);
     mapRenderTrackerLayers();
     mapUpdateKmlLayerList();
   };
   document.getElementById('_trpArchive').onclick=()=>{
-    ov.remove();
+    ov.remove(); _closePopup();
     if(typeof trArchiveFromMap==='function') trArchiveFromMap(entryId,pid);
     mapRenderTrackerLayers();
     mapUpdateKmlLayerList();
   };
   document.getElementById('_trpDel').onclick=()=>{
-    ov.remove();
+    ov.remove(); _closePopup();
     if(typeof trDeleteEntry==='function') trDeleteEntry(entryId,pid);
     mapRenderTrackerLayers();
     mapUpdateKmlLayerList();
@@ -2622,6 +2672,9 @@ window.mapTrackerUnitChange = mapTrackerUnitChange;
 window.mapShowColorPicker = mapShowColorPicker;
 window.mapSelectColor = mapSelectColor;
 window.mapHideColorPicker = mapHideColorPicker;
+window.mapHexColorInput = mapHexColorInput;
+window.mapApplyHexColor = mapApplyHexColor;
+window.mapSetMeasureType = mapSetMeasureType;
 window.mapShowPhotoLinkPicker = mapShowPhotoLinkPicker;
 window.mapLinkPhotoToEntry = mapLinkPhotoToEntry;
 window.mapShowEntryPhotoPicker = mapShowEntryPhotoPicker;
