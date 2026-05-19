@@ -92,7 +92,7 @@ body.theme-light{
 #map-fab.open{background:var(--s2);color:#e8e8e8;transform:rotate(45deg)}
 #map-view-fab.open{background:rgba(255,255,255,0.13);border-color:var(--amber)}
 #map-view-fab{position:fixed;bottom:calc(105px + env(safe-area-inset-bottom));left:16px;z-index:250;width:52px;height:52px;border-radius:50%;background:var(--bg);border:1px solid var(--border2);cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:0}
-#map-view-palette{position:fixed;bottom:calc(163px + env(safe-area-inset-bottom));left:16px;z-index:249;background:var(--bg);border:1px solid var(--border2);border-radius:12px;padding:10px 12px;min-width:210px;pointer-events:none;opacity:0;transform:translateY(10px);transition:opacity .18s,transform .18s}
+#map-view-palette{position:fixed;bottom:calc(163px + env(safe-area-inset-bottom));left:16px;z-index:249;background:var(--bg);border:1px solid var(--border2);border-radius:12px;padding:10px 12px;min-width:210px;max-height:calc(100dvh - 200px);overflow-y:auto;pointer-events:none;opacity:0;transform:translateY(10px);transition:opacity .18s,transform .18s}
 #map-view-palette.open{pointer-events:auto;opacity:1;transform:translateY(0)}
 .map-vf-label{font-family:var(--mono);font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:5px;margin-top:8px}
 .map-vf-label:first-child{margin-top:0}
@@ -1774,11 +1774,15 @@ Anticipated rain — AM weather monitoring expected"></textarea>
         <span style="font-family:var(--mono);font-size:10px;color:var(--muted)">to</span>
         <input type="date" id="map-pin-to" style="background:var(--s1);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--mono);font-size:11px;padding:5px 8px" onchange="mapRenderPhotoPins()">
       </div>
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px">
-        <div class="map-vf-label" style="margin:0">FIELD MARKERS</div>
-        <button id="map-vf-fm-toggle" onclick="mapToggleFieldMarkers()" style="background:var(--s1);border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:9px;font-weight:700;padding:2px 8px;border-radius:8px;cursor:pointer;letter-spacing:.04em">Hide</button>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px;cursor:pointer" onclick="mapToggleFmList()">
+        <div class="map-vf-label" style="margin:0;display:flex;align-items:center;gap:5px">
+          <span id="map-vf-fm-arrow" style="font-size:9px;color:var(--muted)">▾</span>FIELD MARKERS
+        </div>
+        <button id="map-vf-fm-toggle" onclick="event.stopPropagation();mapToggleFieldMarkers()" style="background:var(--s1);border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:9px;font-weight:700;padding:2px 8px;border-radius:8px;cursor:pointer;letter-spacing:.04em">Hide</button>
       </div>
-      <div id="map-field-marker-list" style="font-size:11px;color:var(--muted);margin-bottom:4px;">No markers placed.</div>
+      <div id="map-vf-fm-list-wrap">
+        <div id="map-field-marker-list" style="font-size:11px;color:var(--muted);margin-bottom:4px;max-height:120px;overflow-y:auto;">No markers placed.</div>
+      </div>
     </div>
     <!-- Layer panel -->
 <div id="map-layer-panel" style="position:absolute;top:0;right:0;width:260px;height:100%;background:var(--bg);border-left:1px solid var(--border);z-index:20;transform:translateX(100%);transition:transform .3s;display:flex;flex-direction:column;overflow:hidden;">

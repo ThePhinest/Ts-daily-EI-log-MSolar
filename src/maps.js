@@ -490,6 +490,15 @@ function mapHideFieldMarker(id){
   });
 }
 
+function mapToggleFmList(){
+  const wrap=document.getElementById('map-vf-fm-list-wrap');
+  const arrow=document.getElementById('map-vf-fm-arrow');
+  if(!wrap) return;
+  const collapsed=wrap.style.display==='none';
+  wrap.style.display=collapsed?'':'none';
+  if(arrow) arrow.textContent=collapsed?'▾':'▸';
+}
+
 function mapToggleFieldMarkers(){
   _fieldMarkersVisible=!_fieldMarkersVisible;
   if(_fieldMarkersVisible){
@@ -2690,6 +2699,7 @@ window.mapConfirmMarker = mapConfirmMarker;
 window.mapRenderFieldMarkers = mapRenderFieldMarkers;
 window.mapDeleteFieldMarker = mapDeleteFieldMarker;
 window.mapHideFieldMarker = mapHideFieldMarker;
+window.mapToggleFmList = mapToggleFmList;
 window.mapToggleFieldMarkers = mapToggleFieldMarkers;
 window.mapUpdateFieldMarkerList = mapUpdateFieldMarkerList;
 window.mapImportKml = mapImportKml;
