@@ -151,7 +151,11 @@ function mapSetup(token){
   } catch (_) { /* never let instrumentation break map setup */ }
 
   _mapInstance.addControl(new mapboxgl.AttributionControl({compact:true}),'bottom-left');
-  _mapInstance.addControl(new mapboxgl.NavigationControl({showCompass:true}),'top-right');
+  _mapInstance.addControl(new mapboxgl.NavigationControl({showCompass:false,showZoom:true}),'top-right');
+  _mapInstance.on('rotate',()=>{
+    const needle=document.getElementById('map-compass-needle');
+    if(needle) needle.style.transform=`rotate(${-_mapInstance.getBearing()}deg)`;
+  });
   _mapInstance.on('load',()=>{
     document.getElementById('map-loading').style.display='none';
     setTimeout(()=>_mapInstance.resize(),100);
@@ -301,7 +305,7 @@ const _mapEmojiList = [
   {emoji:'🌳', label:'Tree / Vegetation'},
   {emoji:'🔵', label:'Drainage / Outlet'},
   {emoji:'🏗️', label:'Active Work Area'},
-  {emoji:'🧱', label:'Erosion Control'}
+  {emoji:'📝', label:'Site Note'}
 ];
 let _mapPinFilter = 'today';
 
@@ -1361,16 +1365,21 @@ function mapResize(){ if(_mapInstance) _mapInstance.resize(); }
 // ═══════════════════════════════════════════
 
 // ── FAB ──────────────────────────────────
+function mapResetNorth(){
+  if(_mapInstance) _mapInstance.resetNorth({duration:300});
+}
 function mapToggleFab(){
   mapCloseViewFab();
   _fabOpen=!_fabOpen;
   document.getElementById('map-fab').classList.toggle('open',_fabOpen);
   document.getElementById('map-fab-palette').classList.toggle('open',_fabOpen);
+  document.getElementById('map-compass')?.classList.toggle('fab-open',_fabOpen);
 }
 function mapCloseFab(){
   _fabOpen=false;
   document.getElementById('map-fab').classList.remove('open');
   document.getElementById('map-fab-palette').classList.remove('open');
+  document.getElementById('map-compass')?.classList.remove('fab-open');
 }
 function mapToggleViewFab(){
   mapCloseFab();
@@ -2723,6 +2732,7 @@ window.mapShowExportModal = mapShowExportModal;
 window.mapExportKml = mapExportKml;
 window.mapLoadSettingsFields = mapLoadSettingsFields;
 // B2
+window.mapResetNorth = mapResetNorth;
 window.mapToggleFab = mapToggleFab;
 window.mapCloseFab = mapCloseFab;
 window.mapToggleViewFab = mapToggleViewFab;

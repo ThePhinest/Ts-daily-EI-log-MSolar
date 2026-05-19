@@ -87,6 +87,10 @@ body.theme-light{
 .mapboxgl-ctrl-bottom-left{bottom:calc(8px + env(safe-area-inset-bottom))!important}
 #mapbox-map{width:100%;height:calc(100dvh - 60px - env(safe-area-inset-bottom))}
 #map-loading,#map-no-token{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:var(--bg);z-index:20;padding:32px;text-align:center}
+/* Compass */
+#map-compass{position:fixed;bottom:calc(165px + env(safe-area-inset-bottom));right:16px;z-index:248;width:36px;height:36px;border-radius:50%;background:var(--bg);border:1px solid var(--border2);cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:0;transition:bottom .18s;outline:none}
+#map-compass.fab-open{bottom:calc(365px + env(safe-area-inset-bottom))}
+#map-compass-needle{transition:transform .15s linear;display:flex;align-items:center;justify-content:center}
 /* FAB + palette */
 #map-fab{position:fixed;bottom:calc(105px + env(safe-area-inset-bottom));right:16px;z-index:250;width:52px;height:52px;border-radius:50%;background:var(--amber);border:none;color:#111;font-size:22px;cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;transition:background .18s,transform .18s}
 #map-fab.open{background:var(--s2);color:#e8e8e8;transform:rotate(45deg)}
@@ -1838,6 +1842,16 @@ Anticipated rain — AM weather monitoring expected"></textarea>
   </div>
 </div>
 
+    <!-- Compass -->
+    <button id="map-compass" onclick="mapResetNorth()" title="Reset north">
+      <div id="map-compass-needle">
+        <svg viewBox="0 0 22 22" width="20" height="20">
+          <polygon points="11,2 13,10 11,8.5 9,10" fill="#E74C3C"/>
+          <polygon points="11,20 13,12 11,13.5 9,12" fill="rgba(180,180,180,.6)"/>
+          <circle cx="11" cy="11" r="1.5" fill="rgba(255,255,255,.5)"/>
+        </svg>
+      </div>
+    </button>
     <!-- FAB -->
     <button id="map-fab" onclick="mapToggleFab()" title="Tracker tools">✚</button>
     <div id="map-fab-palette">
@@ -2478,7 +2492,10 @@ Anticipated rain — AM weather monitoring expected"></textarea>
     <div class="config-body">
       <p class="config-hint">Customize the dropdown options for Application Phase and Application Method. These are project-specific — each project can have its own list.</p>
       <div style="margin-bottom:16px">
-        <div style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px">Application Phases</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+          <div style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em">Application Phases</div>
+          <button id="reorder-btn-amendment-phases" class="reorder-btn" onclick="toggleReorderMode('amendment-phases')">⇅ Reorder</button>
+        </div>
         <ul class="preset-list" id="list-amendment-phases"></ul>
         <div class="add-preset-row">
           <input type="text" id="new-amendment-phase" placeholder="Add phase…" style="flex:1;background:var(--bg);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--mono);font-size:12px;padding:6px 10px">
@@ -2486,7 +2503,10 @@ Anticipated rain — AM weather monitoring expected"></textarea>
         </div>
       </div>
       <div style="margin-bottom:12px">
-        <div style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px">Application Methods</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+          <div style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em">Application Methods</div>
+          <button id="reorder-btn-amendment-methods" class="reorder-btn" onclick="toggleReorderMode('amendment-methods')">⇅ Reorder</button>
+        </div>
         <ul class="preset-list" id="list-amendment-methods"></ul>
         <div class="add-preset-row">
           <input type="text" id="new-amendment-method" placeholder="Add method…" style="flex:1;background:var(--bg);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--mono);font-size:12px;padding:6px 10px">

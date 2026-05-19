@@ -213,11 +213,15 @@ function renderAmendmentConfig(){
     if(!ul) return;
     const arr=type==='phases'?window._amendmentPhases:window._amendmentMethods;
     ul.innerHTML='';
+    const isReordering=ul.classList.contains('reorder-mode');
     (arr||[]).forEach((item,i)=>{
       const li=document.createElement('li');
-      li.innerHTML=`<span class="p-text">${item}</span><button class="del-p" onclick="${type==='phases'?'removeAmendmentPhase':'removeAmendmentMethod'}(${i})">✕</button>`;
+      li.dataset.idx=i; li.dataset.origIdx=i;
+      li.innerHTML=`<span class="drag-handle" title="Drag to reorder">≡</span><span class="p-text">${item}</span><button class="del-p" onclick="${type==='phases'?'removeAmendmentPhase':'removeAmendmentMethod'}(${i})">✕</button>`;
+      if(isReordering) li.classList.add('reorder-mode');
       ul.appendChild(li);
     });
+    if(isReordering) _initDrag(ul, type==='phases'?'amendment-phases':'amendment-methods');
   });
 }
 function addAmendmentPhase(){
@@ -540,7 +544,7 @@ function removePhase(idx){
 
 // ── Preset reorder mode ──
 function toggleReorderMode(key){
-  const ids={obs:'list-obs',act:'list-act',env:'list-env',comms:'list-comms',look:'list-look',checklist:'list-checklist',flags:'list-flags'};
+  const ids={obs:'list-obs',act:'list-act',env:'list-env',comms:'list-comms',look:'list-look',checklist:'list-checklist',flags:'list-flags','amendment-phases':'list-amendment-phases','amendment-methods':'list-amendment-methods'};
   const ul=document.getElementById(ids[key]);
   const btn=document.getElementById('reorder-btn-'+key);
   if(!ul||!btn)return;
@@ -551,13 +555,18 @@ function toggleReorderMode(key){
     btn.textContent='⇅ Reorder';
     // Save new order based on current DOM order
     const domItems=[...ul.querySelectorAll('li')];
-    const srcArr=key==='checklist'?checklistItems:key==='flags'?flagItems:presets[key];
+    const isAmendPhases=key==='amendment-phases', isAmendMethods=key==='amendment-methods';
+    const srcArr=key==='checklist'?checklistItems:key==='flags'?flagItems
+      :isAmendPhases?window._amendmentPhases:isAmendMethods?window._amendmentMethods
+      :presets[key];
     const newOrder=domItems.map(li=>{
       const origIdx=parseInt(li.dataset.origIdx!==undefined?li.dataset.origIdx:li.dataset.idx);
       return srcArr[origIdx];
     }).filter(Boolean);
     if(key==='checklist'){window.checklistItems=newOrder;saveChecklistLocal();saveChecklistCloud();renderChecklistList();buildChecklist();}
     else if(key==='flags'){window.flagItems=newOrder;saveFlagsLocal();saveFlagsCloud();renderFlagsList();buildFlags();}
+    else if(isAmendPhases){window._amendmentPhases=newOrder;saveAmendmentLocal();saveAmendmentCloud();renderAmendmentConfig();}
+    else if(isAmendMethods){window._amendmentMethods=newOrder;saveAmendmentLocal();saveAmendmentCloud();renderAmendmentConfig();}
     else{presets[key]=newOrder;ss('msf_presets',presets);renderPresetList(key);renderAllChips();_saveProjectSettings({presets});}
     // Clean up event listeners using stored refs
     ul.onmouseover=null;
