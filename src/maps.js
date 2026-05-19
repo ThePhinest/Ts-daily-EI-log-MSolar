@@ -1435,6 +1435,13 @@ function _renderTrackerSheet(){
         ?[['ft','Feet'],['yd','Yards'],['m','Meters'],['mi','Miles']]
         :[['ac','Acres'],['sqft','Sq Ft'],['sqyd','Sq Yards'],['sqm','Sq Meters'],['ha','Hectares']]
       ).map(([v,l])=>`<option value="${v}"${v===(c.defaultUnit||'ac')?' selected':''}>${l}</option>`).join('');
+      const lsLabels={solid:'— Solid',dashed:'– Dashed',dotted:'·· Dotted','dash-dot':'–· D-Dot'};
+      const lsOpts=['solid','dashed','dotted','dash-dot'].map(s=>`<option value="${s}"${s===(c.lineStyle||'solid')?' selected':''}>${lsLabels[s]||s}</option>`).join('');
+      const lwOpts=[1,2,3,4].map(w=>`<option value="${w}"${w===(c.lineWidth||2)?' selected':''}>${w}px</option>`).join('');
+      const fsLabels={solid:'■ Solid','hatch':'▥ Hatch','crosshatch':'▨ Cross','outline':'□ Outline'};
+      const fsOpts=['solid','hatch','crosshatch','outline'].map(s=>`<option value="${s}"${s===(c.fillStyle||'solid')?' selected':''}>${fsLabels[s]||s}</option>`).join('');
+      const foOpts=[['0.15','Light'],['0.35','Med'],['0.6','Dark']].map(([v,l])=>`<option value="${v}"${String(v)===String(c.fillOpacity??0.35)?' selected':''}>${l}</option>`).join('');
+      const fillCtls=editType!=='linear'?`<select id="map-tc-edit-fillstyle" class="map-tc-unit-sel">${fsOpts}</select><select id="map-tc-edit-fillopacity" class="map-tc-unit-sel">${foOpts}</select>`:'';
       return `<div class="map-tc-row editing" style="flex-wrap:wrap;gap:6px">
         <div style="display:flex;align-items:center;gap:8px;width:100%">
           <div class="map-tc-edit-color" id="map-tc-edit-preview" style="background:${_tcEditingColor||c.color||'#888'}" onclick="mapShowColorPicker('edit',this)"></div>
@@ -1445,6 +1452,11 @@ function _renderTrackerSheet(){
         <div style="display:flex;align-items:center;gap:6px;padding-left:28px">
           <span style="font-family:var(--mono);font-size:10px;color:var(--muted)">${editType==='linear'?'Linear':'Area'} ·</span>
           <select id="map-tc-edit-unit" class="map-tc-unit-sel">${editUnitOpts}</select>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;padding-left:28px;flex-wrap:wrap">
+          <select id="map-tc-edit-linestyle" class="map-tc-unit-sel">${lsOpts}</select>
+          <select id="map-tc-edit-linewidth" class="map-tc-unit-sel">${lwOpts}</select>
+          ${fillCtls}
         </div>
       </div>`;
     }
@@ -1498,7 +1510,11 @@ async function mapTrackerSaveEdit(catId){
   const existing=(typeof tcGetCategory==='function')?tcGetCategory(catId,pid):null;
   if(!existing) return;
   const editedUnit=document.getElementById('map-tc-edit-unit')?.value||existing.defaultUnit||'ac';
-  await tcSaveCategory({...existing,name,color:_tcEditingColor||existing.color,defaultUnit:editedUnit},pid);
+  const editedLineStyle=document.getElementById('map-tc-edit-linestyle')?.value||existing.lineStyle||'solid';
+  const editedLineWidth=parseInt(document.getElementById('map-tc-edit-linewidth')?.value)||existing.lineWidth||2;
+  const editedFillStyle=document.getElementById('map-tc-edit-fillstyle')?.value||existing.fillStyle||'solid';
+  const editedFillOpacity=parseFloat(document.getElementById('map-tc-edit-fillopacity')?.value)??existing.fillOpacity??0.35;
+  await tcSaveCategory({...existing,name,color:_tcEditingColor||existing.color,defaultUnit:editedUnit,lineStyle:editedLineStyle,lineWidth:editedLineWidth,fillStyle:editedFillStyle,fillOpacity:editedFillOpacity},pid);
   _tcEditingCatId=null;
   _tcEditingColor=null;
   _renderTrackerSheet();
@@ -1638,12 +1654,13 @@ function mapTcSetAddType(type){
   document.getElementById('map-tc-add-type-area').classList.toggle('active',type==='area');
   document.getElementById('map-tc-add-type-linear').classList.toggle('active',type==='linear');
   const sel=document.getElementById('map-tc-add-unit');
-  if(!sel) return;
-  if(type==='linear'){
-    sel.innerHTML='<option value="ft">Feet</option><option value="yd">Yards</option><option value="m">Meters</option><option value="mi">Miles</option>';
-  } else {
-    sel.innerHTML='<option value="ac">Acres</option><option value="sqft">Sq Ft</option><option value="sqyd">Sq Yards</option><option value="sqm">Sq Meters</option><option value="ha">Hectares</option>';
+  if(sel){
+    sel.innerHTML=type==='linear'
+      ?'<option value="ft">Feet</option><option value="yd">Yards</option><option value="m">Meters</option><option value="mi">Miles</option>'
+      :'<option value="ac">Acres</option><option value="sqft">Sq Ft</option><option value="sqyd">Sq Yards</option><option value="sqm">Sq Meters</option><option value="ha">Hectares</option>';
   }
+  const fillCtls=document.getElementById('map-tc-add-fill-controls');
+  if(fillCtls) fillCtls.style.display=type==='linear'?'none':'';
 }
 function mapTrackerShowAdd(){
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
@@ -1669,7 +1686,11 @@ async function mapTrackerSaveAdd(){
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
   const measurementType=_tcAddingType||'area';
   const defaultUnit=document.getElementById('map-tc-add-unit')?.value||(measurementType==='linear'?'ft':'ac');
-  await tcSaveCategory({name,color:_tcAddingColor||'#E67E22',measurementType,defaultUnit},pid);
+  const lineStyle=document.getElementById('map-tc-add-linestyle')?.value||'solid';
+  const lineWidth=parseInt(document.getElementById('map-tc-add-linewidth')?.value)||2;
+  const fillStyle=measurementType==='linear'?'solid':(document.getElementById('map-tc-add-fillstyle')?.value||'solid');
+  const fillOpacity=parseFloat(document.getElementById('map-tc-add-fillopacity')?.value)||0.35;
+  await tcSaveCategory({name,color:_tcAddingColor||'#E67E22',measurementType,defaultUnit,lineStyle,lineWidth,fillStyle,fillOpacity},pid);
   mapTrackerHideAdd();
   _renderTrackerSheet();
 }
@@ -2031,6 +2052,72 @@ function mapClearTrackerLayers(){
   if(_trackerPopup){ _trackerPopup.remove(); _trackerPopup=null; }
 }
 
+// ── Tracker layer style helpers ────────────────────────────────────────────
+const _TC_DASH_ARRAYS={solid:null,dashed:[5,3],dotted:[1,2.5],'dash-dot':[5,2,1,2]};
+
+function _generateHatchPattern(color,type){
+  const size=16;
+  const canvas=document.createElement('canvas');
+  canvas.width=size; canvas.height=size;
+  const ctx=canvas.getContext('2d');
+  ctx.clearRect(0,0,size,size);
+  ctx.strokeStyle=color; ctx.lineWidth=1.5;
+  const sp=8;
+  for(let i=-size;i<=size*2;i+=sp){ctx.beginPath();ctx.moveTo(i,0);ctx.lineTo(i+size,size);ctx.stroke();}
+  if(type==='crosshatch'){
+    for(let i=-size;i<=size*2;i+=sp){ctx.beginPath();ctx.moveTo(i,size);ctx.lineTo(i+size,0);ctx.stroke();}
+  }
+  return ctx.getImageData(0,0,size,size);
+}
+
+function _ensureCategoryPatternImages(cats){
+  if(!_mapInstance) return;
+  cats.forEach(cat=>{
+    const color=cat.color||'#888';
+    const fs=cat.fillStyle||'solid';
+    if(fs==='hatch'||fs==='crosshatch'){
+      const name='tr-hatch-'+cat.id;
+      const img=_generateHatchPattern(color,'hatch');
+      try{ if(_mapInstance.hasImage(name)) _mapInstance.updateImage(name,img); else _mapInstance.addImage(name,img,{pixelRatio:2}); }catch{}
+    }
+    if(fs==='crosshatch'){
+      const name='tr-xhatch-'+cat.id;
+      const img=_generateHatchPattern(color,'crosshatch');
+      try{ if(_mapInstance.hasImage(name)) _mapInstance.updateImage(name,img); else _mapInstance.addImage(name,img,{pixelRatio:2}); }catch{}
+    }
+  });
+}
+
+function _addCategoryFillLayer(srcId,cat){
+  const color=cat.color||'#888';
+  const fs=cat.fillStyle||'solid';
+  const fo=cat.fillOpacity!=null?cat.fillOpacity:0.35;
+  let paint;
+  if(fs==='hatch')        paint={'fill-pattern':'tr-hatch-'+cat.id};
+  else if(fs==='crosshatch') paint={'fill-pattern':'tr-xhatch-'+cat.id};
+  else if(fs==='outline')    paint={'fill-color':color,'fill-opacity':0};
+  else                       paint={'fill-color':color,'fill-opacity':fo};
+  _mapInstance.addLayer({id:srcId+'-fill',type:'fill',source:srcId,filter:['==',['geometry-type'],'Polygon'],paint});
+}
+
+function _addCategoryLineLayer(srcId,cat){
+  const color=cat.color||'#888';
+  const lw=cat.lineWidth||2;
+  const dashArr=_TC_DASH_ARRAYS[cat.lineStyle||'solid']||null;
+  const paint={'line-color':color,'line-width':lw,'line-opacity':0.9};
+  if(dashArr) paint['line-dasharray']=dashArr;
+  _mapInstance.addLayer({id:srcId+'-line',type:'line',source:srcId,
+    filter:['any',['==',['geometry-type'],'Polygon'],['==',['geometry-type'],'LineString']],paint});
+}
+
+function _addCategoryCircleLayer(srcId,cat){
+  const color=cat.color||'#888';
+  const r=5+(cat.lineWidth||2);
+  _mapInstance.addLayer({id:srcId+'-circle',type:'circle',source:srcId,
+    filter:['==',['geometry-type'],'Point'],
+    paint:{'circle-color':color,'circle-radius':r,'circle-opacity':0.9,'circle-stroke-color':'#fff','circle-stroke-width':1.5}});
+}
+
 function mapRenderTrackerLayers(){
   if(!_mapInstance||!_mapInstance.isStyleLoaded()) return;
 
@@ -2077,24 +2164,18 @@ function mapRenderTrackerLayers(){
       geometry:e.geometry
     }))};
 
+    _ensureCategoryPatternImages([cat]);
     if(_mapInstance.getSource(src)){
       _mapInstance.getSource(src).setData(geojson);
-      _mapInstance.setPaintProperty(src+'-fill','fill-color',color);
-      _mapInstance.setPaintProperty(src+'-line','line-color',color);
-      _mapInstance.setPaintProperty(src+'-circle','circle-color',color);
+      ['fill','line','circle'].forEach(t=>{try{if(_mapInstance.getLayer(src+'-'+t))_mapInstance.removeLayer(src+'-'+t);}catch{}});
+      _addCategoryFillLayer(src,cat);
+      _addCategoryLineLayer(src,cat);
+      _addCategoryCircleLayer(src,cat);
     } else {
       _mapInstance.addSource(src,{type:'geojson',data:geojson});
-      _mapInstance.addLayer({id:src+'-fill',type:'fill',source:src,
-        filter:['==',['geometry-type'],'Polygon'],
-        paint:{'fill-color':color,'fill-opacity':0.35}});
-      _mapInstance.addLayer({id:src+'-line',type:'line',source:src,
-        filter:['any',['==',['geometry-type'],'Polygon'],['==',['geometry-type'],'LineString']],
-        paint:{'line-color':color,'line-width':2,'line-opacity':0.9}});
-      _mapInstance.addLayer({id:src+'-circle',type:'circle',source:src,
-        filter:['==',['geometry-type'],'Point'],
-        paint:{'circle-color':color,'circle-radius':7,'circle-opacity':0.9,
-               'circle-stroke-color':'#fff','circle-stroke-width':1.5}});
-
+      _addCategoryFillLayer(src,cat);
+      _addCategoryLineLayer(src,cat);
+      _addCategoryCircleLayer(src,cat);
       [src+'-fill',src+'-line',src+'-circle'].forEach(lid=>{
         _mapInstance.on('mouseenter',lid,()=>{_mapInstance.getCanvas().style.cursor='pointer';});
         _mapInstance.on('mouseleave',lid,()=>{_mapInstance.getCanvas().style.cursor='';});

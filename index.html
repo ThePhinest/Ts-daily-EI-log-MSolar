@@ -1892,6 +1892,33 @@ Anticipated rain — AM weather monitoring expected"></textarea>
             <option value="ha">Hectares</option>
           </select>
         </div>
+        <div style="display:flex;align-items:center;gap:6px;margin-top:6px;padding-left:28px;flex-wrap:wrap">
+          <select id="map-tc-add-linestyle" class="map-tc-unit-sel">
+            <option value="solid">— Solid</option>
+            <option value="dashed">– Dashed</option>
+            <option value="dotted">·· Dotted</option>
+            <option value="dash-dot">–· D-Dot</option>
+          </select>
+          <select id="map-tc-add-linewidth" class="map-tc-unit-sel">
+            <option value="1">1px</option>
+            <option value="2" selected>2px</option>
+            <option value="3">3px</option>
+            <option value="4">4px</option>
+          </select>
+          <span id="map-tc-add-fill-controls" style="display:flex;align-items:center;gap:6px">
+            <select id="map-tc-add-fillstyle" class="map-tc-unit-sel">
+              <option value="solid">■ Solid</option>
+              <option value="hatch">▥ Hatch</option>
+              <option value="crosshatch">▨ Cross</option>
+              <option value="outline">□ Outline</option>
+            </select>
+            <select id="map-tc-add-fillopacity" class="map-tc-unit-sel">
+              <option value="0.15">Light</option>
+              <option value="0.35" selected>Med</option>
+              <option value="0.6">Dark</option>
+            </select>
+          </span>
+        </div>
       </div>
     </div>
 
