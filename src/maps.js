@@ -2272,9 +2272,13 @@ function mapRenderTrackerLayers(){
     _trackerClickHandlerRegistered=true;
     _mapInstance.on('click',e=>{
       if(_drawMode) return;
-      // Don't open tracker popup when user clicked a photo pin
       const clickTarget=e.originalEvent&&e.originalEvent.target;
-      if(clickTarget&&clickTarget.closest&&clickTarget.closest('._photo-marker')) return;
+      // Don't open tracker popup when user clicked a photo pin or field marker
+      if(clickTarget&&clickTarget.closest&&(
+        clickTarget.closest('._photo-marker') ||
+        clickTarget.closest('[data-marker-id]') ||
+        clickTarget.closest('.mapboxgl-marker')
+      )) return;
       const bbox=[[e.point.x-22,e.point.y-22],[e.point.x+22,e.point.y+22]];
       const style=_mapInstance.getStyle();
       if(!style||!style.layers) return;
