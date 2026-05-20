@@ -620,6 +620,7 @@ function clShowTrackerLog(){
         const gPhotos=g.entries.reduce((s,e)=>s+(Array.isArray(e.photoIds)?e.photoIds.length:0),0);
         const rows=g.entries.map(e=>{
           const pc=Array.isArray(e.photoIds)?e.photoIds.length:0;
+          const rc=Array.isArray(e.reportIds)?e.reportIds.length:0;
           const rowMeas=(e.measurementValue!=null&&e.measurementUnit)
             ?`<span style="font-family:var(--mono);font-size:10px;color:var(--amber);white-space:nowrap;flex-shrink:0">${(typeof tcFormatMeasurement==='function')?tcFormatMeasurement(e.measurementValue,e.measurementUnit):(e.measurementValue+' '+e.measurementUnit)}</span>`
             :e.acres?`<span style="font-family:var(--mono);font-size:10px;color:var(--amber);white-space:nowrap;flex-shrink:0">${e.acres} ac</span>`:'';
@@ -628,6 +629,7 @@ function clShowTrackerLog(){
             <span style="font-family:var(--mono);font-size:11px;color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${(e.notes||'—').slice(0,42)}</span>
             ${rowMeas}
             ${pc?`<span style="font-size:10px;flex-shrink:0;color:var(--text)">📷 ${pc}</span>`:''}
+            ${rc?`<span style="font-size:10px;flex-shrink:0;color:var(--text)">📋 ${rc}</span>`:''}
             <span style="color:var(--muted);flex-shrink:0;font-size:12px">›</span>
           </div>`;
         }).join('');
@@ -648,6 +650,7 @@ function clShowTrackerLog(){
         const catName=cached?cached.name:(e.categoryName&&!e.categoryName.startsWith('cat-')?e.categoryName:'Unknown');
         const cat=cached||{color:'#888',name:catName};
         const pc=Array.isArray(e.photoIds)?e.photoIds.length:0;
+        const rc=Array.isArray(e.reportIds)?e.reportIds.length:0;
         const sub=[e.date||'',e.notes||''].filter(Boolean).join(' · ');
         const flatMeas=(e.measurementValue!=null&&e.measurementUnit)
           ?`<span style="font-family:var(--mono);font-size:11px;color:var(--amber);white-space:nowrap;flex-shrink:0">${(typeof tcFormatMeasurement==='function')?tcFormatMeasurement(e.measurementValue,e.measurementUnit):(e.measurementValue+' '+e.measurementUnit)}</span>`
@@ -660,6 +663,7 @@ function clShowTrackerLog(){
           </div>
           ${flatMeas}
           ${pc?`<span style="font-size:10px;flex-shrink:0;color:var(--text)">📷 ${pc}</span>`:''}
+          ${rc?`<span style="font-size:10px;flex-shrink:0;color:var(--text)">📋 ${rc}</span>`:''}
           <span style="color:var(--muted);flex-shrink:0;font-size:12px">›</span>
         </div>`;
       }).join('');
