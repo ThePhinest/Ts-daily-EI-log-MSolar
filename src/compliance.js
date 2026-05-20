@@ -641,12 +641,18 @@ function clShowTrackerLog(){
           const pc=Array.isArray(e.photoIds)?e.photoIds.length:0;
           const rc=Array.isArray(e.reportIds)?e.reportIds.length:0;
           const stc=e.fields?.seedTagCount||0;
+          const hasAct=e.fields?.actualAmount!=null;
+          const hasReq=e.fields?.requiredAmount!=null;
+          const amtText=hasAct&&hasReq
+            ?`${e.fields.actualAmount.toLocaleString()} / ${e.fields.requiredAmount.toLocaleString()} ${e.fields.requiredUnit||'lbs'}`
+            :hasAct?`${e.fields.actualAmount.toLocaleString()} ${e.fields.actualUnit||'lbs'} used`
+            :hasReq?`${e.fields.requiredAmount.toLocaleString()} ${e.fields.requiredUnit||'lbs'} req.`:'';
           const rowMeas=(e.measurementValue!=null&&e.measurementUnit)
             ?`<span style="font-family:var(--mono);font-size:10px;color:var(--amber);white-space:nowrap;flex-shrink:0">${(typeof tcFormatMeasurement==='function')?tcFormatMeasurement(e.measurementValue,e.measurementUnit):(e.measurementValue+' '+e.measurementUnit)}</span>`
             :e.acres?`<span style="font-family:var(--mono);font-size:10px;color:var(--amber);white-space:nowrap;flex-shrink:0">${e.acres} ac</span>`:'';
           return `<div onclick="clShowTrackerDetail('${e.id}')" style="display:flex;align-items:center;gap:8px;padding:9px 16px 9px 30px;border-top:1px solid var(--border);cursor:pointer">
             <span style="font-family:var(--mono);font-size:10px;color:var(--text);white-space:nowrap;flex-shrink:0;min-width:68px">${e.date||'—'}</span>
-            <span style="font-family:var(--mono);font-size:11px;color:var(--muted);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${(e.notes||'').slice(0,42)}</span>
+            <span style="font-family:var(--mono);font-size:11px;color:var(--muted);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${amtText}</span>
             ${rowMeas}
             ${pc?`<span style="font-size:10px;flex-shrink:0;color:var(--text)">📷 ${pc}</span>`:''}
             ${stc?`<span style="font-size:10px;flex-shrink:0;color:var(--text)">🏷️ ${stc}</span>`:''}
@@ -696,7 +702,13 @@ function clShowTrackerLog(){
         const pc=Array.isArray(e.photoIds)?e.photoIds.length:0;
         const rc=Array.isArray(e.reportIds)?e.reportIds.length:0;
         const stc=e.fields?.seedTagCount||0;
-        const sub=[e.date||'',e.notes||''].filter(Boolean).join(' · ');
+        const hasActF=e.fields?.actualAmount!=null;
+        const hasReqF=e.fields?.requiredAmount!=null;
+        const amtTextF=hasActF&&hasReqF
+          ?`${e.fields.actualAmount.toLocaleString()} / ${e.fields.requiredAmount.toLocaleString()} ${e.fields.requiredUnit||'lbs'}`
+          :hasActF?`${e.fields.actualAmount.toLocaleString()} ${e.fields.actualUnit||'lbs'} used`
+          :hasReqF?`${e.fields.requiredAmount.toLocaleString()} ${e.fields.requiredUnit||'lbs'} req.`:'';
+        const sub=[e.date||'',amtTextF].filter(Boolean).join(' · ');
         const flatMeas=(e.measurementValue!=null&&e.measurementUnit)
           ?`<span style="font-family:var(--mono);font-size:11px;color:var(--amber);white-space:nowrap;flex-shrink:0">${(typeof tcFormatMeasurement==='function')?tcFormatMeasurement(e.measurementValue,e.measurementUnit):(e.measurementValue+' '+e.measurementUnit)}</span>`
           :e.acres?`<span style="font-family:var(--mono);font-size:11px;color:var(--amber);white-space:nowrap;flex-shrink:0">${e.acres} ac</span>`:'';
