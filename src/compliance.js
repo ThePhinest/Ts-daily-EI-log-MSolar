@@ -325,8 +325,25 @@ function clRenderTrackerCard(search){
       String(e.acres||'').includes(search)
     );
   }
-  const totals=(typeof trGetCumulativeTotals==='function')?trGetCumulativeTotals(pid):[];
-  if(!entries.length && !totals.length){ el.style.display='none'; return; }
+  // Split totals: installed vs planned per category
+  const _allProjEntries=(typeof trGetEntriesForProject==='function')?trGetEntriesForProject(pid):[];
+  const _catMap={};
+  _allProjEntries.forEach(e=>{
+    const cid=e.categoryId||'__none';
+    if(!_catMap[cid]){
+      const mt=(typeof tcGetMeasurementType==='function')?tcGetMeasurementType(cid,pid):'area';
+      const du=(typeof tcGetDefaultUnit==='function')?tcGetDefaultUnit(cid,pid):(mt==='linear'?'ft':'ac');
+      _catMap[cid]={categoryId:e.categoryId,categoryName:e.categoryName||'Unknown',measType:mt,displayUnit:du,installedValue:0,plannedValue:0,entryCount:0};
+    }
+    const ev=e.measurementValue!==undefined?parseFloat(e.measurementValue):parseFloat(e.acres);
+    const eu=e.measurementUnit||'ac';
+    const norm=(ev&&!isNaN(ev)&&typeof tcConvertMeasurement==='function')?tcConvertMeasurement(ev,eu,_catMap[cid].displayUnit)||0:(isNaN(ev)?0:ev||0);
+    if(e.entryType==='planned') _catMap[cid].plannedValue+=norm;
+    else _catMap[cid].installedValue+=norm;
+    _catMap[cid].entryCount++;
+  });
+  const splitTotals=Object.values(_catMap).filter(t=>t.entryCount>0).sort((a,b)=>b.installedValue-a.installedValue);
+  if(!entries.length && !splitTotals.length){ el.style.display='none'; return; }
 
   const todayRows=entries.map(e=>{
     const catColor=(typeof tcGetColor==='function')?tcGetColor(e.categoryId,pid):'#888';
@@ -335,9 +352,10 @@ function clRenderTrackerCard(search){
     const measDisplay=e.measurementValue!=null&&e.measurementUnit
       ?(typeof tcFormatMeasurement==='function'?tcFormatMeasurement(e.measurementValue,e.measurementUnit):`${e.measurementValue} ${e.measurementUnit}`)
       :(e.acres?`${e.acres} ac`:'');
-    return `<div onclick="clShowTrackerDetail('${e.id}')" style="display:flex;align-items:center;gap:10px;padding:9px 6px;border-bottom:1px solid var(--border);cursor:pointer;border-radius:4px">
+    const isPlanned=e.entryType==='planned';
+    return `<div onclick="clShowTrackerDetail('${e.id}')" style="display:flex;align-items:center;gap:10px;padding:9px ${isPlanned?'3':'6'}px 9px 6px;border-bottom:1px solid var(--border);cursor:pointer;border-radius:4px;${isPlanned?'border-left:3px solid var(--amber,#C9A84C);background:rgba(201,168,76,0.06)':''}">
       <div style="width:12px;height:12px;border-radius:50%;background:${catColor};flex-shrink:0"></div>
-      <span style="font-family:var(--mono);font-size:12px;color:var(--text);flex:1">${catName}</span>
+      <span style="font-family:var(--mono);font-size:12px;color:var(--text);flex:1">${catName}${isPlanned?' <span style="font-family:var(--mono);font-size:9px;font-weight:700;color:var(--amber,#C9A84C);letter-spacing:.06em">PLAN</span>':''}</span>
       ${measDisplay?`<span style="font-family:var(--mono);font-size:12px;color:var(--muted)">${measDisplay}</span>`:''}
       ${photoCount?`<span style="font-family:var(--mono);font-size:11px;color:var(--muted)">📷${photoCount}</span>`:''}
       <span style="font-family:var(--mono);font-size:11px;color:var(--muted)">›</span>
@@ -346,18 +364,21 @@ function clRenderTrackerCard(search){
 
   const todaySection=entries.length?`<div style="padding:0 4px 4px">${todayRows}</div>`:'';
 
-  const totalsSection=totals.length?`<div style="border-top:${entries.length?'2px solid var(--border2)':'none'};padding:10px 4px 4px">
+  const totalsSection=splitTotals.length?`<div style="border-top:${entries.length?'2px solid var(--border2)':'none'};padding:10px 4px 4px">
     <div style="font-family:var(--mono);font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Project Totals</div>
-    ${totals.map(t=>{
+    ${splitTotals.map(t=>{
       const catColor=(typeof tcGetColor==='function')?tcGetColor(t.categoryId,pid):'#888';
-      const totalFmt=(typeof tcFormatMeasurement==='function')
-        ?tcFormatMeasurement(t.totalValue??t.totalAcres??0,t.displayUnit||'ac')
-        :`${(t.totalValue??t.totalAcres??0).toFixed(2)} ${t.displayUnit||'ac'}`;
+      const fmt=(v)=>(typeof tcFormatMeasurement==='function')?tcFormatMeasurement(v,t.displayUnit):`${v.toFixed(2)} ${t.displayUnit}`;
+      const hasBoth=t.installedValue>0&&t.plannedValue>0;
+      const totalDisplay=hasBoth
+        ?`${fmt(t.installedValue)} <span style="color:var(--muted);font-size:10px">/ ${fmt(t.plannedValue)} plan</span>`
+        :t.installedValue>0?fmt(t.installedValue)
+        :`<span style="color:var(--amber,#C9A84C);font-size:10px">📍 ${fmt(t.plannedValue)} plan</span>`;
       return `<div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--border)">
         <div style="width:10px;height:10px;border-radius:50%;background:${catColor};flex-shrink:0"></div>
         <span style="font-family:var(--mono);font-size:12px;color:var(--text);flex:1">${t.categoryName}</span>
         <span style="font-family:var(--mono);font-size:11px;color:var(--muted)">${t.entryCount} ${t.entryCount===1?'entry':'entries'}</span>
-        <span style="font-family:var(--mono);font-size:12px;color:var(--amber);font-weight:600">${totalFmt}</span>
+        <span style="font-family:var(--mono);font-size:12px;color:var(--amber);font-weight:600">${totalDisplay}</span>
       </div>`;
     }).join('')}
   </div>`:'';
@@ -669,15 +690,28 @@ function clShowTrackerLog(){
           const stc=e.fields?.seedTagCount||0;
           const hasAct=e.fields?.actualAmount!=null;
           const hasReq=e.fields?.requiredAmount!=null;
-          const amtText=hasAct&&hasReq
+          let amtText=hasAct&&hasReq
             ?`${e.fields.actualAmount.toLocaleString()} / ${e.fields.requiredAmount.toLocaleString()} ${e.fields.requiredUnit||'lbs'}`
             :hasAct?`${e.fields.actualAmount.toLocaleString()} ${e.fields.actualUnit||'lbs'} used`
             :hasReq?`${e.fields.requiredAmount.toLocaleString()} ${e.fields.requiredUnit||'lbs'} req.`:'';
           const rowMeas=(e.measurementValue!=null&&e.measurementUnit)
             ?`<span style="font-family:var(--mono);font-size:10px;color:var(--amber);white-space:nowrap;flex-shrink:0">${(typeof tcFormatMeasurement==='function')?tcFormatMeasurement(e.measurementValue,e.measurementUnit):(e.measurementValue+' '+e.measurementUnit)}</span>`
             :e.acres?`<span style="font-family:var(--mono);font-size:10px;color:var(--amber);white-space:nowrap;flex-shrink:0">${e.acres} ac</span>`:'';
-          const isPlannedRow=e.entryType==='planned';
+                const isPlannedRow=e.entryType==='planned';
           const planBadge=isPlannedRow?`<span style="font-family:var(--mono);font-size:9px;font-weight:700;color:var(--amber);white-space:nowrap;flex-shrink:0;letter-spacing:.06em">PLAN</span>`:'';
+          // For linear entries, show measurement context in middle column
+          if(!amtText&&e.measurementValue!=null&&e.measurementUnit){
+            const fv=parseFloat(e.measurementValue);
+            if(!isNaN(fv)){
+              if(isPlannedRow){
+                amtText=`📍 ${fv.toLocaleString()} ${e.measurementUnit} planned`;
+              } else if(e.parentId){
+                const par=(typeof trGetEntry==='function')?trGetEntry(e.parentId,pid):null;
+                if(par?.measurementValue!=null) amtText=`${fv.toLocaleString()} / ${parseFloat(par.measurementValue).toLocaleString()} ${par.measurementUnit||e.measurementUnit}`;
+                else amtText=`${fv.toLocaleString()} ${e.measurementUnit}`;
+              }
+            }
+          }
           return `<div onclick="clShowTrackerDetail('${e.id}')" style="display:flex;align-items:center;gap:8px;padding:9px 16px 9px ${isPlannedRow?'27':'30'}px;border-top:1px solid var(--border);cursor:pointer;${isPlannedRow?'border-left:3px solid var(--amber);background:rgba(201,168,76,0.06)':''}">
             <span style="font-family:var(--mono);font-size:10px;color:var(--text);white-space:nowrap;flex-shrink:0;min-width:68px">${e.date||'—'}</span>
             ${planBadge}
@@ -692,6 +726,33 @@ function clShowTrackerLog(){
         const meta=[gAcres>0?`${gAcres.toFixed(2)} ac`:'',gPhotos>0?`📷 ${gPhotos}`:'',gSeeds>0?`🏷️ ${gSeeds}`:'',gReports>0?`📋 ${gReports}`:'',`${g.entries.length} ${g.entries.length===1?'entry':'entries'}`].filter(Boolean).join(' · ');
         // Cumulative actual vs required bar — only when entries share the same actual unit
         const catBar=(()=>{
+          const catMeasType=(typeof tcGetMeasurementType==='function')?tcGetMeasurementType(cid,pid):'area';
+          if(catMeasType==='linear'){
+            const defUnit=(typeof tcGetDefaultUnit==='function')?tcGetDefaultUnit(cid,pid):'ft';
+            const plannedLin=g.entries.filter(e=>e.entryType==='planned'&&e.measurementValue!=null);
+            const installedLin=g.entries.filter(e=>e.entryType!=='planned'&&e.measurementValue!=null);
+            if(!plannedLin.length&&!installedLin.length) return '';
+            const conv=(e)=>{
+              const v=parseFloat(e.measurementValue);
+              if(isNaN(v)) return 0;
+              return (typeof tcConvertMeasurement==='function')?tcConvertMeasurement(v,e.measurementUnit||defUnit,defUnit)||0:v;
+            };
+            const totalPlan=plannedLin.reduce((s,e)=>s+conv(e),0);
+            const totalInst=installedLin.reduce((s,e)=>s+conv(e),0);
+            if(totalPlan<=0&&totalInst<=0) return '';
+            const pct=totalPlan>0?Math.min(100,(totalInst/totalPlan)*100):0;
+            const color=pct>=100?'var(--green)':totalInst>0?'var(--amber)':'var(--muted)';
+            return `<div style="padding:4px 16px 8px;background:var(--s1)">
+              <div style="display:flex;justify-content:space-between;font-family:var(--mono);font-size:9px;color:var(--muted);margin-bottom:3px">
+                <span>Installed: ${totalInst.toLocaleString()} / ${totalPlan.toLocaleString()} ${defUnit}</span>
+                <span style="color:${color}">${pct.toFixed(1)}%</span>
+              </div>
+              <div style="height:4px;background:var(--border);border-radius:2px;overflow:hidden">
+                <div style="height:100%;width:${pct.toFixed(1)}%;background:${color};border-radius:2px"></div>
+              </div>
+            </div>`;
+          }
+          // Area: actual vs required amounts
           const withBoth=g.entries.filter(e=>e.fields?.actualAmount!=null&&e.fields?.requiredAmount!=null);
           if(!withBoth.length) return '';
           const units=[...new Set(withBoth.map(e=>e.fields.actualUnit||'lbs'))];

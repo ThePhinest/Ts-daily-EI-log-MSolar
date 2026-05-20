@@ -2001,7 +2001,7 @@ function mapShowTrackerModal(feat,category){
   if(phaseEl) phaseEl.value='N/A';
   if(methodEl) methodEl.value='N/A';
   if(conEl) conEl.value='';
-  if(statusEl) statusEl.value='Installed';
+  if(statusEl) statusEl.value=isPlanned?'Planned':'Installed';
   _populateLinkToPlanDropdown(category);
   document.getElementById('map-tracker-modal').classList.add('open');
 }
@@ -2071,7 +2071,7 @@ function _showUndoToast(entry, pid){
   if(existing) existing.remove();
   const toast=document.createElement('div');
   toast.id='_gl-undo-toast';
-  toast.style.cssText='position:fixed;bottom:calc(160px + env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);background:#1a2a3a;border:1px solid rgba(255,255,255,.15);border-radius:8px;padding:10px 14px;display:flex;align-items:center;gap:12px;z-index:5200;font-family:var(--mono);font-size:12px;color:#e8e8e8;white-space:nowrap;box-shadow:0 4px 16px rgba(0,0,0,.4)';
+  toast.style.cssText='position:fixed;bottom:calc(160px + env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);background:#1a2a3a;border:1px solid rgba(255,255,255,.15);border-radius:8px;padding:10px 14px;display:flex;align-items:center;gap:12px;z-index:4800;font-family:var(--mono);font-size:12px;color:#e8e8e8;white-space:nowrap;box-shadow:0 4px 16px rgba(0,0,0,.4)';
   const label=entry.entryType==='planned'?'Planned area saved':'Entry saved';
   const catName=entry.categoryName||(typeof tcGetName==='function'?tcGetName(entry.categoryId,pid):'');
   toast.innerHTML=`<span>${label}${catName?' · '+catName:''}</span><button onclick="(function(){if(typeof trDeleteEntry==='function')trDeleteEntry('${entry.id}','${pid}');if(typeof mapRenderTrackerLayers==='function')mapRenderTrackerLayers();if(typeof clRenderTrackerCard==='function')clRenderTrackerCard();document.getElementById('_gl-undo-toast')?.remove();})()" style="background:var(--amber);border:none;color:#111;padding:4px 10px;border-radius:4px;font-family:var(--mono);font-size:11px;cursor:pointer;font-weight:700">Undo</button>`;
@@ -2616,6 +2616,7 @@ function mapEditTrackerEntry(entryId){
   _populateLinkToPlanDropdown(entry.categoryId||entry.category);
   const editLinkSel=document.getElementById('map-tr-link-plan');
   if(editLinkSel&&entry.parentId) editLinkSel.value=entry.parentId;
+  if(editMeasType!=='linear') mapTrackerCalc();
   document.getElementById('map-tracker-modal').classList.add('open');
 }
 
