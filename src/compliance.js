@@ -550,9 +550,9 @@ function clShowTrackerLog(){
       <!-- Date range -->
       <div style="display:flex;gap:8px;align-items:center;padding:0 16px 10px;flex-shrink:0">
         <span style="font-family:var(--mono);font-size:10px;color:var(--muted);white-space:nowrap">From</span>
-        <input type="date" id="_tlog-from" style="flex:1;background:var(--s1);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--mono);font-size:11px;padding:5px 8px">
+        <input type="date" id="_tlog-from" style="flex:1;min-width:0;background:var(--s1);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--mono);font-size:16px;padding:5px 8px;min-height:36px;box-sizing:border-box">
         <span style="font-family:var(--mono);font-size:10px;color:var(--muted)">to</span>
-        <input type="date" id="_tlog-to" style="flex:1;background:var(--s1);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--mono);font-size:11px;padding:5px 8px">
+        <input type="date" id="_tlog-to" style="flex:1;min-width:0;background:var(--s1);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--mono);font-size:16px;padding:5px 8px;min-height:36px;box-sizing:border-box">
         <button id="_tlog-clear-dates" style="background:none;border:none;color:var(--amber);font-family:var(--mono);font-size:10px;cursor:pointer;padding:4px 6px;white-space:nowrap">Clear</button>
       </div>
       <!-- Results -->
@@ -626,7 +626,7 @@ function clShowTrackerLog(){
             :e.acres?`<span style="font-family:var(--mono);font-size:10px;color:var(--amber);white-space:nowrap;flex-shrink:0">${e.acres} ac</span>`:'';
           return `<div onclick="clShowTrackerDetail('${e.id}')" style="display:flex;align-items:center;gap:8px;padding:9px 16px 9px 30px;border-top:1px solid var(--border);cursor:pointer">
             <span style="font-family:var(--mono);font-size:10px;color:var(--text);white-space:nowrap;flex-shrink:0;min-width:68px">${e.date||'—'}</span>
-            <span style="font-family:var(--mono);font-size:11px;color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${(e.notes||'—').slice(0,42)}</span>
+            <span style="font-family:var(--mono);font-size:11px;color:var(--green);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${(e.notes||'').slice(0,42)}</span>
             ${rowMeas}
             ${pc?`<span style="font-size:10px;flex-shrink:0;color:var(--text)">📷 ${pc}</span>`:''}
             ${rc?`<span style="font-size:10px;flex-shrink:0;color:var(--text)">📋 ${rc}</span>`:''}
