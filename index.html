@@ -3097,6 +3097,16 @@ document.addEventListener('change', _onInputEvent);
 // Safari returning the constrained height instead of content height when 'auto' is used.
 function autoResize(el){ el.style.height='1px'; el.style.height=el.scrollHeight+'px'; }
 document.addEventListener('input', function(e){ if(e.target.classList.contains('auto-expand')) autoResize(e.target); });
+// Google Fonts load async — on iOS WKWebView cold boot the initial layout runs
+// against the fallback font, leaving chip flex containers and textarea scrollHeight
+// wrong until a reflow happens. fonts.ready resolves once all fonts are available;
+// the rAF ensures we run after the post-font-swap paint cycle.
+document.fonts.ready.then(function(){
+  requestAnimationFrame(function(){
+    document.querySelectorAll('textarea.auto-expand').forEach(autoResize);
+    void document.body.offsetHeight; // flush layout so chip flex containers reflow
+  });
+});
 
 // ── Local date helper — always returns YYYY-MM-DD in device local time, never UTC ──
 function localToday(){const d=new Date();const y=d.getFullYear();const m=String(d.getMonth()+1).padStart(2,'0');const dd=String(d.getDate()).padStart(2,'0');return `${y}-${m}-${dd}`;}

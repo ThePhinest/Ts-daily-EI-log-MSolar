@@ -86,7 +86,7 @@ function restoreFormState(state){
     const vEl=document.getElementById(visibleId);
     if(hv && vEl) vEl.textContent=hv;
   });
-  setTimeout(()=>document.querySelectorAll('textarea.auto-expand').forEach(autoResize),0);
+  requestAnimationFrame(()=>requestAnimationFrame(()=>document.querySelectorAll('textarea.auto-expand').forEach(autoResize)));
 }
 
 function buildCrewHTML(id, num){
