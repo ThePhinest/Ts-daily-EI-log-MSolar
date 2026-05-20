@@ -294,7 +294,7 @@ body.theme-light{
 label{font-family:var(--mono);font-size:13px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted2)}
 .card-personal label{color:var(--personal-accent)}
 input[type=text],input[type=date],input[type=number],input[type=time],select,textarea{background:var(--bg);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--body);font-size:17px;padding:8px 11px;width:100%;transition:border-color .15s;-webkit-appearance:none}
-input[type=time]{min-height:44px;box-sizing:border-box}
+input[type=time],select{min-height:44px;box-sizing:border-box}
 input:focus,select:focus,textarea:focus{outline:none;border-color:var(--amber)}
 input[readonly]{color:var(--muted2);cursor:default}
 input:-webkit-autofill,input:-webkit-autofill:hover,input:-webkit-autofill:focus{-webkit-text-fill-color:var(--text);-webkit-box-shadow:0 0 0 1000px var(--bg) inset;transition:background-color 5000s ease-in-out 0s}
@@ -2002,7 +2002,7 @@ Anticipated rain — AM weather monitoring expected"></textarea>
         <div>
           <label style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;display:block;margin-bottom:4px">Date</label>
           <input type="date" id="map-tr-date" oninput="if(typeof mapSetSessionDate==='function')mapSetSessionDate(this.value)" style="width:100%;box-sizing:border-box;background:var(--s1);border:1px solid var(--border);border-radius:6px;padding:7px 9px;color:var(--text);font-family:var(--mono);font-size:12px">
-          <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:3px">Change for past entries — applies to all drawings this session</div>
+          <div style="font-family:var(--mono);font-size:10px;color:var(--amber);margin-top:3px">Change for past entries — applies to all drawings this session</div>
         </div>
         <div>
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
