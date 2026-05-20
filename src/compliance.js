@@ -364,21 +364,29 @@ function clRenderTrackerCard(search){
 
   const todaySection=entries.length?`<div style="padding:0 4px 4px">${todayRows}</div>`:'';
 
+  const _totHasPlan=splitTotals.some(t=>t.plannedValue>0);
+  const _totCols=`1fr 34px 72px${_totHasPlan?' 68px':''}`;
+  const _totHdrPlan=_totHasPlan?`<span style="font-family:var(--mono);font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;text-align:right">Planned</span>`:'';
   const totalsSection=splitTotals.length?`<div style="border-top:${entries.length?'2px solid var(--border2)':'none'};padding:10px 4px 4px">
-    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Project Totals</div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Project Totals</div>
+    <div style="display:grid;grid-template-columns:${_totCols};gap:0 6px;padding:0 0 4px 18px;border-bottom:1px solid var(--border);margin-bottom:2px">
+      <span style="font-family:var(--mono);font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em">Category</span>
+      <span style="font-family:var(--mono);font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;text-align:right">Ent.</span>
+      <span style="font-family:var(--mono);font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;text-align:right">${_totHasPlan?'Installed':'Total'}</span>
+      ${_totHdrPlan}
+    </div>
     ${splitTotals.map(t=>{
       const catColor=(typeof tcGetColor==='function')?tcGetColor(t.categoryId,pid):'#888';
       const fmt=(v)=>(typeof tcFormatMeasurement==='function')?tcFormatMeasurement(v,t.displayUnit):`${v.toFixed(2)} ${t.displayUnit}`;
-      const hasBoth=t.installedValue>0&&t.plannedValue>0;
-      const totalDisplay=hasBoth
-        ?`${fmt(t.installedValue)} <span style="color:var(--muted);font-size:10px">/ ${fmt(t.plannedValue)} plan</span>`
-        :t.installedValue>0?fmt(t.installedValue)
-        :`<span style="color:var(--amber,#C9A84C);font-size:10px">📍 ${fmt(t.plannedValue)} plan</span>`;
-      return `<div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--border)">
-        <div style="width:10px;height:10px;border-radius:50%;background:${catColor};flex-shrink:0"></div>
-        <span style="font-family:var(--mono);font-size:12px;color:var(--text);flex:1">${t.categoryName}</span>
-        <span style="font-family:var(--mono);font-size:11px;color:var(--muted)">${t.entryCount} ${t.entryCount===1?'entry':'entries'}</span>
-        <span style="font-family:var(--mono);font-size:12px;color:var(--amber);font-weight:600">${totalDisplay}</span>
+      const planCell=_totHasPlan?`<span style="font-family:var(--mono);font-size:11px;color:var(--muted);text-align:right;white-space:nowrap">${t.plannedValue>0?fmt(t.plannedValue):'—'}</span>`:'';
+      return `<div style="display:grid;grid-template-columns:${_totCols};gap:0 6px;padding:5px 0;border-bottom:1px solid var(--border);align-items:center">
+        <div style="display:flex;align-items:center;gap:6px;min-width:0">
+          <div style="width:8px;height:8px;border-radius:50%;background:${catColor};flex-shrink:0"></div>
+          <span style="font-family:var(--mono);font-size:11px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${t.categoryName}</span>
+        </div>
+        <span style="font-family:var(--mono);font-size:11px;color:var(--muted);text-align:right">${t.entryCount}</span>
+        <span style="font-family:var(--mono);font-size:11px;color:var(--amber);font-weight:600;text-align:right;white-space:nowrap">${t.installedValue>0?fmt(t.installedValue):'—'}</span>
+        ${planCell}
       </div>`;
     }).join('')}
   </div>`:'';
