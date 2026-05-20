@@ -365,7 +365,7 @@ function mapRenderPhotoPins(){
 
     const dirLabel = p.direction !== undefined ? `${p.direction}° ${phBearingLabel(p.direction)}` : '';
     const cleanCaption = (p.caption||'').replace(/tilt_angle[^/]*\/?\s*roll_angle[^\n]*/i,'').trim();
-    const popup = new mapboxgl.Popup({ offset:20, maxWidth:'220px', closeButton:true })
+    const popup = new mapboxgl.Popup({ offset:20, maxWidth:'220px', closeButton:true, className:'gl-photo-popup' })
       .setHTML(`
         <div style="font-family:monospace;font-size:11px;color:#111">
           <img src="${p.thumb}" style="width:100%;border-radius:4px;margin-bottom:8px;display:block;cursor:pointer" onclick="phOpenLightbox('${p.id}')">
@@ -1474,6 +1474,7 @@ const TC_COLORS=[
   '#7CCD7C','#A8D8A8','#82C4E8','#D7BDE2','#FFAB40','#FF7043',
   '#8E9BA3','#BDC3C7','#7F8C8D','#2C3E50','#922B21','#1B5E20',
 ];
+let _renderedOrphanCids=new Set(); // tracks orphan source IDs currently on the map
 let _tcLayerVisible={};       // { [catId]: boolean } — default true
 let _tcEditingCatId=null;     // id of category being inline-edited
 let _tcEditingColor=null;     // color staged for edit row (hex string)
@@ -2463,13 +2464,16 @@ function mapRenderTrackerLayers(){
   // Render entries whose category isn't in cache yet (startup before tcLoadForProject completes).
   // Uses snapshotted categoryName + gray fill; colors update when categories load and re-render fires.
   const orphans=byCategory['__orphan']||[];
-  if(orphans.length>0){
+  {
     const orphanByCat={};
+    // Seed all previously rendered orphan cids so they get processed (and cleared if now empty).
+    _renderedOrphanCids.forEach(cid=>{ orphanByCat[cid]={name:cid,entries:[]}; });
     orphans.forEach(e=>{
       const cid=e.categoryId||e.category||'__unk';
       if(!orphanByCat[cid]) orphanByCat[cid]={name:e.categoryName||cid,entries:[]};
       orphanByCat[cid].entries.push(e);
     });
+    _renderedOrphanCids.clear();
     Object.entries(orphanByCat).forEach(([cid,group])=>{
       const src='tracker-'+cid;
       const color='#888';
@@ -2479,24 +2483,31 @@ function mapRenderTrackerLayers(){
         properties:{id:e.id,categoryId:e.categoryId||e.category,categoryName:e.categoryName||e.category,date:e.date,acres:e.acres,measurementValue:e.measurementValue??null,measurementUnit:e.measurementUnit||null,notes:e.notes,location:e.location,phase:e.phase||null,method:e.method||null,status:e.status||null,contractor:e.contractor||null,entryType:e.entryType||'installed'},
         geometry:e.geometry
       }))};
-      if(_mapInstance.getSource(src)){
-        _mapInstance.getSource(src).setData(geojson);
+      if(group.entries.length===0){
+        // No entries — remove source/layers if they exist.
+        [src+'-fill',src+'-line',src+'-circle'].forEach(lid=>{ if(_mapInstance.getLayer(lid)) _mapInstance.removeLayer(lid); });
+        if(_mapInstance.getSource(src)) _mapInstance.removeSource(src);
       } else {
-        _mapInstance.addSource(src,{type:'geojson',data:geojson});
-        _mapInstance.addLayer({id:src+'-fill',type:'fill',source:src,
-          filter:['==',['geometry-type'],'Polygon'],
-          paint:{'fill-color':color,'fill-opacity':0.35}});
-        _mapInstance.addLayer({id:src+'-line',type:'line',source:src,
-          filter:['any',['==',['geometry-type'],'Polygon'],['==',['geometry-type'],'LineString']],
-          paint:{'line-color':color,'line-width':2,'line-opacity':0.9}});
-        _mapInstance.addLayer({id:src+'-circle',type:'circle',source:src,
-          filter:['==',['geometry-type'],'Point'],
-          paint:{'circle-color':color,'circle-radius':7,'circle-opacity':0.9,
-                 'circle-stroke-color':'#fff','circle-stroke-width':1.5}});
-        [src+'-fill',src+'-line',src+'-circle'].forEach(lid=>{
-          _mapInstance.on('mouseenter',lid,()=>{_mapInstance.getCanvas().style.cursor='pointer';});
-          _mapInstance.on('mouseleave',lid,()=>{_mapInstance.getCanvas().style.cursor='';});
-        });
+        _renderedOrphanCids.add(cid);
+        if(_mapInstance.getSource(src)){
+          _mapInstance.getSource(src).setData(geojson);
+        } else {
+          _mapInstance.addSource(src,{type:'geojson',data:geojson});
+          _mapInstance.addLayer({id:src+'-fill',type:'fill',source:src,
+            filter:['==',['geometry-type'],'Polygon'],
+            paint:{'fill-color':color,'fill-opacity':0.35}});
+          _mapInstance.addLayer({id:src+'-line',type:'line',source:src,
+            filter:['any',['==',['geometry-type'],'Polygon'],['==',['geometry-type'],'LineString']],
+            paint:{'line-color':color,'line-width':2,'line-opacity':0.9}});
+          _mapInstance.addLayer({id:src+'-circle',type:'circle',source:src,
+            filter:['==',['geometry-type'],'Point'],
+            paint:{'circle-color':color,'circle-radius':7,'circle-opacity':0.9,
+                   'circle-stroke-color':'#fff','circle-stroke-width':1.5}});
+          [src+'-fill',src+'-line',src+'-circle'].forEach(lid=>{
+            _mapInstance.on('mouseenter',lid,()=>{_mapInstance.getCanvas().style.cursor='pointer';});
+            _mapInstance.on('mouseleave',lid,()=>{_mapInstance.getCanvas().style.cursor='';});
+          });
+        }
       }
     });
   }

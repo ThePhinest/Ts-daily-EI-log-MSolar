@@ -98,7 +98,7 @@ body.theme-light{
 #map-view-fab{position:fixed;bottom:calc(105px + env(safe-area-inset-bottom));left:16px;z-index:250;width:52px;height:52px;border-radius:50%;background:var(--bg);border:1px solid var(--border2);cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:0}
 #map-view-palette{position:fixed;bottom:calc(163px + env(safe-area-inset-bottom));left:16px;z-index:249;background:var(--bg);border:1px solid var(--border2);border-radius:12px;padding:10px 12px;min-width:210px;max-height:calc(100dvh - 200px);overflow-y:auto;pointer-events:none;opacity:0;transform:translateY(10px);transition:opacity .18s,transform .18s}
 #map-view-palette.open{pointer-events:auto;opacity:1;transform:translateY(0)}
-.map-vf-label{font-family:var(--mono);font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:5px;margin-top:8px}
+.map-vf-label{font-family:var(--mono);font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:5px;margin-top:8px}
 .map-vf-label:first-child{margin-top:0}
 .map-vf-row{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:2px}
 #map-fab-palette{position:fixed;bottom:calc(167px + env(safe-area-inset-bottom));right:16px;z-index:249;display:flex;flex-direction:column;align-items:flex-end;gap:8px;pointer-events:none;opacity:0;transform:translateY(10px);transition:opacity .18s,transform .18s}
@@ -119,8 +119,8 @@ body.theme-light{
 #map-tracker-modal{position:fixed;bottom:calc(95px + env(safe-area-inset-bottom));left:0;right:0;z-index:251;background:var(--bg);border-top:1px solid var(--border);border-radius:16px 16px 0 0;padding:16px 16px 16px;transform:translateY(100%);transition:transform .25s;max-height:80dvh;overflow-y:auto}
 #map-tracker-modal.open{transform:translateY(0)}
 /* category picker sheet (draw flow) */
-#map-category-sheet{position:fixed;bottom:calc(95px + env(safe-area-inset-bottom));left:0;right:0;z-index:251;background:var(--bg);border-top:1px solid var(--border);border-radius:16px 16px 0 0;padding:14px 14px 14px;transform:translateY(100%);transition:transform .25s}
-#map-category-sheet.open{transform:translateY(0)}
+#map-category-sheet{position:fixed;bottom:calc(95px + env(safe-area-inset-bottom));left:0;right:0;z-index:251;background:var(--bg);border-top:1px solid var(--border);border-radius:16px 16px 0 0;padding:14px 14px 14px;transform:translateY(100%);transition:transform .25s;pointer-events:none}
+#map-category-sheet.open{transform:translateY(0);pointer-events:auto}
 .map-cat-pill{display:flex;align-items:center;gap:8px;padding:9px 12px;border-radius:8px;border:1px solid var(--border);background:var(--s1);margin-bottom:6px;cursor:pointer;font-family:var(--mono);font-size:12px;color:var(--text);transition:background .12s}
 .map-cat-pill:hover{background:var(--s2)}
 .map-cat-dot{width:12px;height:12px;border-radius:50%;flex-shrink:0}
@@ -148,6 +148,7 @@ body.theme-light{
 .gl-tracker-popup.mapboxgl-popup-anchor-bottom .mapboxgl-popup-tip{border-top-color:#0F1F2E}
 .gl-tracker-popup.mapboxgl-popup-anchor-top .mapboxgl-popup-tip{border-bottom-color:#0F1F2E}
 .gl-tracker-popup .mapboxgl-popup-close-button{color:#e8e8e8;font-size:20px;width:28px;height:28px;line-height:28px;padding:0;top:4px;right:4px}
+.gl-photo-popup .mapboxgl-popup-close-button{color:#444;font-size:20px;width:28px;height:28px;line-height:28px;padding:0;top:4px;right:4px}
 #map-no-token{display:none}
 .map-controls{position:absolute;top:12px;left:12px;z-index:10;display:flex;gap:6px;flex-wrap:wrap}
 .map-style-btn{font-family:var(--mono);font-size:10px;padding:5px 10px;border-radius:20px;border:1px solid var(--border2);background:var(--s1);color:var(--amber);cursor:pointer;transition:all .15s;letter-spacing:.04em}
@@ -304,7 +305,7 @@ textarea.auto-expand{overflow-y:hidden;resize:none;touch-action:manipulation}
 select{cursor:pointer}
 
 /* PRESET CHIPS */
-.preset-strip{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:7px}
+.preset-strip{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:7px;width:100%}
 .preset-chip{font-family:var(--body);font-size:14px;font-weight:500;background:var(--s3);border:1px solid var(--border2);color:var(--muted2);border-radius:20px;padding:3px 11px;cursor:pointer;transition:all .12s;white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis}
 .preset-chip:hover{border-color:var(--amber);color:var(--amber);background:var(--amber-bg)}
 ._tlog-chip{font-family:var(--mono);font-size:11px;padding:5px 11px;border-radius:20px;border:1px solid var(--border);background:var(--s1);color:var(--muted);cursor:pointer;transition:all .12s;white-space:nowrap;flex-shrink:0}
@@ -1779,11 +1780,11 @@ Anticipated rain — AM weather monitoring expected"></textarea>
         <span style="font-family:var(--mono);font-size:10px;color:var(--muted)">to</span>
         <input type="date" id="map-pin-to" style="background:var(--s1);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--mono);font-size:11px;padding:5px 8px" onchange="mapRenderPhotoPins()">
       </div>
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px;cursor:pointer" onclick="mapToggleFmList()">
-        <div class="map-vf-label" style="margin:0;display:flex;align-items:center;gap:5px">
+      <div style="cursor:pointer" onclick="mapToggleFmList()">
+        <div class="map-vf-label" style="display:flex;align-items:center;gap:5px">
           <span id="map-vf-fm-arrow" style="font-size:9px;color:var(--muted)">▾</span>FIELD MARKERS
         </div>
-        <button id="map-vf-fm-toggle" onclick="event.stopPropagation();mapToggleFieldMarkers()" style="background:var(--s1);border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:9px;font-weight:700;padding:2px 8px;border-radius:8px;cursor:pointer;letter-spacing:.04em">Hide</button>
+        <button id="map-vf-fm-toggle" class="map-style-btn" onclick="event.stopPropagation();mapToggleFieldMarkers()" style="margin-bottom:5px">Hide</button>
       </div>
       <div id="map-vf-fm-list-wrap">
         <div id="map-field-marker-list" style="font-size:11px;color:var(--muted);margin-bottom:4px;max-height:120px;overflow-y:auto;">No markers placed.</div>
