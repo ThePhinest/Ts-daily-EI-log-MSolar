@@ -82,6 +82,10 @@ function trGetEntriesForCategory(category, projectId){
   return trGetEntriesForProject(projectId).filter(e => e.category === category);
 }
 
+function trGetChildEntries(parentId, projectId){
+  return trGetEntriesForProject(projectId).filter(e => e.parentId === parentId);
+}
+
 function trGetEntry(entryId, projectId){
   return _trLoadRaw(projectId).entries.find(e => e.id === entryId) || null;
 }
@@ -316,6 +320,7 @@ if(typeof window !== 'undefined'){
   window.trSetMapVisibility = trSetMapVisibility;
   window.trGetEntriesForDate = trGetEntriesForDate;
   window.trGetEntriesForCategory = trGetEntriesForCategory;
+  window.trGetChildEntries = trGetChildEntries;
   window.trGetCumulativeTotals = trGetCumulativeTotals;
   window.trGetEntry = trGetEntry;
   window.trAddPhotoLink = trAddPhotoLink;

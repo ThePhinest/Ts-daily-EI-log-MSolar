@@ -9,6 +9,8 @@ let _mapCurrentStyle=localStorage.getItem('gl_map_style')||'satellite-streets-v1
 
 // B2 — Draw / Measure / FAB / GPS state
 let _drawInstance=null, _drawMode=null, _drawCategory=null;
+let _drawEntryType='installed'; // 'planned' | 'installed'
+let _activePlannedEntryId=null;
 let _fabOpen=false, _viewFabOpen=false, _gpsFollowActive=false, _gpsFollowWatch=null;
 let _pendingDrawFeature=null;
 let _pendingPhotoIds=[];
@@ -1429,12 +1431,37 @@ function mapShowCategorySheet(){
     list.innerHTML=noCatPill+'<div style="font-family:var(--mono);font-size:12px;color:var(--muted);text-align:center;padding:16px 0">No categories yet.<br>Use Tracker to add your first.</div>';
   } else {
     list.innerHTML=noCatPill+cats.map(c=>`
-      <div class="map-cat-pill" onclick="mapActivateDrawMode('${c.id}')">
+      <div class="map-cat-pill" onclick="mapSelectCategoryForDraw('${c.id}')">
         <div class="map-cat-dot" style="background:${c.color||'#888'}"></div>
         <span>${c.name}</span>
       </div>`).join('');
   }
   document.getElementById('map-category-sheet').classList.add('open');
+}
+function mapSelectCategoryForDraw(catId){
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const cat=catId?((typeof tcGetCategory==='function')?tcGetCategory(catId,pid):null):null;
+  const name=cat?cat.name:'Uncategorized';
+  const color=cat?(cat.color||'#888'):'#555';
+  const list=document.getElementById('map-category-list');
+  list.innerHTML=`
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+      <button onclick="mapShowCategorySheet()" style="background:none;border:none;color:var(--muted);font-size:16px;cursor:pointer;padding:0;line-height:1">‹</button>
+      <div style="width:10px;height:10px;border-radius:50%;background:${color};flex-shrink:0"></div>
+      <span style="font-family:var(--mono);font-size:13px;color:var(--text);font-weight:600">${name}</span>
+    </div>
+    <button onclick="mapActivateDrawModeTyped('${catId}','planned')" style="width:100%;background:rgba(201,168,76,0.1);border:1px solid var(--amber);border-radius:8px;padding:12px;color:var(--amber);font-family:var(--mono);font-size:12px;cursor:pointer;text-align:left;margin-bottom:8px;font-weight:700">
+      📍 Draw Planned Area
+      <div style="font-size:10px;color:var(--muted);font-weight:400;margin-top:3px">Define the full scope — rate × area sets required amount</div>
+    </button>
+    <button onclick="mapActivateDrawModeTyped('${catId}','installed')" style="width:100%;background:var(--s1);border:1px solid var(--border);border-radius:8px;padding:12px;color:var(--text);font-family:var(--mono);font-size:12px;cursor:pointer;text-align:left;font-weight:700">
+      ✏️ Draw Installed
+      <div style="font-size:10px;color:var(--muted);font-weight:400;margin-top:3px">Record actual work — link to a planned area to track progress</div>
+    </button>`;
+}
+function mapActivateDrawModeTyped(catId, entryType){
+  _drawEntryType=entryType||'installed';
+  mapActivateDrawMode(catId);
 }
 function mapCloseCategorySheet(){
   document.getElementById('map-category-sheet').classList.remove('open');
@@ -1798,7 +1825,8 @@ function mapActivateDrawMode(categoryId){
   const catName=categoryId?((typeof tcGetName==='function')?tcGetName(categoryId,pid):categoryId):'Uncategorized';
   const catColor=categoryId?((typeof tcGetColor==='function')?tcGetColor(categoryId,pid):'#888'):'#888';
   const bar=document.getElementById('map-draw-bar');
-  document.getElementById('map-draw-bar-label').textContent=`Drawing: ${catName}`;
+  document.getElementById('map-draw-bar-label').textContent=_drawEntryType==='planned'?`Planning: ${catName}`:`Drawing: ${catName}`;
+  _updateActivePlanIndicator();
   document.getElementById('map-draw-shape-btns').style.display='flex';
   bar.classList.add('show');
   bar.style.borderColor=catColor;
@@ -1809,6 +1837,8 @@ function mapDeactivateDrawMode(){
   const prevMode=_drawMode;
   _drawMode=null;
   _drawCategory=null;
+  _drawEntryType='installed';
+  _activePlannedEntryId=null;
   _pendingDrawFeature=null;
   if(prevMode==='draw'&&_drawInstance){
     _drawInstance.deleteAll();
@@ -1820,6 +1850,7 @@ function mapDeactivateDrawMode(){
   document.getElementById('map-fab-draw-btn').classList.remove('active');
   document.getElementById('map-fab-measure-btn').classList.remove('active');
   document.getElementById('map-measure-chip').classList.remove('show');
+  _updateActivePlanIndicator();
   const measTypeBtns=document.getElementById('map-measure-type-btns');
   if(measTypeBtns) measTypeBtns.style.display='none';
   ['poly','line','point'].forEach(s=>{
@@ -1901,6 +1932,11 @@ function _buildUnitOpts(units,selected){
   return units.map(u=>`<option value="${u}"${u===selected?' selected':''}>${TC_UNIT_LABELS?.[u]||u}</option>`).join('');
 }
 function mapShowTrackerModal(feat,category){
+  const isPlanned=_drawEntryType==='planned';
+  const titleEl=document.getElementById('map-tracker-modal-title');
+  if(titleEl) titleEl.textContent=isPlanned?'New Planned Area':'New Tracker Entry';
+  const typeRow=document.getElementById('map-tr-type-row');
+  if(typeRow) typeRow.style.display=isPlanned?'block':'none';
   const activeLogDate=document.getElementById('reportDate')?.value;
   const today=activeLogDate||new Date().toLocaleDateString('en-CA');
   document.getElementById('map-tr-date').value=today;
@@ -1966,6 +2002,7 @@ function mapShowTrackerModal(feat,category){
   if(methodEl) methodEl.value='N/A';
   if(conEl) conEl.value='';
   if(statusEl) statusEl.value='Installed';
+  _populateLinkToPlanDropdown(category);
   document.getElementById('map-tracker-modal').classList.add('open');
 }
 
@@ -1982,6 +2019,65 @@ function mapCloseTrackerModal(){
   document.getElementById('map-tracker-modal').classList.remove('open');
 }
 
+function _updateActivePlanIndicator(){
+  const el=document.getElementById('map-draw-active-plan');
+  const lbl=document.getElementById('map-draw-active-plan-label');
+  if(!el) return;
+  if(_activePlannedEntryId&&_drawMode==='draw'&&_drawEntryType==='installed'){
+    const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+    const entry=(typeof trGetEntry==='function')?trGetEntry(_activePlannedEntryId,pid):null;
+    const name=entry?(entry.categoryName||'Plan'):'Plan';
+    if(lbl) lbl.textContent=`📍 ${name}`;
+    el.style.display='flex';
+  } else {
+    el.style.display='none';
+  }
+}
+function mapActivatePlannedEntry(entryId){
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const entry=(typeof trGetEntry==='function')?trGetEntry(entryId,pid):null;
+  if(!entry) return;
+  _activePlannedEntryId=entryId;
+  if(_trackerPopup){_trackerPopup.remove();_trackerPopup=null;}
+  _drawEntryType='installed';
+  if(!_drawMode) mapActivateDrawMode(entry.categoryId||entry.category);
+  else _updateActivePlanIndicator();
+}
+function mapClearActivePlan(){
+  _activePlannedEntryId=null;
+  _updateActivePlanIndicator();
+  const sel=document.getElementById('map-tr-link-plan');
+  if(sel) sel.value='';
+}
+function _populateLinkToPlanDropdown(categoryId){
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const sel=document.getElementById('map-tr-link-plan');
+  const section=document.getElementById('map-tr-link-plan-section');
+  if(!sel||!section) return;
+  if(_drawEntryType==='planned'){ section.style.display='none'; return; }
+  const plans=(typeof trGetEntriesForProject==='function')
+    ?trGetEntriesForProject(pid).filter(e=>!e.deletedFromMap&&!e.archivedFromMap&&e.entryType==='planned'&&(e.categoryId===categoryId||e.category===categoryId))
+    :[];
+  if(!plans.length){ section.style.display='none'; return; }
+  section.style.display='block';
+  sel.innerHTML='<option value="">— None —</option>'+plans.map(e=>{
+    const meas=e.measurementValue!=null?`${e.measurementValue} ${e.measurementUnit||'ac'}`:e.acres?`${e.acres} ac`:'';
+    const label=[e.date,meas,e.notes?e.notes.slice(0,20):''].filter(Boolean).join(' · ');
+    return `<option value="${e.id}"${e.id===_activePlannedEntryId?' selected':''}>${label}</option>`;
+  }).join('');
+}
+function _showUndoToast(entry, pid){
+  const existing=document.getElementById('_gl-undo-toast');
+  if(existing) existing.remove();
+  const toast=document.createElement('div');
+  toast.id='_gl-undo-toast';
+  toast.style.cssText='position:fixed;bottom:calc(160px + env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);background:#1a2a3a;border:1px solid rgba(255,255,255,.15);border-radius:8px;padding:10px 14px;display:flex;align-items:center;gap:12px;z-index:5200;font-family:var(--mono);font-size:12px;color:#e8e8e8;white-space:nowrap;box-shadow:0 4px 16px rgba(0,0,0,.4)';
+  const label=entry.entryType==='planned'?'Planned area saved':'Entry saved';
+  const catName=entry.categoryName||(typeof tcGetName==='function'?tcGetName(entry.categoryId,pid):'');
+  toast.innerHTML=`<span>${label}${catName?' · '+catName:''}</span><button onclick="(function(){if(typeof trDeleteEntry==='function')trDeleteEntry('${entry.id}','${pid}');if(typeof mapRenderTrackerLayers==='function')mapRenderTrackerLayers();if(typeof clRenderTrackerCard==='function')clRenderTrackerCard();document.getElementById('_gl-undo-toast')?.remove();})()" style="background:var(--amber);border:none;color:#111;padding:4px 10px;border-radius:4px;font-family:var(--mono);font-size:11px;cursor:pointer;font-weight:700">Undo</button>`;
+  document.body.appendChild(toast);
+  setTimeout(()=>{const t=document.getElementById('_gl-undo-toast');if(t===toast)toast.remove();},6000);
+}
 function mapCancelTrackerEntry(){
   if(_drawInstance) _drawInstance.deleteAll();
   _pendingDrawFeature=null;
@@ -2044,13 +2140,20 @@ function mapSaveTrackerEntry(){
       };
     })(),
     notes:document.getElementById('map-tr-notes').value.trim()||null,
-    photoIds:[..._pendingPhotoIds]
+    photoIds:[..._pendingPhotoIds],
+    entryType:_drawEntryType||'installed',
+    parentId:(()=>{
+      if(_drawEntryType==='planned') return null;
+      const sel=document.getElementById('map-tr-link-plan');
+      return (sel&&sel.value)?sel.value:(_activePlannedEntryId||null);
+    })(),
   };
   // Editing an existing entry — preserve id so trSaveEntry updates in place
   if(_editingEntryId){ entry.id=_editingEntryId; entry.deletedFromMap=false; entry.archivedFromMap=false; }
   _editingEntryId=null;
   _pendingPhotoIds=[];
-  if(typeof trSaveEntry==='function') trSaveEntry(entry,pid);
+  const saved=(typeof trSaveEntry==='function')?trSaveEntry(entry,pid):null;
+  if(saved) _showUndoToast(saved,pid);
   _pendingDrawFeature=null;
   mapCloseTrackerModal();
   if(_drawInstance) _drawInstance.deleteAll();
@@ -2266,7 +2369,7 @@ function _addCategoryFillLayer(srcId,cat){
   if(fs==='hatch')        paint={'fill-pattern':'tr-hatch-'+cat.id};
   else if(fs==='crosshatch') paint={'fill-pattern':'tr-xhatch-'+cat.id};
   else if(fs==='outline')    paint={'fill-color':color,'fill-opacity':0};
-  else                       paint={'fill-color':color,'fill-opacity':fo};
+  else                       paint={'fill-color':color,'fill-opacity':['case',['==',['get','entryType'],'planned'],0.07,fo]};
   _mapInstance.addLayer({id:srcId+'-fill',type:'fill',source:srcId,filter:['==',['geometry-type'],'Polygon'],paint});
 }
 
@@ -2274,7 +2377,7 @@ function _addCategoryLineLayer(srcId,cat){
   const color=cat.color||'#888';
   const lw=cat.lineWidth||2;
   const dashArr=_TC_DASH_ARRAYS[cat.lineStyle||'solid']||null;
-  const paint={'line-color':color,'line-width':lw,'line-opacity':0.9};
+  const paint={'line-color':color,'line-width':['case',['==',['get','entryType'],'planned'],Math.max(1,lw-0.5),lw],'line-opacity':['case',['==',['get','entryType'],'planned'],0.45,0.9]};
   if(dashArr) paint['line-dasharray']=dashArr;
   _mapInstance.addLayer({id:srcId+'-line',type:'line',source:srcId,
     filter:['any',['==',['geometry-type'],'Polygon'],['==',['geometry-type'],'LineString']],paint});
@@ -2334,7 +2437,7 @@ function mapRenderTrackerLayers(){
     const geojson={type:'FeatureCollection',features:(visible?byCategory[cat.id]:[]).map(e=>({
       type:'Feature',
       id:e.id,
-      properties:{id:e.id,categoryId:e.categoryId||e.category,categoryName:e.categoryName||e.category,date:e.date,acres:e.acres,measurementValue:e.measurementValue??null,measurementUnit:e.measurementUnit||null,notes:e.notes,location:e.location,phase:e.phase||null,method:e.method||null,status:e.status||null,contractor:e.contractor||null},
+      properties:{id:e.id,categoryId:e.categoryId||e.category,categoryName:e.categoryName||e.category,date:e.date,acres:e.acres,measurementValue:e.measurementValue??null,measurementUnit:e.measurementUnit||null,notes:e.notes,location:e.location,phase:e.phase||null,method:e.method||null,status:e.status||null,contractor:e.contractor||null,entryType:e.entryType||'installed'},
       geometry:e.geometry
     }))};
 
@@ -2373,7 +2476,7 @@ function mapRenderTrackerLayers(){
       const visible=_tcLayerVisible[cid]!==false;
       const geojson={type:'FeatureCollection',features:(visible?group.entries:[]).map(e=>({
         type:'Feature',id:e.id,
-        properties:{id:e.id,categoryId:e.categoryId||e.category,categoryName:e.categoryName||e.category,date:e.date,acres:e.acres,measurementValue:e.measurementValue??null,measurementUnit:e.measurementUnit||null,notes:e.notes,location:e.location,phase:e.phase||null,method:e.method||null,status:e.status||null,contractor:e.contractor||null},
+        properties:{id:e.id,categoryId:e.categoryId||e.category,categoryName:e.categoryName||e.category,date:e.date,acres:e.acres,measurementValue:e.measurementValue??null,measurementUnit:e.measurementUnit||null,notes:e.notes,location:e.location,phase:e.phase||null,method:e.method||null,status:e.status||null,contractor:e.contractor||null,entryType:e.entryType||'installed'},
         geometry:e.geometry
       }))};
       if(_mapInstance.getSource(src)){
@@ -2435,7 +2538,9 @@ function _showTrackerEntryPopup(lngLat,props){
     ${props.notes?`<div style="margin-top:6px;color:#c8d8e8;border-top:1px solid rgba(255,255,255,.1);padding-top:6px">${props.notes}</div>`:''}
     ${badgeRow}
     ${photoStrip}
-    <div style="display:flex;gap:6px;margin-top:8px">
+    ${entry?.parentId?`<div style="font-size:10px;color:#a0b8c8;margin-top:4px;border-top:1px solid rgba(255,255,255,.08);padding-top:4px">📍 Linked to planned area</div>`:''}
+    <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
+      ${entry?.entryType==='planned'?`<button onclick="mapActivatePlannedEntry('${props.id}')" style="flex:1;background:rgba(201,168,76,0.2);border:1px solid var(--amber,#C9A84C);color:var(--amber,#C9A84C);padding:6px;border-radius:6px;font-family:var(--mono);font-size:11px;cursor:pointer;font-weight:700;white-space:nowrap">📍 Activate</button>`:''}
       <button onclick="mapEditTrackerEntry('${props.id}')" style="flex:1;background:var(--amber,#D97706);border:none;color:#111;padding:6px;border-radius:6px;font-family:var(--mono);font-size:11px;cursor:pointer;font-weight:700">✏️ Edit</button>
       <button onclick="mapDeleteTrackerEntryFromPanel('${props.id}')" style="flex:1;background:var(--s2);border:1px solid var(--border);color:var(--muted);padding:6px;border-radius:6px;font-family:var(--mono);font-size:11px;cursor:pointer;">✕ Remove</button>
     </div>
@@ -2452,6 +2557,12 @@ function mapEditTrackerEntry(entryId){
   _editingEntryId=entryId;
   _pendingDrawFeature={geometry:entry.geometry};
   _drawCategory=entry.categoryId||entry.category;
+  _drawEntryType=entry.entryType||'installed';
+  _activePlannedEntryId=entry.parentId||null;
+  const editTitleEl=document.getElementById('map-tracker-modal-title');
+  if(editTitleEl) editTitleEl.textContent=_drawEntryType==='planned'?'Edit Planned Area':'Edit Tracker Entry';
+  const editTypeRow=document.getElementById('map-tr-type-row');
+  if(editTypeRow) editTypeRow.style.display=_drawEntryType==='planned'?'block':'none';
   document.getElementById('map-tr-date').value=entry.date||'';
   document.getElementById('map-tr-location').value=entry.location||'';
   document.getElementById('map-tr-notes').value=entry.notes||'';
@@ -2502,6 +2613,9 @@ function mapEditTrackerEntry(entryId){
   document.getElementById('map-tracker-cat-label').textContent=editName;
   _pendingPhotoIds=[...(entry.photoIds||[])];
   mapRefreshEntryPhotoStrip();
+  _populateLinkToPlanDropdown(entry.categoryId||entry.category);
+  const editLinkSel=document.getElementById('map-tr-link-plan');
+  if(editLinkSel&&entry.parentId) editLinkSel.value=entry.parentId;
   document.getElementById('map-tracker-modal').classList.add('open');
 }
 
@@ -2574,11 +2688,17 @@ function mapToggleTrackerCategoryVisibility(catId, visible){
 }
 function mapDeleteTrackerEntryFromPanel(entryId){
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const entry=(typeof trGetEntry==='function')?trGetEntry(entryId,pid):null;
+  const children=entry?.entryType==='planned'
+    ?((typeof trGetEntriesForProject==='function')?trGetEntriesForProject(pid).filter(e=>e.parentId===entryId):[])
+    :[];
+  const childNote=children.length>0?`<div style="font-family:var(--mono);font-size:11px;color:var(--amber);margin-bottom:10px;padding:8px;background:rgba(201,168,76,0.1);border:1px solid rgba(201,168,76,0.3);border-radius:6px">⚠ This planned area has ${children.length} linked installation${children.length===1?'':'s'} — they will be unlinked (not deleted).</div>`:'';
   const ov=document.createElement('div');
   ov.className='modal-overlay';
   ov.style.cssText='z-index:9000';
   ov.innerHTML=`<div class="modal-box" style="max-width:300px;width:88%">
     <div class="modal-title" style="margin-bottom:10px">Remove Entry</div>
+    ${childNote}
     <div style="font-family:var(--mono);font-size:12px;color:var(--muted);margin-bottom:16px;line-height:1.5">How would you like to remove this entry?</div>
     <div class="modal-btns" style="flex-direction:column;gap:8px">
       <button id="_trpHide" class="modal-confirm" style="width:100%">Hide from Map</button>
@@ -2786,6 +2906,10 @@ window.mapFabGps = mapFabGps;
 window.mapShowCategorySheet = mapShowCategorySheet;
 window.mapCloseCategorySheet = mapCloseCategorySheet;
 window.mapActivateDrawMode = mapActivateDrawMode;
+window.mapSelectCategoryForDraw = mapSelectCategoryForDraw;
+window.mapActivateDrawModeTyped = mapActivateDrawModeTyped;
+window.mapActivatePlannedEntry = mapActivatePlannedEntry;
+window.mapClearActivePlan = mapClearActivePlan;
 window.mapDeactivateDrawMode = mapDeactivateDrawMode;
 window.mapDrawSetShape = mapDrawSetShape;
 window.mapShowTrackerModal = mapShowTrackerModal;

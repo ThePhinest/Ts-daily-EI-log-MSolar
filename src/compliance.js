@@ -417,6 +417,32 @@ function clShowTrackerDetail(entryId){
         ${bar}
       </div>`;
     })()}
+    ${(()=>{
+      if(entry.entryType!=='planned') return '';
+      const children=(typeof trGetEntriesForProject==='function')
+        ?trGetEntriesForProject(pid).filter(e=>e.parentId===entryId&&!e.deletedAt)
+        :[];
+      if(!children.length) return `<div style="font-family:var(--mono);font-size:11px;color:var(--muted);background:var(--s1);border:1px solid var(--border);border-radius:6px;padding:10px;margin-bottom:10px">No installations linked yet.</div>`;
+      const totalAct=children.reduce((s,e)=>s+(e.fields?.actualAmount||0),0);
+      const unit=children.find(e=>e.fields?.actualUnit)?.fields?.actualUnit||'lbs';
+      const rows=children.map(e=>{
+        const meas=e.measurementValue!=null?`${e.measurementValue} ${e.measurementUnit||'ac'}`:e.acres?`${e.acres} ac`:'';
+        const act=e.fields?.actualAmount!=null?`${e.fields.actualAmount.toLocaleString()} ${e.fields.actualUnit||'lbs'}`:'';
+        return `<div onclick="clShowTrackerDetail('${e.id}')" style="display:flex;align-items:center;gap:8px;padding:7px 10px;border-top:1px solid var(--border);cursor:pointer">
+          <span style="font-family:var(--mono);font-size:10px;color:var(--muted);flex-shrink:0">${e.date||'—'}</span>
+          <span style="font-family:var(--mono);font-size:10px;color:var(--text);flex:1">${meas}</span>
+          ${act?`<span style="font-family:var(--mono);font-size:10px;color:var(--amber);flex-shrink:0">${act}</span>`:''}
+          <span style="color:var(--muted);font-size:11px">›</span>
+        </div>`;
+      }).join('');
+      return `<div style="margin-bottom:10px;border:1px solid var(--border);border-radius:6px;overflow:hidden">
+        <div style="display:flex;justify-content:space-between;padding:8px 10px;background:var(--s1)">
+          <span style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em">Linked Installations</span>
+          <span style="font-family:var(--mono);font-size:10px;color:var(--amber)">${totalAct>0?totalAct.toLocaleString()+' '+unit+' total':children.length+' linked'}</span>
+        </div>
+        ${rows}
+      </div>`;
+    })()}
     <div style="margin-bottom:14px">
       <span style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em">Photos</span>
       <div id="_cltr-photo-strip" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">${photoStrip}</div>
@@ -650,8 +676,11 @@ function clShowTrackerLog(){
           const rowMeas=(e.measurementValue!=null&&e.measurementUnit)
             ?`<span style="font-family:var(--mono);font-size:10px;color:var(--amber);white-space:nowrap;flex-shrink:0">${(typeof tcFormatMeasurement==='function')?tcFormatMeasurement(e.measurementValue,e.measurementUnit):(e.measurementValue+' '+e.measurementUnit)}</span>`
             :e.acres?`<span style="font-family:var(--mono);font-size:10px;color:var(--amber);white-space:nowrap;flex-shrink:0">${e.acres} ac</span>`:'';
-          return `<div onclick="clShowTrackerDetail('${e.id}')" style="display:flex;align-items:center;gap:8px;padding:9px 16px 9px 30px;border-top:1px solid var(--border);cursor:pointer">
+          const isPlannedRow=e.entryType==='planned';
+          const planBadge=isPlannedRow?`<span style="font-family:var(--mono);font-size:9px;font-weight:700;color:var(--amber);white-space:nowrap;flex-shrink:0;letter-spacing:.06em">PLAN</span>`:'';
+          return `<div onclick="clShowTrackerDetail('${e.id}')" style="display:flex;align-items:center;gap:8px;padding:9px 16px 9px ${isPlannedRow?'27':'30'}px;border-top:1px solid var(--border);cursor:pointer;${isPlannedRow?'border-left:3px solid var(--amber);background:rgba(201,168,76,0.06)':''}">
             <span style="font-family:var(--mono);font-size:10px;color:var(--text);white-space:nowrap;flex-shrink:0;min-width:68px">${e.date||'—'}</span>
+            ${planBadge}
             <span style="font-family:var(--mono);font-size:11px;color:var(--muted);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${amtText}</span>
             ${rowMeas}
             ${pc?`<span style="font-size:10px;flex-shrink:0;color:var(--text)">📷 ${pc}</span>`:''}
@@ -712,10 +741,11 @@ function clShowTrackerLog(){
         const flatMeas=(e.measurementValue!=null&&e.measurementUnit)
           ?`<span style="font-family:var(--mono);font-size:11px;color:var(--amber);white-space:nowrap;flex-shrink:0">${(typeof tcFormatMeasurement==='function')?tcFormatMeasurement(e.measurementValue,e.measurementUnit):(e.measurementValue+' '+e.measurementUnit)}</span>`
           :e.acres?`<span style="font-family:var(--mono);font-size:11px;color:var(--amber);white-space:nowrap;flex-shrink:0">${e.acres} ac</span>`:'';
-        return `<div onclick="clShowTrackerDetail('${e.id}')" style="display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--border);cursor:pointer">
+        const isPlannedFlat=e.entryType==='planned';
+        return `<div onclick="clShowTrackerDetail('${e.id}')" style="display:flex;align-items:center;gap:10px;padding:10px ${isPlannedFlat?'13':'16'}px;border-bottom:1px solid var(--border);cursor:pointer;${isPlannedFlat?'border-left:3px solid var(--amber);background:rgba(201,168,76,0.06)':''}">
           <div style="width:10px;height:10px;border-radius:50%;background:${cat.color};flex-shrink:0"></div>
           <div style="flex:1;min-width:0">
-            <div style="font-family:var(--mono);font-size:11px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${cat.name}</div>
+            <div style="font-family:var(--mono);font-size:11px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${cat.name}${isPlannedFlat?' <span style="font-family:var(--mono);font-size:9px;font-weight:700;color:var(--amber);letter-spacing:.06em">PLAN</span>':''}</div>
             <div style="font-family:var(--mono);font-size:10px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${sub.slice(0,52)}</div>
           </div>
           ${flatMeas}
