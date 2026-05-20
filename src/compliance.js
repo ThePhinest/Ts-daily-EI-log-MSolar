@@ -399,6 +399,7 @@ function clShowTrackerDetail(entryId){
       ${(entry.method&&entry.method!=='N/A')?`<div><span style="color:var(--muted);text-transform:uppercase;font-size:10px;letter-spacing:.06em">Application Method</span><div style="margin-top:2px">${entry.method}</div></div>`:''}
       ${entry.contractor?`<div><span style="color:var(--muted);text-transform:uppercase;font-size:10px;letter-spacing:.06em">Contractor / Applicator</span><div style="margin-top:2px">${entry.contractor}</div></div>`:''}
       ${entry.notes?`<div><span style="color:var(--muted);text-transform:uppercase;font-size:10px;letter-spacing:.06em">Notes</span><div style="margin-top:2px;line-height:1.5">${entry.notes}</div></div>`:''}
+      ${entry.fields?.seedTagCount!=null?`<div><span style="color:var(--muted);text-transform:uppercase;font-size:10px;letter-spacing:.06em">Seed Tags</span><div style="margin-top:2px">🏷️ ${entry.fields.seedTagCount}</div></div>`:''}
     </div>
     ${(()=>{
       const hasReq=entry.fields?.requiredAmount!=null;

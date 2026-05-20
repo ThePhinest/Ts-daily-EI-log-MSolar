@@ -1985,6 +1985,7 @@ function mapCloseTrackerModal(){
 function mapCancelTrackerEntry(){
   if(_drawInstance) _drawInstance.deleteAll();
   _pendingDrawFeature=null;
+  _editingEntryId=null;
   _pendingPhotoIds=[];
   mapRefreshEntryPhotoStrip();
   mapCloseTrackerModal();
