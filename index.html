@@ -144,9 +144,9 @@ body.theme-light{
 .tc-type-btn.active{background:var(--amber);color:#111;border-color:var(--amber);font-weight:700}
 .map-tc-unit-sel{background:var(--s1);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--mono);font-size:11px;padding:4px 6px;cursor:pointer;min-width:0}
 .gl-tracker-popup{z-index:5100!important}
-.gl-tracker-popup .mapboxgl-popup-content{background:#0F1F2E;color:#e8e8e8;padding:12px;border-radius:8px;border:1px solid rgba(255,255,255,.12)}
-.gl-tracker-popup.mapboxgl-popup-anchor-bottom .mapboxgl-popup-tip{border-top-color:#0F1F2E}
-.gl-tracker-popup.mapboxgl-popup-anchor-top .mapboxgl-popup-tip{border-bottom-color:#0F1F2E}
+.gl-tracker-popup .mapboxgl-popup-content{background:rgba(0,0,0,0.82);color:#e8e8e8;padding:12px;border-radius:8px;border:1px solid rgba(255,255,255,.12)}
+.gl-tracker-popup.mapboxgl-popup-anchor-bottom .mapboxgl-popup-tip{border-top-color:rgba(0,0,0,0.82)}
+.gl-tracker-popup.mapboxgl-popup-anchor-top .mapboxgl-popup-tip{border-bottom-color:rgba(0,0,0,0.82)}
 .gl-tracker-popup .mapboxgl-popup-close-button{color:#e8e8e8;font-size:20px;width:28px;height:28px;line-height:28px;padding:0;top:4px;right:4px}
 .gl-photo-popup .mapboxgl-popup-close-button{color:#444;font-size:20px;width:28px;height:28px;line-height:28px;padding:0;top:4px;right:4px}
 #map-no-token{display:none}
@@ -1338,7 +1338,7 @@ body.is-native select { font-size: 16px !important; }
     <div class="card-body">
       <div class="g g3">
         <div class="field full"><label>Project Name</label><input type="text" id="projectName" value="" readonly=""></div>
-        <div class="field"><label>Report Date</label><input type="date" id="reportDate"></div>
+        <div class="field"><label>Report Date</label><input type="date" id="reportDate" oninput="if(typeof updateReportDateDow==='function')updateReportDateDow()"><div id="reportDate-dow" style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:3px"></div></div>
         <div class="field"><label>Prepared By</label><input type="text" id="preparedBy" value="" readonly></div>
         <div class="field"><label>Organization</label><input type="text" id="org" value="" readonly></div>
         <div class="field span2"><label>Current Activity</label><input type="text" id="activePhase" value="" readonly></div>

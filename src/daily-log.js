@@ -87,6 +87,7 @@ function restoreFormState(state){
     if(hv && vEl) vEl.textContent=hv;
   });
   requestAnimationFrame(()=>requestAnimationFrame(()=>document.querySelectorAll('textarea.auto-expand').forEach(autoResize)));
+  updateReportDateDow();
 }
 
 function buildCrewHTML(id, num){
@@ -216,6 +217,7 @@ function _resetFormCore(){
   document.getElementById('p-miles').textContent='— mi';
   document.getElementById('p-hours').textContent='— hrs';
   document.getElementById('reportDate').value=localToday();
+  updateReportDateDow();
   applyProjectConfig();
   try{ localStorage.removeItem('msf_autosave'); }catch{}
 }
@@ -603,6 +605,17 @@ async function dlArchive(date){
   try{ tsBackfillWeekFromLogs(date); }catch(e){}
 }
 
+// ── Day-of-week label below Report Date input ──
+function updateReportDateDow(){
+  const el=document.getElementById('reportDate-dow');
+  if(!el) return;
+  const val=document.getElementById('reportDate')?.value;
+  if(!val){el.textContent='';return;}
+  const [y,m,d]=val.split('-').map(Number);
+  const dt=new Date(y,m-1,d);
+  el.textContent=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][dt.getDay()];
+}
+
 // ── Format date for display: "Mon, Mar 18" ──
 function dlFmtDisplay(dateStr){
   if(!dateStr) return '';
@@ -761,6 +774,7 @@ window.dlGetAll = dlGetAll;
 window.dlGet = dlGet;
 window.dlSaveLocal = dlSaveLocal;
 window.dlArchive = dlArchive;
+window.updateReportDateDow = updateReportDateDow;
 window.dlFmtDisplay = dlFmtDisplay;
 window.localToday = localToday;
 window.checkNewDay = checkNewDay;
