@@ -1088,7 +1088,9 @@ function mapUpdateKmlLayerList(){
         <input type="checkbox" ${allVisible?'checked':''} style="accent-color:${cat.color||'#888'};width:14px;height:14px;flex-shrink:0;" id="${fid}-cb">
         <div style="width:10px;height:10px;border-radius:50%;background:${cat.color||'#888'};flex-shrink:0;"></div>
         <span style="font-family:var(--mono);font-size:11px;color:var(--text);font-weight:600;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${cat.name}</span>
-        <span style="font-family:var(--mono);font-size:9px;color:var(--muted);">${catEntries.length}</span>`;
+        <span style="font-family:var(--mono);font-size:9px;color:var(--muted);">${catEntries.length}</span>
+        <button onclick="event.stopPropagation();mapMoveCatLayerOrder('${cat.id}','up')" title="Bring forward" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px;padding:0 2px;line-height:1">↑</button>
+        <button onclick="event.stopPropagation();mapMoveCatLayerOrder('${cat.id}','down')" title="Send back" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px;padding:0 2px;line-height:1">↓</button>`;
       const kids=document.createElement('div');
       kids.id=fid+'-children';
       kids.style.cssText='padding:4px 6px 4px 16px;';
@@ -1564,8 +1566,6 @@ function _renderTrackerSheet(){
       <div class="map-tc-dot" style="background:${c.color||'#888'}"></div>
       <span class="map-tc-name">${c.name}</span>
       ${typeBadge}
-      <button class="map-tc-btn" onclick="mapMoveCatLayerOrder('${c.id}','up')" title="Bring forward">↑</button>
-      <button class="map-tc-btn" onclick="mapMoveCatLayerOrder('${c.id}','down')" title="Send back">↓</button>
       <button class="map-tc-btn ${visible?'':'dim'}" onclick="mapTrackerToggleLayer('${c.id}')" title="${visible?'Hide':'Show'} layer">${visible?'●':'○'}</button>
       <button class="map-tc-btn" onclick="mapTrackerStartEdit('${c.id}')">Edit</button>
       <button class="map-tc-btn" onclick="mapShowCategoryDetails('${c.id}')" title="Category details" style="${hasDetails?'color:var(--amber)':''}">⚙</button>
@@ -1594,6 +1594,7 @@ function mapMoveCatLayerOrder(catId, dir){
   _setTcLayerOrder(order,pid);
   _renderTrackerSheet();
   mapRenderTrackerLayers();
+  if(_layerPanelOpen) mapUpdateKmlLayerList();
 }
 
 function mapTrackerStartEdit(catId){
