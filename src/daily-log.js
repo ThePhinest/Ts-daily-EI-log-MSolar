@@ -15,7 +15,7 @@ function collectFormState(){
     'wxSunrise','wxSunset','wxDaylight',
     'inspSummary','agencyInsp','landowner','rte','nonCompliance',
     'genComms','lookahead','lookaheadWeather',
-    'p-timeIn','p-timeOut','p-odoStart','p-odoEnd','p-notes'];
+    'p-timeIn','p-timeOut','p-break','p-odoStart','p-odoEnd','p-notes'];
   const state={fields:{},sky:[],checkboxes:{},flagNotes:{},checklist:{},crew:[],crewSeq,crewIds:[...crewIds]};
   fields.forEach(id=>{const el=document.getElementById(id);if(el)state.fields[id]=el.value});
   // Sky — collect all checked
@@ -216,6 +216,7 @@ function _resetFormCore(){
   document.getElementById('crewContainer').innerHTML='';window.crewIds=[];window.crewSeq=0;updateCrewBadge();
   document.getElementById('p-miles').textContent='— mi';
   document.getElementById('p-hours').textContent='— hrs';
+  const pBreakEl=document.getElementById('p-break');if(pBreakEl)pBreakEl.value='0';
   document.getElementById('reportDate').value=localToday();
   updateReportDateDow();
   applyProjectConfig();
@@ -290,21 +291,34 @@ function getMyWeather(){
     if(btn){btn.textContent='⛅ Get My Weather';btn.disabled=false;}
     return;
   }
+  const dow=new Date().getDay(); // 5=Fri, 6=Sat
+  if(dow===5||dow===6){
+    // Store day offsets globally so the modal buttons can use them
+    window._wxTmrOffset=1;
+    window._wxMonOffset=dow===5?3:2; // Fri→+3, Sat→+2
+    if(btn){btn.textContent='⛅ Get My Weather';btn.disabled=false;}
+    document.getElementById('wx-dow-overlay').style.display='flex';
+    return;
+  }
+  _doWeatherFetch(1);
+}
+async function _doWeatherFetch(forecastOffset){
+  const btn=document.getElementById('wx-btn');
+  if(btn){btn.textContent='⛅ Fetching weather…';btn.disabled=true;}
   navigator.geolocation.getCurrentPosition(
     async function(pos){
       const lat=pos.coords.latitude.toFixed(4);
       const lon=pos.coords.longitude.toFixed(4);
-      if(btn) btn.textContent='⛅ Fetching weather…';
       try{
         const url=`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}`+
           `&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,windspeed_10m_max,windgusts_10m_max,winddirection_10m_dominant,weathercode,sunrise,sunset`+
           `&hourly=precipitation,windspeed_10m,weathercode,soil_moisture_0_to_7cm,soil_temperature_0_to_7cm`+
           `&past_days=1&current_weather=true`+
-          `&temperature_unit=fahrenheit&windspeed_unit=mph&precipitation_unit=inch&timezone=auto&forecast_days=3`;
+          `&temperature_unit=fahrenheit&windspeed_unit=mph&precipitation_unit=inch&timezone=auto&forecast_days=4`;
         const res=await fetch(url);
         if(!res.ok) throw new Error('HTTP '+res.status);
         const data=await res.json();
-        _applyWeatherData(data);
+        _applyWeatherData(data,forecastOffset);
         if(btn){btn.textContent='✓ Weather filled';btn.style.color='var(--green)';
           setTimeout(()=>{btn.textContent='⛅ Get My Weather';btn.style.color='';btn.disabled=false;},3000);}
       }catch(e){
@@ -314,7 +328,7 @@ function getMyWeather(){
         if(btn){btn.textContent='⛅ Get My Weather';btn.disabled=false;}
       }
     },
-    function(err){
+    function(){
       alert('Location access denied. Please allow location access and try again.');
       if(btn){btn.textContent='⛅ Get My Weather';btn.disabled=false;}
     },
@@ -415,7 +429,7 @@ function _formatDaylight(sunriseISO, sunsetISO){
   return {sunrise: _formatTimeAmPm(sr), sunset: _formatTimeAmPm(ss), length: `${lengthH}h ${lengthM}m`};
 }
 
-function _applyWeatherData(data){
+function _applyWeatherData(data,forecastOffset){
   const d=data.daily;
   const cw=data.current_weather;
   if(!d||!cw) return;
@@ -424,7 +438,7 @@ function _applyWeatherData(data){
   const todayStr = cw.time.slice(0,10);
   const TODAY = d.time.findIndex(t => t === todayStr);
   if(TODAY < 0) return;
-  const TMR = TODAY + 1;
+  const TMR = TODAY + (forecastOffset||1);
   const range = _findTodayActiveRange(data);
 
   // ── Temps: today's low = AM, today's high = PM ──
@@ -586,7 +600,8 @@ async function dlArchive(date){
     if(tin&&tout){
       const [h1,m1]=tin.split(':').map(Number);
       const [h2,m2]=tout.split(':').map(Number);
-      const diff=((h2*60+m2)-(h1*60+m1))/60;
+      const breakMins=parseInt(f['p-break']||'0')||0;
+      const diff=((h2*60+m2)-(h1*60+m1)-breakMins)/60;
       if(diff>0) hours=Math.round(diff*10)/10;
     }
     // Resolve projectId at write time (E1.1 Option C). Daily log is always
@@ -768,6 +783,7 @@ window.dayNoteSave = dayNoteSave;
 window.dayNoteClear = dayNoteClear;
 window.dayNoteClose = dayNoteClose;
 window.getMyWeather = getMyWeather;
+window._doWeatherFetch = _doWeatherFetch;
 window._applyWeatherData = _applyWeatherData;
 window._wmoToDesc = _wmoToDesc;
 window.dlGetAll = dlGetAll;

@@ -826,6 +826,18 @@ body.is-native select { font-size: 16px !important; }
   </div>
 </div>
 
+<!-- WEATHER DAY CHOICE MODAL -->
+<div class="nd-overlay" id="wx-dow-overlay" style="display:none">
+  <div class="nd-card" style="max-width:320px">
+    <div class="nd-head"><span class="nd-head-icon">⛅</span><span id="wx-dow-title" style="font-family:var(--cond);font-weight:700;font-size:16px">Weekend Forecast</span></div>
+    <p style="font-family:var(--mono);font-size:13px;color:var(--muted);margin:0 0 16px">Fetch tomorrow's forecast or Monday's?</p>
+    <div style="display:flex;gap:10px">
+      <button class="nd-btn nd-btn-secondary" style="flex:1" onclick="document.getElementById('wx-dow-overlay').style.display='none';_doWeatherFetch(window._wxTmrOffset)">Tomorrow</button>
+      <button class="nd-btn nd-btn-primary" style="flex:1" onclick="document.getElementById('wx-dow-overlay').style.display='none';_doWeatherFetch(window._wxMonOffset)">Monday</button>
+    </div>
+  </div>
+</div>
+
 <!-- DAY NOTE MODAL -->
 <div class="nd-overlay" id="daynote-overlay" style="display:none">
   <div class="nd-card">
@@ -1363,7 +1375,7 @@ body.is-native select { font-size: 16px !important; }
       <span class="card-chevron">▾</span>
     </div>
     <div class="card-body">
-      <div class="g g4" style="margin-bottom:12px">
+      <div class="g g3" style="margin-bottom:12px">
         <div class="field">
           <label>Time In</label>
           <input type="time" id="p-timeIn">
@@ -1372,6 +1384,22 @@ body.is-native select { font-size: 16px !important; }
           <label>Time Out</label>
           <input type="time" id="p-timeOut">
         </div>
+        <div class="field">
+          <label>Break / Lunch</label>
+          <select id="p-break" onchange="calcHours()" style="width:100%;background:var(--s1);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--mono);font-size:14px;padding:7px 8px">
+            <option value="0">None</option>
+            <option value="15">15 min</option>
+            <option value="30">30 min</option>
+            <option value="45">45 min</option>
+            <option value="60">1 hr</option>
+            <option value="75">1 hr 15</option>
+            <option value="90">1 hr 30</option>
+            <option value="105">1 hr 45</option>
+            <option value="120">2 hrs</option>
+          </select>
+        </div>
+      </div>
+      <div class="g g2" style="margin-bottom:12px">
         <div class="field">
           <label>Odometer Start</label>
           <input type="number" id="p-odoStart" placeholder="miles" oninput="calcMiles()">
@@ -1973,7 +2001,8 @@ Anticipated rain — AM weather monitoring expected"></textarea>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
         <div>
           <label style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;display:block;margin-bottom:4px">Date</label>
-          <input type="date" id="map-tr-date" style="width:100%;box-sizing:border-box;background:var(--s1);border:1px solid var(--border);border-radius:6px;padding:7px 9px;color:var(--text);font-family:var(--mono);font-size:12px">
+          <input type="date" id="map-tr-date" oninput="if(typeof mapSetSessionDate==='function')mapSetSessionDate(this.value)" style="width:100%;box-sizing:border-box;background:var(--s1);border:1px solid var(--border);border-radius:6px;padding:7px 9px;color:var(--text);font-family:var(--mono);font-size:12px">
+          <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:3px">Change for past entries — applies to all drawings this session</div>
         </div>
         <div>
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
@@ -3006,7 +3035,8 @@ function calcHours(){
   if(!inn||!out){document.getElementById('p-hours').textContent='— hrs';return}
   const [ih,im]=inn.split(':').map(Number);
   const [oh,om]=out.split(':').map(Number);
-  const mins=(oh*60+om)-(ih*60+im);
+  const breakMins=parseInt(document.getElementById('p-break')?.value||'0')||0;
+  const mins=(oh*60+om)-(ih*60+im)-breakMins;
   if(mins<=0){document.getElementById('p-hours').textContent='— hrs';return}
   const h=Math.floor(mins/60),m=mins%60;
   document.getElementById('p-hours').textContent=`${h}h ${m}m`;

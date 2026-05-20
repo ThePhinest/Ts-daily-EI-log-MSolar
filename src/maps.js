@@ -1474,8 +1474,18 @@ const TC_COLORS=[
   '#7CCD7C','#A8D8A8','#82C4E8','#D7BDE2','#FFAB40','#FF7043',
   '#8E9BA3','#BDC3C7','#7F8C8D','#2C3E50','#922B21','#1B5E20',
 ];
+let _trSessionDate=null; // user-chosen entry date for the current drawing session
 let _renderedOrphanCids=new Set(); // tracks orphan source IDs currently on the map
 let _tcLayerVisible={};       // { [catId]: boolean } — default true
+function _getTcLayerOrder(pid){ try{ return JSON.parse(localStorage.getItem('gl_tc_order_'+pid)||'[]'); }catch{ return []; } }
+function _setTcLayerOrder(order,pid){ try{ localStorage.setItem('gl_tc_order_'+pid,JSON.stringify(order)); }catch{} }
+function _sortCatsByOrder(cats,pid){
+  const order=_getTcLayerOrder(pid);
+  if(!order.length) return cats;
+  const indexed=cats.filter(c=>order.includes(c.id)).sort((a,b)=>order.indexOf(a.id)-order.indexOf(b.id));
+  const rest=cats.filter(c=>!order.includes(c.id));
+  return [...indexed,...rest];
+}
 let _tcEditingCatId=null;     // id of category being inline-edited
 let _tcEditingColor=null;     // color staged for edit row (hex string)
 let _tcAddingColor=null;      // color staged for add row (hex string)
@@ -1499,7 +1509,7 @@ function mapCloseTrackerSheet(){
 
 function _renderTrackerSheet(){
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
-  const cats=(typeof tcGetCategories==='function')?tcGetCategories(pid):[];
+  const cats=_sortCatsByOrder((typeof tcGetCategories==='function')?tcGetCategories(pid):[],pid);
   const list=document.getElementById('map-tracker-cat-list');
   if(!cats.length){
     list.innerHTML='<div style="font-family:var(--mono);font-size:12px;color:var(--muted);text-align:center;padding:20px 0">No categories yet.<br>Tap + to create your first.</div>';
@@ -1554,6 +1564,8 @@ function _renderTrackerSheet(){
       <div class="map-tc-dot" style="background:${c.color||'#888'}"></div>
       <span class="map-tc-name">${c.name}</span>
       ${typeBadge}
+      <button class="map-tc-btn" onclick="mapMoveCatLayerOrder('${c.id}','up')" title="Bring forward">↑</button>
+      <button class="map-tc-btn" onclick="mapMoveCatLayerOrder('${c.id}','down')" title="Send back">↓</button>
       <button class="map-tc-btn ${visible?'':'dim'}" onclick="mapTrackerToggleLayer('${c.id}')" title="${visible?'Hide':'Show'} layer">${visible?'●':'○'}</button>
       <button class="map-tc-btn" onclick="mapTrackerStartEdit('${c.id}')">Edit</button>
       <button class="map-tc-btn" onclick="mapShowCategoryDetails('${c.id}')" title="Category details" style="${hasDetails?'color:var(--amber)':''}">⚙</button>
@@ -1565,6 +1577,21 @@ function _renderTrackerSheet(){
 function mapTrackerToggleLayer(catId){
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
   _tcLayerVisible[catId]=(_tcLayerVisible[catId]===false)?true:false;
+  _renderTrackerSheet();
+  mapRenderTrackerLayers();
+}
+function mapMoveCatLayerOrder(catId, dir){
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const cats=(typeof tcGetCategories==='function')?tcGetCategories(pid):[];
+  let order=_getTcLayerOrder(pid);
+  // Seed order with all cat IDs if empty
+  if(!order.length) order=cats.map(c=>c.id);
+  // Ensure catId is in order
+  if(!order.includes(catId)) order.push(catId);
+  const idx=order.indexOf(catId);
+  if(dir==='up'&&idx<order.length-1){ const t=order[idx+1];order[idx+1]=order[idx];order[idx]=t; }
+  if(dir==='down'&&idx>0){ const t=order[idx-1];order[idx-1]=order[idx];order[idx]=t; }
+  _setTcLayerOrder(order,pid);
   _renderTrackerSheet();
   mapRenderTrackerLayers();
 }
@@ -1835,6 +1862,7 @@ function mapActivateDrawMode(categoryId){
 }
 
 function mapDeactivateDrawMode(){
+  _trSessionDate=null;
   const prevMode=_drawMode;
   _drawMode=null;
   _drawCategory=null;
@@ -1939,7 +1967,7 @@ function mapShowTrackerModal(feat,category){
   const typeRow=document.getElementById('map-tr-type-row');
   if(typeRow) typeRow.style.display=isPlanned?'block':'none';
   const activeLogDate=document.getElementById('reportDate')?.value;
-  const today=activeLogDate||new Date().toLocaleDateString('en-CA');
+  const today=_trSessionDate||activeLogDate||new Date().toLocaleDateString('en-CA');
   document.getElementById('map-tr-date').value=today;
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
   const catDetails=(typeof tcGetCategory==='function')?tcGetCategory(category,pid):null;
@@ -2419,7 +2447,7 @@ function mapRenderTrackerLayers(){
 
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
   const entries=(typeof trGetEntriesForProject==='function')?trGetEntriesForProject(pid).filter(e=>!e.deletedFromMap&&!e.archivedFromMap):[];
-  const cats=(typeof tcGetCategories==='function')?tcGetCategories(pid):[];
+  const cats=_sortCatsByOrder((typeof tcGetCategories==='function')?tcGetCategories(pid):[],pid);
 
   const byCategory={};
   cats.forEach(c=>{byCategory[c.id]=[];});
@@ -2935,6 +2963,8 @@ window.mapShowTrackerSheet = mapShowTrackerSheet;
 window._renderTrackerSheet = _renderTrackerSheet;
 window.mapCloseTrackerSheet = mapCloseTrackerSheet;
 window.mapTrackerToggleLayer = mapTrackerToggleLayer;
+window.mapMoveCatLayerOrder = mapMoveCatLayerOrder;
+window.mapSetSessionDate = (d)=>{ _trSessionDate=d; };
 window.mapTrackerStartEdit = mapTrackerStartEdit;
 window.mapTrackerCancelEdit = mapTrackerCancelEdit;
 window.mapTrackerSaveEdit = mapTrackerSaveEdit;
