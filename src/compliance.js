@@ -400,6 +400,22 @@ function clShowTrackerDetail(entryId){
       ${entry.contractor?`<div><span style="color:var(--muted);text-transform:uppercase;font-size:10px;letter-spacing:.06em">Contractor / Applicator</span><div style="margin-top:2px">${entry.contractor}</div></div>`:''}
       ${entry.notes?`<div><span style="color:var(--muted);text-transform:uppercase;font-size:10px;letter-spacing:.06em">Notes</span><div style="margin-top:2px;line-height:1.5">${entry.notes}</div></div>`:''}
     </div>
+    ${(()=>{
+      const hasReq=entry.fields?.requiredAmount!=null;
+      const hasAct=entry.fields?.actualAmount!=null;
+      if(!hasReq&&!hasAct) return '';
+      const req=entry.fields?.requiredAmount||0;
+      const reqUnit=entry.fields?.requiredUnit||'lbs';
+      const act=entry.fields?.actualAmount||0;
+      const actUnit=entry.fields?.actualUnit||'lbs';
+      const pct=(hasReq&&hasAct&&req>0)?Math.min(100,(act/req)*100):null;
+      const bar=pct!=null?`<div style="margin-top:6px;height:6px;background:var(--border);border-radius:3px;overflow:hidden"><div style="height:100%;width:${pct.toFixed(1)}%;background:${pct>=100?'var(--green)':'var(--amber)'};border-radius:3px"></div></div><div style="font-family:var(--mono);font-size:10px;color:${pct>=100?'var(--green)':'var(--amber)'};text-align:right;margin-top:2px">${pct.toFixed(1)}%</div>`:'';
+      return `<div style="background:var(--s1);border:1px solid var(--border);border-radius:6px;padding:8px 10px;margin-bottom:10px">
+        ${hasReq?`<div style="font-family:var(--mono);font-size:10px;color:var(--muted)">Required <span style="color:var(--text)">${req.toLocaleString()} ${reqUnit}</span></div>`:''}
+        ${hasAct?`<div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:2px">Actual <span style="color:var(--text)">${act.toLocaleString()} ${actUnit}</span></div>`:''}
+        ${bar}
+      </div>`;
+    })()}
     <div style="margin-bottom:14px">
       <span style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em">Photos</span>
       <div id="_cltr-photo-strip" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">${photoStrip}</div>
@@ -621,6 +637,7 @@ function clShowTrackerLog(){
         const rows=g.entries.map(e=>{
           const pc=Array.isArray(e.photoIds)?e.photoIds.length:0;
           const rc=Array.isArray(e.reportIds)?e.reportIds.length:0;
+          const stc=e.fields?.seedTagCount||0;
           const rowMeas=(e.measurementValue!=null&&e.measurementUnit)
             ?`<span style="font-family:var(--mono);font-size:10px;color:var(--amber);white-space:nowrap;flex-shrink:0">${(typeof tcFormatMeasurement==='function')?tcFormatMeasurement(e.measurementValue,e.measurementUnit):(e.measurementValue+' '+e.measurementUnit)}</span>`
             :e.acres?`<span style="font-family:var(--mono);font-size:10px;color:var(--amber);white-space:nowrap;flex-shrink:0">${e.acres} ac</span>`:'';
@@ -629,17 +646,41 @@ function clShowTrackerLog(){
             <span style="font-family:var(--mono);font-size:11px;color:var(--muted);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${(e.notes||'').slice(0,42)}</span>
             ${rowMeas}
             ${pc?`<span style="font-size:10px;flex-shrink:0;color:var(--text)">📷 ${pc}</span>`:''}
+            ${stc?`<span style="font-size:10px;flex-shrink:0;color:var(--text)">🏷️ ${stc}</span>`:''}
             ${rc?`<span style="font-size:10px;flex-shrink:0;color:var(--text)">📋 ${rc}</span>`:''}
             <span style="color:var(--muted);flex-shrink:0;font-size:12px">›</span>
           </div>`;
         }).join('');
         const meta=[gAcres>0?`${gAcres.toFixed(2)} ac`:'',gPhotos>0?`📷 ${gPhotos}`:'',`${g.entries.length} ${g.entries.length===1?'entry':'entries'}`].filter(Boolean).join(' · ');
+        // Cumulative actual vs required bar — only when entries share the same actual unit
+        const catBar=(()=>{
+          const withBoth=g.entries.filter(e=>e.fields?.actualAmount!=null&&e.fields?.requiredAmount!=null);
+          if(!withBoth.length) return '';
+          const units=[...new Set(withBoth.map(e=>e.fields.actualUnit||'lbs'))];
+          if(units.length>1) return ''; // mixed units — skip
+          const totalReq=withBoth.reduce((s,e)=>s+(e.fields.requiredAmount||0),0);
+          const totalAct=withBoth.reduce((s,e)=>s+(e.fields.actualAmount||0),0);
+          if(totalReq<=0) return '';
+          const pct=Math.min(100,(totalAct/totalReq)*100);
+          const color=pct>=100?'var(--green)':'var(--amber)';
+          const unit=units[0];
+          return `<div style="padding:4px 16px 8px;background:var(--s1)">
+            <div style="display:flex;justify-content:space-between;font-family:var(--mono);font-size:9px;color:var(--muted);margin-bottom:3px">
+              <span>Applied: ${totalAct.toLocaleString()} / ${totalReq.toLocaleString()} ${unit}</span>
+              <span style="color:${color}">${pct.toFixed(1)}%</span>
+            </div>
+            <div style="height:4px;background:var(--border);border-radius:2px;overflow:hidden">
+              <div style="height:100%;width:${pct.toFixed(1)}%;background:${color};border-radius:2px"></div>
+            </div>
+          </div>`;
+        })();
         return `<div style="border-bottom:1px solid var(--border)">
           <div style="display:flex;align-items:center;gap:8px;padding:10px 16px;background:var(--s1)">
             <div style="width:10px;height:10px;border-radius:50%;background:${g.cat.color};flex-shrink:0"></div>
             <span style="font-family:var(--cond);font-weight:700;font-size:13px;letter-spacing:.04em;flex:1">${g.cat.name}</span>
             <span style="font-family:var(--mono);font-size:10px;color:var(--muted);white-space:nowrap">${meta}</span>
           </div>
+          ${catBar}
           ${rows}
         </div>`;
       }).join('');
@@ -651,6 +692,7 @@ function clShowTrackerLog(){
         const cat=cached||{color:'#888',name:catName};
         const pc=Array.isArray(e.photoIds)?e.photoIds.length:0;
         const rc=Array.isArray(e.reportIds)?e.reportIds.length:0;
+        const stc=e.fields?.seedTagCount||0;
         const sub=[e.date||'',e.notes||''].filter(Boolean).join(' · ');
         const flatMeas=(e.measurementValue!=null&&e.measurementUnit)
           ?`<span style="font-family:var(--mono);font-size:11px;color:var(--amber);white-space:nowrap;flex-shrink:0">${(typeof tcFormatMeasurement==='function')?tcFormatMeasurement(e.measurementValue,e.measurementUnit):(e.measurementValue+' '+e.measurementUnit)}</span>`
@@ -663,6 +705,7 @@ function clShowTrackerLog(){
           </div>
           ${flatMeas}
           ${pc?`<span style="font-size:10px;flex-shrink:0;color:var(--text)">📷 ${pc}</span>`:''}
+          ${stc?`<span style="font-size:10px;flex-shrink:0;color:var(--text)">🏷️ ${stc}</span>`:''}
           ${rc?`<span style="font-size:10px;flex-shrink:0;color:var(--text)">📋 ${rc}</span>`:''}
           <span style="color:var(--muted);flex-shrink:0;font-size:12px">›</span>
         </div>`;

@@ -1942,6 +1942,12 @@ function mapShowTrackerModal(feat,category){
   const calcEl=document.getElementById('map-tr-calc-result');
   if(rateEl) rateEl.value=catDetails?.targetRate||'';
   if(calcEl) calcEl.textContent='—';
+  const actualAmtEl=document.getElementById('map-tr-actual-amt');
+  const actualUnitEl=document.getElementById('map-tr-actual-unit');
+  const seedTagsEl=document.getElementById('map-tr-seed-tags');
+  if(actualAmtEl) actualAmtEl.value='';
+  if(actualUnitEl) actualUnitEl.value='lbs';
+  if(seedTagsEl) seedTagsEl.value='';
   if(catDetails?.targetRate&&measType!=='linear') mapTrackerCalc();
   const catColor=(typeof tcGetColor==='function')?tcGetColor(category,pid):'#888';
   const catName=(typeof tcGetName==='function')?tcGetName(category,pid):(category||'Unknown');
@@ -2019,7 +2025,23 @@ function mapSaveTrackerEntry(){
     method:isLinear?null:(document.getElementById('map-tr-method')?.value||'N/A'),
     status:isLinear?(document.getElementById('map-tr-status')?.value||'Installed'):null,
     contractor:document.getElementById('map-tr-contractor')?.value.trim()||null,
-    fields:{},
+    fields:(()=>{
+      if(isLinear) return {};
+      const rateVal=parseFloat(document.getElementById('map-tr-rate')?.value)||null;
+      const requiredAmt=rateVal&&acres?Math.round(rateVal*acres):null;
+      const requiredUnit=rateVal?_catUnit().split('/')[0]:null;
+      const rawActual=document.getElementById('map-tr-actual-amt')?.value;
+      const actualAmt=rawActual!==''&&rawActual!=null?parseFloat(rawActual):null;
+      const actualUnitVal=document.getElementById('map-tr-actual-unit')?.value||'lbs';
+      const rawTags=document.getElementById('map-tr-seed-tags')?.value;
+      const seedTagVal=rawTags!==''&&rawTags!=null?parseInt(rawTags):null;
+      return {
+        ...(rateVal!=null?{appliedRate:rateVal}:{}),
+        ...(requiredAmt!=null?{requiredAmount:requiredAmt,requiredUnit}:{}),
+        ...(actualAmt!=null?{actualAmount:actualAmt,actualUnit:actualUnitVal}:{}),
+        ...(seedTagVal!=null?{seedTagCount:seedTagVal}:{}),
+      };
+    })(),
     notes:document.getElementById('map-tr-notes').value.trim()||null,
     photoIds:[..._pendingPhotoIds]
   };
@@ -2456,9 +2478,15 @@ function mapEditTrackerEntry(entryId){
   const calcSection=document.getElementById('map-tr-calc-section');
   if(calcSection) calcSection.style.display=editMeasType==='linear'?'none':'';
   const rateEl=document.getElementById('map-tr-rate');
-  if(rateEl) rateEl.value='';
+  if(rateEl) rateEl.value=entry.fields?.appliedRate||'';
   const calcEl=document.getElementById('map-tr-calc-result');
   if(calcEl) calcEl.textContent='—';
+  const editActualAmtEl=document.getElementById('map-tr-actual-amt');
+  const editActualUnitEl=document.getElementById('map-tr-actual-unit');
+  const editSeedTagsEl=document.getElementById('map-tr-seed-tags');
+  if(editActualAmtEl) editActualAmtEl.value=entry.fields?.actualAmount!=null?entry.fields.actualAmount:'';
+  if(editActualUnitEl) editActualUnitEl.value=entry.fields?.actualUnit||'lbs';
+  if(editSeedTagsEl) editSeedTagsEl.value=entry.fields?.seedTagCount!=null?entry.fields.seedTagCount:'';
   const editColor=(typeof tcGetColor==='function')?tcGetColor(_drawCategory,editPid):'#888';
   const editName=(typeof tcGetName==='function')?tcGetName(_drawCategory,editPid):(entry.categoryName||_drawCategory||'Unknown');
   document.getElementById('map-tracker-cat-dot').style.background=editColor;

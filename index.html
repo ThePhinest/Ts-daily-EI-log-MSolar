@@ -2023,6 +2023,24 @@ Anticipated rain — AM weather monitoring expected"></textarea>
           </div>
         </div>
         <button onclick="mapTrackerCalcInsert()" style="margin-top:8px;width:100%;background:none;border:1px solid var(--border);color:var(--muted);padding:5px;border-radius:6px;font-family:var(--mono);font-size:10px;cursor:pointer;letter-spacing:.04em">↓ Append to notes</button>
+        <!-- Actual applied + seed tags -->
+        <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border)">
+          <div style="font-family:var(--mono);font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">Actual Applied</div>
+          <div style="display:grid;grid-template-columns:1fr auto;gap:8px">
+            <input type="number" id="map-tr-actual-amt" step="0.1" min="0" placeholder="Amount used" style="width:100%;box-sizing:border-box;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:7px 9px;color:var(--text);font-family:var(--mono);font-size:12px">
+            <select id="map-tr-actual-unit" style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:7px 9px;color:var(--text);font-family:var(--mono);font-size:12px">
+              <option value="lbs">lbs</option>
+              <option value="kg">kg</option>
+              <option value="bags">bags</option>
+              <option value="tons">tons</option>
+              <option value="gal">gal</option>
+            </select>
+          </div>
+          <div style="margin-top:8px">
+            <div style="font-family:var(--mono);font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px">Seed Tags 🏷️</div>
+            <input type="number" id="map-tr-seed-tags" step="1" min="0" placeholder="0" style="width:80px;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:7px 9px;color:var(--text);font-family:var(--mono);font-size:12px">
+          </div>
+        </div>
       </div>
       <!-- Photos -->
       <div style="margin-bottom:14px">
