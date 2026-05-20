@@ -636,6 +636,7 @@ function clShowTrackerLog(){
         const gAcres=g.entries.reduce((s,e)=>s+(parseFloat(e.acres)||0),0);
         const gPhotos=g.entries.reduce((s,e)=>s+(Array.isArray(e.photoIds)?e.photoIds.length:0),0);
         const gSeeds=g.entries.reduce((s,e)=>s+(e.fields?.seedTagCount||0),0);
+        const gReports=g.entries.reduce((s,e)=>s+(Array.isArray(e.reportIds)?e.reportIds.length:0),0);
         const rows=g.entries.map(e=>{
           const pc=Array.isArray(e.photoIds)?e.photoIds.length:0;
           const rc=Array.isArray(e.reportIds)?e.reportIds.length:0;
@@ -653,7 +654,7 @@ function clShowTrackerLog(){
             <span style="color:var(--muted);flex-shrink:0;font-size:12px">›</span>
           </div>`;
         }).join('');
-        const meta=[gAcres>0?`${gAcres.toFixed(2)} ac`:'',gPhotos>0?`📷 ${gPhotos}`:'',gSeeds>0?`🏷️ ${gSeeds}`:'',`${g.entries.length} ${g.entries.length===1?'entry':'entries'}`].filter(Boolean).join(' · ');
+        const meta=[gAcres>0?`${gAcres.toFixed(2)} ac`:'',gPhotos>0?`📷 ${gPhotos}`:'',gSeeds>0?`🏷️ ${gSeeds}`:'',gReports>0?`📋 ${gReports}`:'',`${g.entries.length} ${g.entries.length===1?'entry':'entries'}`].filter(Boolean).join(' · ');
         // Cumulative actual vs required bar — only when entries share the same actual unit
         const catBar=(()=>{
           const withBoth=g.entries.filter(e=>e.fields?.actualAmount!=null&&e.fields?.requiredAmount!=null);
