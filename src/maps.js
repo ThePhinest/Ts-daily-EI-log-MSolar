@@ -2410,6 +2410,13 @@ function _showTrackerEntryPopup(lngLat,props){
     :(props.acres?props.acres+' ac':'');
   const photoIds=entry?.photoIds||[];
   const photos=(window._phPhotos||[]).filter(p=>photoIds.includes(p.id));
+  const seedTagCount=entry?.fields?.seedTagCount||0;
+  const reportCount=(entry?.reportIds||[]).length;
+  const badgeRow=(seedTagCount||reportCount||photos.length)?`<div style="display:flex;gap:8px;margin-top:6px;padding-top:6px;border-top:1px solid rgba(255,255,255,.1)">
+    ${photos.length?`<span style="color:#dce8f4;font-size:11px">📷 ${photos.length}</span>`:''}
+    ${seedTagCount?`<span style="color:#dce8f4;font-size:11px">🏷️ ${seedTagCount}</span>`:''}
+    ${reportCount?`<span style="color:#dce8f4;font-size:11px">📋 ${reportCount}</span>`:''}
+  </div>`:'';
   const photoStrip=photos.length?`<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,.12)">
     ${photos.map(p=>`<img src="${p.thumb}" onclick="phOpenLightbox('${p.id}')" style="width:56px;height:56px;object-fit:cover;border-radius:4px;cursor:pointer;border:2px solid rgba(255,255,255,.15)">`).join('')}
   </div>`:'';
@@ -2426,6 +2433,7 @@ function _showTrackerEntryPopup(lngLat,props){
     ${(props.method&&props.method!=='N/A')?`<div style="color:#dce8f4">⚙️ ${props.method}</div>`:''}
     ${props.contractor?`<div style="color:#dce8f4">👷 ${props.contractor}</div>`:''}
     ${props.notes?`<div style="margin-top:6px;color:#c8d8e8;border-top:1px solid rgba(255,255,255,.1);padding-top:6px">${props.notes}</div>`:''}
+    ${badgeRow}
     ${photoStrip}
     <div style="display:flex;gap:6px;margin-top:8px">
       <button onclick="mapEditTrackerEntry('${props.id}')" style="flex:1;background:var(--amber,#D97706);border:none;color:#111;padding:6px;border-radius:6px;font-family:var(--mono);font-size:11px;cursor:pointer;font-weight:700">✏️ Edit</button>
