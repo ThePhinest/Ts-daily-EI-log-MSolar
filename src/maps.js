@@ -332,6 +332,23 @@ function mapTogglePinDateRange(){
   ri.style.display = ri.style.display === 'none' ? 'flex' : 'none';
   mapRenderPhotoPins();
 }
+function mapTogglePinKeyword(){
+  const input = document.getElementById('map-photo-search');
+  const btn = document.getElementById('map-pin-keyword');
+  if(!input) return;
+  const showing = input.style.display !== 'none';
+  if(showing){
+    input.style.display = 'none';
+    input.value = '';
+    _mapPhotoSearch = '';
+    _renderPhotoMarkers();
+    if(btn) btn.classList.remove('active');
+  } else {
+    input.style.display = 'block';
+    if(btn) btn.classList.add('active');
+    setTimeout(()=>input.focus(), 50);
+  }
+}
 
 function mapRenderPhotoPins(){
   if(!_mapInstance) return;
@@ -2945,6 +2962,7 @@ window.mapSaveSettings = mapSaveSettings;
 window.mapAddGPSDot = mapAddGPSDot;
 window.mapSetPinFilter = mapSetPinFilter;
 window.mapTogglePinDateRange = mapTogglePinDateRange;
+window.mapTogglePinKeyword = mapTogglePinKeyword;
 window.mapRenderPhotoPins = mapRenderPhotoPins;
 window.mapToggleLayerPanel = mapToggleLayerPanel;
 window.mapShowMarkerModal = mapShowMarkerModal;
