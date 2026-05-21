@@ -310,6 +310,7 @@ const _mapEmojiList = [
   {emoji:'📝', label:'Site Note'}
 ];
 let _mapPinFilter = 'today';
+let _mapPhotoSearch = '';
 
 function mapSetPinFilter(filter){
   _mapPinFilter = filter;
@@ -354,6 +355,7 @@ function mapRenderPhotoPins(){
       if(fromDate && p.date < fromDate) return false;
       if(toDate && p.date > toDate) return false;
     }
+    if(_mapPhotoSearch && !(p.caption||'').toLowerCase().includes(_mapPhotoSearch)) return false;
     return true;
   });
 
@@ -1010,7 +1012,16 @@ function mapUpdateKmlLayerList(){
     if(layer.folderName){ if(!folders[layer.folderName]) folders[layer.folderName]=[]; folders[layer.folderName].push(layer); }
     else noFolder.push(layer);
   });
-  Object.entries(folders).forEach(([folderName, layers])=>{
+  const _kflPid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const _kflOrder=_getKmlFolderOrder(_kflPid);
+  const _kflSorted=Object.entries(folders).sort(([a],[b])=>{
+    const ai=_kflOrder.indexOf(a), bi=_kflOrder.indexOf(b);
+    if(ai<0&&bi<0) return 0;
+    if(ai<0) return 1;
+    if(bi<0) return -1;
+    return ai-bi;
+  });
+  _kflSorted.forEach(([folderName, layers])=>{
     const folderId = 'kml-folder-'+folderName.replace(/[^a-z0-9]/gi,'_');
     const folderWrap = document.createElement('div');
     folderWrap.style.cssText = 'margin-bottom:6px;border:1px solid var(--border2);border-radius:6px;overflow:hidden;';
@@ -1034,7 +1045,9 @@ function mapUpdateKmlLayerList(){
         style="accent-color:${cbAccent};width:14px;height:14px;flex-shrink:0;"
         id="${folderId}-cb">
       <span style="font-family:var(--mono);font-size:11px;color:var(--amber2);font-weight:600;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">📁 ${folderName}</span>
-      <span style="font-family:var(--mono);font-size:9px;color:var(--muted);">${layers.length}</span>`;
+      <span style="font-family:var(--mono);font-size:9px;color:var(--muted);">${layers.length}</span>
+      <button onclick="event.stopPropagation();mapMoveKmlFolderOrder('${folderName.replace(/'/g,"\\'")}','up')" title="Bring forward" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px;padding:0 2px;line-height:1">↑</button>
+      <button onclick="event.stopPropagation();mapMoveKmlFolderOrder('${folderName.replace(/'/g,"\\'")}','down')" title="Send back" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px;padding:0 2px;line-height:1">↓</button>`;
     const children = document.createElement('div');
     children.id = folderId+'-children';
     children.style.cssText = 'padding:4px 6px 4px 16px;';
@@ -1481,6 +1494,37 @@ let _renderedOrphanCids=new Set(); // tracks orphan source IDs currently on the 
 let _tcLayerVisible={};       // { [catId]: boolean } — default true
 function _getTcLayerOrder(pid){ try{ return JSON.parse(localStorage.getItem('gl_tc_order_'+pid)||'[]'); }catch{ return []; } }
 function _setTcLayerOrder(order,pid){ try{ localStorage.setItem('gl_tc_order_'+pid,JSON.stringify(order)); }catch{} }
+function _getKmlFolderOrder(pid){ try{ return JSON.parse(localStorage.getItem('gl_kfl_order_'+pid)||'[]'); }catch{ return []; } }
+function _setKmlFolderOrder(order,pid){ try{ localStorage.setItem('gl_kfl_order_'+pid,JSON.stringify(order)); }catch{} }
+function _applyKmlFolderMapOrder(){
+  if(!_mapInstance) return;
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const folderNames=[...new Set(_mapKmlLayers.map(l=>l.folderName).filter(Boolean))];
+  const order=_getKmlFolderOrder(pid);
+  const sorted=[...folderNames.filter(f=>order.includes(f)).sort((a,b)=>order.indexOf(a)-order.indexOf(b)),
+                ...folderNames.filter(f=>!order.includes(f))];
+  sorted.forEach(folderName=>{
+    _mapKmlLayers.filter(l=>l.folderName===folderName&&l.visible).forEach(layer=>{
+      ['fill','line','pt'].forEach(t=>{
+        if(_mapInstance.getLayer(layer.id+'-'+t)) try{_mapInstance.moveLayer(layer.id+'-'+t);}catch(e){}
+      });
+    });
+  });
+}
+function mapMoveKmlFolderOrder(folderName, dir){
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const folderNames=[...new Set(_mapKmlLayers.map(l=>l.folderName).filter(Boolean))];
+  let order=_getKmlFolderOrder(pid);
+  if(!order.length) order=[...folderNames];
+  folderNames.forEach(f=>{ if(!order.includes(f)) order.push(f); });
+  const idx=order.indexOf(folderName);
+  if(idx<0) return;
+  if(dir==='up'&&idx<order.length-1){ const t=order[idx+1];order[idx+1]=order[idx];order[idx]=t; }
+  if(dir==='down'&&idx>0){ const t=order[idx-1];order[idx-1]=order[idx];order[idx]=t; }
+  _setKmlFolderOrder(order,pid);
+  mapUpdateKmlLayerList();
+  _applyKmlFolderMapOrder();
+}
 function _sortCatsByOrder(cats,pid){
   const order=_getTcLayerOrder(pid);
   if(!order.length) return cats;
@@ -2920,7 +2964,9 @@ window.kmlParseLayerById = kmlParseLayerById;
 window.kmlLoadLayers = kmlLoadLayers;
 window.mapClearKmlLayers = mapClearKmlLayers;
 window.mapUpdateKmlLayerList = mapUpdateKmlLayerList;
+window.mapMoveKmlFolderOrder = mapMoveKmlFolderOrder;
 window.kmlToggleFolderVisibility = kmlToggleFolderVisibility;
+window.mapSetPhotoSearch = (q)=>{ _mapPhotoSearch=(q||'').trim().toLowerCase(); _renderPhotoMarkers(); };
 window.mapToggleKmlLayer = mapToggleKmlLayer;
 window.mapRemoveKmlLayer = mapRemoveKmlLayer;
 window.mapRemoveKmlLayerById = mapRemoveKmlLayerById;
