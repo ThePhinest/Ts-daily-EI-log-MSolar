@@ -341,7 +341,7 @@ function mapTogglePinKeyword(){
     input.style.display = 'none';
     input.value = '';
     _mapPhotoSearch = '';
-    _renderPhotoMarkers();
+    mapRenderPhotoPins();
     if(btn) btn.classList.remove('active');
   } else {
     input.style.display = 'block';
@@ -1061,10 +1061,9 @@ function mapUpdateKmlLayerList(){
       <input type="checkbox" ${cbChecked}
         style="accent-color:${cbAccent};width:14px;height:14px;flex-shrink:0;"
         id="${folderId}-cb">
-      <span style="font-family:var(--mono);font-size:11px;color:var(--amber2);font-weight:600;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">📁 ${folderName}</span>
-      <span style="font-family:var(--mono);font-size:9px;color:var(--muted);">${layers.length}</span>
-      <button onclick="event.stopPropagation();mapMoveKmlFolderOrder('${folderName.replace(/'/g,"\\'")}','up')" title="Bring forward" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px;padding:0 2px;line-height:1">↑</button>
-      <button onclick="event.stopPropagation();mapMoveKmlFolderOrder('${folderName.replace(/'/g,"\\'")}','down')" title="Send back" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px;padding:0 2px;line-height:1">↓</button>`;
+      <span style="font-family:var(--mono);font-size:11px;color:var(--amber2);font-weight:600;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${folderName}">📁 ${folderName}</span>
+      <button onclick="event.stopPropagation();mapMoveKmlFolderOrder('${folderName.replace(/'/g,"\\'")}','up')" title="Bring forward" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:11px;padding:0 1px;line-height:1;flex-shrink:0">↑</button>
+      <button onclick="event.stopPropagation();mapMoveKmlFolderOrder('${folderName.replace(/'/g,"\\'")}','down')" title="Send back" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:11px;padding:0 1px;line-height:1;flex-shrink:0">↓</button>`;
     const children = document.createElement('div');
     children.id = folderId+'-children';
     children.style.cssText = 'padding:4px 6px 4px 16px;';
@@ -2984,7 +2983,7 @@ window.mapClearKmlLayers = mapClearKmlLayers;
 window.mapUpdateKmlLayerList = mapUpdateKmlLayerList;
 window.mapMoveKmlFolderOrder = mapMoveKmlFolderOrder;
 window.kmlToggleFolderVisibility = kmlToggleFolderVisibility;
-window.mapSetPhotoSearch = (q)=>{ _mapPhotoSearch=(q||'').trim().toLowerCase(); _renderPhotoMarkers(); };
+window.mapSetPhotoSearch = (q)=>{ _mapPhotoSearch=(q||'').trim().toLowerCase(); mapRenderPhotoPins(); };
 window.mapToggleKmlLayer = mapToggleKmlLayer;
 window.mapRemoveKmlLayer = mapRemoveKmlLayer;
 window.mapRemoveKmlLayerById = mapRemoveKmlLayerById;
