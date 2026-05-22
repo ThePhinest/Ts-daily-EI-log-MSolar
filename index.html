@@ -235,6 +235,10 @@ body.theme-light{
 
 /* PAGES */
 .page{display:none}.page.active{display:block}
+.page.subpage.active{animation:_subpageIn .28s cubic-bezier(.4,0,.2,1) both}
+.page.subpage.sliding-out{display:block!important;animation:_subpageOut .28s cubic-bezier(.4,0,.2,1) both}
+@keyframes _subpageIn{from{transform:translateX(100%)}to{transform:translateX(0)}}
+@keyframes _subpageOut{from{transform:translateX(0)}to{transform:translateX(100%)}}
 .wrap{max-width:880px;margin:0 auto;padding:22px 16px}
 
 /* SIGN-IN PAGE */
@@ -739,7 +743,10 @@ body.is-native select { font-size: 16px !important; }
 
 <!-- APP BAR -->
 <div class="app-bar" style="justify-content:space-between">
-  <button class="icon-btn" title="Toggle theme" onclick="toggleTheme()" id="theme-btn">☀</button>
+  <div style="display:flex;align-items:center;gap:6px">
+    <button class="icon-btn" title="Reload app" onclick="location.reload()">⟳</button>
+    <span id="sync-dot" title="" style="font-family: var(--mono); font-size: 10px; letter-spacing: 0.05em; transition: color 0.3s; white-space: nowrap; margin-left: 2px; color: var(--green);">✓ synced</span>
+  </div>
   <div style="text-align:center;flex:1">
     <div class="app-wordmark" id="app-bar-title">
   <span class="app-wm-ground">GROUND</span>
@@ -749,10 +756,12 @@ body.is-native select { font-size: 16px !important; }
 </div>
     <div class="app-sub" id="app-bar-sub" onclick="showProjectSwitcher()" title="Switch project" style="cursor:pointer"></div>
   </div>
-  <div style="display:flex;align-items:center;gap:6px">
-    <button class="icon-btn" title="Reload app" onclick="location.reload()">⟳</button>
-    <span id="sync-dot" title="" style="font-family: var(--mono); font-size: 10px; letter-spacing: 0.05em; transition: color 0.3s; white-space: nowrap; margin-left: 2px; color: var(--green);">✓ synced</span>
-  </div>
+  <button class="icon-btn" id="settings-btn" title="Settings" onclick="showPage('config')" style="padding:5px 7px;line-height:0">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="21" height="21" aria-hidden="true">
+      <circle cx="12" cy="12" r="3.2" fill="#7aacac"/>
+      <path fill="#C9A84C" fill-rule="evenodd" d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94L14.4 2.81c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41L9.25 5.35c-.59.24-1.13.56-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.22-.07.47.12.61l2.03 1.58C4.84 11.36 4.8 11.69 4.8 12s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61L19.14 12.94zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/>
+    </svg>
+  </button>
 </div>
 
 <!-- BOTTOM NAV -->
@@ -2291,6 +2300,16 @@ Anticipated rain — AM weather monitoring expected"></textarea>
     </div>
   </div>
 
+  <!-- Account nav card — opens Account Settings subpage. Same nav-card pattern
+       as AI & Branding: teal title, amber subtitle/chevron, no expand/collapse. -->
+  <div class="config-section nav-card" id="cfg-account-nav" onclick="showPage('accountSettings')" role="button" tabindex="0" style="cursor:pointer;margin-bottom:14px">
+    <div class="config-head">
+      <span class="config-title">Account</span>
+      <span class="nav-card-subtitle">Profile, appearance, sign out</span>
+      <span class="card-chevron">▾</span>
+    </div>
+  </div>
+
   <!-- AI & Branding navigation card — opens dedicated subpage (page-aiBranding).
        The .nav-card class (a) styles it distinctly from collapse/expand cards
        (title in teal, subtitle/chevron in amber — inverse of the standard cards),
@@ -2624,16 +2643,6 @@ Anticipated rain — AM weather monitoring expected"></textarea>
     </div>
   </div>
 
-  <!-- ACCOUNT -->
-  <div class="config-section" id="cfg-account">
-    <div class="config-head" onclick="toggleSection('cfg-account')"><span class="config-title">Account</span><span class="config-sub">Profile and sign out</span><span class="card-chevron">▾</span></div>
-    <div class="config-body">
-      <div style="font-family:var(--mono);font-size:11px;color:var(--muted2);margin-bottom:14px">
-        Signed in as <span id="cfg-account-email" style="color:var(--text)">—</span>
-      </div>
-      <button class="btn" style="border-color:var(--red,#e05);color:var(--red,#e05);font-size:11px;padding:7px 14px" onclick="glSignOut()">Sign Out</button>
-    </div>
-  </div>
 
 </div></div><!-- /page-config -->
 
@@ -2656,13 +2665,13 @@ Anticipated rain — AM weather monitoring expected"></textarea>
        - Form Templates (Phase 4 §2)
        - Firm Branding (Phase 4b — logos, watermarks, doc-style)
      ═══════════════════════════════════════════════════════════════════ -->
-<div class="page" id="page-aiBranding"><div class="wrap">
+<div class="page subpage" id="page-aiBranding"><div class="wrap">
 
   <!-- Subpage header — back button + page title.
        Sweep-ready markup: semantic class names, no hardcoded sizes that
        fight a future design pass. Branding sweep can restyle via CSS only. -->
   <div class="subpage-header" style="display:flex;align-items:center;gap:12px;margin-bottom:14px;flex-wrap:wrap">
-    <button class="btn btn-outline subpage-back" style="font-size:11px;padding:6px 12px;display:inline-flex;align-items:center;gap:5px" onclick="showPage('config')">
+    <button class="btn btn-outline subpage-back" style="font-size:11px;padding:6px 12px;display:inline-flex;align-items:center;gap:5px" onclick="showPageBack('config')">
       <span style="font-size:14px;line-height:1">‹</span>
       <span>Settings</span>
     </button>
@@ -2902,6 +2911,103 @@ Anticipated rain — AM weather monitoring expected"></textarea>
 </div></div><!-- /page-aiBranding -->
 
 
+<!-- ═══════════════════════════════════════════════════════════════════
+     ACCOUNT SETTINGS PAGE
+     Subpage — slide-in from right. Opened from the Account nav card in Settings.
+     Sections: Profile · Appearance · Security · Session · Data
+     ═══════════════════════════════════════════════════════════════════ -->
+<div class="page subpage" id="page-accountSettings"><div class="wrap">
+
+  <div class="subpage-header" style="display:flex;align-items:center;gap:12px;margin-bottom:14px;flex-wrap:wrap">
+    <button class="btn btn-outline subpage-back" style="font-size:11px;padding:6px 12px;display:inline-flex;align-items:center;gap:5px" onclick="showPageBack('config')">
+      <span style="font-size:14px;line-height:1">‹</span>
+      <span>Settings</span>
+    </button>
+    <span class="subpage-title" style="font-family:var(--mono);font-size:14px;font-weight:500;color:var(--amber);letter-spacing:.02em">Account</span>
+  </div>
+
+  <!-- Profile -->
+  <div class="config-section" id="acct-profile">
+    <div class="config-head"><span class="config-title">Profile</span><span class="config-sub">Display name &amp; email</span></div>
+    <div class="config-body">
+      <p class="config-hint">Your display name appears on reports and logs. Email is set by your sign-in provider and cannot be changed here.</p>
+      <div class="field" style="margin-bottom:10px">
+        <label>Display Name</label>
+        <input type="text" id="acct-display-name" placeholder="Your name" autocomplete="off">
+      </div>
+      <div class="field" style="margin-bottom:10px">
+        <label>Email</label>
+        <input type="email" id="acct-email" placeholder="—" disabled style="opacity:.6;cursor:default">
+      </div>
+      <div class="field" style="margin-bottom:14px">
+        <label>Sign-in method</label>
+        <input type="text" id="acct-providers" placeholder="—" disabled style="opacity:.6;cursor:default;font-family:var(--mono);font-size:12px">
+      </div>
+      <button class="btn btn-amber" style="font-size:11px;padding:7px 14px" onclick="acctSaveName()">Save Name</button>
+      <span id="acct-name-status" style="font-family:var(--mono);font-size:11px;color:var(--green);margin-left:12px;opacity:0;transition:opacity .4s"></span>
+    </div>
+  </div>
+
+  <!-- Appearance -->
+  <div class="config-section" id="acct-appearance">
+    <div class="config-head"><span class="config-title">Appearance</span><span class="config-sub">App theme</span></div>
+    <div class="config-body">
+      <p class="config-hint">Choose your preferred color scheme. System follows your device setting.</p>
+      <div style="display:flex;gap:6px;margin-bottom:4px">
+        <button class="cal-toggle-btn" id="acct-theme-dark" onclick="applyTheme('dark')">Dark</button>
+        <button class="cal-toggle-btn" id="acct-theme-system" onclick="applyTheme('system')">System</button>
+        <button class="cal-toggle-btn" id="acct-theme-light" onclick="applyTheme('light')">Light</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Security -->
+  <div class="config-section" id="acct-security">
+    <div class="config-head"><span class="config-title">Security</span><span class="config-sub">Verification &amp; password</span></div>
+    <div class="config-body">
+      <p class="config-hint">Verify your email address or update your password if you use email sign-in.</p>
+      <button class="btn btn-outline" style="font-size:11px;padding:7px 14px;margin-bottom:10px" onclick="acctSendVerificationEmail()">Send Verification Email</button>
+      <span id="acct-verify-status" style="font-family:var(--mono);font-size:11px;color:var(--green);margin-left:10px;opacity:0;transition:opacity .4s"></span>
+      <div id="acct-pw-form" style="display:none;margin-top:12px">
+        <div class="field" style="margin-bottom:10px">
+          <label>New Password</label>
+          <input type="password" id="acct-pw-new" placeholder="Min 6 characters" autocomplete="new-password">
+        </div>
+        <div class="field" style="margin-bottom:10px">
+          <label>Confirm Password</label>
+          <input type="password" id="acct-pw-confirm" placeholder="Repeat new password" autocomplete="new-password">
+        </div>
+        <button class="btn btn-amber" style="font-size:11px;padding:7px 14px" onclick="acctChangePassword()">Update Password</button>
+        <button class="btn btn-outline" style="font-size:11px;padding:7px 14px;margin-left:8px" onclick="acctHideChangePassword()">Cancel</button>
+        <span id="acct-pw-status" style="font-family:var(--mono);font-size:11px;color:var(--green);margin-left:10px;opacity:0;transition:opacity .4s"></span>
+      </div>
+      <div style="margin-top:8px">
+        <button class="btn btn-outline" id="acct-pw-toggle" style="font-size:11px;padding:7px 14px" onclick="acctShowChangePassword()">Change Password</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Session -->
+  <div class="config-section" id="acct-session">
+    <div class="config-head"><span class="config-title">Session</span><span class="config-sub">Sign out of this device</span></div>
+    <div class="config-body">
+      <p class="config-hint">Signing out clears your session on this device. Your data remains saved in GroundLog.</p>
+      <button class="btn btn-outline" style="font-size:11px;padding:7px 14px;color:var(--muted)" onclick="glSignOut()">Sign Out</button>
+    </div>
+  </div>
+
+  <!-- Data -->
+  <div class="config-section" id="acct-data">
+    <div class="config-head"><span class="config-title">Data</span><span class="config-sub">Account &amp; data removal</span></div>
+    <div class="config-body">
+      <p class="config-hint">Permanently deletes your GroundLog account and all associated data. This cannot be undone.</p>
+      <button class="btn btn-outline" style="font-size:11px;padding:7px 14px;color:#c0392b;border-color:#c0392b" onclick="acctDeleteAccount()">Delete Account</button>
+    </div>
+  </div>
+
+</div></div><!-- /page-accountSettings -->
+
+
 <script>
 var _logFormalized = false;
 // ═══════════════════════════════════════════
@@ -2984,11 +3090,18 @@ function showPage(name){
   }
   if(name==='config'){ renderConfig(); tsLoadConfigFields(); renderNavConfig(); mapLoadSettingsFields(); }
   if(name==='aiBranding'){ if(typeof aiBrandingInit==='function') aiBrandingInit(); }
+  if(name==='accountSettings'){ acctInitPage(); }
   if(name==='map'){ mapInit(); setTimeout(()=>{ mapResize(); },200); }
   if(name==='calendar'){ calRender(); }
   if(name==='timesheet'){ tsPushFromDailyLog(); tsRenderCurrentWeek(); tsRenderHistory(); tsRenderCumulative(); tsCheckArchivePrompt(); }
   if(name==='compliance'){ clInit(); clAutoDetect(); }
   if(name==='photos'){ phResetAndRender(); }
+}
+
+function showPageBack(name){
+  const current=document.querySelector('.page.active');
+  if(current){current.classList.add('sliding-out');setTimeout(()=>{current.classList.remove('sliding-out');showPage(name);},280);}
+  else{showPage(name);}
 }
 
 // ═══════════════════════════════════════════
@@ -3104,8 +3217,9 @@ var PAGE_REGISTRY = [
   { id:'calendar',   label:'Calendar',    icon:'📅' },
   { id:'reports',    label:'Reports',     icon:'📄' },
   { id:'docs',       label:'Docs',        icon:'📁' },
-  { id:'config',     label:'Settings',    icon:'⚙'  },
-  { id:'aiBranding', label:'AI & Branding', icon:'✦' },
+  { id:'config',          label:'Settings',      icon:'⚙'  },
+  { id:'aiBranding',      label:'AI & Branding', icon:'✦' },
+  { id:'accountSettings', label:'Account',        icon:'👤' },
 ];
 
 var _NAV_DEFAULTS = ['log','calendar','photos'];

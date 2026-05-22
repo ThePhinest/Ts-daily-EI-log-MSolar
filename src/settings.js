@@ -683,6 +683,10 @@ function applyTheme(t){
   document.body.classList.toggle('theme-light', isLight);
   const btn=document.getElementById('theme-btn');
   if(btn) btn.textContent = t==='light' ? '☀' : t==='system' ? '⊙' : '🌙';
+  ['dark','light','system'].forEach(function(theme){
+    const el=document.getElementById('acct-theme-'+theme);
+    if(el) el.classList.toggle('active', theme===t);
+  });
   try{ localStorage.setItem('phinest_theme', t); }catch{}
 }
 function toggleTheme(){

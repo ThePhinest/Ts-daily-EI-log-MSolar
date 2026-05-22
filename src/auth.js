@@ -410,8 +410,6 @@ function _initAuth() {
       // can correlate per-user issues without leaking PII to Sentry.
       Sentry.setUser({ id: user.uid });
       document.getElementById('page-signin').style.display = 'none';
-      const emailEl = document.getElementById('cfg-account-email');
-      if (emailEl) emailEl.textContent = user.email || user.displayName || 'Signed in';
       obCheck();
     } else {
       window._currentUser = null;
@@ -426,6 +424,124 @@ function _initAuth() {
       document.getElementById('page-signin').style.display = 'flex';
     }
   });
+}
+
+// ═══════════════════════════════════════════
+// ACCOUNT SETTINGS
+// ═══════════════════════════════════════════
+
+function acctInitPage() {
+  const user = window._currentUser;
+  if (!user) return;
+
+  const nameEl = document.getElementById('acct-display-name');
+  if (nameEl) nameEl.value = user.displayName || '';
+
+  const emailEl = document.getElementById('acct-email');
+  if (emailEl) emailEl.value = user.email || '';
+
+  const provEl = document.getElementById('acct-providers');
+  if (provEl) {
+    const providers = (user.providerData || []).map(function(p) {
+      if (p.providerId === 'google.com') return 'Google';
+      if (p.providerId === 'password') return 'Email & Password';
+      return p.providerId;
+    });
+    provEl.value = providers.length ? providers.join(', ') : '—';
+  }
+
+  // Sync theme buttons to current active theme
+  const storedTheme = localStorage.getItem('phinest_theme') || 'dark';
+  ['dark', 'light', 'system'].forEach(function(t) {
+    const btn = document.getElementById('acct-theme-' + t);
+    if (btn) btn.classList.toggle('active', t === storedTheme);
+  });
+
+  // Reset change-password form
+  acctHideChangePassword();
+  const pwNew = document.getElementById('acct-pw-new');
+  const pwConfirm = document.getElementById('acct-pw-confirm');
+  if (pwNew) pwNew.value = '';
+  if (pwConfirm) pwConfirm.value = '';
+
+  // Reset status spans
+  ['acct-name-status', 'acct-verify-status', 'acct-pw-status'].forEach(function(id) {
+    const el = document.getElementById(id);
+    if (el) { el.textContent = ''; el.style.opacity = '0'; }
+  });
+}
+
+function _acctShowStatus(id, msg, isError) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = msg;
+  el.style.color = isError ? '#c0392b' : 'var(--green)';
+  el.style.opacity = '1';
+  setTimeout(function() { el.style.opacity = '0'; }, 3000);
+}
+
+function acctSaveName() {
+  const user = window._currentUser;
+  if (!user) return;
+  const name = (document.getElementById('acct-display-name')?.value || '').trim();
+  if (!name) return _acctShowStatus('acct-name-status', 'Enter a display name.', true);
+  user.updateProfile({ displayName: name })
+    .then(function() { _acctShowStatus('acct-name-status', '✓ Saved', false); })
+    .catch(function(e) { _acctShowStatus('acct-name-status', e.message || 'Error saving name.', true); });
+}
+
+function acctShowChangePassword() {
+  const form = document.getElementById('acct-pw-form');
+  const btn = document.getElementById('acct-pw-toggle');
+  if (form) form.style.display = '';
+  if (btn) btn.style.display = 'none';
+}
+
+function acctHideChangePassword() {
+  const form = document.getElementById('acct-pw-form');
+  const btn = document.getElementById('acct-pw-toggle');
+  if (form) form.style.display = 'none';
+  if (btn) btn.style.display = '';
+}
+
+function acctChangePassword() {
+  const user = window._currentUser;
+  if (!user) return;
+  const newPw = document.getElementById('acct-pw-new')?.value || '';
+  const confirmPw = document.getElementById('acct-pw-confirm')?.value || '';
+  if (newPw.length < 6) return _acctShowStatus('acct-pw-status', 'Password must be at least 6 characters.', true);
+  if (newPw !== confirmPw) return _acctShowStatus('acct-pw-status', 'Passwords do not match.', true);
+  user.updatePassword(newPw)
+    .then(function() {
+      _acctShowStatus('acct-pw-status', '✓ Password updated', false);
+      document.getElementById('acct-pw-new').value = '';
+      document.getElementById('acct-pw-confirm').value = '';
+      acctHideChangePassword();
+    })
+    .catch(function(e) { _acctShowStatus('acct-pw-status', e.message || 'Error updating password.', true); });
+}
+
+function acctSendVerificationEmail() {
+  const user = window._currentUser;
+  if (!user) return;
+  user.sendEmailVerification()
+    .then(function() { _acctShowStatus('acct-verify-status', '✓ Verification email sent', false); })
+    .catch(function(e) { _acctShowStatus('acct-verify-status', e.message || 'Error sending email.', true); });
+}
+
+function acctDeleteAccount() {
+  const user = window._currentUser;
+  if (!user) return;
+  _confirmModal(
+    'Permanently delete your GroundLog account and all data? This cannot be undone.',
+    function() {
+      user.delete()
+        .catch(function(e) {
+          _confirmModal(e.message || 'Could not delete account. You may need to sign out and sign back in first.', null, 'Delete Failed', 'Close');
+        });
+    },
+    'Delete Account', 'Delete'
+  );
 }
 
 // ── Window exposure ──
@@ -443,3 +559,10 @@ window.siForgotPassword = siForgotPassword;
 window.glSignOut = glSignOut;
 window.glRunMigration = glRunMigration;
 window.glRunStorageMigration = glRunStorageMigration;
+window.acctInitPage = acctInitPage;
+window.acctSaveName = acctSaveName;
+window.acctShowChangePassword = acctShowChangePassword;
+window.acctHideChangePassword = acctHideChangePassword;
+window.acctChangePassword = acctChangePassword;
+window.acctSendVerificationEmail = acctSendVerificationEmail;
+window.acctDeleteAccount = acctDeleteAccount;
