@@ -250,8 +250,7 @@ async function siAppleSignIn() {
     try {
       const { FirebaseAuthentication } = await import('@capacitor-firebase/authentication');
       const rawNonce = _generateNonce(32);
-      const hashedNonce = await _sha256Hex(rawNonce);
-      const result = await FirebaseAuthentication.signInWithApple({ nonce: hashedNonce });
+      const result = await FirebaseAuthentication.signInWithApple({ nonce: rawNonce });
       if (!result || !result.credential || !result.credential.idToken) {
         return siSetError('Apple sign-in was cancelled.');
       }
@@ -533,8 +532,7 @@ async function acctLinkApple() {
     if (window.Capacitor?.isNativePlatform?.()) {
       const { FirebaseAuthentication } = await import('@capacitor-firebase/authentication');
       const rawNonce = _generateNonce(32);
-      const hashedNonce = await _sha256Hex(rawNonce);
-      const result = await FirebaseAuthentication.signInWithApple({ nonce: hashedNonce });
+      const result = await FirebaseAuthentication.signInWithApple({ nonce: rawNonce });
       if (!result?.credential?.idToken) return _acctShowStatus('acct-link-status', 'Apple sign-in was cancelled.', true);
       const provider = new firebase.auth.OAuthProvider('apple.com');
       const credential = provider.credential({ idToken: result.credential.idToken, rawNonce: rawNonce });
