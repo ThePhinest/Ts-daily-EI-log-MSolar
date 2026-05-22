@@ -125,6 +125,13 @@ if (window.navigator.standalone === true && !window.Capacitor?.isNativePlatform?
     el.style.display = 'none';
   });
 }
+// Show Sign in with Apple only on native Capacitor — web path requires
+// a Service ID registered with Apple (future work if web Apple sign-in needed).
+if (window.Capacitor?.isNativePlatform?.()) {
+  document.querySelectorAll('.si-btn-apple').forEach(function(el) {
+    el.style.display = '';
+  });
+}
 
 function siShowTab(tab) {
   document.getElementById('si-panel-signin').style.display = tab === 'signin' ? '' : 'none';
@@ -215,6 +222,42 @@ async function siGoogleSignIn() {
       // popup or initiating a second one is not an error to surface.
       if (e.code !== 'auth/popup-closed-by-user' && e.code !== 'auth/cancelled-popup-request') {
         siSetError(_siAuthError(e.code));
+      }
+    });
+}
+
+async function siAppleSignIn() {
+  if (!auth) return siSetError('Auth not available.');
+  siSetError('');
+
+  // Native Capacitor path — uses the system Apple sign-in sheet (ASAuthorizationController).
+  // signInWithPopup is not available in WKWebView; the plugin opens the native sheet
+  // and returns an idToken + rawNonce we exchange with Firebase.
+  if (window.Capacitor?.isNativePlatform?.()) {
+    try {
+      const { FirebaseAuthentication } = await import('@capacitor-firebase/authentication');
+      const result = await FirebaseAuthentication.signInWithApple();
+      if (!result || !result.credential || !result.credential.idToken) {
+        return siSetError('Apple sign-in was cancelled.');
+      }
+      const provider = new firebase.auth.OAuthProvider('apple.com');
+      const credential = provider.credential({
+        idToken: result.credential.idToken,
+        rawNonce: result.credential.rawNonce
+      });
+      await auth.signInWithCredential(credential);
+      return;
+    } catch(e) {
+      return siSetError(_siAuthError(e && e.code) || (e && e.message) || 'Apple sign-in failed.');
+    }
+  }
+
+  // Web fallback via popup (requires Apple Service ID configured in Firebase console).
+  const provider = new firebase.auth.OAuthProvider('apple.com');
+  auth.signInWithPopup(provider)
+    .catch(function(e) {
+      if (e.code !== 'auth/popup-closed-by-user' && e.code !== 'auth/cancelled-popup-request') {
+        siSetError(_siAuthError(e.code) || e.message || 'Apple sign-in failed.');
       }
     });
 }
@@ -555,6 +598,7 @@ window.siShowTab = siShowTab;
 window.siSignIn = siSignIn;
 window.siCreateAccount = siCreateAccount;
 window.siGoogleSignIn = siGoogleSignIn;
+window.siAppleSignIn = siAppleSignIn;
 window.siForgotPassword = siForgotPassword;
 window.glSignOut = glSignOut;
 window.glRunMigration = glRunMigration;

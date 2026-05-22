@@ -255,6 +255,8 @@ body.theme-light{
 .si-btn-primary:hover{opacity:.88}
 .si-btn-google{background:transparent;border:1px solid var(--border2);color:var(--text)}
 .si-btn-google:hover{border-color:var(--amber)}
+.si-btn-apple{background:#1c1c1e;color:#fff;border:1px solid rgba(255,255,255,.18);display:none}
+.si-btn-apple:hover{border-color:rgba(255,255,255,.4)}
 .si-forgot{display:block;text-align:center;font-family:var(--mono);font-size:11px;color:var(--muted2);margin-top:4px;cursor:pointer;background:none;border:none;width:100%}
 .si-forgot:hover{color:var(--amber)}
 .si-error{color:var(--red,#e05);font-family:var(--mono);font-size:11px;margin-top:12px;min-height:16px;text-align:center}
@@ -1295,6 +1297,7 @@ body.is-native select { font-size: 16px !important; }
       <button class="si-forgot" onclick="siForgotPassword()">Forgot password?</button>
       <div class="si-divider">or</div>
       <button class="si-btn si-btn-google" onclick="siGoogleSignIn()">Continue with Google</button>
+      <button class="si-btn si-btn-apple" onclick="siAppleSignIn()" style="margin-top:8px">Sign in with Apple</button>
     </div>
 
     <!-- CREATE ACCOUNT PANEL -->
@@ -1306,6 +1309,7 @@ body.is-native select { font-size: 16px !important; }
       <button class="si-btn si-btn-primary" onclick="siCreateAccount()">Create Account</button>
       <div class="si-divider">or</div>
       <button class="si-btn si-btn-google" onclick="siGoogleSignIn()">Continue with Google</button>
+      <button class="si-btn si-btn-apple" onclick="siAppleSignIn()" style="margin-top:8px">Sign in with Apple</button>
     </div>
 
     <div class="si-error" id="si-error"></div>
