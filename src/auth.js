@@ -473,6 +473,111 @@ function _initAuth() {
 // ACCOUNT SETTINGS
 // ═══════════════════════════════════════════
 
+function acctRenderLinkedProviders() {
+  const user = window._currentUser;
+  if (!user) return;
+  const providers = user.providerData || [];
+  const providerIds = providers.map(function(p) { return p.providerId; });
+
+  const list = document.getElementById('acct-linked-list');
+  if (list) {
+    const canUnlink = providers.length > 1;
+    list.innerHTML = providers.map(function(p) {
+      const name = p.providerId === 'google.com' ? 'Google'
+                 : p.providerId === 'apple.com'  ? 'Apple'
+                 : p.providerId === 'password'   ? 'Email & Password'
+                 : p.providerId;
+      return '<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)">'
+        + '<span style="font-family:var(--mono);font-size:12px;color:var(--text)">' + name + '</span>'
+        + (canUnlink ? '<button class="btn btn-outline" style="font-size:10px;padding:4px 10px;color:var(--muted)" onclick="acctUnlink(\'' + p.providerId + '\')">Unlink</button>' : '')
+        + '</div>';
+    }).join('');
+  }
+
+  // Link Apple — native only, hidden if already linked
+  const linkAppleBtn = document.getElementById('acct-link-apple-btn');
+  if (linkAppleBtn) {
+    const isNative = window.Capacitor?.isNativePlatform?.();
+    linkAppleBtn.style.display = (isNative && !providerIds.includes('apple.com')) ? '' : 'none';
+  }
+
+  // Link Google — hidden if already linked
+  const linkGoogleBtn = document.getElementById('acct-link-google-btn');
+  if (linkGoogleBtn) {
+    linkGoogleBtn.style.display = providerIds.includes('google.com') ? 'none' : '';
+  }
+}
+
+async function acctLinkApple() {
+  const user = window._currentUser;
+  if (!user) return;
+  try {
+    if (window.Capacitor?.isNativePlatform?.()) {
+      const { FirebaseAuthentication } = await import('@capacitor-firebase/authentication');
+      const result = await FirebaseAuthentication.signInWithApple();
+      if (!result?.credential?.idToken) return _acctShowStatus('acct-link-status', 'Apple sign-in was cancelled.', true);
+      const provider = new firebase.auth.OAuthProvider('apple.com');
+      const credential = provider.credential({ idToken: result.credential.idToken, rawNonce: result.credential.rawNonce });
+      await user.linkWithCredential(credential);
+    } else {
+      await user.linkWithPopup(new firebase.auth.OAuthProvider('apple.com'));
+    }
+    window._currentUser = auth.currentUser;
+    acctRenderLinkedProviders();
+    _acctShowStatus('acct-link-status', '✓ Apple linked', false);
+  } catch(e) {
+    const msg = e.code === 'auth/credential-already-in-use'
+      ? 'This Apple account is already linked to another GroundLog account.'
+      : (e.message || 'Could not link Apple.');
+    _acctShowStatus('acct-link-status', msg, true);
+  }
+}
+
+async function acctLinkGoogle() {
+  const user = window._currentUser;
+  if (!user) return;
+  try {
+    if (window.Capacitor?.isNativePlatform?.()) {
+      const { FirebaseAuthentication } = await import('@capacitor-firebase/authentication');
+      const result = await FirebaseAuthentication.signInWithGoogle();
+      if (!result?.credential?.idToken) return _acctShowStatus('acct-link-status', 'Google sign-in was cancelled.', true);
+      const credential = firebase.auth.GoogleAuthProvider.credential(result.credential.idToken, result.credential.accessToken);
+      await user.linkWithCredential(credential);
+    } else {
+      await user.linkWithPopup(new firebase.auth.GoogleAuthProvider());
+    }
+    window._currentUser = auth.currentUser;
+    acctRenderLinkedProviders();
+    _acctShowStatus('acct-link-status', '✓ Google linked', false);
+  } catch(e) {
+    const msg = e.code === 'auth/credential-already-in-use'
+      ? 'This Google account is already linked to another GroundLog account.'
+      : (e.message || 'Could not link Google.');
+    _acctShowStatus('acct-link-status', msg, true);
+  }
+}
+
+function acctUnlink(providerId) {
+  const user = window._currentUser;
+  if (!user) return;
+  if ((user.providerData || []).length <= 1) {
+    return _acctShowStatus('acct-link-status', 'Cannot remove the only sign-in method.', true);
+  }
+  const name = providerId === 'google.com' ? 'Google'
+             : providerId === 'apple.com'  ? 'Apple'
+             : providerId === 'password'   ? 'Email & Password'
+             : providerId;
+  _confirmModal('Remove ' + name + ' as a sign-in method?', function() {
+    user.unlink(providerId)
+      .then(function() {
+        window._currentUser = auth.currentUser;
+        acctRenderLinkedProviders();
+        _acctShowStatus('acct-link-status', '✓ ' + name + ' unlinked', false);
+      })
+      .catch(function(e) { _acctShowStatus('acct-link-status', e.message || 'Could not unlink.', true); });
+  }, 'Unlink ' + name, 'Unlink');
+}
+
 function acctInitPage() {
   const user = window._currentUser;
   if (!user) return;
@@ -508,10 +613,12 @@ function acctInitPage() {
   if (pwConfirm) pwConfirm.value = '';
 
   // Reset status spans
-  ['acct-name-status', 'acct-verify-status', 'acct-pw-status'].forEach(function(id) {
+  ['acct-name-status', 'acct-verify-status', 'acct-pw-status', 'acct-link-status'].forEach(function(id) {
     const el = document.getElementById(id);
     if (el) { el.textContent = ''; el.style.opacity = '0'; }
   });
+
+  acctRenderLinkedProviders();
 }
 
 function _acctShowStatus(id, msg, isError) {
@@ -604,6 +711,10 @@ window.glSignOut = glSignOut;
 window.glRunMigration = glRunMigration;
 window.glRunStorageMigration = glRunStorageMigration;
 window.acctInitPage = acctInitPage;
+window.acctRenderLinkedProviders = acctRenderLinkedProviders;
+window.acctLinkApple = acctLinkApple;
+window.acctLinkGoogle = acctLinkGoogle;
+window.acctUnlink = acctUnlink;
 window.acctSaveName = acctSaveName;
 window.acctShowChangePassword = acctShowChangePassword;
 window.acctHideChangePassword = acctHideChangePassword;
