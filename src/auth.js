@@ -117,6 +117,19 @@ function _obInitSwipe() {
 // AUTH — SIGN IN / REGISTER / SIGN OUT
 // ═══════════════════════════════════════════
 
+// Apple Sign-In requires a nonce to prevent replay attacks. Generate one
+// locally, pass the SHA-256 hash to Apple, and the raw value to Firebase.
+function _generateNonce(len) {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~';
+  const arr = crypto.getRandomValues(new Uint8Array(len));
+  return Array.from(arr, function(v) { return chars[v % chars.length]; }).join('');
+}
+
+async function _sha256Hex(str) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
+  return Array.from(new Uint8Array(buf), function(b) { return b.toString(16).padStart(2, '0'); }).join('');
+}
+
 // Hide Google sign-in on iOS PWA — OAuth redirect breaks in that context.
 // Capacitor native uses the @capacitor-firebase/authentication plugin path
 // which DOES work in WKWebView, so the hide must skip when running native.
@@ -236,15 +249,14 @@ async function siAppleSignIn() {
   if (window.Capacitor?.isNativePlatform?.()) {
     try {
       const { FirebaseAuthentication } = await import('@capacitor-firebase/authentication');
-      const result = await FirebaseAuthentication.signInWithApple();
+      const rawNonce = _generateNonce(32);
+      const hashedNonce = await _sha256Hex(rawNonce);
+      const result = await FirebaseAuthentication.signInWithApple({ nonce: hashedNonce });
       if (!result || !result.credential || !result.credential.idToken) {
         return siSetError('Apple sign-in was cancelled.');
       }
       const provider = new firebase.auth.OAuthProvider('apple.com');
-      const credential = provider.credential({
-        idToken: result.credential.idToken,
-        rawNonce: result.credential.rawNonce
-      });
+      const credential = provider.credential({ idToken: result.credential.idToken, rawNonce: rawNonce });
       await auth.signInWithCredential(credential);
       return;
     } catch(e) {
@@ -520,10 +532,12 @@ async function acctLinkApple() {
   try {
     if (window.Capacitor?.isNativePlatform?.()) {
       const { FirebaseAuthentication } = await import('@capacitor-firebase/authentication');
-      const result = await FirebaseAuthentication.signInWithApple();
+      const rawNonce = _generateNonce(32);
+      const hashedNonce = await _sha256Hex(rawNonce);
+      const result = await FirebaseAuthentication.signInWithApple({ nonce: hashedNonce });
       if (!result?.credential?.idToken) return _acctShowStatus('acct-link-status', 'Apple sign-in was cancelled.', true);
       const provider = new firebase.auth.OAuthProvider('apple.com');
-      const credential = provider.credential({ idToken: result.credential.idToken, rawNonce: result.credential.rawNonce });
+      const credential = provider.credential({ idToken: result.credential.idToken, rawNonce: rawNonce });
       await user.linkWithCredential(credential);
     } else {
       await user.linkWithPopup(new firebase.auth.OAuthProvider('apple.com'));
