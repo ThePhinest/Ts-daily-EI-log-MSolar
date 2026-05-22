@@ -391,6 +391,13 @@ body.theme-light .preset-chip:hover{background:rgba(0,76,84,0.18);border-color:v
 .config-section.nav-card .nav-card-subtitle{font-family:var(--mono);font-size:9px;color:var(--amber);flex:1 0 100%;order:3;margin-left:0;margin-right:0}
 .config-section.nav-card .card-chevron{color:var(--amber);transform:rotate(-90deg);margin-left:auto}
 .config-section.nav-card .config-head{border-bottom:none}
+/* Account Settings subpage — teal titles, amber subtitles + labels
+   (same inverted palette as AI & Branding sections; apply to any future
+   settings subpage by scoping to the page id). */
+#page-accountSettings .config-title{color:var(--muted2)}
+#page-accountSettings .config-sub{color:var(--amber)}
+#page-accountSettings .config-head{cursor:default}
+#page-accountSettings .config-body label{color:var(--amber)}
 /* AI & Branding editor — sweep-ready styles, semantic class names so the
    future branding pass can restyle via CSS only without HTML rewrites.
    Patterns mirror .config-section but with .ab- prefix to keep them
@@ -758,8 +765,8 @@ body.is-native select { font-size: 16px !important; }
   </div>
   <button class="icon-btn" id="settings-btn" title="Settings" onclick="showPage('config')" style="padding:5px 7px;line-height:0">
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="21" height="21" aria-hidden="true">
-      <circle cx="12" cy="12" r="3.2" fill="#7aacac"/>
-      <path fill="#C9A84C" fill-rule="evenodd" d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94L14.4 2.81c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41L9.25 5.35c-.59.24-1.13.56-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.22-.07.47.12.61l2.03 1.58C4.84 11.36 4.8 11.69 4.8 12s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61L19.14 12.94zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/>
+      <circle cx="12" cy="12" r="3.2" fill="#C9A84C"/>
+      <path fill="#7aacac" fill-rule="evenodd" d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94L14.4 2.81c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41L9.25 5.35c-.59.24-1.13.56-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.22-.07.47.12.61l2.03 1.58C4.84 11.36 4.8 11.69 4.8 12s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61L19.14 12.94zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/>
     </svg>
   </button>
 </div>
