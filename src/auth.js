@@ -506,6 +506,12 @@ function acctRenderLinkedProviders() {
   if (linkGoogleBtn) {
     linkGoogleBtn.style.display = providerIds.includes('google.com') ? 'none' : '';
   }
+
+  // Link Email & Password — hidden if already linked
+  const linkEmailBtn = document.getElementById('acct-link-email-btn');
+  if (linkEmailBtn) {
+    linkEmailBtn.style.display = providerIds.includes('password') ? 'none' : '';
+  }
 }
 
 async function acctLinkApple() {
@@ -555,6 +561,51 @@ async function acctLinkGoogle() {
       : (e.message || 'Could not link Google.');
     _acctShowStatus('acct-link-status', msg, true);
   }
+}
+
+function acctShowLinkEmailForm() {
+  const form = document.getElementById('acct-link-email-form');
+  const btn = document.getElementById('acct-link-email-btn');
+  if (form) form.style.display = '';
+  if (btn) btn.style.display = 'none';
+}
+
+function acctHideLinkEmailForm() {
+  const form = document.getElementById('acct-link-email-form');
+  const btn = document.getElementById('acct-link-email-btn');
+  if (form) form.style.display = 'none';
+  const emailInput = document.getElementById('acct-link-email');
+  const pwInput = document.getElementById('acct-link-email-pw');
+  if (emailInput) emailInput.value = '';
+  if (pwInput) pwInput.value = '';
+  const user = window._currentUser;
+  const linked = (user?.providerData || []).some(function(p){ return p.providerId === 'password'; });
+  if (btn) btn.style.display = linked ? 'none' : '';
+}
+
+function acctLinkEmail() {
+  const user = window._currentUser;
+  if (!user) return;
+  const email = (document.getElementById('acct-link-email')?.value || '').trim();
+  const pw = document.getElementById('acct-link-email-pw')?.value || '';
+  if (!email) return _acctShowStatus('acct-link-status', 'Enter an email address.', true);
+  if (pw.length < 6) return _acctShowStatus('acct-link-status', 'Password must be at least 6 characters.', true);
+  const credential = firebase.auth.EmailAuthProvider.credential(email, pw);
+  user.linkWithCredential(credential)
+    .then(function() {
+      window._currentUser = auth.currentUser;
+      acctHideLinkEmailForm();
+      acctRenderLinkedProviders();
+      _acctShowStatus('acct-link-status', '✓ Email & Password linked', false);
+    })
+    .catch(function(e) {
+      const msg = e.code === 'auth/email-already-in-use'
+        ? 'That email is already linked to another GroundLog account.'
+        : e.code === 'auth/invalid-email'
+        ? 'Invalid email address.'
+        : (e.message || 'Could not link email.');
+      _acctShowStatus('acct-link-status', msg, true);
+    });
 }
 
 function acctUnlink(providerId) {
@@ -714,6 +765,9 @@ window.acctInitPage = acctInitPage;
 window.acctRenderLinkedProviders = acctRenderLinkedProviders;
 window.acctLinkApple = acctLinkApple;
 window.acctLinkGoogle = acctLinkGoogle;
+window.acctLinkEmail = acctLinkEmail;
+window.acctShowLinkEmailForm = acctShowLinkEmailForm;
+window.acctHideLinkEmailForm = acctHideLinkEmailForm;
 window.acctUnlink = acctUnlink;
 window.acctSaveName = acctSaveName;
 window.acctShowChangePassword = acctShowChangePassword;

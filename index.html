@@ -3004,9 +3004,22 @@ Anticipated rain — AM weather monitoring expected"></textarea>
     <div class="config-body">
       <p class="config-hint">You can sign in with any linked method. At least one must stay linked at all times.</p>
       <div id="acct-linked-list" style="margin-bottom:14px"></div>
-      <div style="display:flex;flex-wrap:wrap;gap:8px">
+      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px">
         <button class="btn btn-outline" id="acct-link-apple-btn" style="font-size:11px;padding:7px 14px;display:none" onclick="acctLinkApple()">Link Apple</button>
         <button class="btn btn-outline" id="acct-link-google-btn" style="font-size:11px;padding:7px 14px" onclick="acctLinkGoogle()">Link Google</button>
+        <button class="btn btn-outline" id="acct-link-email-btn" style="font-size:11px;padding:7px 14px" onclick="acctShowLinkEmailForm()">Link Email & Password</button>
+      </div>
+      <div id="acct-link-email-form" style="display:none;margin-top:4px">
+        <div class="field" style="margin-bottom:10px">
+          <label>Email</label>
+          <input type="email" id="acct-link-email" placeholder="Email address" autocomplete="email">
+        </div>
+        <div class="field" style="margin-bottom:10px">
+          <label>Password</label>
+          <input type="password" id="acct-link-email-pw" placeholder="Min 6 characters" autocomplete="new-password">
+        </div>
+        <button class="btn btn-amber" style="font-size:11px;padding:7px 14px" onclick="acctLinkEmail()">Link Account</button>
+        <button class="btn btn-outline" style="font-size:11px;padding:7px 14px;margin-left:8px" onclick="acctHideLinkEmailForm()">Cancel</button>
       </div>
       <span id="acct-link-status" style="font-family:var(--mono);font-size:11px;margin-top:8px;display:block;opacity:0;transition:opacity .4s"></span>
     </div>
