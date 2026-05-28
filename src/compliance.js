@@ -1041,7 +1041,8 @@ async function _tlogExportXlsx(scheme, entries, pid){
   const url=URL.createObjectURL(blob);
   const a=document.createElement('a');
   a.href=url;
-  a.download=`tracker-log-${pid}-${today}.xlsx`;
+  const safeName=(cfg.projectName||pid).replace(/[^a-zA-Z0-9 _-]/g,'').trim().replace(/\s+/g,'-');
+  a.download=`tracker-log-${safeName}-${today}.xlsx`;
   a.click();
   URL.revokeObjectURL(url);
 }
