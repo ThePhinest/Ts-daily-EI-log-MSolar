@@ -15,6 +15,7 @@ let _fabOpen=false, _viewFabOpen=false, _gpsFollowActive=false, _gpsFollowWatch=
 let _pendingDrawFeature=null;
 let _pendingPhotoIds=[];
 let _pendingPhotoTypes={};
+let _pendingPhotoCaptions={};
 
 // Category colors/labels are project-scoped and user-defined.
 // All lookups go through tcGetColor() / tcGetName() in trackerCategories.js.
@@ -2062,6 +2063,7 @@ function mapShowTrackerModal(feat,category){
   document.getElementById('map-tr-notes').value='';
   _pendingPhotoIds=[];
   _pendingPhotoTypes={};
+  _pendingPhotoCaptions={};
   mapRefreshEntryPhotoStrip();
   // Seed calculator — only relevant for area categories
   const calcSection=document.getElementById('map-tr-calc-section');
@@ -2176,6 +2178,7 @@ function mapCancelTrackerEntry(){
   _editingEntryId=null;
   _pendingPhotoIds=[];
   _pendingPhotoTypes={};
+  _pendingPhotoCaptions={};
   mapRefreshEntryPhotoStrip();
   mapCloseTrackerModal();
   // Stay in draw mode so user can try again
@@ -2235,6 +2238,7 @@ function mapSaveTrackerEntry(){
     notes:document.getElementById('map-tr-notes').value.trim()||null,
     photoIds:[..._pendingPhotoIds],
     photoTypes:{..._pendingPhotoTypes},
+    photoCaptions:{..._pendingPhotoCaptions},
     entryType:_drawEntryType||'installed',
     parentId:(()=>{
       if(_drawEntryType==='planned') return null;
@@ -2717,6 +2721,7 @@ function mapEditTrackerEntry(entryId){
   document.getElementById('map-tracker-cat-label').textContent=editName;
   _pendingPhotoIds=[...(entry.photoIds||[])];
   _pendingPhotoTypes={...(entry.photoTypes||{})};
+  _pendingPhotoCaptions={...(entry.photoCaptions||{})};
   mapRefreshEntryPhotoStrip();
   _populateLinkToPlanDropdown(entry.categoryId||entry.category);
   const editLinkSel=document.getElementById('map-tr-link-plan');
@@ -2888,26 +2893,65 @@ function mapRefreshEntryPhotoStrip(){
   const photos=_pendingPhotoIds.map(id=>(window._phPhotos||[]).find(p=>p.id===id)).filter(Boolean);
   strip.innerHTML=photos.map(p=>{
     const isTag=(_pendingPhotoTypes[p.id]||'general')==='material_tag';
+    const cap=_pendingPhotoCaptions[p.id]||'';
+    const badgeLabel=isTag?(cap?cap.slice(0,12)+(cap.length>12?'…':''):'🏷 Mat. Tag'):'General';
     return `
       <div style="display:inline-flex;flex-direction:column;align-items:center;flex-shrink:0;gap:3px">
         <div style="position:relative">
           <img src="${p.thumb}" style="width:64px;height:48px;object-fit:cover;border-radius:4px;display:block;border:2px solid ${isTag?'var(--amber)':'transparent'}">
           <button onclick="mapRemoveEntryPhoto('${p.id}')" style="position:absolute;top:-5px;right:-5px;background:#c0392b;border:none;border-radius:50%;width:16px;height:16px;font-size:9px;color:#fff;cursor:pointer;padding:0;display:flex;align-items:center;justify-content:center">✕</button>
         </div>
-        <button onclick="mapTogglePhotoType('${p.id}')" style="font-family:var(--mono);font-size:8px;padding:2px 4px;border-radius:3px;border:1px solid ${isTag?'var(--amber)':'var(--border)'};background:${isTag?'rgba(201,168,76,0.15)':'var(--s1)'};color:${isTag?'var(--amber)':'var(--muted)'};cursor:pointer;width:64px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:center">
-          ${isTag?'🏷 Mat. Tag':'General'}
+        <button onclick="mapTogglePhotoType('${p.id}')" style="font-family:var(--mono);font-size:8px;padding:2px 4px;border-radius:3px;border:1px solid ${isTag?'var(--amber)':'var(--border)'};background:${isTag?'rgba(201,168,76,0.15)':'var(--s1)'};color:${isTag?'var(--amber)':'var(--muted)'};cursor:pointer;width:64px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:center" title="${cap||''}">
+          ${badgeLabel}
         </button>
       </div>`;
   }).join('');
 }
 function mapTogglePhotoType(photoId){
   const cur=_pendingPhotoTypes[photoId]||'general';
-  _pendingPhotoTypes[photoId]=cur==='general'?'material_tag':'general';
-  mapRefreshEntryPhotoStrip();
+  if(cur==='general') _pendingPhotoTypes[photoId]='material_tag';
+  _showPhotoCaptionModal(photoId);
+}
+function _showPhotoCaptionModal(photoId){
+  const isTag=(_pendingPhotoTypes[photoId]||'general')==='material_tag';
+  const photo=(window._phPhotos||[]).find(p=>p.id===photoId);
+  const existing=_pendingPhotoCaptions[photoId]||photo?.caption||'';
+  const ov=document.createElement('div');
+  ov.className='modal-overlay';
+  ov.style.cssText='z-index:9600';
+  ov.innerHTML=`
+    <div class="modal-box" style="max-width:300px;width:88%">
+      <div class="modal-title" style="margin-bottom:6px">${isTag?'Edit export label':'Label for export'}</div>
+      <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:14px;line-height:1.5">Used as the filename in the material tag photo ZIP. Leave blank to use the photo caption.</div>
+      <input type="text" id="_phcap-input" value="${existing.replace(/"/g,'&quot;').replace(/'/g,'&#39;')}" placeholder="e.g. Seed tag east section 3" style="width:100%;box-sizing:border-box;background:var(--s1);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--body);font-size:16px;padding:9px 12px;outline:none;margin-bottom:14px">
+      <div class="modal-btns">
+        <button class="modal-confirm" id="_phcap-ok">Save</button>
+        ${isTag?`<button class="modal-cancel" id="_phcap-remove" style="color:#c0392b">Remove Tag</button>`:''}
+        <button class="modal-cancel" id="_phcap-skip">${isTag?'Cancel':'Skip'}</button>
+      </div>
+    </div>`;
+  document.body.appendChild(ov);
+  const input=ov.querySelector('#_phcap-input');
+  input.focus(); input.select();
+  const save=()=>{
+    const val=input.value.trim();
+    if(val) _pendingPhotoCaptions[photoId]=val;
+    else delete _pendingPhotoCaptions[photoId];
+    ov.remove(); mapRefreshEntryPhotoStrip();
+  };
+  ov.querySelector('#_phcap-ok').onclick=save;
+  if(isTag) ov.querySelector('#_phcap-remove').onclick=()=>{
+    _pendingPhotoTypes[photoId]='general';
+    delete _pendingPhotoCaptions[photoId];
+    ov.remove(); mapRefreshEntryPhotoStrip();
+  };
+  ov.querySelector('#_phcap-skip').onclick=()=>{ ov.remove(); mapRefreshEntryPhotoStrip(); };
+  input.addEventListener('keydown',e=>{ if(e.key==='Enter') save(); });
 }
 function mapRemoveEntryPhoto(photoId){
   _pendingPhotoIds=_pendingPhotoIds.filter(id=>id!==photoId);
   delete _pendingPhotoTypes[photoId];
+  delete _pendingPhotoCaptions[photoId];
   mapRefreshEntryPhotoStrip();
 }
 

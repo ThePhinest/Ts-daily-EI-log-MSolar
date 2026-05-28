@@ -263,6 +263,7 @@ function trRemovePhotoLink(entryId, photoId, projectId){
   if(!Array.isArray(data.entries[idx].photoIds)) return true;
   data.entries[idx].photoIds = data.entries[idx].photoIds.filter(id => id !== photoId);
   if(data.entries[idx].photoTypes) delete data.entries[idx].photoTypes[photoId];
+  if(data.entries[idx].photoCaptions) delete data.entries[idx].photoCaptions[photoId];
   data.entries[idx].updatedAt = Date.now();
   _trSaveRaw(pid, data);
   if(typeof _udb === 'function' && typeof _fbReady !== 'undefined' && _fbReady && typeof _currentUser !== 'undefined' && _currentUser){

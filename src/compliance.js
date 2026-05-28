@@ -930,13 +930,14 @@ async function _tlogExportXlsx(scheme, entries, pid){
   const ws=wb.addWorksheet('Tracker Log');
 
   const TEAL='006B75', AMBER='C9A84C', WHITE='FFFFFF';
-  const TEAL_LIGHT='E8F4F5', GRAY_LIGHT='F2F2F2', GRAY_ROW='F9F9F9';
-  const NCOLS=12;
+  const TEAL_LIGHT='E8F4F5', GRAY_LIGHT='F2F2F2', GRAY_ROW='F9F9F9', AMBER_LIGHT='FDF5DC';
+  const NCOLS=13;
 
   const cols=[
     {header:'Date',            width:12},
     {header:'Category',        width:24},
-    {header:'Measurement',      width:12},
+    {header:'Type',            width:10},
+    {header:'Measurement',     width:12},
     {header:'Location',        width:22},
     {header:'Notes',           width:38},
     {header:'Photos',          width:8},
@@ -979,11 +980,10 @@ async function _tlogExportXlsx(scheme, entries, pid){
     r.height=16;
   });
 
-  // ── Blank separator ──
-  ws.addRow([]); // row 8
+  ws.addRow([]); // row 8 blank
 
-  // ── Column headers ──
-  const hRow=ws.addRow(cols.map(c=>c.header)); // row 9
+  // ── Column headers row 9 ──
+  const hRow=ws.addRow(cols.map(c=>c.header));
   hRow.eachCell({includeEmpty:true},cell=>{
     cell.font={name:'Calibri',bold:true,size:10,color:{argb:scheme==='neutral'?'000000':WHITE}};
     cell.fill=scheme==='neutral'
@@ -993,52 +993,103 @@ async function _tlogExportXlsx(scheme, entries, pid){
     cell.alignment={vertical:'middle',horizontal:'left',wrapText:false};
   });
   hRow.height=18;
-
-  // Freeze rows 1-9
   ws.views=[{state:'frozen',ySplit:9,activeCell:'A10'}];
 
-  // ── Data rows ──
-  entries.forEach((e,i)=>{
+  // ── Group entries: planned → children, then orphan installed ──
+  const planned=entries.filter(e=>e.entryType==='planned');
+  const childrenOf=new Map();
+  entries.filter(e=>e.entryType!=='planned'&&e.parentId).forEach(e=>{
+    if(!childrenOf.has(e.parentId)) childrenOf.set(e.parentId,[]);
+    childrenOf.get(e.parentId).push(e);
+  });
+  const childIds=new Set([...childrenOf.values()].flat().map(e=>e.id));
+  const orphans=entries.filter(e=>e.entryType!=='planned'&&!childIds.has(e.id));
+
+  const renderGroups=[
+    ...planned.map(p=>({entry:p,isPlanned:true,children:childrenOf.get(p.id)||[]})),
+    ...orphans.map(e=>({entry:e,isPlanned:false,children:[]})),
+  ];
+
+  // ── Helper: build a data row values array ──
+  const rowVals=(e,typeLabel)=>{
     const catName=e.categoryName||(typeof tcGetName==='function'?tcGetName(e.categoryId,pid):'Unknown');
     const f=e.fields||{};
     const rateUnit=f.requiredUnit?f.requiredUnit+'/ac':'';
-    const dRow=ws.addRow([
-      e.date||'',
-      catName,
+    return [
+      e.date||'', catName, typeLabel,
       e.measurementValue!=null?`${e.measurementValue} ${e.measurementUnit||''}`:e.acres!=null?`${e.acres} ac`:'',
-      e.location||'',
-      e.notes||'',
+      e.location||'', e.notes||'',
       Array.isArray(e.photoIds)?e.photoIds.length:'',
       f.seedTagCount!=null?f.seedTagCount:'',
       f.appliedRate!=null?(rateUnit?f.appliedRate+' '+rateUnit:f.appliedRate):'',
       f.requiredAmount!=null?f.requiredAmount+' '+(f.requiredUnit||''):'',
       f.actualAmount!=null?f.actualAmount+' '+(f.actualUnit||''):'',
-      e.method||'',
-      e.contractor||'',
-    ]);
+      e.method||'', e.contractor||'',
+    ];
+  };
 
-    let fillArgb=null;
-    if(scheme==='brand'){
-      fillArgb=i%2===1?TEAL_LIGHT:null;
-    } else if(scheme==='category'){
-      const hex=typeof tcGetColor==='function'?tcGetColor(e.categoryId,pid):null;
-      if(hex) fillArgb=_tlogLightenHex(hex,0.82);
-    } else {
-      fillArgb=i%2===1?GRAY_ROW:null;
-    }
-
-    dRow.eachCell({includeEmpty:true},cell=>{
-      cell.font={name:'Calibri',size:10};
+  // ── Helper: apply cell style to a row ──
+  const styleRow=(row,bold,fillArgb,isCat)=>{
+    row.eachCell({includeEmpty:true},cell=>{
+      cell.font={name:'Calibri',size:10,bold:!!bold};
       cell.alignment={vertical:'top',horizontal:'left',wrapText:true};
       if(fillArgb) cell.fill={type:'pattern',pattern:'solid',fgColor:{argb:fillArgb}};
-      if(scheme==='category') cell.border={
+      if(isCat) cell.border={
         top:{style:'thin',color:{argb:'CCCCCC'}},
         left:{style:'thin',color:{argb:'CCCCCC'}},
         bottom:{style:'thin',color:{argb:'CCCCCC'}},
         right:{style:'thin',color:{argb:'CCCCCC'}},
       };
     });
-    dRow.height=15;
+    row.height=15;
+  };
+
+  let rowIdx=0;
+  renderGroups.forEach(({entry:e,isPlanned,children})=>{
+    if(isPlanned){
+      // Compute child totals for the summary row
+      const totalAct=children.reduce((s,c)=>s+(c.fields?.actualAmount||0),0);
+      const actUnit=children.find(c=>c.fields?.actualUnit)?.fields?.actualUnit||'';
+      const totalSeeds=children.reduce((s,c)=>s+(c.fields?.seedTagCount||0),0);
+      const n=children.length;
+      const f=e.fields||{};
+      const rateUnit=f.requiredUnit?f.requiredUnit+'/ac':'';
+      const catName=e.categoryName||(typeof tcGetName==='function'?tcGetName(e.categoryId,pid):'Unknown');
+      const planMeas=e.measurementValue!=null?`${e.measurementValue} ${e.measurementUnit||''}`:e.acres!=null?`${e.acres} ac`:'';
+      const planNotes=[e.notes,n?`↳ ${n} section${n!==1?'s':''} installed`:''].filter(Boolean).join(' · ');
+      const actualDisplay=totalAct>0?`${totalAct.toLocaleString()} ${actUnit} (${n} section${n!==1?'s':''})`:n?`${n} section${n!==1?'s':''} — no amounts recorded`:'';
+
+      const pRow=ws.addRow([
+        e.date||'', catName, 'Planned', planMeas, e.location||'', planNotes,
+        Array.isArray(e.photoIds)?e.photoIds.length:'',
+        totalSeeds||'',
+        f.appliedRate!=null?(rateUnit?f.appliedRate+' '+rateUnit:f.appliedRate):'',
+        f.requiredAmount!=null?f.requiredAmount+' '+(f.requiredUnit||''):'',
+        actualDisplay,
+        e.method||'', e.contractor||'',
+      ]);
+      styleRow(pRow,true,AMBER_LIGHT, scheme==='category');
+      // Stronger border on planned row bottom to separate from children
+      pRow.eachCell({includeEmpty:true},cell=>{
+        cell.border={...(cell.border||{}), bottom:{style:'thin',color:{argb:'C9A84C'}}};
+      });
+
+      children.forEach((c,ci)=>{
+        const fill=scheme==='brand'?ci%2===1?TEAL_LIGHT:null
+          :scheme==='category'?(()=>{const h=typeof tcGetColor==='function'?tcGetColor(c.categoryId,pid):null;return h?_tlogLightenHex(h,0.82):null;})()
+          :ci%2===1?GRAY_ROW:null;
+        const cRow=ws.addRow(rowVals(c,'Installed'));
+        styleRow(cRow,false,fill,scheme==='category');
+        rowIdx++;
+      });
+    } else {
+      const fill=scheme==='brand'?rowIdx%2===1?TEAL_LIGHT:null
+        :scheme==='category'?(()=>{const h=typeof tcGetColor==='function'?tcGetColor(e.categoryId,pid):null;return h?_tlogLightenHex(h,0.82):null;})()
+        :rowIdx%2===1?GRAY_ROW:null;
+      const dRow=ws.addRow(rowVals(e,'Installed'));
+      styleRow(dRow,false,fill,scheme==='category');
+      rowIdx++;
+    }
   });
 
   // ── Download ──
@@ -1075,7 +1126,11 @@ async function _tlogExportPhotoZip(entries, pid){
         if(!resp.ok) continue;
         const blob=await resp.blob();
         const ext=(photo.filename||'photo.jpg').split('.').pop()||'jpg';
-        const safeName=((photo.caption||photoId).replace(/[^a-zA-Z0-9 _-]/g,'').trim().slice(0,40)||photoId.slice(0,8));
+        const captionSource=(e.photoCaptions||{})[photoId]||photo?.caption||null;
+        const idx=taggedIds.indexOf(photoId)+1;
+        const safeName=captionSource
+          ?captionSource.replace(/[^a-zA-Z0-9 _-]/g,'').trim().slice(0,50)
+          :`${e.date||'photo'}-${catName}-${idx}`;
         folder.file(`${safeName}.${ext}`,blob);
       }catch{ /* skip failed fetches silently */ }
     }
