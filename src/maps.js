@@ -14,6 +14,7 @@ let _activePlannedEntryId=null;
 let _fabOpen=false, _viewFabOpen=false, _gpsFollowActive=false, _gpsFollowWatch=null;
 let _pendingDrawFeature=null;
 let _pendingPhotoIds=[];
+let _pendingPhotoTypes={};
 
 // Category colors/labels are project-scoped and user-defined.
 // All lookups go through tcGetColor() / tcGetName() in trackerCategories.js.
@@ -2060,6 +2061,7 @@ function mapShowTrackerModal(feat,category){
     centroid ? `${centroid.lat.toFixed(5)}, ${centroid.lng.toFixed(5)}` : '';
   document.getElementById('map-tr-notes').value='';
   _pendingPhotoIds=[];
+  _pendingPhotoTypes={};
   mapRefreshEntryPhotoStrip();
   // Seed calculator — only relevant for area categories
   const calcSection=document.getElementById('map-tr-calc-section');
@@ -2173,6 +2175,7 @@ function mapCancelTrackerEntry(){
   _pendingDrawFeature=null;
   _editingEntryId=null;
   _pendingPhotoIds=[];
+  _pendingPhotoTypes={};
   mapRefreshEntryPhotoStrip();
   mapCloseTrackerModal();
   // Stay in draw mode so user can try again
@@ -2231,6 +2234,7 @@ function mapSaveTrackerEntry(){
     })(),
     notes:document.getElementById('map-tr-notes').value.trim()||null,
     photoIds:[..._pendingPhotoIds],
+    photoTypes:{..._pendingPhotoTypes},
     entryType:_drawEntryType||'installed',
     parentId:(()=>{
       if(_drawEntryType==='planned') return null;
@@ -2712,6 +2716,7 @@ function mapEditTrackerEntry(entryId){
   document.getElementById('map-tracker-cat-dot').style.background=editColor;
   document.getElementById('map-tracker-cat-label').textContent=editName;
   _pendingPhotoIds=[...(entry.photoIds||[])];
+  _pendingPhotoTypes={...(entry.photoTypes||{})};
   mapRefreshEntryPhotoStrip();
   _populateLinkToPlanDropdown(entry.categoryId||entry.category);
   const editLinkSel=document.getElementById('map-tr-link-plan');
@@ -2881,14 +2886,28 @@ function mapRefreshEntryPhotoStrip(){
   const strip=document.getElementById('map-tr-photo-strip');
   if(!strip) return;
   const photos=_pendingPhotoIds.map(id=>(window._phPhotos||[]).find(p=>p.id===id)).filter(Boolean);
-  strip.innerHTML=photos.map(p=>`
-    <div style="position:relative;display:inline-block;flex-shrink:0">
-      <img src="${p.thumb}" style="width:64px;height:48px;object-fit:cover;border-radius:4px;display:block">
-      <button onclick="mapRemoveEntryPhoto('${p.id}')" style="position:absolute;top:-5px;right:-5px;background:#c0392b;border:none;border-radius:50%;width:16px;height:16px;font-size:9px;color:#fff;cursor:pointer;padding:0;display:flex;align-items:center;justify-content:center">✕</button>
-    </div>`).join('');
+  strip.innerHTML=photos.map(p=>{
+    const isTag=(_pendingPhotoTypes[p.id]||'general')==='material_tag';
+    return `
+      <div style="display:inline-flex;flex-direction:column;align-items:center;flex-shrink:0;gap:3px">
+        <div style="position:relative">
+          <img src="${p.thumb}" style="width:64px;height:48px;object-fit:cover;border-radius:4px;display:block;border:2px solid ${isTag?'var(--amber)':'transparent'}">
+          <button onclick="mapRemoveEntryPhoto('${p.id}')" style="position:absolute;top:-5px;right:-5px;background:#c0392b;border:none;border-radius:50%;width:16px;height:16px;font-size:9px;color:#fff;cursor:pointer;padding:0;display:flex;align-items:center;justify-content:center">✕</button>
+        </div>
+        <button onclick="mapTogglePhotoType('${p.id}')" style="font-family:var(--mono);font-size:8px;padding:2px 4px;border-radius:3px;border:1px solid ${isTag?'var(--amber)':'var(--border)'};background:${isTag?'rgba(201,168,76,0.15)':'var(--s1)'};color:${isTag?'var(--amber)':'var(--muted)'};cursor:pointer;width:64px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:center">
+          ${isTag?'🏷 Mat. Tag':'General'}
+        </button>
+      </div>`;
+  }).join('');
+}
+function mapTogglePhotoType(photoId){
+  const cur=_pendingPhotoTypes[photoId]||'general';
+  _pendingPhotoTypes[photoId]=cur==='general'?'material_tag':'general';
+  mapRefreshEntryPhotoStrip();
 }
 function mapRemoveEntryPhoto(photoId){
   _pendingPhotoIds=_pendingPhotoIds.filter(id=>id!==photoId);
+  delete _pendingPhotoTypes[photoId];
   mapRefreshEntryPhotoStrip();
 }
 
@@ -3054,6 +3073,7 @@ window.mapLinkPhotoToEntry = mapLinkPhotoToEntry;
 window.mapShowEntryPhotoPicker = mapShowEntryPhotoPicker;
 window.mapToggleEntryPhoto = mapToggleEntryPhoto;
 window.mapRefreshEntryPhotoStrip = mapRefreshEntryPhotoStrip;
+window.mapTogglePhotoType = mapTogglePhotoType;
 window.mapRemoveEntryPhoto = mapRemoveEntryPhoto;
 window.mapClearTrackerLayers = mapClearTrackerLayers;
 window.mapRenderTrackerLayers = mapRenderTrackerLayers;

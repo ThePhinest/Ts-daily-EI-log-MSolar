@@ -233,7 +233,7 @@ function trGetCumulativeTotals(projectId){
 }
 
 // Photo linking — adds/removes a photoId from the entry's photoIds array.
-function trAddPhotoLink(entryId, photoId, projectId){
+function trAddPhotoLink(entryId, photoId, projectId, type){
   const pid = projectId || ((typeof _activeProjectId === 'function') ? _activeProjectId() : 'default');
   const data = _trLoadRaw(pid);
   const idx = data.entries.findIndex(e => e.id === entryId);
@@ -241,6 +241,8 @@ function trAddPhotoLink(entryId, photoId, projectId){
   if(!Array.isArray(data.entries[idx].photoIds)) data.entries[idx].photoIds = [];
   if(data.entries[idx].photoIds.includes(photoId)) return true;
   data.entries[idx].photoIds.push(photoId);
+  if(!data.entries[idx].photoTypes) data.entries[idx].photoTypes = {};
+  data.entries[idx].photoTypes[photoId] = type || 'general';
   data.entries[idx].updatedAt = Date.now();
   _trSaveRaw(pid, data);
   if(typeof _udb === 'function' && typeof _fbReady !== 'undefined' && _fbReady && typeof _currentUser !== 'undefined' && _currentUser){
@@ -260,6 +262,7 @@ function trRemovePhotoLink(entryId, photoId, projectId){
   if(idx < 0) return false;
   if(!Array.isArray(data.entries[idx].photoIds)) return true;
   data.entries[idx].photoIds = data.entries[idx].photoIds.filter(id => id !== photoId);
+  if(data.entries[idx].photoTypes) delete data.entries[idx].photoTypes[photoId];
   data.entries[idx].updatedAt = Date.now();
   _trSaveRaw(pid, data);
   if(typeof _udb === 'function' && typeof _fbReady !== 'undefined' && _fbReady && typeof _currentUser !== 'undefined' && _currentUser){

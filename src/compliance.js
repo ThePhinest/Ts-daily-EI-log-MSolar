@@ -890,6 +890,10 @@ function _showTlogExportModal(getEntries, pid){
               <span style="font-family:var(--mono);font-size:10px;color:var(--muted)">${s.sub}</span>
             </button>`).join('')}
         </div>
+        <label style="display:flex;align-items:center;gap:10px;padding:12px 0;border-top:1px solid var(--border);cursor:pointer">
+          <input type="checkbox" id="_tlog-zip-cb" style="width:16px;height:16px;accent-color:var(--amber);cursor:pointer;flex-shrink:0">
+          <span style="font-family:var(--mono);font-size:11px;color:var(--text)">📎 Include Material Tag Photos <span style="color:var(--muted)">.zip</span></span>
+        </label>
         <button id="_tlog-dl-btn" style="width:100%;padding:12px;background:var(--amber);color:#000;font-family:var(--cond);font-weight:700;font-size:14px;letter-spacing:.06em;border:none;border-radius:8px;cursor:pointer;margin-bottom:8px">⬇ Download .xlsx</button>
         <button id="_tlog-dl-cancel" style="width:100%;padding:9px;background:none;color:var(--muted);font-family:var(--mono);font-size:11px;border:1px solid var(--border);border-radius:8px;cursor:pointer">Cancel</button>
       </div>`;
@@ -900,7 +904,9 @@ function _showTlogExportModal(getEntries, pid){
     ov.querySelector('#_tlog-dl-btn').onclick=async()=>{
       const dlBtn=ov.querySelector('#_tlog-dl-btn');
       dlBtn.textContent='Building…'; dlBtn.disabled=true;
+      const includeZip=ov.querySelector('#_tlog-zip-cb').checked;
       await _tlogExportXlsx(selected, getEntries(), pid);
+      if(includeZip) await _tlogExportPhotoZip(getEntries(), pid);
       ov.remove();
     };
   };
@@ -1043,6 +1049,44 @@ async function _tlogExportXlsx(scheme, entries, pid){
   a.href=url;
   const safeName=(cfg.projectName||pid).replace(/[^a-zA-Z0-9 _-]/g,'').trim().replace(/\s+/g,'-');
   a.download=`tracker-log-${safeName}-${today}.xlsx`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ── Material Tag photo ZIP export ──
+async function _tlogExportPhotoZip(entries, pid){
+  const {default:JSZip}=await import('jszip');
+  const zip=new JSZip();
+  const cfg=JSON.parse(localStorage.getItem('msf_projectconfig')||'{}');
+  const today=new Date().toLocaleDateString('en-CA');
+
+  for(const e of entries){
+    const types=e.photoTypes||{};
+    const taggedIds=(e.photoIds||[]).filter(id=>types[id]==='material_tag');
+    if(!taggedIds.length) continue;
+    const catName=(e.categoryName||(typeof tcGetName==='function'?tcGetName(e.categoryId,pid):'Unknown'))
+      .replace(/[^a-zA-Z0-9 _-]/g,'').trim();
+    const folder=zip.folder(`${e.date||'unknown'} ${catName}`.trim());
+    for(const photoId of taggedIds){
+      const photo=(window._phPhotos||[]).find(p=>p.id===photoId);
+      if(!photo?.storageUrl) continue;
+      try{
+        const resp=await fetch(photo.storageUrl);
+        if(!resp.ok) continue;
+        const blob=await resp.blob();
+        const ext=(photo.filename||'photo.jpg').split('.').pop()||'jpg';
+        const safeName=((photo.caption||photoId).replace(/[^a-zA-Z0-9 _-]/g,'').trim().slice(0,40)||photoId.slice(0,8));
+        folder.file(`${safeName}.${ext}`,blob);
+      }catch{ /* skip failed fetches silently */ }
+    }
+  }
+
+  const buf=await zip.generateAsync({type:'blob'});
+  const url=URL.createObjectURL(buf);
+  const a=document.createElement('a');
+  a.href=url;
+  const safeName=(cfg.projectName||pid).replace(/[^a-zA-Z0-9 _-]/g,'').trim().replace(/\s+/g,'-');
+  a.download=`material-tags-${safeName}-${today}.zip`;
   a.click();
   URL.revokeObjectURL(url);
 }
