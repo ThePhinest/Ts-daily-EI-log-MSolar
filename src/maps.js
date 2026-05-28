@@ -251,7 +251,11 @@ function mapSetStyle(style){
     _mapKmlLayers.filter(l=>l.visible).forEach(layer => mapToggleKmlLayerById(layer.id, true));
   });
   _mapInstance.once('idle',()=>{
-    mapRenderTrackerLayers(); // also calls mapRefreshDateLabels() at its end
+    mapRenderTrackerLayers();
+    // Symbol layers (text) need glyph loading to complete before they render.
+    // Wait for the map to go idle a second time (after fill/line layers trigger
+    // a full render cycle and glyphs are available) then refresh date labels.
+    _mapInstance.once('idle', mapRefreshDateLabels);
   });
 }
 
