@@ -245,6 +245,7 @@ function mapSetStyle(style){
     mapAddGPSDot();
     mapRenderFieldMarkers();
     _mapKmlLayers.filter(l=>l.visible).forEach(layer => mapToggleKmlLayerById(layer.id, true));
+    mapRenderTrackerLayers();
     mapRefreshDateLabels();
   });
 }
@@ -2572,6 +2573,15 @@ function mapToggleDateLabelEdit(){
   btn.style.borderColor=newOn?'var(--amber)':'rgba(255,255,255,0.15)';
   btn.style.color=newOn?'var(--amber)':'rgba(255,255,255,0.35)';
   btn.textContent=newOn?'📅 On':'📅 Label';
+  // Immediately persist — keeps popup and edit modal in sync
+  if(_editingEntryId){
+    const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+    const entry=(typeof trGetEntry==='function')?trGetEntry(_editingEntryId,pid):null;
+    if(entry&&typeof trSaveEntry==='function'){
+      trSaveEntry({...entry,showDateLabel:newOn},pid);
+      mapRefreshDateLabels();
+    }
+  }
 }
 window.mapToggleDateLabelEdit=mapToggleDateLabelEdit;
 
@@ -2740,8 +2750,7 @@ function _showTrackerEntryPopup(lngLat,props){
   const html=`<div style="font-family:var(--mono);font-size:12px;min-width:180px;color:#e8e8e8">
     <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
       <div style="width:10px;height:10px;border-radius:50%;background:${color};flex-shrink:0"></div>
-      <strong style="color:#fff;flex:1">${label}</strong>
-      ${entry?`<button onclick="mapToggleDateLabel('${props.id}')" style="background:${labelOn?'rgba(201,168,76,0.25)':'none'};border:1px solid ${labelOn?'var(--amber,#C9A84C)':'rgba(255,255,255,0.2)'};border-radius:4px;color:${labelOn?'var(--amber,#C9A84C)':'rgba(255,255,255,0.4)'};font-family:var(--mono);font-size:9px;padding:2px 7px;cursor:pointer;line-height:1.4;white-space:nowrap">📅${labelOn?' On':''}</button>`:''}
+      <strong style="color:#fff">${label}</strong>
     </div>
     ${props.date?`<div style="color:#dce8f4">📅 ${props.date}</div>`:''}
     ${measText?`<div style="color:#dce8f4">📐 ${measText}</div>`:''}
@@ -2755,6 +2764,7 @@ function _showTrackerEntryPopup(lngLat,props){
     ${photoStrip}
     ${entry?.parentId?`<div style="font-size:10px;color:#a0b8c8;margin-top:4px;border-top:1px solid rgba(255,255,255,.08);padding-top:4px">📍 Linked to planned area</div>`:''}
     <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
+      ${entry?`<button onclick="mapToggleDateLabel('${props.id}')" style="background:${labelOn?'rgba(201,168,76,0.2)':'var(--s2,#1a2a38)'};border:1px solid ${labelOn?'var(--amber,#C9A84C)':'var(--border,#334)'};color:${labelOn?'var(--amber,#C9A84C)':'var(--muted,#888)'};padding:6px;border-radius:6px;font-family:var(--mono);font-size:11px;cursor:pointer;white-space:nowrap">📅${labelOn?' On':' Label'}</button>`:''}
       ${entry?.entryType==='planned'?`<button onclick="mapActivatePlannedEntry('${props.id}')" style="flex:1;background:rgba(201,168,76,0.2);border:1px solid var(--amber,#C9A84C);color:var(--amber,#C9A84C);padding:6px;border-radius:6px;font-family:var(--mono);font-size:11px;cursor:pointer;font-weight:700;white-space:nowrap">📍 Activate</button>`:''}
       <button onclick="mapEditTrackerEntry('${props.id}')" style="flex:1;background:var(--amber,#D97706);border:none;color:#111;padding:6px;border-radius:6px;font-family:var(--mono);font-size:11px;cursor:pointer;font-weight:700">✏️ Edit</button>
       <button onclick="mapDeleteTrackerEntryFromPanel('${props.id}')" style="flex:1;background:var(--s2);border:1px solid var(--border);color:var(--muted);padding:6px;border-radius:6px;font-family:var(--mono);font-size:11px;cursor:pointer;">✕ Remove</button>
