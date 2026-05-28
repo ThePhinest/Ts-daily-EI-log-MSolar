@@ -1116,9 +1116,10 @@ async function _tlogExportXlsx(scheme, entries, pid){
         totalPlanMeas>0?`${totalPlanMeas.toFixed(2)} ${planMeasUnit}`:'',
         planLocations, planNotes,
         '', totalPlanSeeds||'', '',
-        totalReqAmt>0?`${totalReqAmt.toLocaleString()} ${reqUnit}`:'',
-        actualDisplay,
-        '', '', '',
+        '',                                                          // Applied Rate (not meaningful for aggregated plan)
+        totalReqAmt>0?`${totalReqAmt.toLocaleString()} ${reqUnit}`:'', // Required Amount
+        actualDisplay,                                               // Actual Amount
+        '', '',
         pct!=null?Math.round(pct):'',
       ]);
       styleRow(pRow,true,AMBER_LIGHT,scheme==='category');
@@ -1135,7 +1136,29 @@ async function _tlogExportXlsx(scheme, entries, pid){
       });
 
     } else {
-      // ── No plan — just installed rows ──
+      // ── No plan — synthetic Category Total row + installed rows ──
+      if(installed.length>0){
+        const catName=installed[0].categoryName||(typeof tcGetName==='function'?tcGetName(cid,pid):'Unknown');
+        const totalMeas=installed.reduce((s,e)=>s+(parseFloat(e.measurementValue)||parseFloat(e.acres)||0),0);
+        const measUnit=installed.find(e=>e.measurementUnit)?.measurementUnit||'ac';
+        const totalActAmt=installed.reduce((s,e)=>s+(e.fields?.actualAmount||0),0);
+        const actUnit=installed.find(e=>e.fields?.actualUnit)?.fields?.actualUnit||'lbs';
+        const totalSeeds=installed.reduce((s,e)=>s+(e.fields?.seedTagCount||0),0);
+        const totalPhotos=installed.reduce((s,e)=>s+(Array.isArray(e.photoIds)?e.photoIds.length:0),0);
+        const tRow=ws.addRow([
+          '', catName, `Category Total (${installed.length} entr${installed.length!==1?'ies':'y'})`,
+          totalMeas>0?`${totalMeas.toFixed(2)} ${measUnit}`:'',
+          '', '',
+          totalPhotos||'', totalSeeds||'', '',
+          '', '',
+          totalActAmt>0?`${totalActAmt.toLocaleString()} ${actUnit}`:'',
+          '', '', '',
+        ]);
+        styleRow(tRow,true,AMBER_LIGHT,scheme==='category');
+        tRow.eachCell({includeEmpty:true},cell=>{
+          cell.border={...(cell.border||{}),bottom:{style:'thin',color:{argb:'C9A84C'}}};
+        });
+      }
       installed.forEach((e,ci)=>{
         const fill=scheme==='brand'?ci%2===1?TEAL_LIGHT:null
           :scheme==='category'?(catColor?_tlogLightenHex(catColor,0.82):null)
