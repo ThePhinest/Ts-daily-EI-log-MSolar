@@ -240,13 +240,18 @@ function mapSetStyle(style){
   mapboxgl.accessToken = localStorage.getItem(_mapTokenKeys().storageKey);
   _mapInstance.setStyle(`mapbox://styles/mapbox/${style}`);
   mapUpdateStyleButtons();
+  // styledata fires when the new style is applied but isStyleLoaded() may still be false.
+  // GPS dot, field markers, and KML work here (Markers are HTML; KML awaits Storage so style
+  // is loaded by the time addLayer runs). Tracker GL layers need isStyleLoaded()=true so
+  // they wait for 'idle' which fires after full render.
   _mapInstance.once('styledata',()=>{
     if(_mapGpsMarker){_mapGpsMarker.remove();_mapGpsMarker=null;}
     mapAddGPSDot();
     mapRenderFieldMarkers();
     _mapKmlLayers.filter(l=>l.visible).forEach(layer => mapToggleKmlLayerById(layer.id, true));
-    mapRenderTrackerLayers();
-    mapRefreshDateLabels();
+  });
+  _mapInstance.once('idle',()=>{
+    mapRenderTrackerLayers(); // also calls mapRefreshDateLabels() at its end
   });
 }
 
