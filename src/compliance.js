@@ -861,16 +861,24 @@ function clShowTrackerLog(){
 
   // CSV export — always exports currently filtered view
   document.getElementById('_tlog-export').onclick=()=>{
-    const rows=[['Date','Category','Acres','Location','Notes','Photos (count)']];
+    const rows=[['Date','Category','Acres','Location','Notes','Photos (count)','Applied Rate','Required Amount','Actual Amount','Seed Tags','Method','Contractor']];
     _tlogFilter().forEach(e=>{
       const catName=e.categoryName||(typeof tcGetName==='function'?tcGetName(e.categoryId,pid):'Unknown');
+      const f=e.fields||{};
+      const rateUnit=f.requiredUnit?f.requiredUnit+'/ac':'';
       rows.push([
         e.date||'',
         catName,
         e.acres||'',
         e.location||'',
         e.notes||'',
-        Array.isArray(e.photoIds)?e.photoIds.length:0
+        Array.isArray(e.photoIds)?e.photoIds.length:0,
+        f.appliedRate!=null?(rateUnit?f.appliedRate+' '+rateUnit:f.appliedRate):'',
+        f.requiredAmount!=null?f.requiredAmount+' '+(f.requiredUnit||''):'',
+        f.actualAmount!=null?f.actualAmount+' '+(f.actualUnit||''):'',
+        f.seedTagCount!=null?f.seedTagCount:'',
+        e.method||'',
+        e.contractor||''
       ]);
     });
     const csv=rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\n');
