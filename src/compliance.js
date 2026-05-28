@@ -610,7 +610,7 @@ function clShowTrackerLog(){
       <!-- Header -->
       <div style="display:flex;align-items:center;gap:8px;padding:14px 16px 12px;border-bottom:1px solid var(--border);flex-shrink:0">
         <span style="font-family:var(--cond);font-weight:700;font-size:15px;letter-spacing:.06em;text-transform:uppercase;flex:1">Tracker Log</span>
-        <button id="_tlog-export" style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--amber);font-family:var(--mono);font-size:11px;padding:7px 12px;cursor:pointer;min-height:36px">⬇ CSV</button>
+        <button id="_tlog-export" style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--amber);font-family:var(--mono);font-size:11px;padding:7px 12px;cursor:pointer;min-height:36px">⬇ Export</button>
         <button id="_tlog-close" style="background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;width:36px;height:36px;display:flex;align-items:center;justify-content:center">✕</button>
       </div>
       <!-- Search -->
@@ -859,48 +859,185 @@ function clShowTrackerLog(){
   });
   document.getElementById('_tlog-close').onclick=()=>ov.remove();
 
-  // CSV export — always exports currently filtered view
-  document.getElementById('_tlog-export').onclick=()=>{
-    const cfg=JSON.parse(localStorage.getItem('msf_projectconfig')||'{}');
-    const rows=[
-      ['GroundLog Tracker Log Export'],
-      ['Project', cfg.projectName||''],
-      ['Location', cfg.location||''],
-      ['Org', cfg.org||''],
-      ['Prepared By', cfg.preparedBy||''],
-      ['Active Phase', cfg.activePhase||''],
-      ['Exported', new Date().toLocaleDateString('en-CA')],
-      [],
-      ['Date','Category','Acres','Location','Notes','Photos (count)','Applied Rate','Required Amount','Actual Amount','Seed Tags','Method','Contractor']
-    ];
-    _tlogFilter().forEach(e=>{
-      const catName=e.categoryName||(typeof tcGetName==='function'?tcGetName(e.categoryId,pid):'Unknown');
-      const f=e.fields||{};
-      const rateUnit=f.requiredUnit?f.requiredUnit+'/ac':'';
-      rows.push([
-        e.date||'',
-        catName,
-        e.acres||'',
-        e.location||'',
-        e.notes||'',
-        Array.isArray(e.photoIds)?e.photoIds.length:0,
-        f.appliedRate!=null?(rateUnit?f.appliedRate+' '+rateUnit:f.appliedRate):'',
-        f.requiredAmount!=null?f.requiredAmount+' '+(f.requiredUnit||''):'',
-        f.actualAmount!=null?f.actualAmount+' '+(f.actualUnit||''):'',
-        f.seedTagCount!=null?f.seedTagCount:'',
-        e.method||'',
-        e.contractor||''
-      ]);
+  // Export — opens scheme picker modal
+  document.getElementById('_tlog-export').onclick=()=>_showTlogExportModal(_tlogFilter, pid);
+}
+
+// ── Tracker log export — scheme picker modal ──
+function _showTlogExportModal(getEntries, pid){
+  const count=getEntries().length;
+  const btnBase='display:flex;flex-direction:column;gap:3px;width:100%;text-align:left;padding:11px 14px;border-radius:8px;cursor:pointer;border:2px solid var(--border);background:var(--s1);transition:border-color .15s';
+  const btnActive='display:flex;flex-direction:column;gap:3px;width:100%;text-align:left;padding:11px 14px;border-radius:8px;cursor:pointer;border:2px solid var(--amber);background:var(--s1);transition:border-color .15s';
+  const schemes=[
+    {id:'brand',  label:'GroundLog Brand',   sub:'Teal headers · amber labels · alternating row tint'},
+    {id:'category',label:'Category Colors',  sub:'Each row tinted with its category color'},
+    {id:'neutral', label:'Neutral',           sub:'Standard Excel — no color fills'},
+  ];
+  let selected='brand';
+
+  const ov=document.createElement('div');
+  ov.className='modal-overlay';
+  ov.style.cssText='z-index:9500';
+  const render=()=>{
+    ov.innerHTML=`
+      <div class="modal-box" style="max-width:340px;width:92%">
+        <div class="modal-title" style="margin-bottom:4px">Export Tracker Log</div>
+        <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-bottom:18px">${count} entr${count===1?'y':'ies'} · current filter</div>
+        <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:20px">
+          ${schemes.map(s=>`
+            <button class="_xlсхeme" data-id="${s.id}" style="${selected===s.id?btnActive:btnBase}">
+              <span style="font-family:var(--cond);font-weight:700;font-size:13px;letter-spacing:.04em;color:${selected===s.id?'var(--amber)':'var(--text)'}">${s.label}</span>
+              <span style="font-family:var(--mono);font-size:10px;color:var(--muted)">${s.sub}</span>
+            </button>`).join('')}
+        </div>
+        <button id="_tlog-dl-btn" style="width:100%;padding:12px;background:var(--amber);color:#000;font-family:var(--cond);font-weight:700;font-size:14px;letter-spacing:.06em;border:none;border-radius:8px;cursor:pointer;margin-bottom:8px">⬇ Download .xlsx</button>
+        <button id="_tlog-dl-cancel" style="width:100%;padding:9px;background:none;color:var(--muted);font-family:var(--mono);font-size:11px;border:1px solid var(--border);border-radius:8px;cursor:pointer">Cancel</button>
+      </div>`;
+    ov.querySelectorAll('._xlсхeme').forEach(btn=>{
+      btn.onclick=()=>{ selected=btn.dataset.id; render(); };
     });
-    const csv=rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\n');
-    const blob=new Blob([csv],{type:'text/csv'});
-    const url=URL.createObjectURL(blob);
-    const a=document.createElement('a');
-    a.href=url;
-    a.download=`tracker-log-${pid}-${new Date().toLocaleDateString('en-CA')}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    ov.querySelector('#_tlog-dl-cancel').onclick=()=>ov.remove();
+    ov.querySelector('#_tlog-dl-btn').onclick=async()=>{
+      const dlBtn=ov.querySelector('#_tlog-dl-btn');
+      dlBtn.textContent='Building…'; dlBtn.disabled=true;
+      await _tlogExportXlsx(selected, getEntries(), pid);
+      ov.remove();
+    };
   };
+  render();
+  document.body.appendChild(ov);
+}
+
+// ── Tracker log export — XLSX generation (ExcelJS, lazy-loaded) ──
+function _tlogLightenHex(hex, t){
+  const h=hex.replace('#','');
+  return [0,2,4].map(i=>{
+    const c=parseInt(h.slice(i,i+2),16);
+    return Math.round(c+(255-c)*t).toString(16).padStart(2,'0');
+  }).join('');
+}
+
+async function _tlogExportXlsx(scheme, entries, pid){
+  const {default:ExcelJS}=await import('exceljs');
+  const wb=new ExcelJS.Workbook();
+  wb.creator='GroundLog'; wb.created=new Date();
+  const ws=wb.addWorksheet('Tracker Log');
+
+  const TEAL='006B75', AMBER='C9A84C', WHITE='FFFFFF';
+  const TEAL_LIGHT='E8F4F5', GRAY_LIGHT='F2F2F2', GRAY_ROW='F9F9F9';
+  const NCOLS=12;
+
+  const cols=[
+    {header:'Date',            width:12},
+    {header:'Category',        width:24},
+    {header:'Acres',           width:8},
+    {header:'Location',        width:22},
+    {header:'Notes',           width:38},
+    {header:'Photos',          width:8},
+    {header:'Applied Rate',    width:15},
+    {header:'Required Amount', width:18},
+    {header:'Actual Amount',   width:15},
+    {header:'Seed Tags',       width:10},
+    {header:'Method',          width:20},
+    {header:'Contractor',      width:24},
+  ];
+  ws.columns=cols.map(c=>({width:c.width}));
+
+  const cfg=JSON.parse(localStorage.getItem('msf_projectconfig')||'{}');
+  const today=new Date().toLocaleDateString('en-CA');
+
+  // ── Title row ──
+  ws.addRow(['GroundLog Tracker Log Export']);
+  ws.mergeCells(1,1,1,NCOLS);
+  const titleCell=ws.getCell('A1');
+  titleCell.font={name:'Calibri',bold:true,size:14,color:{argb:scheme==='neutral'?'000000':WHITE}};
+  titleCell.fill=scheme==='neutral'?{type:'pattern',pattern:'none'}:{type:'pattern',pattern:'solid',fgColor:{argb:TEAL}};
+  titleCell.alignment={vertical:'middle',horizontal:'left',indent:1};
+  ws.getRow(1).height=26;
+
+  // ── Info block ──
+  const infoRows=[
+    ['Project',      cfg.projectName||''],
+    ['Location',     cfg.location||''],
+    ['Org',          cfg.org||''],
+    ['Prepared By',  cfg.preparedBy||''],
+    ['Active Phase', cfg.activePhase||''],
+    ['Exported',     today],
+  ];
+  infoRows.forEach(([label,value],i)=>{
+    const r=ws.addRow([label,value]);
+    const ri=i+2;
+    ws.mergeCells(ri,2,ri,NCOLS);
+    r.getCell(1).font={name:'Consolas',size:9,bold:true,color:{argb:scheme==='neutral'?'444444':AMBER}};
+    r.getCell(2).font={name:'Calibri',size:10};
+    r.height=16;
+  });
+
+  // ── Blank separator ──
+  ws.addRow([]); // row 8
+
+  // ── Column headers ──
+  const hRow=ws.addRow(cols.map(c=>c.header)); // row 9
+  hRow.eachCell({includeEmpty:true},cell=>{
+    cell.font={name:'Calibri',bold:true,size:10,color:{argb:scheme==='neutral'?'000000':WHITE}};
+    cell.fill=scheme==='neutral'
+      ?{type:'pattern',pattern:'solid',fgColor:{argb:GRAY_LIGHT}}
+      :{type:'pattern',pattern:'solid',fgColor:{argb:TEAL}};
+    cell.border={bottom:{style:'thin',color:{argb:'CCCCCC'}}};
+    cell.alignment={vertical:'middle',wrapText:false};
+  });
+  hRow.height=18;
+
+  // Freeze rows 1-9
+  ws.views=[{state:'frozen',ySplit:9,activeCell:'A10'}];
+
+  // ── Data rows ──
+  entries.forEach((e,i)=>{
+    const catName=e.categoryName||(typeof tcGetName==='function'?tcGetName(e.categoryId,pid):'Unknown');
+    const f=e.fields||{};
+    const rateUnit=f.requiredUnit?f.requiredUnit+'/ac':'';
+    const dRow=ws.addRow([
+      e.date||'',
+      catName,
+      e.acres!=null?e.acres:'',
+      e.location||'',
+      e.notes||'',
+      Array.isArray(e.photoIds)?e.photoIds.length:'',
+      f.appliedRate!=null?(rateUnit?f.appliedRate+' '+rateUnit:f.appliedRate):'',
+      f.requiredAmount!=null?f.requiredAmount+' '+(f.requiredUnit||''):'',
+      f.actualAmount!=null?f.actualAmount+' '+(f.actualUnit||''):'',
+      f.seedTagCount!=null?f.seedTagCount:'',
+      e.method||'',
+      e.contractor||'',
+    ]);
+
+    let fillArgb=null;
+    if(scheme==='brand'){
+      fillArgb=i%2===1?TEAL_LIGHT:null;
+    } else if(scheme==='category'){
+      const hex=typeof tcGetColor==='function'?tcGetColor(e.categoryId,pid):null;
+      if(hex) fillArgb=_tlogLightenHex(hex,0.82);
+    } else {
+      fillArgb=i%2===1?GRAY_ROW:null;
+    }
+
+    dRow.eachCell({includeEmpty:true},cell=>{
+      cell.font={name:'Calibri',size:10};
+      cell.alignment={vertical:'top',wrapText:true};
+      if(fillArgb) cell.fill={type:'pattern',pattern:'solid',fgColor:{argb:fillArgb}};
+    });
+    dRow.height=15;
+  });
+
+  // ── Download ──
+  const buf=await wb.xlsx.writeBuffer();
+  const blob=new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url;
+  a.download=`tracker-log-${pid}-${today}.xlsx`;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 // ── Init compliance log ──
