@@ -861,7 +861,18 @@ function clShowTrackerLog(){
 
   // CSV export — always exports currently filtered view
   document.getElementById('_tlog-export').onclick=()=>{
-    const rows=[['Date','Category','Acres','Location','Notes','Photos (count)','Applied Rate','Required Amount','Actual Amount','Seed Tags','Method','Contractor']];
+    const cfg=JSON.parse(localStorage.getItem('msf_projectconfig')||'{}');
+    const rows=[
+      ['GroundLog Tracker Log Export'],
+      ['Project', cfg.projectName||''],
+      ['Location', cfg.location||''],
+      ['Org', cfg.org||''],
+      ['Prepared By', cfg.preparedBy||''],
+      ['Active Phase', cfg.activePhase||''],
+      ['Exported', new Date().toLocaleDateString('en-CA')],
+      [],
+      ['Date','Category','Acres','Location','Notes','Photos (count)','Applied Rate','Required Amount','Actual Amount','Seed Tags','Method','Contractor']
+    ];
     _tlogFilter().forEach(e=>{
       const catName=e.categoryName||(typeof tcGetName==='function'?tcGetName(e.categoryId,pid):'Unknown');
       const f=e.fields||{};
