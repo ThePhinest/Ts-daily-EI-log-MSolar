@@ -863,6 +863,23 @@ function clShowTrackerLog(){
   document.getElementById('_tlog-export').onclick=()=>_showTlogExportModal(_tlogFilter, pid);
 }
 
+// ── Download or share a blob — native iOS uses Web Share API, web uses blob link ──
+async function _glShareOrDownload(blob, filename, mimeType){
+  if(window.Capacitor?.isNativePlatform?.()){
+    try{
+      const file=new File([blob],filename,{type:mimeType});
+      if(navigator.canShare?.({files:[file]})){
+        await navigator.share({files:[file],title:filename});
+        return;
+      }
+    }catch(e){ console.warn('Web Share API:',e.message); }
+  }
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url; a.download=filename; a.click();
+  URL.revokeObjectURL(url);
+}
+
 // ── Tracker log export — scheme picker modal ──
 function _showTlogExportModal(getEntries, pid){
   const count=getEntries().length;
@@ -1092,16 +1109,11 @@ async function _tlogExportXlsx(scheme, entries, pid){
     }
   });
 
-  // ── Download ──
+  // ── Download / Share ──
   const buf=await wb.xlsx.writeBuffer();
   const blob=new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
-  const url=URL.createObjectURL(blob);
-  const a=document.createElement('a');
-  a.href=url;
   const safeName=(cfg.projectName||pid).replace(/[^a-zA-Z0-9 _-]/g,'').trim().replace(/\s+/g,'-');
-  a.download=`tracker-log-${safeName}-${today}.xlsx`;
-  a.click();
-  URL.revokeObjectURL(url);
+  await _glShareOrDownload(blob,`tracker-log-${safeName}-${today}.xlsx`,'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
 }
 
 // ── Material Tag photo ZIP export ──
@@ -1137,13 +1149,8 @@ async function _tlogExportPhotoZip(entries, pid){
   }
 
   const buf=await zip.generateAsync({type:'blob'});
-  const url=URL.createObjectURL(buf);
-  const a=document.createElement('a');
-  a.href=url;
   const safeName=(cfg.projectName||pid).replace(/[^a-zA-Z0-9 _-]/g,'').trim().replace(/\s+/g,'-');
-  a.download=`material-tags-${safeName}-${today}.zip`;
-  a.click();
-  URL.revokeObjectURL(url);
+  await _glShareOrDownload(new Blob([buf],{type:'application/zip'}),`material-tags-${safeName}-${today}.zip`,'application/zip');
 }
 
 // ── Init compliance log ──
