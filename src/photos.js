@@ -219,6 +219,7 @@ async function phSaveCloud(){
       if(p.takenAt) doc.takenAt = p.takenAt;
       if(p.software) doc.software = p.software;
       if(p.projectId) doc.projectId = p.projectId;
+      if(p.type) doc.type = p.type;
       batch.set(ref, doc);
     });
     await batch.commit();
@@ -447,6 +448,37 @@ async function phInit(){
 // ── Reset day window and re-render (called from showPage) ──
 function phResetAndRender(){ _phDaysShown = 7; phRender(); }
 
+// ── Save a captured map view blob as a photo record ──
+async function phSaveCapturedImage(blob, photoDate){
+  if(!storage||!_currentUser||!_fbReady) return null;
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const today=photoDate||new Date().toLocaleDateString('en-CA');
+  const [y,m,d]=today.split('-');
+  const labelDate=`${parseInt(m)}/${parseInt(d)}/${y.slice(2)}`;
+  const id='mv'+Date.now().toString(36)+Math.random().toString(36).slice(2,5);
+  const caption=`Map View · ${labelDate}`;
+  // Generate thumbnail via canvas
+  const bmp=await createImageBitmap(blob);
+  const tc=document.createElement('canvas');
+  tc.width=280; tc.height=Math.round(280*bmp.height/bmp.width)||157;
+  tc.getContext('2d').drawImage(bmp,0,0,tc.width,tc.height);
+  bmp.close();
+  const thumb=tc.toDataURL('image/jpeg',0.72);
+  // Upload to Storage
+  let storageUrl='';
+  try{
+    const ref=storage.ref(`photos/${_currentUser.uid}/${id}/map-view.png`);
+    const snap=await ref.put(blob,{contentType:'image/png'});
+    storageUrl=await snap.ref.getDownloadURL();
+  }catch(e){ console.warn('phSaveCapturedImage upload failed:',e.message); return null; }
+  const entry={id,date:today,caption,filename:'map-view.png',thumb,storageUrl,uploadedAt:Date.now(),projectId:pid,type:'map_capture'};
+  window._phPhotos=(window._phPhotos||[]);
+  window._phPhotos.push(entry);
+  phSaveLocal();
+  phSaveCloud();
+  return entry;
+}
+
 // ── Expose to window for HTML onclick handlers and cross-module calls ──
 window.phInit = phInit;
 window.phResetAndRender = phResetAndRender;
@@ -455,6 +487,7 @@ window.phRender = phRender;
 window.phSaveLocal = phSaveLocal;
 window.phLoadMore = phLoadMore;
 window.phClearFilters = phClearFilters;
+window.phSaveCapturedImage = phSaveCapturedImage;
 window.phOpenLightbox = phOpenLightbox;
 window.phCloseLightbox = phCloseLightbox;
 window.phSaveCaption = phSaveCaption;

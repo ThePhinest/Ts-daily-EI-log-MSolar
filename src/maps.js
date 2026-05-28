@@ -103,7 +103,8 @@ function mapSetup(token){
     container:'mapbox-map',
     style:`mapbox://styles/mapbox/${_mapCurrentStyle}`,
     center, zoom,
-    attributionControl:false
+    attributionControl:false,
+    preserveDrawingBuffer:true,
   });
 
   // ── β.1 instrumentation — Mapbox + WebGL silent-failure capture ──
@@ -244,6 +245,7 @@ function mapSetStyle(style){
     mapAddGPSDot();
     mapRenderFieldMarkers();
     _mapKmlLayers.filter(l=>l.visible).forEach(layer => mapToggleKmlLayerById(layer.id, true));
+    mapRefreshDateLabels();
   });
 }
 
@@ -2080,6 +2082,8 @@ function mapShowTrackerModal(feat,category){
   if(seedTagsEl) seedTagsEl.value='';
   const mixProductEl=document.getElementById('map-tr-mix-product');
   if(mixProductEl) mixProductEl.value='';
+  const newLabelBtn=document.getElementById('map-tr-date-label-btn');
+  if(newLabelBtn){newLabelBtn.dataset.on='0';newLabelBtn.style.background='none';newLabelBtn.style.borderColor='rgba(255,255,255,0.15)';newLabelBtn.style.color='rgba(255,255,255,0.35)';newLabelBtn.textContent='📅 Label';}
   if(catDetails?.targetRate&&measType!=='linear') mapTrackerCalc();
   const catColor=(typeof tcGetColor==='function')?tcGetColor(category,pid):'#888';
   const catName=(typeof tcGetName==='function')?tcGetName(category,pid):(category||'Unknown');
@@ -2238,6 +2242,7 @@ function mapSaveTrackerEntry(){
       };
     })(),
     seedMix:document.getElementById('map-tr-mix-product')?.value.trim()||null,
+    showDateLabel:document.getElementById('map-tr-date-label-btn')?.dataset.on==='1'||false,
     notes:document.getElementById('map-tr-notes').value.trim()||null,
     photoIds:[..._pendingPhotoIds],
     photoTypes:{..._pendingPhotoTypes},
@@ -2492,6 +2497,102 @@ function _addCategoryCircleLayer(srcId,cat){
     paint:{'circle-color':color,'circle-radius':r,'circle-opacity':0.9,'circle-stroke-color':'#fff','circle-stroke-width':1.5}});
 }
 
+// ── Date label helpers ──
+function _calcCentroid(geometry){
+  if(!geometry) return null;
+  try{
+    const g=typeof geometry==='string'?JSON.parse(geometry):geometry;
+    if(!g||!g.type) return null;
+    if(g.type==='Polygon'){
+      const ring=g.coordinates[0];
+      if(!ring||!ring.length) return null;
+      return [ring.reduce((s,p)=>s+p[0],0)/ring.length, ring.reduce((s,p)=>s+p[1],0)/ring.length];
+    }
+    if(g.type==='LineString'){
+      const c=g.coordinates;
+      return c&&c.length?c[Math.floor(c.length/2)]:null;
+    }
+    if(g.type==='Point') return g.coordinates;
+  }catch{}
+  return null;
+}
+
+function _fmtLabelDate(d){
+  if(!d) return '';
+  const [y,m,dy]=d.split('-');
+  return `${parseInt(m)}/${parseInt(dy)}/${y.slice(2)}`;
+}
+
+function mapRefreshDateLabels(){
+  if(!_mapInstance||!_mapInstance.isStyleLoaded()) return;
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const entries=(typeof trGetEntriesForProject==='function')?trGetEntriesForProject(pid):[];
+  const features=entries
+    .filter(e=>e.showDateLabel&&!e.deletedAt&&!e.archivedFromMap&&e.geometry)
+    .map(e=>{
+      const c=_calcCentroid(e.geometry);
+      if(!c) return null;
+      return {type:'Feature',geometry:{type:'Point',coordinates:c},properties:{label:_fmtLabelDate(e.date)}};
+    })
+    .filter(Boolean);
+  const geojson={type:'FeatureCollection',features};
+  if(_mapInstance.getSource('tracker-date-labels')){
+    _mapInstance.getSource('tracker-date-labels').setData(geojson);
+  } else {
+    _mapInstance.addSource('tracker-date-labels',{type:'geojson',data:geojson});
+    _mapInstance.addLayer({
+      id:'tracker-date-labels-layer',type:'symbol',source:'tracker-date-labels',
+      layout:{'text-field':['get','label'],'text-size':11,'text-anchor':'center','text-allow-overlap':true,'text-ignore-placement':true},
+      paint:{'text-color':'#ffffff','text-halo-color':'rgba(0,0,0,0.85)','text-halo-width':1.5},
+    });
+  }
+}
+window.mapRefreshDateLabels=mapRefreshDateLabels;
+
+function mapToggleDateLabel(entryId){
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const entry=(typeof trGetEntry==='function')?trGetEntry(entryId,pid):null;
+  if(!entry) return;
+  const updated={...entry,showDateLabel:!entry.showDateLabel};
+  if(typeof trSaveEntry==='function') trSaveEntry(updated,pid);
+  mapRefreshDateLabels();
+  if(_trackerPopup){
+    const lngLat=_trackerPopup.getLngLat();
+    _showTrackerEntryPopup(lngLat,{id:entryId,categoryId:entry.categoryId,categoryName:entry.categoryName,measurementValue:entry.measurementValue,measurementUnit:entry.measurementUnit,acres:entry.acres,location:entry.location,status:entry.status,phase:entry.phase,method:entry.method,contractor:entry.contractor,notes:entry.notes});
+  }
+}
+window.mapToggleDateLabel=mapToggleDateLabel;
+
+function mapToggleDateLabelEdit(){
+  const btn=document.getElementById('map-tr-date-label-btn');
+  if(!btn) return;
+  const newOn=btn.dataset.on!=='1';
+  btn.dataset.on=newOn?'1':'0';
+  btn.style.background=newOn?'rgba(201,168,76,0.25)':'none';
+  btn.style.borderColor=newOn?'var(--amber)':'rgba(255,255,255,0.15)';
+  btn.style.color=newOn?'var(--amber)':'rgba(255,255,255,0.35)';
+  btn.textContent=newOn?'📅 On':'📅 Label';
+}
+window.mapToggleDateLabelEdit=mapToggleDateLabelEdit;
+
+async function mapCaptureView(){
+  if(!_mapInstance) return;
+  mapToggleFab();
+  const canvas=_mapInstance.getCanvas();
+  const today=new Date().toLocaleDateString('en-CA');
+  const blob=await new Promise(res=>canvas.toBlob(res,'image/png'));
+  if(!blob){ console.warn('mapCaptureView: canvas returned null blob'); return; }
+  if(typeof phSaveCapturedImage==='function'){
+    await phSaveCapturedImage(blob,today);
+    const t=document.createElement('div');
+    t.style.cssText='position:fixed;bottom:calc(170px + env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.85);color:#fff;font-family:var(--mono);font-size:11px;padding:6px 14px;border-radius:20px;z-index:5000;pointer-events:none;white-space:nowrap';
+    t.textContent='📷 Map view saved to photos';
+    document.body.appendChild(t);
+    setTimeout(()=>t.remove(),2500);
+  }
+}
+window.mapCaptureView=mapCaptureView;
+
 function mapRenderTrackerLayers(){
   if(!_mapInstance||!_mapInstance.isStyleLoaded()) return;
 
@@ -2611,6 +2712,7 @@ function mapRenderTrackerLayers(){
       }
     });
   }
+  mapRefreshDateLabels();
 }
 
 function _showTrackerEntryPopup(lngLat,props){
@@ -2634,10 +2736,12 @@ function _showTrackerEntryPopup(lngLat,props){
   const photoStrip=photos.length?`<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,.12)">
     ${photos.map(p=>`<img src="${p.thumb}" onclick="phOpenLightbox('${p.id}')" style="width:56px;height:56px;object-fit:cover;border-radius:4px;cursor:pointer;border:2px solid rgba(255,255,255,.15)">`).join('')}
   </div>`:'';
+  const labelOn=entry?.showDateLabel||false;
   const html=`<div style="font-family:var(--mono);font-size:12px;min-width:180px;color:#e8e8e8">
     <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
       <div style="width:10px;height:10px;border-radius:50%;background:${color};flex-shrink:0"></div>
-      <strong style="color:#fff">${label}</strong>
+      <strong style="color:#fff;flex:1">${label}</strong>
+      ${entry?`<button onclick="mapToggleDateLabel('${props.id}')" style="background:${labelOn?'rgba(201,168,76,0.25)':'none'};border:1px solid ${labelOn?'var(--amber,#C9A84C)':'rgba(255,255,255,0.2)'};border-radius:4px;color:${labelOn?'var(--amber,#C9A84C)':'rgba(255,255,255,0.4)'};font-family:var(--mono);font-size:9px;padding:2px 7px;cursor:pointer;line-height:1.4;white-space:nowrap">📅${labelOn?' On':''}</button>`:''}
     </div>
     ${props.date?`<div style="color:#dce8f4">📅 ${props.date}</div>`:''}
     ${measText?`<div style="color:#dce8f4">📐 ${measText}</div>`:''}
@@ -2720,6 +2824,15 @@ function mapEditTrackerEntry(entryId){
   if(editSeedTagsEl) editSeedTagsEl.value=entry.fields?.seedTagCount!=null?entry.fields.seedTagCount:'';
   const editMixEl=document.getElementById('map-tr-mix-product');
   if(editMixEl) editMixEl.value=entry.seedMix||'';
+  const editLabelBtn=document.getElementById('map-tr-date-label-btn');
+  if(editLabelBtn){
+    const on=!!entry.showDateLabel;
+    editLabelBtn.dataset.on=on?'1':'0';
+    editLabelBtn.style.background=on?'rgba(201,168,76,0.25)':'none';
+    editLabelBtn.style.borderColor=on?'var(--amber)':'rgba(255,255,255,0.15)';
+    editLabelBtn.style.color=on?'var(--amber)':'rgba(255,255,255,0.35)';
+    editLabelBtn.textContent=on?'📅 On':'📅 Label';
+  }
   const editColor=(typeof tcGetColor==='function')?tcGetColor(_drawCategory,editPid):'#888';
   const editName=(typeof tcGetName==='function')?tcGetName(_drawCategory,editPid):(entry.categoryName||_drawCategory||'Unknown');
   document.getElementById('map-tracker-cat-dot').style.background=editColor;

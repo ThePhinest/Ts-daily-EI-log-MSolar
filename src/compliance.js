@@ -1219,6 +1219,21 @@ async function _tlogExportPhotoZip(entries, pid){
     }
   }
 
+  // ── Include map capture photos in map-views/ subfolder ──
+  const captures=(window._phPhotos||[]).filter(p=>p.type==='map_capture'&&(!p.projectId||p.projectId===pid));
+  if(captures.length){
+    const mapFolder=zip.folder('map-views');
+    for(const photo of captures){
+      if(!photo.storageUrl) continue;
+      try{
+        const resp=await fetch(photo.storageUrl);
+        if(!resp.ok) continue;
+        const b=await resp.blob();
+        mapFolder.file(`${photo.date||'map'}-view.png`,b);
+      }catch{}
+    }
+  }
+
   const buf=await zip.generateAsync({type:'blob'});
   const safeName=(cfg.projectName||pid).replace(/[^a-zA-Z0-9 _-]/g,'').trim().replace(/\s+/g,'-');
   await _glShareOrDownload(new Blob([buf],{type:'application/zip'}),`material-tags-${safeName}-${today}.zip`,'application/zip');
