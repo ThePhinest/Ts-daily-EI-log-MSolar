@@ -930,7 +930,7 @@ async function _tlogExportXlsx(scheme, entries, pid){
   const cols=[
     {header:'Date',            width:12},
     {header:'Category',        width:24},
-    {header:'Acres',           width:8},
+    {header:'Measurement',      width:12},
     {header:'Location',        width:22},
     {header:'Notes',           width:38},
     {header:'Photos',          width:8},
@@ -999,7 +999,7 @@ async function _tlogExportXlsx(scheme, entries, pid){
     const dRow=ws.addRow([
       e.date||'',
       catName,
-      e.acres!=null?e.acres:'',
+      e.measurementValue!=null?`${e.measurementValue} ${e.measurementUnit||''}`:e.acres!=null?`${e.acres} ac`:'',
       e.location||'',
       e.notes||'',
       Array.isArray(e.photoIds)?e.photoIds.length:'',
