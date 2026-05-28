@@ -934,10 +934,10 @@ async function _tlogExportXlsx(scheme, entries, pid){
     {header:'Location',        width:22},
     {header:'Notes',           width:38},
     {header:'Photos',          width:8},
+    {header:'Seed Tags',       width:10},
     {header:'Applied Rate',    width:15},
     {header:'Required Amount', width:18},
     {header:'Actual Amount',   width:15},
-    {header:'Seed Tags',       width:10},
     {header:'Method',          width:20},
     {header:'Contractor',      width:24},
   ];
@@ -984,7 +984,7 @@ async function _tlogExportXlsx(scheme, entries, pid){
       ?{type:'pattern',pattern:'solid',fgColor:{argb:GRAY_LIGHT}}
       :{type:'pattern',pattern:'solid',fgColor:{argb:TEAL}};
     cell.border={bottom:{style:'thin',color:{argb:'CCCCCC'}}};
-    cell.alignment={vertical:'middle',wrapText:false};
+    cell.alignment={vertical:'middle',horizontal:'left',wrapText:false};
   });
   hRow.height=18;
 
@@ -1003,10 +1003,10 @@ async function _tlogExportXlsx(scheme, entries, pid){
       e.location||'',
       e.notes||'',
       Array.isArray(e.photoIds)?e.photoIds.length:'',
+      f.seedTagCount!=null?f.seedTagCount:'',
       f.appliedRate!=null?(rateUnit?f.appliedRate+' '+rateUnit:f.appliedRate):'',
       f.requiredAmount!=null?f.requiredAmount+' '+(f.requiredUnit||''):'',
       f.actualAmount!=null?f.actualAmount+' '+(f.actualUnit||''):'',
-      f.seedTagCount!=null?f.seedTagCount:'',
       e.method||'',
       e.contractor||'',
     ]);
@@ -1023,8 +1023,14 @@ async function _tlogExportXlsx(scheme, entries, pid){
 
     dRow.eachCell({includeEmpty:true},cell=>{
       cell.font={name:'Calibri',size:10};
-      cell.alignment={vertical:'top',wrapText:true};
+      cell.alignment={vertical:'top',horizontal:'left',wrapText:true};
       if(fillArgb) cell.fill={type:'pattern',pattern:'solid',fgColor:{argb:fillArgb}};
+      if(scheme==='category') cell.border={
+        top:{style:'thin',color:{argb:'CCCCCC'}},
+        left:{style:'thin',color:{argb:'CCCCCC'}},
+        bottom:{style:'thin',color:{argb:'CCCCCC'}},
+        right:{style:'thin',color:{argb:'CCCCCC'}},
+      };
     });
     dRow.height=15;
   });
