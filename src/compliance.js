@@ -760,13 +760,22 @@ function clShowTrackerLog(){
               </div>
             </div>`;
           }
-          // Area: actual vs required amounts
-          const withBoth=g.entries.filter(e=>e.fields?.actualAmount!=null&&e.fields?.requiredAmount!=null);
-          if(!withBoth.length) return '';
-          const units=[...new Set(withBoth.map(e=>e.fields.actualUnit||'lbs'))];
+          // Area: use planned entries' requiredAmount as denominator; fall back to installed actual/required if no plan
+          const plannedArea=g.entries.filter(e=>e.entryType==='planned'&&e.fields?.requiredAmount!=null);
+          const installedArea=g.entries.filter(e=>e.entryType!=='planned'&&e.fields?.actualAmount!=null);
+          const hasPlan=plannedArea.length>0;
+          const withBoth=hasPlan?[]:g.entries.filter(e=>e.fields?.actualAmount!=null&&e.fields?.requiredAmount!=null);
+          if(!hasPlan&&!withBoth.length) return '';
+          const units=hasPlan
+            ?[...new Set(plannedArea.map(e=>e.fields?.requiredUnit||'lbs'))]
+            :[...new Set(withBoth.map(e=>e.fields.actualUnit||'lbs'))];
           if(units.length>1) return ''; // mixed units — skip
-          const totalReq=withBoth.reduce((s,e)=>s+(e.fields.requiredAmount||0),0);
-          const totalAct=withBoth.reduce((s,e)=>s+(e.fields.actualAmount||0),0);
+          const totalReq=hasPlan
+            ?plannedArea.reduce((s,e)=>s+(e.fields.requiredAmount||0),0)
+            :withBoth.reduce((s,e)=>s+(e.fields.requiredAmount||0),0);
+          const totalAct=hasPlan
+            ?installedArea.reduce((s,e)=>s+(e.fields.actualAmount||0),0)
+            :withBoth.reduce((s,e)=>s+(e.fields.actualAmount||0),0);
           if(totalReq<=0) return '';
           const pct=Math.min(100,(totalAct/totalReq)*100);
           const color=pct>=100?'var(--green)':'var(--amber)';
@@ -863,17 +872,31 @@ function clShowTrackerLog(){
   document.getElementById('_tlog-export').onclick=()=>_showTlogExportModal(_tlogFilter, pid);
 }
 
-// ── Download or share a blob — native iOS uses Web Share API, web uses blob link ──
+// ── Download or share a blob — native iOS uses Capacitor Share, web uses blob link ──
 async function _glShareOrDownload(blob, filename, mimeType){
   if(window.Capacitor?.isNativePlatform?.()){
     try{
-      const file=new File([blob],filename,{type:mimeType});
-      if(navigator.canShare?.({files:[file]})){
-        await navigator.share({files:[file],title:filename});
-        return;
-      }
-    }catch(e){ console.warn('Web Share API:',e.message); }
+      const [{Filesystem,Directory},{Share}]=await Promise.all([
+        import('@capacitor/filesystem'),
+        import('@capacitor/share'),
+      ]);
+      // Convert blob → base64
+      const buf=await blob.arrayBuffer();
+      const bytes=new Uint8Array(buf);
+      let bin='';
+      for(let i=0;i<bytes.byteLength;i++) bin+=String.fromCharCode(bytes[i]);
+      const b64=btoa(bin);
+      // Write to cache
+      const tempPath=`gl_exports/${filename}`;
+      await Filesystem.writeFile({path:tempPath,data:b64,directory:Directory.Cache,recursive:true});
+      const {uri}=await Filesystem.getUri({path:tempPath,directory:Directory.Cache});
+      await Share.share({title:filename,files:[uri]});
+      // Clean up (best-effort)
+      try{await Filesystem.deleteFile({path:tempPath,directory:Directory.Cache});}catch{}
+      return;
+    }catch(e){ console.warn('Capacitor Share failed:',e.message); }
   }
+  // Web fallback
   const url=URL.createObjectURL(blob);
   const a=document.createElement('a');
   a.href=url; a.download=filename; a.click();
@@ -948,22 +971,24 @@ async function _tlogExportXlsx(scheme, entries, pid){
 
   const TEAL='006B75', AMBER='C9A84C', WHITE='FFFFFF';
   const TEAL_LIGHT='E8F4F5', GRAY_LIGHT='F2F2F2', GRAY_ROW='F9F9F9', AMBER_LIGHT='FDF5DC';
-  const NCOLS=13;
+  const NCOLS=15;
 
   const cols=[
     {header:'Date',            width:12},
     {header:'Category',        width:24},
-    {header:'Type',            width:10},
+    {header:'Type',            width:16},
     {header:'Measurement',     width:12},
     {header:'Location',        width:22},
-    {header:'Notes',           width:38},
+    {header:'Notes',           width:36},
     {header:'Photos',          width:8},
     {header:'Seed Tags',       width:10},
+    {header:'Mix / Product',   width:22},
     {header:'Applied Rate',    width:15},
     {header:'Required Amount', width:18},
     {header:'Actual Amount',   width:15},
     {header:'Method',          width:20},
     {header:'Contractor',      width:24},
+    {header:'Progress',        width:14},
   ];
   ws.columns=cols.map(c=>({width:c.width}));
 
@@ -1012,22 +1037,7 @@ async function _tlogExportXlsx(scheme, entries, pid){
   hRow.height=18;
   ws.views=[{state:'frozen',ySplit:9,activeCell:'A10'}];
 
-  // ── Group entries: planned → children, then orphan installed ──
-  const planned=entries.filter(e=>e.entryType==='planned');
-  const childrenOf=new Map();
-  entries.filter(e=>e.entryType!=='planned'&&e.parentId).forEach(e=>{
-    if(!childrenOf.has(e.parentId)) childrenOf.set(e.parentId,[]);
-    childrenOf.get(e.parentId).push(e);
-  });
-  const childIds=new Set([...childrenOf.values()].flat().map(e=>e.id));
-  const orphans=entries.filter(e=>e.entryType!=='planned'&&!childIds.has(e.id));
-
-  const renderGroups=[
-    ...planned.map(p=>({entry:p,isPlanned:true,children:childrenOf.get(p.id)||[]})),
-    ...orphans.map(e=>({entry:e,isPlanned:false,children:[]})),
-  ];
-
-  // ── Helper: build a data row values array ──
+  // ── Helper: build a data row values array (15 cols) ──
   const rowVals=(e,typeLabel)=>{
     const catName=e.categoryName||(typeof tcGetName==='function'?tcGetName(e.categoryId,pid):'Unknown');
     const f=e.fields||{};
@@ -1038,10 +1048,12 @@ async function _tlogExportXlsx(scheme, entries, pid){
       e.location||'', e.notes||'',
       Array.isArray(e.photoIds)?e.photoIds.length:'',
       f.seedTagCount!=null?f.seedTagCount:'',
+      e.seedMix||'',
       f.appliedRate!=null?(rateUnit?f.appliedRate+' '+rateUnit:f.appliedRate):'',
       f.requiredAmount!=null?f.requiredAmount+' '+(f.requiredUnit||''):'',
       f.actualAmount!=null?f.actualAmount+' '+(f.actualUnit||''):'',
       e.method||'', e.contractor||'',
+      '', // Progress — empty on installed rows
     ];
   };
 
@@ -1061,52 +1073,87 @@ async function _tlogExportXlsx(scheme, entries, pid){
     row.height=15;
   };
 
-  let rowIdx=0;
-  renderGroups.forEach(({entry:e,isPlanned,children})=>{
-    if(isPlanned){
-      // Compute child totals for the summary row
-      const totalAct=children.reduce((s,c)=>s+(c.fields?.actualAmount||0),0);
-      const actUnit=children.find(c=>c.fields?.actualUnit)?.fields?.actualUnit||'';
-      const totalSeeds=children.reduce((s,c)=>s+(c.fields?.seedTagCount||0),0);
-      const n=children.length;
-      const f=e.fields||{};
-      const rateUnit=f.requiredUnit?f.requiredUnit+'/ac':'';
-      const catName=e.categoryName||(typeof tcGetName==='function'?tcGetName(e.categoryId,pid):'Unknown');
-      const planMeas=e.measurementValue!=null?`${e.measurementValue} ${e.measurementUnit||''}`:e.acres!=null?`${e.acres} ac`:'';
-      const planNotes=[e.notes,n?`↳ ${n} section${n!==1?'s':''} installed`:''].filter(Boolean).join(' · ');
-      const actualDisplay=totalAct>0?`${totalAct.toLocaleString()} ${actUnit} (${n} section${n!==1?'s':''})`:n?`${n} section${n!==1?'s':''} — no amounts recorded`:'';
+  // ── Group entries by category (one Plan Total row per category) ──
+  const catOrder=[];
+  const catGroups={};
+  entries.forEach(e=>{
+    const cid=e.categoryId||'_unknown';
+    if(!catGroups[cid]){
+      catGroups[cid]={cid,planned:[],installed:[]};
+      catOrder.push(cid);
+    }
+    if(e.entryType==='planned') catGroups[cid].planned.push(e);
+    else catGroups[cid].installed.push(e);
+  });
+
+  catOrder.forEach(cid=>{
+    const {planned,installed}=catGroups[cid];
+    const catColor=typeof tcGetColor==='function'?tcGetColor(cid,pid):null;
+
+    if(planned.length>0){
+      // ── Aggregate all planned entries into one Plan Total row ──
+      const totalPlanMeas=planned.reduce((s,e)=>s+(parseFloat(e.measurementValue)||parseFloat(e.acres)||0),0);
+      const planMeasUnit=planned.find(e=>e.measurementUnit)?.measurementUnit||'ac';
+      const totalReqAmt=planned.reduce((s,e)=>s+(e.fields?.requiredAmount||0),0);
+      const reqUnit=planned.find(e=>e.fields?.requiredUnit)?.fields?.requiredUnit||'';
+      const totalPlanSeeds=planned.reduce((s,e)=>s+(e.fields?.seedTagCount||0),0);
+      const planDates=[...new Set(planned.map(e=>e.date).filter(Boolean))].join(', ');
+      const planLocations=planned.map(e=>e.location||'').filter(Boolean).join('; ');
+      const planNotes=planned.map(e=>e.notes||'').filter(Boolean).join(' · ');
+      const catName=planned[0].categoryName||(typeof tcGetName==='function'?tcGetName(cid,pid):'Unknown');
+
+      const totalActAmt=installed.reduce((s,e)=>s+(e.fields?.actualAmount||0),0);
+      const actUnit=installed.find(e=>e.fields?.actualUnit)?.fields?.actualUnit||reqUnit;
+      const pct=totalReqAmt>0?Math.min(100,(totalActAmt/totalReqAmt)*100):null;
+
+      const planTypeLabel=planned.length>1?`Plan Total (${planned.length} areas)`:'Plan Total';
+      const actualDisplay=totalActAmt>0
+        ?`${totalActAmt.toLocaleString()} ${actUnit} (${installed.length} entr${installed.length!==1?'ies':'y'})`
+        :installed.length?`${installed.length} entr${installed.length!==1?'ies':'y'} — no amounts`:'';
 
       const pRow=ws.addRow([
-        e.date||'', catName, 'Planned', planMeas, e.location||'', planNotes,
-        Array.isArray(e.photoIds)?e.photoIds.length:'',
-        totalSeeds||'',
-        f.appliedRate!=null?(rateUnit?f.appliedRate+' '+rateUnit:f.appliedRate):'',
-        f.requiredAmount!=null?f.requiredAmount+' '+(f.requiredUnit||''):'',
+        planDates, catName, planTypeLabel,
+        totalPlanMeas>0?`${totalPlanMeas.toFixed(2)} ${planMeasUnit}`:'',
+        planLocations, planNotes,
+        '', totalPlanSeeds||'', '',
+        totalReqAmt>0?`${totalReqAmt.toLocaleString()} ${reqUnit}`:'',
         actualDisplay,
-        e.method||'', e.contractor||'',
+        '', '', '',
+        pct!=null?Math.round(pct):'',
       ]);
-      styleRow(pRow,true,AMBER_LIGHT, scheme==='category');
-      // Stronger border on planned row bottom to separate from children
+      styleRow(pRow,true,AMBER_LIGHT,scheme==='category');
       pRow.eachCell({includeEmpty:true},cell=>{
-        cell.border={...(cell.border||{}), bottom:{style:'thin',color:{argb:'C9A84C'}}};
+        cell.border={...(cell.border||{}),bottom:{style:'thin',color:{argb:'C9A84C'}}};
       });
 
-      children.forEach((c,ci)=>{
+      installed.forEach((e,ci)=>{
         const fill=scheme==='brand'?ci%2===1?TEAL_LIGHT:null
-          :scheme==='category'?(()=>{const h=typeof tcGetColor==='function'?tcGetColor(c.categoryId,pid):null;return h?_tlogLightenHex(h,0.82):null;})()
+          :scheme==='category'?(catColor?_tlogLightenHex(catColor,0.82):null)
           :ci%2===1?GRAY_ROW:null;
-        const cRow=ws.addRow(rowVals(c,'Installed'));
-        styleRow(cRow,false,fill,scheme==='category');
-        rowIdx++;
+        const iRow=ws.addRow(rowVals(e,'Installed'));
+        styleRow(iRow,false,fill,scheme==='category');
       });
+
     } else {
-      const fill=scheme==='brand'?rowIdx%2===1?TEAL_LIGHT:null
-        :scheme==='category'?(()=>{const h=typeof tcGetColor==='function'?tcGetColor(e.categoryId,pid):null;return h?_tlogLightenHex(h,0.82):null;})()
-        :rowIdx%2===1?GRAY_ROW:null;
-      const dRow=ws.addRow(rowVals(e,'Installed'));
-      styleRow(dRow,false,fill,scheme==='category');
-      rowIdx++;
+      // ── No plan — just installed rows ──
+      installed.forEach((e,ci)=>{
+        const fill=scheme==='brand'?ci%2===1?TEAL_LIGHT:null
+          :scheme==='category'?(catColor?_tlogLightenHex(catColor,0.82):null)
+          :ci%2===1?GRAY_ROW:null;
+        const iRow=ws.addRow(rowVals(e,'Installed'));
+        styleRow(iRow,false,fill,scheme==='category');
+      });
     }
+  });
+
+  // ── Data bar on Progress column (O) — renders on plan rows that have a numeric % value ──
+  ws.addConditionalFormatting({
+    ref:'O10:O10000',
+    rules:[{
+      type:'dataBar',
+      cfvo:[{type:'num',value:0},{type:'num',value:100}],
+      color:{argb:'FFC9A84C'},
+    }],
   });
 
   // ── Download / Share ──

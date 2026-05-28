@@ -2078,6 +2078,8 @@ function mapShowTrackerModal(feat,category){
   if(actualAmtEl) actualAmtEl.value='';
   if(actualUnitEl) actualUnitEl.value='lbs';
   if(seedTagsEl) seedTagsEl.value='';
+  const mixProductEl=document.getElementById('map-tr-mix-product');
+  if(mixProductEl) mixProductEl.value='';
   if(catDetails?.targetRate&&measType!=='linear') mapTrackerCalc();
   const catColor=(typeof tcGetColor==='function')?tcGetColor(category,pid):'#888';
   const catName=(typeof tcGetName==='function')?tcGetName(category,pid):(category||'Unknown');
@@ -2235,6 +2237,7 @@ function mapSaveTrackerEntry(){
         ...(seedTagVal!=null?{seedTagCount:seedTagVal}:{}),
       };
     })(),
+    seedMix:document.getElementById('map-tr-mix-product')?.value.trim()||null,
     notes:document.getElementById('map-tr-notes').value.trim()||null,
     photoIds:[..._pendingPhotoIds],
     photoTypes:{..._pendingPhotoTypes},
@@ -2715,6 +2718,8 @@ function mapEditTrackerEntry(entryId){
   if(editActualAmtEl) editActualAmtEl.value=entry.fields?.actualAmount!=null?entry.fields.actualAmount:'';
   if(editActualUnitEl) editActualUnitEl.value=entry.fields?.actualUnit||'lbs';
   if(editSeedTagsEl) editSeedTagsEl.value=entry.fields?.seedTagCount!=null?entry.fields.seedTagCount:'';
+  const editMixEl=document.getElementById('map-tr-mix-product');
+  if(editMixEl) editMixEl.value=entry.seedMix||'';
   const editColor=(typeof tcGetColor==='function')?tcGetColor(_drawCategory,editPid):'#888';
   const editName=(typeof tcGetName==='function')?tcGetName(_drawCategory,editPid):(entry.categoryName||_drawCategory||'Unknown');
   document.getElementById('map-tracker-cat-dot').style.background=editColor;

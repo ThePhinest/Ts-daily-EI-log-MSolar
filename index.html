@@ -2066,9 +2066,15 @@ Anticipated rain — AM weather monitoring expected"></textarea>
               <option value="gal">gal</option>
             </select>
           </div>
-          <div style="margin-top:8px">
-            <div style="font-family:var(--mono);font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px">Seed Tags 🏷️</div>
-            <input type="number" id="map-tr-seed-tags" step="1" min="0" placeholder="0" style="width:80px;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:7px 9px;color:var(--text);font-family:var(--mono);font-size:12px">
+          <div style="margin-top:8px;display:flex;gap:12px;align-items:flex-end">
+            <div>
+              <div style="font-family:var(--mono);font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px">Seed Tags 🏷️</div>
+              <input type="number" id="map-tr-seed-tags" step="1" min="0" placeholder="0" style="width:80px;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:7px 9px;color:var(--text);font-family:var(--mono);font-size:12px">
+            </div>
+            <div style="flex:1">
+              <div style="font-family:var(--mono);font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px">Mix / Product</div>
+              <input type="text" id="map-tr-mix-product" placeholder="seed mix, lime, fertilizer…" style="width:100%;box-sizing:border-box;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:7px 9px;color:var(--text);font-family:var(--mono);font-size:12px">
+            </div>
           </div>
         </div>
       </div>
