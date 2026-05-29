@@ -2684,11 +2684,12 @@ async function _compositeBrandWordmark(blob){
     const PILL_H=Math.max(28,Math.round(c.height*0.035));
     const FONT_PX=Math.round(PILL_H*0.50);
     const TEXT_PAD=Math.round(PILL_H*0.55);
+    const SPACE=Math.round(FONT_PX*0.28);
     ctx.font=`600 ${FONT_PX}px Oswald, "Arial Narrow", system-ui, sans-serif`;
     const wLeft=ctx.measureText('GROUND').width;
     const wPipe=ctx.measureText('|').width;
     const wRight=ctx.measureText('LOG').width;
-    const pillW=Math.round(wLeft+wPipe+wRight+TEXT_PAD*2);
+    const pillW=Math.round(wLeft+SPACE+wPipe+SPACE+wRight+TEXT_PAD*2);
     const x=PAD, y=c.height-PAD-PILL_H, r=Math.round(PILL_H*0.25);
     ctx.fillStyle='rgba(15,31,46,0.55)';
     ctx.beginPath();
@@ -2700,10 +2701,13 @@ async function _compositeBrandWordmark(blob){
     ctx.closePath();
     ctx.fill();
     ctx.textBaseline='middle';
-    const cy=y+PILL_H/2;
+    // Visual-center fix: textBaseline='middle' aligns to em-box midpoint, but for
+    // all-caps text the visual mass sits above that (no descenders). Nudge down
+    // ~10% of font-size to put caps in the optical center of the pill.
+    const cy=y+PILL_H/2+Math.round(FONT_PX*0.10);
     let tx=x+TEXT_PAD;
-    ctx.fillStyle='#ffffff'; ctx.fillText('GROUND',tx,cy); tx+=wLeft;
-    ctx.fillStyle='#C9A84C'; ctx.fillText('|',tx,cy); tx+=wPipe;
+    ctx.fillStyle='#ffffff'; ctx.fillText('GROUND',tx,cy); tx+=wLeft+SPACE;
+    ctx.fillStyle='#C9A84C'; ctx.fillText('|',tx,cy); tx+=wPipe+SPACE;
     ctx.fillStyle='#006B75'; ctx.fillText('LOG',tx,cy);
     return await new Promise(res=>c.toBlob(res,'image/png'));
   }catch(e){
