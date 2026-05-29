@@ -1196,12 +1196,17 @@ async function _tlogExportPhotoZip(entries, pid){
 
   for(const e of entries){
     const types=e.photoTypes||{};
-    const taggedIds=(e.photoIds||[]).filter(id=>types[id]==='material_tag');
-    if(!taggedIds.length) continue;
+    // Bundle a photo if it's tagged material_tag OR if the photo record type is map_capture
+    const includeIds=(e.photoIds||[]).filter(id=>{
+      if(types[id]==='material_tag') return true;
+      const ph=(window._phPhotos||[]).find(p=>p.id===id);
+      return ph?.type==='map_capture';
+    });
+    if(!includeIds.length) continue;
     const catName=(e.categoryName||(typeof tcGetName==='function'?tcGetName(e.categoryId,pid):'Unknown'))
       .replace(/[^a-zA-Z0-9 _-]/g,'').trim();
     const folder=zip.folder(`${e.date||'unknown'} ${catName}`.trim());
-    for(const photoId of taggedIds){
+    for(const photoId of includeIds){
       const photo=(window._phPhotos||[]).find(p=>p.id===photoId);
       if(!photo?.storageUrl) continue;
       try{
@@ -1210,27 +1215,12 @@ async function _tlogExportPhotoZip(entries, pid){
         const blob=await resp.blob();
         const ext=(photo.filename||'photo.jpg').split('.').pop()||'jpg';
         const captionSource=(e.photoCaptions||{})[photoId]||photo?.caption||null;
-        const idx=taggedIds.indexOf(photoId)+1;
+        const idx=includeIds.indexOf(photoId)+1;
         const safeName=captionSource
           ?captionSource.replace(/[^a-zA-Z0-9 _-]/g,'').trim().slice(0,50)
           :`${e.date||'photo'}-${catName}-${idx}`;
         folder.file(`${safeName}.${ext}`,blob);
       }catch{ /* skip failed fetches silently */ }
-    }
-  }
-
-  // ── Include map capture photos in map-views/ subfolder ──
-  const captures=(window._phPhotos||[]).filter(p=>p.type==='map_capture'&&(!p.projectId||p.projectId===pid));
-  if(captures.length){
-    const mapFolder=zip.folder('map-views');
-    for(const photo of captures){
-      if(!photo.storageUrl) continue;
-      try{
-        const resp=await fetch(photo.storageUrl);
-        if(!resp.ok) continue;
-        const b=await resp.blob();
-        mapFolder.file(`${photo.date||'map'}-view.png`,b);
-      }catch{}
     }
   }
 

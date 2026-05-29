@@ -2093,7 +2093,10 @@ function mapShowTrackerModal(feat,category){
   const mixProductEl=document.getElementById('map-tr-mix-product');
   if(mixProductEl) mixProductEl.value='';
   const newLabelBtn=document.getElementById('map-tr-date-label-btn');
-  if(newLabelBtn){newLabelBtn.dataset.on='0';newLabelBtn.style.background='none';newLabelBtn.style.borderColor='rgba(255,255,255,0.15)';newLabelBtn.style.color='rgba(255,255,255,0.35)';newLabelBtn.textContent='📅 Label';}
+  if(newLabelBtn){newLabelBtn.dataset.on='0';newLabelBtn.style.background='none';newLabelBtn.style.borderColor='rgba(255,255,255,0.15)';newLabelBtn.style.color='rgba(255,255,255,0.35)';newLabelBtn.textContent='🔖 Label';}
+  const newLabelText=document.getElementById('map-tr-label-text'); if(newLabelText) newLabelText.value='';
+  const newLabelColor=document.getElementById('map-tr-label-color'); if(newLabelColor) newLabelColor.value='#ffffff';
+  const newLabelCfg=document.getElementById('map-tr-label-config'); if(newLabelCfg) newLabelCfg.style.display='none';
   if(catDetails?.targetRate&&measType!=='linear') mapTrackerCalc();
   const catColor=(typeof tcGetColor==='function')?tcGetColor(category,pid):'#888';
   const catName=(typeof tcGetName==='function')?tcGetName(category,pid):(category||'Unknown');
@@ -2253,6 +2256,8 @@ function mapSaveTrackerEntry(){
     })(),
     seedMix:document.getElementById('map-tr-mix-product')?.value.trim()||null,
     showDateLabel:document.getElementById('map-tr-date-label-btn')?.dataset.on==='1'||false,
+    labelText:document.getElementById('map-tr-label-text')?.value.trim()||null,
+    labelColor:(()=>{const v=document.getElementById('map-tr-label-color')?.value;return (v&&/^#[0-9A-Fa-f]{6}$/.test(v))?v:null;})(),
     notes:document.getElementById('map-tr-notes').value.trim()||null,
     photoIds:[..._pendingPhotoIds],
     photoTypes:{..._pendingPhotoTypes},
@@ -2542,7 +2547,9 @@ function mapRefreshDateLabels(){
     .map(e=>{
       const c=_calcCentroid(e.geometry);
       if(!c) return null;
-      return {type:'Feature',geometry:{type:'Point',coordinates:c},properties:{label:_fmtLabelDate(e.date)}};
+      const text=(e.labelText&&e.labelText.trim())?e.labelText.trim():_fmtLabelDate(e.date);
+      const color=(e.labelColor&&/^#[0-9A-Fa-f]{6}$/.test(e.labelColor))?e.labelColor:'#ffffff';
+      return {type:'Feature',geometry:{type:'Point',coordinates:c},properties:{label:text,color}};
     })
     .filter(Boolean);
   const geojson={type:'FeatureCollection',features};
@@ -2553,7 +2560,7 @@ function mapRefreshDateLabels(){
     _mapInstance.addLayer({
       id:'tracker-date-labels-layer',type:'symbol',source:'tracker-date-labels',
       layout:{'text-field':['get','label'],'text-size':11,'text-anchor':'center','text-allow-overlap':true,'text-ignore-placement':true},
-      paint:{'text-color':'#ffffff','text-halo-color':'rgba(0,0,0,0.85)','text-halo-width':1.5},
+      paint:{'text-color':['get','color'],'text-halo-color':'rgba(0,0,0,0.85)','text-halo-width':1.5},
     });
   }
 }
@@ -2563,15 +2570,78 @@ function mapToggleDateLabel(entryId){
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
   const entry=(typeof trGetEntry==='function')?trGetEntry(entryId,pid):null;
   if(!entry) return;
-  const updated={...entry,showDateLabel:!entry.showDateLabel};
+  // Fast-path rename: if label already on, open the inline edit modal
+  if(entry.showDateLabel){
+    _showLabelTextModal(entryId);
+    return;
+  }
+  const updated={...entry,showDateLabel:true};
   if(typeof trSaveEntry==='function') trSaveEntry(updated,pid);
   mapRefreshDateLabels();
   if(_trackerPopup){
     const lngLat=_trackerPopup.getLngLat();
-    _showTrackerEntryPopup(lngLat,{id:entryId,categoryId:entry.categoryId,categoryName:entry.categoryName,measurementValue:entry.measurementValue,measurementUnit:entry.measurementUnit,acres:entry.acres,location:entry.location,status:entry.status,phase:entry.phase,method:entry.method,contractor:entry.contractor,notes:entry.notes});
+    _showTrackerEntryPopup(lngLat,{id:entryId,categoryId:entry.categoryId,categoryName:entry.categoryName,date:entry.date,measurementValue:entry.measurementValue,measurementUnit:entry.measurementUnit,acres:entry.acres,location:entry.location,status:entry.status,phase:entry.phase,method:entry.method,contractor:entry.contractor,notes:entry.notes});
   }
 }
 window.mapToggleDateLabel=mapToggleDateLabel;
+
+// Inline rename modal for the popup tap-to-edit path. Edits labelText + labelColor;
+// "Turn Off" toggles the label visibility off; persists directly to entry.
+function _showLabelTextModal(entryId){
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const entry=(typeof trGetEntry==='function')?trGetEntry(entryId,pid):null;
+  if(!entry) return;
+  const curText=entry.labelText||'';
+  const curColor=(entry.labelColor&&/^#[0-9A-Fa-f]{6}$/.test(entry.labelColor))?entry.labelColor:'#ffffff';
+  const dateFallback=_fmtLabelDate(entry.date);
+  const ov=document.createElement('div');
+  ov.className='modal-overlay';
+  ov.style.cssText='z-index:9700';
+  ov.innerHTML=`
+    <div class="modal-box" style="max-width:320px;width:90%">
+      <div class="modal-title" style="margin-bottom:6px">Edit Label</div>
+      <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:12px;line-height:1.5">Leave blank to use the date (${dateFallback||'—'}).</div>
+      <input type="text" id="_lblt-input" value="${curText.replace(/"/g,'&quot;').replace(/'/g,'&#39;')}" placeholder="Custom label" style="width:100%;box-sizing:border-box;background:var(--s1);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--body);font-size:16px;padding:9px 12px;outline:none;margin-bottom:12px">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+        <span style="font-family:var(--mono);font-size:11px;color:var(--muted)">Color</span>
+        <input type="color" id="_lblt-color" value="${curColor}" style="width:32px;height:32px;padding:0;border:1px solid var(--border);border-radius:4px;background:transparent;cursor:pointer">
+        <input type="text" id="_lblt-color-hex" value="${curColor}" maxlength="7" style="flex:1;min-width:0;background:var(--s1);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--mono);font-size:12px;padding:6px 9px">
+      </div>
+      <div class="modal-btns">
+        <button class="modal-confirm" id="_lblt-ok">Save</button>
+        <button class="modal-cancel" id="_lblt-off" style="color:#c0392b">Turn Off</button>
+        <button class="modal-cancel" id="_lblt-cancel">Cancel</button>
+      </div>
+    </div>`;
+  document.body.appendChild(ov);
+  const input=ov.querySelector('#_lblt-input');
+  const cIn=ov.querySelector('#_lblt-color');
+  const cHex=ov.querySelector('#_lblt-color-hex');
+  input.focus(); input.select();
+  cIn.addEventListener('input',()=>{ cHex.value=cIn.value; });
+  cHex.addEventListener('input',()=>{ if(/^#[0-9A-Fa-f]{6}$/.test(cHex.value)) cIn.value=cHex.value; });
+  const persist=(patch)=>{
+    const refreshed=(typeof trGetEntry==='function')?trGetEntry(entryId,pid):entry;
+    if(!refreshed) return;
+    const updated={...refreshed,...patch};
+    if(typeof trSaveEntry==='function') trSaveEntry(updated,pid);
+    mapRefreshDateLabels();
+    if(_trackerPopup){
+      const lngLat=_trackerPopup.getLngLat();
+      _showTrackerEntryPopup(lngLat,{id:entryId,categoryId:updated.categoryId,categoryName:updated.categoryName,date:updated.date,measurementValue:updated.measurementValue,measurementUnit:updated.measurementUnit,acres:updated.acres,location:updated.location,status:updated.status,phase:updated.phase,method:updated.method,contractor:updated.contractor,notes:updated.notes});
+    }
+  };
+  ov.querySelector('#_lblt-ok').onclick=()=>{
+    const val=input.value.trim();
+    const hex=cHex.value.trim();
+    const color=/^#[0-9A-Fa-f]{6}$/.test(hex)?hex:'#ffffff';
+    persist({labelText:val||null,labelColor:color});
+    ov.remove();
+  };
+  ov.querySelector('#_lblt-off').onclick=()=>{ persist({showDateLabel:false}); ov.remove(); };
+  ov.querySelector('#_lblt-cancel').onclick=()=>ov.remove();
+  input.addEventListener('keydown',e=>{ if(e.key==='Enter') ov.querySelector('#_lblt-ok').click(); });
+}
 
 function mapToggleDateLabelEdit(){
   const btn=document.getElementById('map-tr-date-label-btn');
@@ -2581,7 +2651,9 @@ function mapToggleDateLabelEdit(){
   btn.style.background=newOn?'rgba(201,168,76,0.25)':'none';
   btn.style.borderColor=newOn?'var(--amber)':'rgba(255,255,255,0.15)';
   btn.style.color=newOn?'var(--amber)':'rgba(255,255,255,0.35)';
-  btn.textContent=newOn?'📅 On':'📅 Label';
+  btn.textContent=newOn?'🔖 On':'🔖 Label';
+  const cfg=document.getElementById('map-tr-label-config');
+  if(cfg) cfg.style.display=newOn?'block':'none';
   // Immediately persist — keeps popup and edit modal in sync
   if(_editingEntryId){
     const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
@@ -2594,23 +2666,125 @@ function mapToggleDateLabelEdit(){
 }
 window.mapToggleDateLabelEdit=mapToggleDateLabelEdit;
 
-async function mapCaptureView(){
-  if(!_mapInstance) return;
-  mapToggleFab();
-  const canvas=_mapInstance.getCanvas();
-  const today=new Date().toLocaleDateString('en-CA');
-  const blob=await new Promise(res=>canvas.toBlob(res,'image/png'));
-  if(!blob){ console.warn('mapCaptureView: canvas returned null blob'); return; }
-  if(typeof phSaveCapturedImage==='function'){
-    await phSaveCapturedImage(blob,today);
-    const t=document.createElement('div');
-    t.style.cssText='position:fixed;bottom:calc(170px + env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.85);color:#fff;font-family:var(--mono);font-size:11px;padding:6px 14px;border-radius:20px;z-index:5000;pointer-events:none;white-space:nowrap';
-    t.textContent='📷 Map view saved to photos';
-    document.body.appendChild(t);
-    setTimeout(()=>t.remove(),2500);
+// ── Brand wordmark composite ──
+// Decodes the captured GL canvas blob, draws a translucent dark pill in the
+// bottom-left, then composites "GROUND|LOG" wordmark (white + amber pipe) on top
+// and re-encodes. Fails open — returns the raw blob if anything throws so capture
+// still succeeds without branding.
+async function _compositeBrandWordmark(blob){
+  try{
+    const bmp=await createImageBitmap(blob);
+    const c=document.createElement('canvas');
+    c.width=bmp.width; c.height=bmp.height;
+    const ctx=c.getContext('2d');
+    ctx.drawImage(bmp,0,0);
+    bmp.close();
+    try{ if(document.fonts&&document.fonts.ready) await document.fonts.ready; }catch{}
+    const PAD=Math.max(16,Math.round(c.width*0.012));
+    const PILL_H=Math.max(28,Math.round(c.height*0.035));
+    const FONT_PX=Math.round(PILL_H*0.50);
+    const TEXT_PAD=Math.round(PILL_H*0.55);
+    ctx.font=`600 ${FONT_PX}px Oswald, "Arial Narrow", system-ui, sans-serif`;
+    const wLeft=ctx.measureText('GROUND').width;
+    const wPipe=ctx.measureText('|').width;
+    const wRight=ctx.measureText('LOG').width;
+    const pillW=Math.round(wLeft+wPipe+wRight+TEXT_PAD*2);
+    const x=PAD, y=c.height-PAD-PILL_H, r=Math.round(PILL_H*0.25);
+    ctx.fillStyle='rgba(15,31,46,0.55)';
+    ctx.beginPath();
+    ctx.moveTo(x+r,y);
+    ctx.arcTo(x+pillW,y,x+pillW,y+PILL_H,r);
+    ctx.arcTo(x+pillW,y+PILL_H,x,y+PILL_H,r);
+    ctx.arcTo(x,y+PILL_H,x,y,r);
+    ctx.arcTo(x,y,x+pillW,y,r);
+    ctx.closePath();
+    ctx.fill();
+    ctx.textBaseline='middle';
+    const cy=y+PILL_H/2;
+    let tx=x+TEXT_PAD;
+    ctx.fillStyle='#ffffff'; ctx.fillText('GROUND',tx,cy); tx+=wLeft;
+    ctx.fillStyle='#C9A84C'; ctx.fillText('|',tx,cy); tx+=wPipe;
+    ctx.fillStyle='#ffffff'; ctx.fillText('LOG',tx,cy);
+    return await new Promise(res=>c.toBlob(res,'image/png'));
+  }catch(e){
+    console.warn('_compositeBrandWordmark failed:',e.message);
+    return blob;
   }
 }
-window.mapCaptureView=mapCaptureView;
+
+// ── Capture-to-drawing: capture current map view, brand it, save as photo,
+//    link it to the popup's tracker entry, then open caption modal with prefill.
+async function mapCaptureForEntry(entryId){
+  if(!_mapInstance) return;
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const entry=(typeof trGetEntry==='function')?trGetEntry(entryId,pid):null;
+  if(!entry){ console.warn('mapCaptureForEntry: entry not found',entryId); return; }
+  const canvas=_mapInstance.getCanvas();
+  const today=new Date().toLocaleDateString('en-CA');
+  const rawBlob=await new Promise(res=>canvas.toBlob(res,'image/png'));
+  if(!rawBlob){ console.warn('mapCaptureForEntry: canvas returned null'); return; }
+  const branded=await _compositeBrandWordmark(rawBlob);
+  if(typeof phSaveCapturedImage!=='function') return;
+  const catName=(typeof tcGetName==='function')?tcGetName(entry.categoryId,pid):(entry.categoryName||'Drawing');
+  const prefill=`${catName} · ${_fmtLabelDate(today)}`;
+  const photoEntry=await phSaveCapturedImage(branded,today,prefill);
+  if(!photoEntry){ console.warn('mapCaptureForEntry: save failed'); return; }
+  // Link to entry — also seed photoCaptions so ZIP export filename works
+  if(typeof trAddPhotoLink==='function') trAddPhotoLink(entryId,photoEntry.id,pid,'general');
+  const refreshed=(typeof trGetEntry==='function')?trGetEntry(entryId,pid):null;
+  if(refreshed&&typeof trSaveEntry==='function'){
+    const caps={...(refreshed.photoCaptions||{}),[photoEntry.id]:prefill};
+    trSaveEntry({...refreshed,photoCaptions:caps},pid);
+  }
+  // Refresh popup so the photo badge count updates
+  if(_trackerPopup){
+    const lngLat=_trackerPopup.getLngLat();
+    const re=(typeof trGetEntry==='function')?trGetEntry(entryId,pid):entry;
+    _showTrackerEntryPopup(lngLat,{id:entryId,categoryId:re.categoryId,categoryName:re.categoryName,date:re.date,measurementValue:re.measurementValue,measurementUnit:re.measurementUnit,acres:re.acres,location:re.location,status:re.status,phase:re.phase,method:re.method,contractor:re.contractor,notes:re.notes});
+  }
+  // Open caption modal so user can confirm or edit the auto-caption
+  _showCaptureCaptionModal(entryId,photoEntry.id,prefill);
+}
+window.mapCaptureForEntry=mapCaptureForEntry;
+
+// Standalone caption modal for capture flow — writes directly to entry.photoCaptions
+// (since we're not inside the entry edit modal's pending state).
+function _showCaptureCaptionModal(entryId,photoId,prefill){
+  const ov=document.createElement('div');
+  ov.className='modal-overlay';
+  ov.style.cssText='z-index:9700';
+  const safe=(prefill||'').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+  ov.innerHTML=`
+    <div class="modal-box" style="max-width:320px;width:90%">
+      <div class="modal-title" style="margin-bottom:6px">Capture Label</div>
+      <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:12px;line-height:1.5">Used as the filename in the photo ZIP export.</div>
+      <input type="text" id="_capcap-input" value="${safe}" placeholder="Label for this capture" style="width:100%;box-sizing:border-box;background:var(--s1);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--body);font-size:16px;padding:9px 12px;outline:none;margin-bottom:14px">
+      <div class="modal-btns">
+        <button class="modal-confirm" id="_capcap-ok">Save</button>
+        <button class="modal-cancel" id="_capcap-skip">Skip</button>
+      </div>
+    </div>`;
+  document.body.appendChild(ov);
+  const input=ov.querySelector('#_capcap-input');
+  input.focus(); input.select();
+  const persist=(val)=>{
+    const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+    const e=(typeof trGetEntry==='function')?trGetEntry(entryId,pid):null;
+    if(e&&typeof trSaveEntry==='function'){
+      const caps={...(e.photoCaptions||{})};
+      if(val) caps[photoId]=val; else delete caps[photoId];
+      trSaveEntry({...e,photoCaptions:caps},pid);
+    }
+    // Also update the photo record's caption so it surfaces in the lightbox
+    const photo=(window._phPhotos||[]).find(p=>p.id===photoId);
+    if(photo) photo.caption=val||photo.caption||'';
+    if(typeof phSaveLocal==='function') phSaveLocal();
+    if(typeof phSaveCloud==='function') phSaveCloud();
+  };
+  ov.querySelector('#_capcap-ok').onclick=()=>{ persist(input.value.trim()); ov.remove(); };
+  ov.querySelector('#_capcap-skip').onclick=()=>ov.remove();
+  input.addEventListener('keydown',e=>{ if(e.key==='Enter') ov.querySelector('#_capcap-ok').click(); });
+}
 
 function mapRenderTrackerLayers(){
   if(!_mapInstance||!_mapInstance.isStyleLoaded()) return;
@@ -2773,7 +2947,8 @@ function _showTrackerEntryPopup(lngLat,props){
     ${photoStrip}
     ${entry?.parentId?`<div style="font-size:10px;color:#a0b8c8;margin-top:4px;border-top:1px solid rgba(255,255,255,.08);padding-top:4px">📍 Linked to planned area</div>`:''}
     <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
-      ${entry?`<button onclick="mapToggleDateLabel('${props.id}')" style="background:${labelOn?'rgba(201,168,76,0.2)':'var(--s2,#1a2a38)'};border:1px solid ${labelOn?'var(--amber,#C9A84C)':'var(--border,#334)'};color:${labelOn?'var(--amber,#C9A84C)':'var(--muted,#888)'};padding:6px;border-radius:6px;font-family:var(--mono);font-size:11px;cursor:pointer;white-space:nowrap">📅${labelOn?' On':' Label'}</button>`:''}
+      ${entry?`<button onclick="mapToggleDateLabel('${props.id}')" style="background:${labelOn?'rgba(201,168,76,0.2)':'var(--s2,#1a2a38)'};border:1px solid ${labelOn?'var(--amber,#C9A84C)':'var(--border,#334)'};color:${labelOn?'var(--amber,#C9A84C)':'var(--muted,#888)'};padding:6px;border-radius:6px;font-family:var(--mono);font-size:11px;cursor:pointer;white-space:nowrap">🔖${labelOn?' On':' Label'}</button>`:''}
+      ${entry?`<button onclick="mapCaptureForEntry('${props.id}')" style="background:var(--s2,#1a2a38);border:1px solid var(--border,#334);color:var(--muted,#888);padding:6px;border-radius:6px;font-family:var(--mono);font-size:11px;cursor:pointer;white-space:nowrap" title="Capture map view as photo">📷</button>`:''}
       ${entry?.entryType==='planned'?`<button onclick="mapActivatePlannedEntry('${props.id}')" style="flex:1;background:rgba(201,168,76,0.2);border:1px solid var(--amber,#C9A84C);color:var(--amber,#C9A84C);padding:6px;border-radius:6px;font-family:var(--mono);font-size:11px;cursor:pointer;font-weight:700;white-space:nowrap">📍 Activate</button>`:''}
       <button onclick="mapEditTrackerEntry('${props.id}')" style="flex:1;background:var(--amber,#D97706);border:none;color:#111;padding:6px;border-radius:6px;font-family:var(--mono);font-size:11px;cursor:pointer;font-weight:700">✏️ Edit</button>
       <button onclick="mapDeleteTrackerEntryFromPanel('${props.id}')" style="flex:1;background:var(--s2);border:1px solid var(--border);color:var(--muted);padding:6px;border-radius:6px;font-family:var(--mono);font-size:11px;cursor:pointer;">✕ Remove</button>
@@ -2844,14 +3019,20 @@ function mapEditTrackerEntry(entryId){
   const editMixEl=document.getElementById('map-tr-mix-product');
   if(editMixEl) editMixEl.value=entry.seedMix||'';
   const editLabelBtn=document.getElementById('map-tr-date-label-btn');
+  const on=!!entry.showDateLabel;
   if(editLabelBtn){
-    const on=!!entry.showDateLabel;
     editLabelBtn.dataset.on=on?'1':'0';
     editLabelBtn.style.background=on?'rgba(201,168,76,0.25)':'none';
     editLabelBtn.style.borderColor=on?'var(--amber)':'rgba(255,255,255,0.15)';
     editLabelBtn.style.color=on?'var(--amber)':'rgba(255,255,255,0.35)';
-    editLabelBtn.textContent=on?'📅 On':'📅 Label';
+    editLabelBtn.textContent=on?'🔖 On':'🔖 Label';
   }
+  const editLabelText=document.getElementById('map-tr-label-text');
+  if(editLabelText) editLabelText.value=entry.labelText||'';
+  const editLabelColor=document.getElementById('map-tr-label-color');
+  if(editLabelColor) editLabelColor.value=(entry.labelColor&&/^#[0-9A-Fa-f]{6}$/.test(entry.labelColor))?entry.labelColor:'#ffffff';
+  const editLabelCfg=document.getElementById('map-tr-label-config');
+  if(editLabelCfg) editLabelCfg.style.display=on?'block':'none';
   const editColor=(typeof tcGetColor==='function')?tcGetColor(_drawCategory,editPid):'#888';
   const editName=(typeof tcGetName==='function')?tcGetName(_drawCategory,editPid):(entry.categoryName||_drawCategory||'Unknown');
   document.getElementById('map-tracker-cat-dot').style.background=editColor;

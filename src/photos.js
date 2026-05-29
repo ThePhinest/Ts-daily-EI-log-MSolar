@@ -449,14 +449,14 @@ async function phInit(){
 function phResetAndRender(){ _phDaysShown = 7; phRender(); }
 
 // ── Save a captured map view blob as a photo record ──
-async function phSaveCapturedImage(blob, photoDate){
+async function phSaveCapturedImage(blob, photoDate, captionOverride){
   if(!storage||!_currentUser||!_fbReady) return null;
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
   const today=photoDate||new Date().toLocaleDateString('en-CA');
   const [y,m,d]=today.split('-');
   const labelDate=`${parseInt(m)}/${parseInt(d)}/${y.slice(2)}`;
   const id='mv'+Date.now().toString(36)+Math.random().toString(36).slice(2,5);
-  const caption=`Map View · ${labelDate}`;
+  const caption=(captionOverride&&captionOverride.trim())?captionOverride.trim():`Map View · ${labelDate}`;
   // Generate thumbnail via canvas
   const bmp=await createImageBitmap(blob);
   const tc=document.createElement('canvas');

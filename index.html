@@ -1880,7 +1880,6 @@ Anticipated rain — AM weather monitoring expected"></textarea>
       <div class="map-fab-row"><span class="map-fab-lbl">Measure</span><button class="map-fab-btn" id="map-fab-measure-btn" onclick="mapFabMeasure()" title="Measure area / distance">📏</button></div>
       <div class="map-fab-row"><span class="map-fab-lbl">Location</span><button class="map-fab-btn" id="map-fab-gps-btn" onclick="mapFabGps()" title="Follow my location">🎯</button></div>
       <div class="map-fab-row"><span class="map-fab-lbl">Tracker</span><button class="map-fab-btn" id="map-fab-tracker-btn" onclick="mapShowTrackerSheet()" title="Manage tracker categories">☰</button></div>
-      <div class="map-fab-row"><span class="map-fab-lbl">Capture</span><button class="map-fab-btn" id="map-fab-capture-btn" onclick="mapCaptureView()" title="Capture map view as photo">📷</button></div>
     </div>
 
     <!-- Draw mode indicator bar -->
@@ -1986,7 +1985,13 @@ Anticipated rain — AM weather monitoring expected"></textarea>
       <div id="map-tracker-cat-row" style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
         <div id="map-tracker-cat-dot" style="width:14px;height:14px;border-radius:50%;flex-shrink:0;background:#ccc"></div>
         <span id="map-tracker-cat-label" style="font-family:var(--mono);font-size:12px;color:var(--amber);font-weight:600;letter-spacing:.04em;flex:1"></span>
-        <button id="map-tr-date-label-btn" data-on="0" onclick="mapToggleDateLabelEdit()" style="background:none;border:1px solid rgba(255,255,255,0.15);border-radius:4px;color:rgba(255,255,255,0.35);font-family:var(--mono);font-size:9px;padding:2px 7px;cursor:pointer;line-height:1.4;white-space:nowrap;flex-shrink:0">📅 Label</button>
+        <button id="map-tr-date-label-btn" data-on="0" onclick="mapToggleDateLabelEdit()" style="background:none;border:1px solid rgba(255,255,255,0.15);border-radius:4px;color:rgba(255,255,255,0.35);font-family:var(--mono);font-size:9px;padding:2px 7px;cursor:pointer;line-height:1.4;white-space:nowrap;flex-shrink:0">🔖 Label</button>
+      </div>
+      <div id="map-tr-label-config" style="display:none;margin:0 0 10px 22px">
+        <div style="display:flex;gap:8px;align-items:center">
+          <input type="text" id="map-tr-label-text" placeholder="Custom label (blank = date)" style="flex:1;min-width:0;box-sizing:border-box;background:var(--s1);border:1px solid var(--border);border-radius:6px;padding:6px 9px;color:var(--text);font-family:var(--mono);font-size:11px">
+          <input type="color" id="map-tr-label-color" value="#ffffff" title="Label color" style="width:28px;height:28px;padding:0;border:1px solid var(--border);border-radius:4px;background:transparent;cursor:pointer;flex-shrink:0">
+        </div>
       </div>
       <div id="map-tr-type-row" style="display:none;margin-bottom:10px">
         <span style="font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;padding:3px 8px;border-radius:3px;background:rgba(201,168,76,0.15);border:1px solid var(--amber);color:var(--amber)">📍 PLANNED AREA</span>

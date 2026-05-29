@@ -35,6 +35,9 @@
 //     centroidLng, centroidLat, acres, location,
 //     fields: { /* category-specific key/value pairs */ },
 //     notes,
+//     showDateLabel,   <- bool; render label on map at centroid
+//     labelText,       <- optional custom label text (falls back to formatted date)
+//     labelColor,      <- optional hex color (#rrggbb); halo stays dark
 //     createdAt, updatedAt, createdBy, deletedAt, deletedFromMap
 //   }
 
