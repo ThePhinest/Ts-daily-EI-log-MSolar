@@ -2704,7 +2704,7 @@ async function _compositeBrandWordmark(blob){
     let tx=x+TEXT_PAD;
     ctx.fillStyle='#ffffff'; ctx.fillText('GROUND',tx,cy); tx+=wLeft;
     ctx.fillStyle='#C9A84C'; ctx.fillText('|',tx,cy); tx+=wPipe;
-    ctx.fillStyle='#ffffff'; ctx.fillText('LOG',tx,cy);
+    ctx.fillStyle='#006B75'; ctx.fillText('LOG',tx,cy);
     return await new Promise(res=>c.toBlob(res,'image/png'));
   }catch(e){
     console.warn('_compositeBrandWordmark failed:',e.message);
