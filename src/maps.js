@@ -2454,16 +2454,17 @@ function _stopGpsFollow(){
 }
 
 function _makeConeEl(){
-  // 60° translucent fan, apex at bottom-center (sits on the GPS dot), opening "up" = north at rotation 0.
+  // 60° translucent amber fan (brand gold), apex at bottom-center (sits on the GPS
+  // dot), opening "up" = north at rotation 0. Longer reach than the dot radius.
   const wrap=document.createElement('div');
-  wrap.style.cssText='width:130px;height:130px;pointer-events:none';
-  wrap.innerHTML=`<svg width="130" height="130" viewBox="0 0 130 130" style="display:block">
+  wrap.style.cssText='width:160px;height:180px;pointer-events:none';
+  wrap.innerHTML=`<svg width="160" height="180" viewBox="0 0 160 180" style="display:block">
     <defs><radialGradient id="gl-cone-grad" cx="50%" cy="100%" r="100%">
-      <stop offset="0%" stop-color="rgba(20,150,210,0.55)"/>
-      <stop offset="70%" stop-color="rgba(20,150,210,0.18)"/>
-      <stop offset="100%" stop-color="rgba(20,150,210,0)"/>
+      <stop offset="0%" stop-color="rgba(201,168,76,0.6)"/>
+      <stop offset="65%" stop-color="rgba(201,168,76,0.22)"/>
+      <stop offset="100%" stop-color="rgba(201,168,76,0)"/>
     </radialGradient></defs>
-    <path d="M65 126 L12.5 35 A105 105 0 0 1 117.5 35 Z" fill="url(#gl-cone-grad)"/>
+    <path d="M80 176 L5 46 A150 150 0 0 1 155 46 Z" fill="url(#gl-cone-grad)"/>
   </svg>`;
   return wrap;
 }
@@ -2492,11 +2493,18 @@ async function _startCompass(){
     if(typeof e.webkitCompassHeading==='number' && !isNaN(e.webkitCompassHeading)) h=e.webkitCompassHeading; // iOS true heading
     else if(e.absolute && typeof e.alpha==='number') h=(360-e.alpha)%360;                                    // android absolute
     if(h==null) return;
-    _curHeading=h;
-    if(_mapHeadingCone) _mapHeadingCone.setRotation(h);
+    // Low-pass smoothing over the circular range to kill raw-compass jitter.
+    const delta=((h-_curHeading+540)%360)-180;
+    _curHeading=(_curHeading+delta*0.3+360)%360;
+    if(_mapHeadingCone){
+      _mapHeadingCone.setRotation(_curHeading);
+      // rotationAlignment:'map' recomputes the cone's screen angle on render; force a
+      // repaint so it tracks smoothly even when the map is static (direction mode).
+      if(_gpsMode===2 && _mapInstance) _mapInstance.triggerRepaint();
+    }
     if(_gpsMode===3 && _mapInstance){ // heading-up: spin map (throttled)
       const now=Date.now();
-      if(now-_lastSpinTs>120){ _lastSpinTs=now; _mapInstance.rotateTo(h,{duration:120}); }
+      if(now-_lastSpinTs>110){ _lastSpinTs=now; _mapInstance.rotateTo(_curHeading,{duration:110}); }
     }
   };
   window.addEventListener('deviceorientation',_compassHandler,true);
@@ -2547,7 +2555,7 @@ function mapCycleGpsMode(){
 }
 
 // ── Tracker entry map layers ──────────────
-let _trackerPopup=null,_trackerClickHandlerRegistered=false,_editingEntryId=null;
+let _trackerPopup=null,_trackerClickHandlerRegistered=false,_editingEntryId=null,_labelTopGuardRegistered=false;
 
 function mapClearTrackerLayers(){
   if(!_mapInstance||!_mapInstance.isStyleLoaded()) return;
@@ -2926,6 +2934,21 @@ function _showCaptureCaptionModal(entryId,photoId,prefill){
 function mapRenderTrackerLayers(){
   if(!_mapInstance||!_mapInstance.isStyleLoaded()) return;
 
+  if(!_labelTopGuardRegistered){
+    _labelTopGuardRegistered=true;
+    // Async layer re-adds (pattern-image loads, style ops) can stack a drawing fill
+    // above the label layer after our synchronous re-top runs. Once the map settles,
+    // ensure the label is the topmost layer. Cheap: only moves it if it isn't already.
+    _mapInstance.on('idle',()=>{
+      const lyr='tracker-date-labels-layer';
+      if(!_mapInstance.getLayer(lyr)) return;
+      const layers=(_mapInstance.getStyle()||{}).layers||[];
+      if(layers.length && layers[layers.length-1].id!==lyr){
+        try{_mapInstance.moveLayer(lyr);}catch(e){}
+      }
+    });
+  }
+
   if(!_trackerClickHandlerRegistered){
     _trackerClickHandlerRegistered=true;
     _mapInstance.on('click',e=>{
@@ -3069,9 +3092,9 @@ function _showTrackerEntryPopup(lngLat,props){
   const photoStrip=photos.length?`<div style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,.12)">
     <div onclick="mapTogglePopupPhotos(this)" style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:11px;color:#dce8f4;user-select:none">
       <span>📷 ${photos.length} photo${photos.length>1?'s':''}</span>
-      <span class="_trp-chev" style="margin-left:auto;display:inline-block;transition:transform .15s">▸</span>
+      <span class="_trp-chev" style="margin-left:auto;display:inline-block;transition:transform .15s;transform:rotate(90deg)">▸</span>
     </div>
-    <div class="_trp-photos" style="display:none;gap:4px;flex-wrap:wrap;margin-top:8px">
+    <div class="_trp-photos" style="display:flex;gap:4px;flex-wrap:wrap;margin-top:8px">
       ${photos.map(p=>`<img src="${p.thumb}" onclick="phOpenLightbox('${p.id}',${photoIdsLiteral})" style="width:56px;height:56px;object-fit:cover;border-radius:4px;cursor:pointer;border:2px solid rgba(255,255,255,.15)">`).join('')}
     </div>
   </div>`:'';
