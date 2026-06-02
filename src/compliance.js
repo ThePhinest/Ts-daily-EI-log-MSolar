@@ -595,6 +595,7 @@ function clShowTrackerLog(){
   let _tlCat='';
   let _tlFrom='';
   let _tlTo='';
+  const _tlCollapsed=new Set();   // category ids collapsed in the grouped view
 
   const initCats=(typeof tcGetCategories==='function')?tcGetCategories(pid):[];
   const chipHtml=[
@@ -791,16 +792,28 @@ function clShowTrackerLog(){
             </div>
           </div>`;
         })();
+        const collapsed=_tlCollapsed.has(cid);
         return `<div style="border-bottom:1px solid var(--border)">
-          <div style="display:flex;align-items:center;gap:8px;padding:10px 16px;background:var(--s1)">
+          <div class="_tlog-cat-head" data-cat="${cid}" style="display:flex;align-items:center;gap:8px;padding:10px 16px;background:var(--s1);cursor:pointer">
             <div style="width:10px;height:10px;border-radius:50%;background:${g.cat.color};flex-shrink:0"></div>
             <span style="font-family:var(--cond);font-weight:700;font-size:13px;letter-spacing:.04em;flex:1">${g.cat.name}</span>
             <span style="font-family:var(--mono);font-size:10px;color:var(--muted);white-space:nowrap">${meta}</span>
+            <span style="color:var(--muted);font-size:11px;display:inline-block;transition:transform .15s;transform:rotate(${collapsed?'0':'90'}deg)">▸</span>
           </div>
-          ${catBar}
-          ${rows}
+          <div style="display:${collapsed?'none':'block'}">
+            ${catBar}
+            ${rows}
+          </div>
         </div>`;
       }).join('');
+      // Re-attach header toggle listeners after each render (innerHTML wipes them).
+      res.querySelectorAll('._tlog-cat-head').forEach(h=>{
+        h.addEventListener('click',()=>{
+          const cid=h.dataset.cat;
+          if(_tlCollapsed.has(cid)) _tlCollapsed.delete(cid); else _tlCollapsed.add(cid);
+          _tlogRender();
+        });
+      });
     } else {
       // Flat list — search/filter active
       res.innerHTML=entries.map(e=>{

@@ -2940,13 +2940,22 @@ function _showTrackerEntryPopup(lngLat,props){
   const photos=(window._phPhotos||[]).filter(p=>photoIds.includes(p.id));
   const seedTagCount=entry?.fields?.seedTagCount||0;
   const reportCount=(entry?.reportIds||[]).length;
-  const badgeRow=(seedTagCount||reportCount||photos.length)?`<div style="display:flex;gap:8px;margin-top:6px;padding-top:6px;border-top:1px solid rgba(255,255,255,.1)">
-    ${photos.length?`<span style="color:#dce8f4;font-size:11px">📷 ${photos.length}</span>`:''}
+  // Photo count moved into the collapsible photo header below — keep seed/report here.
+  const badgeRow=(seedTagCount||reportCount)?`<div style="display:flex;gap:8px;margin-top:6px;padding-top:6px;border-top:1px solid rgba(255,255,255,.1)">
     ${seedTagCount?`<span style="color:#dce8f4;font-size:11px">🏷️ ${seedTagCount}</span>`:''}
     ${reportCount?`<span style="color:#dce8f4;font-size:11px">📋 ${reportCount}</span>`:''}
   </div>`:'';
-  const photoStrip=photos.length?`<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,.12)">
-    ${photos.map(p=>`<img src="${p.thumb}" onclick="phOpenLightbox('${p.id}')" style="width:56px;height:56px;object-fit:cover;border-radius:4px;cursor:pointer;border:2px solid rgba(255,255,255,.15)">`).join('')}
+  // Collapsible photo section — saves screen space on phone; tap header to expand.
+  // Swipe in the lightbox stays scoped to this drawing's photos.
+  const photoIdsLiteral='['+photos.map(p=>`'${p.id}'`).join(',')+']';
+  const photoStrip=photos.length?`<div style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,.12)">
+    <div onclick="mapTogglePopupPhotos(this)" style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:11px;color:#dce8f4;user-select:none">
+      <span>📷 ${photos.length} photo${photos.length>1?'s':''}</span>
+      <span class="_trp-chev" style="margin-left:auto;display:inline-block;transition:transform .15s">▸</span>
+    </div>
+    <div class="_trp-photos" style="display:none;gap:4px;flex-wrap:wrap;margin-top:8px">
+      ${photos.map(p=>`<img src="${p.thumb}" onclick="phOpenLightbox('${p.id}',${photoIdsLiteral})" style="width:56px;height:56px;object-fit:cover;border-radius:4px;cursor:pointer;border:2px solid rgba(255,255,255,.15)">`).join('')}
+    </div>
   </div>`:'';
   const labelOn=entry?.showDateLabel||false;
   const html=`<div style="font-family:var(--mono);font-size:12px;min-width:180px;color:#e8e8e8">
@@ -2976,6 +2985,18 @@ function _showTrackerEntryPopup(lngLat,props){
   _trackerPopup=new mapboxgl.Popup({closeButton:true,closeOnClick:false,className:'gl-tracker-popup'})
     .setLngLat(lngLat).setHTML(html).addTo(_mapInstance);
 }
+
+// Toggle the collapsible photo strip inside a tracker entry popup.
+function mapTogglePopupPhotos(hdr){
+  const wrap=hdr.parentElement;
+  const strip=wrap&&wrap.querySelector('._trp-photos');
+  const chev=hdr.querySelector('._trp-chev');
+  if(!strip) return;
+  const open=strip.style.display!=='none';
+  strip.style.display=open?'none':'flex';
+  if(chev) chev.style.transform=open?'':'rotate(90deg)';
+}
+window.mapTogglePopupPhotos=mapTogglePopupPhotos;
 
 function mapEditTrackerEntry(entryId){
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
