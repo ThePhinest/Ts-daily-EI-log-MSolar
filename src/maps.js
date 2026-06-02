@@ -2543,7 +2543,15 @@ function mapRefreshDateLabels(){
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
   const entries=(typeof trGetEntriesForProject==='function')?trGetEntriesForProject(pid):[];
   const features=entries
-    .filter(e=>e.showDateLabel&&!e.deletedAt&&!e.archivedFromMap&&e.geometry)
+    .filter(e=>{
+      // Label only shows when the drawing itself is on the map: must have the
+      // label flag + geometry, not be deleted/archived/removed-from-map, AND its
+      // category must be visible (hiding a drawing's category hides its label too).
+      if(!e.showDateLabel||!e.geometry||e.deletedAt||e.archivedFromMap||e.deletedFromMap) return false;
+      const cid=e.categoryId||e.category;
+      if(_tcLayerVisible[cid]===false) return false;
+      return true;
+    })
     .map(e=>{
       const c=_calcCentroid(e.geometry);
       if(!c) return null;
@@ -2555,12 +2563,6 @@ function mapRefreshDateLabels(){
   const geojson={type:'FeatureCollection',features};
   if(_mapInstance.getSource('tracker-date-labels')){
     _mapInstance.getSource('tracker-date-labels').setData(geojson);
-    // Drawing fill/line layers get re-added above this symbol layer on re-render
-    // (e.g. toggling a label off then on), burying the label. Re-raise it to the
-    // top so labels always render above their drawings.
-    if(_mapInstance.getLayer('tracker-date-labels-layer')){
-      try{_mapInstance.moveLayer('tracker-date-labels-layer');}catch(e){}
-    }
   } else {
     _mapInstance.addSource('tracker-date-labels',{type:'geojson',data:geojson});
     _mapInstance.addLayer({
@@ -2568,6 +2570,13 @@ function mapRefreshDateLabels(){
       layout:{'text-field':['get','label'],'text-size':11,'text-anchor':'center','text-allow-overlap':true,'text-ignore-placement':true},
       paint:{'text-color':['get','color'],'text-halo-color':'rgba(0,0,0,0.85)','text-halo-width':1.5},
     });
+  }
+  // Drawing fill/line layers get re-added above this symbol layer on re-render
+  // (toggling a label, editing a drawing, hiding/showing a category), burying the
+  // label. Always re-raise it to the top so labels render above their drawings
+  // regardless of toggle order.
+  if(_mapInstance.getLayer('tracker-date-labels-layer')){
+    try{_mapInstance.moveLayer('tracker-date-labels-layer');}catch(e){}
   }
 }
 window.mapRefreshDateLabels=mapRefreshDateLabels;
