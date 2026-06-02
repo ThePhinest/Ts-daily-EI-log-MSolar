@@ -12,6 +12,8 @@ let _drawInstance=null, _drawMode=null, _drawCategory=null;
 let _drawEntryType='installed'; // 'planned' | 'installed'
 let _activePlannedEntryId=null;
 let _fabOpen=false, _viewFabOpen=false, _gpsFollowActive=false, _gpsFollowWatch=null;
+// GPS location/direction mode cycle: 0=off, 1=locate, 2=direction(cone,north-up), 3=heading(cone+map spins)
+let _gpsMode=0, _compassActive=false, _compassHandler=null, _mapHeadingCone=null, _curHeading=0, _lastSpinTs=0;
 let _pendingDrawFeature=null;
 let _pendingPhotoIds=[];
 let _pendingPhotoTypes={};
@@ -216,6 +218,7 @@ function mapAddGPSDot(){
       if(!_mapGpsMarker){
         _mapGpsMarker=new mapboxgl.Marker({element:el,anchor:'bottom'}).setLngLat([lng,lat]).addTo(_mapInstance);
       } else { _mapGpsMarker.setLngLat([lng,lat]); }
+      if(_mapHeadingCone) _mapHeadingCone.setLngLat([lng,lat]); // keep direction cone on the dot
     },
     err=>console.warn('GPS:',err.message),
     {enableHighAccuracy:true,maximumAge:5000}
@@ -1460,7 +1463,7 @@ function mapFabMeasure(){
 }
 function mapFabGps(){
   mapCloseFab();
-  mapToggleGpsFollow();
+  mapCycleGpsMode();
 }
 
 // ── Category picker (draw flow) ───────────
@@ -2420,12 +2423,127 @@ function mapToggleGpsFollow(){
 }
 
 function mapResetGpsFollow(){
-  if(!_gpsFollowActive) return;
+  // Only acts if a GPS mode is engaged — preserves a user's manual map rotation.
+  if(_gpsMode===0 && !_gpsFollowActive) return;
+  _gpsMode=0;
+  _stopGpsFollow();
+  _stopCompass();
+  _hideCone();
+  _updateGpsBtn();
+  if(_mapInstance){ try{ _mapInstance.easeTo({bearing:0,duration:300}); }catch(e){} } // unspin
+}
+
+// ── GPS / heading mode cycle ──────────────
+// off → locate → direction (cone, north-up) → heading (cone + map spins) → off
+function _startGpsFollow(){
+  if(_gpsFollowActive||!navigator.geolocation) return;
+  _gpsFollowActive=true;
+  navigator.geolocation.getCurrentPosition(pos=>{
+    if(!_mapInstance||!_gpsFollowActive) return;
+    _mapInstance.flyTo({center:[pos.coords.longitude,pos.coords.latitude],zoom:17,duration:800});
+  },null,{enableHighAccuracy:true});
+  _gpsFollowWatch=navigator.geolocation.watchPosition(pos=>{
+    if(!_mapInstance||!_gpsFollowActive) return;
+    _mapInstance.easeTo({center:[pos.coords.longitude,pos.coords.latitude],duration:300});
+  },null,{enableHighAccuracy:true,maximumAge:3000});
+}
+function _stopGpsFollow(){
   _gpsFollowActive=false;
   if(_gpsFollowWatch) navigator.geolocation.clearWatch(_gpsFollowWatch);
   _gpsFollowWatch=null;
+}
+
+function _makeConeEl(){
+  // 60° translucent fan, apex at bottom-center (sits on the GPS dot), opening "up" = north at rotation 0.
+  const wrap=document.createElement('div');
+  wrap.style.cssText='width:130px;height:130px;pointer-events:none';
+  wrap.innerHTML=`<svg width="130" height="130" viewBox="0 0 130 130" style="display:block">
+    <defs><radialGradient id="gl-cone-grad" cx="50%" cy="100%" r="100%">
+      <stop offset="0%" stop-color="rgba(20,150,210,0.55)"/>
+      <stop offset="70%" stop-color="rgba(20,150,210,0.18)"/>
+      <stop offset="100%" stop-color="rgba(20,150,210,0)"/>
+    </radialGradient></defs>
+    <path d="M65 126 L12.5 35 A105 105 0 0 1 117.5 35 Z" fill="url(#gl-cone-grad)"/>
+  </svg>`;
+  return wrap;
+}
+function _showCone(){
+  if(!_mapInstance) return;
+  if(!_mapHeadingCone){
+    const ll=_mapGpsMarker?_mapGpsMarker.getLngLat():_mapInstance.getCenter();
+    _mapHeadingCone=new mapboxgl.Marker({element:_makeConeEl(),anchor:'bottom',rotationAlignment:'map',pitchAlignment:'map',rotation:_curHeading}).setLngLat(ll).addTo(_mapInstance);
+  }
+}
+function _hideCone(){
+  if(_mapHeadingCone){ _mapHeadingCone.remove(); _mapHeadingCone=null; }
+}
+
+async function _startCompass(){
+  if(_compassActive) return;
+  // iOS 13+ requires explicit permission, granted from a user gesture (the FAB tap).
+  try{
+    if(typeof DeviceOrientationEvent!=='undefined' && typeof DeviceOrientationEvent.requestPermission==='function'){
+      const res=await DeviceOrientationEvent.requestPermission();
+      if(res!=='granted') return;
+    }
+  }catch(e){ /* not a user gesture / unsupported — fall through, listener still tries */ }
+  _compassHandler=(e)=>{
+    let h=null;
+    if(typeof e.webkitCompassHeading==='number' && !isNaN(e.webkitCompassHeading)) h=e.webkitCompassHeading; // iOS true heading
+    else if(e.absolute && typeof e.alpha==='number') h=(360-e.alpha)%360;                                    // android absolute
+    if(h==null) return;
+    _curHeading=h;
+    if(_mapHeadingCone) _mapHeadingCone.setRotation(h);
+    if(_gpsMode===3 && _mapInstance){ // heading-up: spin map (throttled)
+      const now=Date.now();
+      if(now-_lastSpinTs>120){ _lastSpinTs=now; _mapInstance.rotateTo(h,{duration:120}); }
+    }
+  };
+  window.addEventListener('deviceorientation',_compassHandler,true);
+  window.addEventListener('deviceorientationabsolute',_compassHandler,true);
+  _compassActive=true;
+}
+function _stopCompass(){
+  if(_compassHandler){
+    window.removeEventListener('deviceorientation',_compassHandler,true);
+    window.removeEventListener('deviceorientationabsolute',_compassHandler,true);
+  }
+  _compassHandler=null; _compassActive=false;
+}
+
+function _updateGpsBtn(){
   const btn=document.getElementById('map-fab-gps-btn');
-  if(btn) btn.classList.remove('active');
+  if(!btn) return;
+  const icons=['🎯','🎯','🧭','🧭'];
+  const titles=['Follow my location (off)','Location: centered on you','Direction: view cone, north up','Heading: cone + map rotates to your facing'];
+  btn.textContent=icons[_gpsMode];
+  btn.title=titles[_gpsMode];
+  btn.classList.toggle('active',_gpsMode>0);
+  btn.dataset.gpsMode=_gpsMode;
+}
+
+function mapCycleGpsMode(){
+  if(!navigator.geolocation) return;
+  _gpsMode=(_gpsMode+1)%4;
+  switch(_gpsMode){
+    case 0: // OFF
+      _stopGpsFollow(); _stopCompass(); _hideCone();
+      if(_mapInstance) _mapInstance.easeTo({bearing:0,duration:300});
+      break;
+    case 1: // LOCATE — centered, north up, no cone
+      _stopCompass(); _hideCone();
+      if(_mapInstance) _mapInstance.easeTo({bearing:0,duration:300});
+      _startGpsFollow();
+      break;
+    case 2: // DIRECTION — cone, north up
+      if(_mapInstance) _mapInstance.easeTo({bearing:0,duration:300});
+      _startGpsFollow(); _showCone(); _startCompass();
+      break;
+    case 3: // HEADING — cone + map spins to heading
+      _startGpsFollow(); _showCone(); _startCompass();
+      break;
+  }
+  _updateGpsBtn();
 }
 
 // ── Tracker entry map layers ──────────────
