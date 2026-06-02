@@ -492,11 +492,15 @@ function renderConfig(){
 }
 function renderPhaseList(){
   const ul=document.getElementById('list-phases');if(!ul)return;ul.innerHTML='';
+  const isReordering=ul.classList.contains('reorder-mode');
   phases.forEach((ph,i)=>{
     const li=document.createElement('li');
-    li.innerHTML=`<span class="p-text">${ph}</span>${ph===activePhaseLabel?'<span class="phase-badge">active</span>':''}<button class="del-p" onclick="removePhase(${i})">✕</button>`;
+    li.dataset.idx=i;li.dataset.origIdx=i;li.dataset.key='phases';
+    li.innerHTML=`<span class="drag-handle" title="Drag to reorder">≡</span><span class="p-text">${ph}</span>${ph===activePhaseLabel?'<span class="phase-badge">active</span>':''}<button class="del-p" onclick="removePhase(${i})">✕</button>`;
+    if(isReordering) li.classList.add('reorder-mode');
     ul.appendChild(li);
   });
+  if(isReordering) _initDrag(ul,'phases');
 }
 function renderPresetList(key){
   const ids={obs:'list-obs',act:'list-act',env:'list-env',comms:'list-comms',look:'list-look'};
@@ -544,7 +548,7 @@ function removePhase(idx){
 
 // ── Preset reorder mode ──
 function toggleReorderMode(key){
-  const ids={obs:'list-obs',act:'list-act',env:'list-env',comms:'list-comms',look:'list-look',checklist:'list-checklist',flags:'list-flags','amendment-phases':'list-amendment-phases','amendment-methods':'list-amendment-methods'};
+  const ids={obs:'list-obs',act:'list-act',env:'list-env',comms:'list-comms',look:'list-look',checklist:'list-checklist',flags:'list-flags','amendment-phases':'list-amendment-phases','amendment-methods':'list-amendment-methods',phases:'list-phases'};
   const ul=document.getElementById(ids[key]);
   const btn=document.getElementById('reorder-btn-'+key);
   if(!ul||!btn)return;
@@ -558,6 +562,7 @@ function toggleReorderMode(key){
     const isAmendPhases=key==='amendment-phases', isAmendMethods=key==='amendment-methods';
     const srcArr=key==='checklist'?checklistItems:key==='flags'?flagItems
       :isAmendPhases?window._amendmentPhases:isAmendMethods?window._amendmentMethods
+      :key==='phases'?phases
       :presets[key];
     const newOrder=domItems.map(li=>{
       const origIdx=parseInt(li.dataset.origIdx!==undefined?li.dataset.origIdx:li.dataset.idx);
@@ -567,6 +572,7 @@ function toggleReorderMode(key){
     else if(key==='flags'){window.flagItems=newOrder;saveFlagsLocal();saveFlagsCloud();renderFlagsList();buildFlags();}
     else if(isAmendPhases){window._amendmentPhases=newOrder;saveAmendmentLocal();saveAmendmentCloud();renderAmendmentConfig();}
     else if(isAmendMethods){window._amendmentMethods=newOrder;saveAmendmentLocal();saveAmendmentCloud();renderAmendmentConfig();}
+    else if(key==='phases'){window.phases=newOrder;ss('msf_phases',phases);renderPhaseList();populateSelects();}
     else{presets[key]=newOrder;ss('msf_presets',presets);renderPresetList(key);renderAllChips();_saveProjectSettings({presets});}
     // Clean up event listeners using stored refs
     ul.onmouseover=null;
