@@ -3,6 +3,8 @@
 // ═══════════════════════════════════════════
 window._phPhotos = window._phPhotos || [];
 var _phLbId = null;
+var _phLbList = [];      // ordered photo ids the lightbox navigates through
+var _phLbIndex = -1;     // current position within _phLbList
 var _phPageSize = 7;
 var _phDaysShown = 7;
 
@@ -277,16 +279,20 @@ async function phGetFull(id){
   return p ? p.thumb : '';
 }
 
-// ── Render library ──
-function phRender(){
+// ── Current filtered + sorted photo set (shared by library render + lightbox nav) ──
+function _phFilteredSorted(){
   const fromDate = document.getElementById('ph-filter-from')?.value||'';
   const toDate   = document.getElementById('ph-filter-to')?.value||'';
-
   let photos = [...window._phPhotos].sort((a,b)=> b.date > a.date ? 1 : b.date < a.date ? -1 : b.uploadedAt - a.uploadedAt);
-
   if(_projectFilterActive) photos = photos.filter(p => !p.projectId || p.projectId === _activeProjectId());
   if(fromDate) photos = photos.filter(p=>p.date >= fromDate);
   if(toDate)   photos = photos.filter(p=>p.date <= toDate);
+  return photos;
+}
+
+// ── Render library ──
+function phRender(){
+  let photos = _phFilteredSorted();
 
   // Stats (all photos, not filtered)
   const allDates = [...new Set(window._phPhotos.map(p=>p.date))];
@@ -346,27 +352,62 @@ function phClearFilters(){
 }
 
 // ── Lightbox ──
-async function phOpenLightbox(id){
+// Opens the full-res viewer. `listIds` (optional) sets the navigation order;
+// when omitted, navigates the current filtered+sorted photo-page set.
+async function phOpenLightbox(id, listIds){
+  _phLbList = (Array.isArray(listIds) && listIds.length) ? listIds.slice() : _phFilteredSorted().map(p=>p.id);
+  _phLbIndex = _phLbList.indexOf(id);
+  if(_phLbIndex < 0){ _phLbList = [id]; _phLbIndex = 0; } // opened on a photo outside the current filter
+  document.getElementById('ph-lightbox').classList.remove('hidden');
+  await _phLbShow(_phLbIndex);
+}
+
+// Renders the photo at the given index: thumb instantly, full-res async (race-guarded).
+async function _phLbShow(index){
+  if(index < 0 || index >= _phLbList.length) return;
+  _phLbIndex = index;
+  const id = _phLbList[index];
   _phLbId = id;
   const p = window._phPhotos.find(x=>x.id===id);
   if(!p) return;
-  const lb = document.getElementById('ph-lightbox');
   const img = document.getElementById('ph-lb-img');
   const cap = document.getElementById('ph-lb-caption');
   const dat = document.getElementById('ph-lb-date');
-  // Show thumb immediately while full loads
-  img.src = p.thumb;
-  cap.value = p.caption||'';
-  dat.textContent = phDayLabel(p.date);
-  lb.classList.remove('hidden');
-  // Load full image async
+  img.src = p.thumb;            // instant
+  if(cap) cap.value = p.caption||'';
+  if(dat) dat.textContent = phDayLabel(p.date);
+  _phLbUpdateNav();
   const full = await phGetFull(id);
-  if(_phLbId === id) img.src = full; // only update if still viewing same photo
+  if(_phLbId === id) img.src = full;   // only swap in full-res if still on this photo
+  _phLbPreloadNeighbors();
+}
+
+// Stops at the ends (no wrap).
+function phLbNext(){ if(_phLbIndex < _phLbList.length-1) _phLbShow(_phLbIndex+1); }
+function phLbPrev(){ if(_phLbIndex > 0) _phLbShow(_phLbIndex-1); }
+
+function _phLbUpdateNav(){
+  const prev = document.getElementById('ph-lb-prev');
+  const next = document.getElementById('ph-lb-next');
+  const cnt  = document.getElementById('ph-lb-count');
+  if(prev) prev.style.visibility = _phLbIndex > 0 ? 'visible' : 'hidden';
+  if(next) next.style.visibility = _phLbIndex < _phLbList.length-1 ? 'visible' : 'hidden';
+  if(cnt)  cnt.textContent = _phLbList.length > 1 ? `${_phLbIndex+1} / ${_phLbList.length}` : '';
+}
+
+// Warm the browser cache for the neighbours so swipes feel instant.
+function _phLbPreloadNeighbors(){
+  [_phLbIndex-1, _phLbIndex+1].forEach(async i=>{
+    if(i < 0 || i >= _phLbList.length) return;
+    try{ const url = await phGetFull(_phLbList[i]); if(url){ const im = new Image(); im.src = url; } }catch(e){}
+  });
 }
 
 function phCloseLightbox(){
   document.getElementById('ph-lightbox').classList.add('hidden');
   _phLbId = null;
+  _phLbList = [];
+  _phLbIndex = -1;
 }
 
 function phSaveCaption(){
@@ -418,6 +459,29 @@ function phConfirmDelete(id){
 // ── Close lightbox on backdrop tap ──
 document.getElementById('ph-lightbox')?.addEventListener('click', function(e){
   if(e.target===this) phCloseLightbox();
+});
+
+// ── Swipe left/right on the image to navigate ──
+(function(){
+  const img = document.getElementById('ph-lb-img');
+  if(!img) return;
+  let sx=null, sy=null;
+  img.addEventListener('touchstart', e=>{ const t=e.changedTouches[0]; sx=t.clientX; sy=t.clientY; }, {passive:true});
+  img.addEventListener('touchend', e=>{
+    if(sx===null) return;
+    const t=e.changedTouches[0], dx=t.clientX-sx, dy=t.clientY-sy;
+    sx=sy=null;
+    if(Math.abs(dx)>40 && Math.abs(dx)>Math.abs(dy)){ dx<0 ? phLbNext() : phLbPrev(); }
+  }, {passive:true});
+})();
+
+// ── Keyboard navigation (desktop) ──
+document.addEventListener('keydown', e=>{
+  const lb=document.getElementById('ph-lightbox');
+  if(!lb || lb.classList.contains('hidden')) return;
+  if(e.key==='ArrowRight') phLbNext();
+  else if(e.key==='ArrowLeft') phLbPrev();
+  else if(e.key==='Escape') phCloseLightbox();
 });
 
 // ── Phase D migration: tag existing photos with active projectId ──
@@ -490,6 +554,8 @@ window.phClearFilters = phClearFilters;
 window.phSaveCapturedImage = phSaveCapturedImage;
 window.phOpenLightbox = phOpenLightbox;
 window.phCloseLightbox = phCloseLightbox;
+window.phLbNext = phLbNext;
+window.phLbPrev = phLbPrev;
 window.phSaveCaption = phSaveCaption;
 window.phConfirmDelete = phConfirmDelete;
 window.phBearingLabel = phBearingLabel;

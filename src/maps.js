@@ -2555,6 +2555,12 @@ function mapRefreshDateLabels(){
   const geojson={type:'FeatureCollection',features};
   if(_mapInstance.getSource('tracker-date-labels')){
     _mapInstance.getSource('tracker-date-labels').setData(geojson);
+    // Drawing fill/line layers get re-added above this symbol layer on re-render
+    // (e.g. toggling a label off then on), burying the label. Re-raise it to the
+    // top so labels always render above their drawings.
+    if(_mapInstance.getLayer('tracker-date-labels-layer')){
+      try{_mapInstance.moveLayer('tracker-date-labels-layer');}catch(e){}
+    }
   } else {
     _mapInstance.addSource('tracker-date-labels',{type:'geojson',data:geojson});
     _mapInstance.addLayer({
