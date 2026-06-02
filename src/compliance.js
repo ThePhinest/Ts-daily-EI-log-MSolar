@@ -659,7 +659,6 @@ function clShowTrackerLog(){
   function _tlogRender(){
     const entries=_tlogFilter();
     const liveCats=(typeof tcGetCategories==='function')?tcGetCategories(pid):[];
-    const totalAcres=entries.reduce((s,e)=>s+(parseFloat(e.acres)||0),0);
     const totalPhotos=entries.reduce((s,e)=>s+(Array.isArray(e.photoIds)?e.photoIds.length:0),0);
     const res=document.getElementById('_tlog-results');
     const foot=document.getElementById('_tlog-footer');
@@ -690,7 +689,18 @@ function clShowTrackerLog(){
       res.innerHTML=order.map(cid=>{
         const g=groups[cid];
         const _installed=g.entries.filter(e=>e.entryType!=='planned');
-        const gAcres=_installed.reduce((s,e)=>s+(parseFloat(e.measurementValue)||parseFloat(e.acres)||0),0);
+        // Category total respects the category's measurement type + default unit
+        // (linear → ft, area → ac, etc.) — never assume acres. Converts each entry
+        // into the category default unit before summing.
+        const _metaType=(typeof tcGetMeasurementType==='function')?tcGetMeasurementType(cid,pid):'area';
+        const _metaUnit=(typeof tcGetDefaultUnit==='function')?tcGetDefaultUnit(cid,pid):(_metaType==='linear'?'ft':'ac');
+        const _metaTotal=_installed.reduce((s,e)=>{
+          const v=parseFloat(e.measurementValue);
+          if(!isNaN(v)) return s+((typeof tcConvertMeasurement==='function')?(tcConvertMeasurement(v,e.measurementUnit||_metaUnit,_metaUnit)??v):v);
+          if(_metaType!=='linear'&&e.acres) return s+(parseFloat(e.acres)||0); // legacy area fallback
+          return s;
+        },0);
+        const _metaTotalText=_metaTotal>0?((typeof tcFormatMeasurement==='function')?tcFormatMeasurement(_metaTotal,_metaUnit):`${_metaTotal.toFixed(2)} ${_metaUnit}`):'';
         const gPhotos=_installed.reduce((s,e)=>s+(Array.isArray(e.photoIds)?e.photoIds.length:0),0);
         const gSeeds=_installed.reduce((s,e)=>s+(e.fields?.seedTagCount||0),0);
         const gReports=_installed.reduce((s,e)=>s+(Array.isArray(e.reportIds)?e.reportIds.length:0),0);
@@ -733,7 +743,7 @@ function clShowTrackerLog(){
             <span style="color:var(--muted);flex-shrink:0;font-size:12px">›</span>
           </div>`;
         }).join('');
-        const meta=[gAcres>0?`${gAcres.toFixed(2)} ac`:'',gPhotos>0?`📷 ${gPhotos}`:'',gSeeds>0?`🏷️ ${gSeeds}`:'',gReports>0?`📋 ${gReports}`:'',`${_installed.length} ${_installed.length===1?'entry':'entries'}`].filter(Boolean).join(' · ');
+        const meta=[_metaTotalText,gPhotos>0?`📷 ${gPhotos}`:'',gSeeds>0?`🏷️ ${gSeeds}`:'',gReports>0?`📋 ${gReports}`:'',`${_installed.length} ${_installed.length===1?'entry':'entries'}`].filter(Boolean).join(' · ');
         // Cumulative actual vs required bar — only when entries share the same actual unit
         const catBar=(()=>{
           const catMeasType=(typeof tcGetMeasurementType==='function')?tcGetMeasurementType(cid,pid):'area';
@@ -851,7 +861,9 @@ function clShowTrackerLog(){
 
     const all=_getEntries();
     const parts=[`${entries.length} ${entries.length===1?'entry':'entries'}`];
-    if(totalAcres>0) parts.push(`${totalAcres.toFixed(2)} ac total`);
+    // No cross-category measurement total — categories use different units (ac vs ft),
+    // so summing them into one acreage number is meaningless. Per-category totals
+    // live in each group header instead.
     if(totalPhotos>0) parts.push(`📷 ${totalPhotos}`);
     if(entries.length<all.length) parts.push(`of ${all.length} total`);
     foot.textContent=parts.join(' · ');
