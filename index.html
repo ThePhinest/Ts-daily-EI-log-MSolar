@@ -2630,24 +2630,19 @@ Anticipated rain — AM weather monitoring expected"></textarea>
   </div>
 
   <div class="config-section" id="cfg-phases">
-    <div class="config-head" onclick="toggleSection('cfg-phases')"><span class="config-title">Phase Labels</span><span class="config-sub">Manage available phase tags</span><span class="card-chevron">▾</span></div>
+    <div class="config-head" onclick="toggleSection('cfg-phases')"><span class="config-title">Phases</span><span class="config-sub">Current activity &amp; phase tags</span><span class="card-chevron">▾</span></div>
     <div class="config-body">
-      <p class="config-hint">Add phase tags here as the project progresses. Each preset is tagged to one phase.</p>
+      <p class="config-hint">Set the active construction scope, then manage the phase tags available as the project progresses. The current activity appears on daily logs and generated reports; each preset is tagged to one phase.</p>
+      <label style="font-family:var(--mono);font-size:13px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted2);display:block;margin-bottom:6px">Current Activity</label>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:16px">
+        <input type="text" id="activePhaseInput" style="max-width:320px;background:var(--bg);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--body);font-size:17px;padding:8px 11px;box-sizing:border-box" placeholder="e.g. Grading, Clearing &amp; Grubbing, Installation">
+        <button class="btn btn-amber" style="font-size:11px;padding:7px 14px" onclick="savePhaseLabel()">Save &amp; Apply</button>
+      </div>
+      <label style="font-family:var(--mono);font-size:13px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted2);display:block;margin-bottom:6px">Phase Labels</label>
       <ul class="preset-list" id="list-phases"></ul>
       <div class="add-preset-row">
         <input type="text" id="new-phase-text" placeholder="e.g. Site Prep, Foundations, Mobilization">
         <button class="btn-add-p" onclick="addPhase()">+ Add Phase</button>
-      </div>
-    </div>
-  </div>
-
-  <div class="config-section" id="cfg-phase">
-    <div class="config-head" onclick="toggleSection('cfg-phase')"><span class="config-title">Current Activity</span><span class="config-sub">Set the active construction phase</span><span class="card-chevron">▾</span></div>
-    <div class="config-body">
-      <p class="config-hint">Records the active construction scope for this project. Appears on daily logs and generated reports.</p>
-      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-        <input type="text" id="activePhaseInput" style="max-width:320px;background:var(--bg);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--body);font-size:17px;padding:8px 11px" placeholder="e.g. Grading, Clearing &amp; Grubbing, Installation">
-        <button class="btn btn-amber" style="font-size:11px;padding:7px 14px" onclick="savePhaseLabel()">Save &amp; Apply</button>
       </div>
     </div>
   </div>
