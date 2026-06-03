@@ -90,6 +90,8 @@ body.theme-light{
 /* Compass */
 #map-compass{position:fixed;bottom:calc(165px + env(safe-area-inset-bottom));right:16px;z-index:248;width:36px;height:36px;border-radius:50%;background:var(--bg);border:1px solid var(--border2);cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:0;transition:bottom .18s;outline:none}
 #map-compass.fab-open{bottom:calc(365px + env(safe-area-inset-bottom))}
+#map-compass.gps-active{border-color:var(--amber);box-shadow:0 0 0 1px var(--amber),0 2px 8px rgba(0,0,0,.45)}
+#map-compass.gps-amber{background:rgba(201,168,76,.25);border-color:var(--amber)}
 #map-compass-needle{transition:transform .15s linear;display:flex;align-items:center;justify-content:center}
 /* FAB + palette */
 #map-fab{position:fixed;bottom:calc(105px + env(safe-area-inset-bottom));right:16px;z-index:250;width:52px;height:52px;border-radius:50%;background:var(--amber);border:none;color:#111;font-size:22px;cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;transition:background .18s,transform .18s}
@@ -1867,7 +1869,7 @@ Anticipated rain — AM weather monitoring expected"></textarea>
 </div>
 
     <!-- Compass -->
-    <button id="map-compass" onclick="mapResetNorth()" title="Reset north">
+    <button id="map-compass" onclick="mapCycleGpsMode()" title="Locate / cycle location modes">
       <div id="map-compass-needle">
         <svg viewBox="0 0 22 22" width="20" height="20">
           <polygon points="11,2 13,10 11,8.5 9,10" fill="#E74C3C"/>
@@ -1881,7 +1883,6 @@ Anticipated rain — AM weather monitoring expected"></textarea>
     <div id="map-fab-palette">
       <div class="map-fab-row"><span class="map-fab-lbl">Draw</span><button class="map-fab-btn" id="map-fab-draw-btn" onclick="mapFabDraw()" title="Draw tracker entry">✏️</button></div>
       <div class="map-fab-row"><span class="map-fab-lbl">Measure</span><button class="map-fab-btn" id="map-fab-measure-btn" onclick="mapFabMeasure()" title="Measure area / distance">📏</button></div>
-      <div class="map-fab-row"><span class="map-fab-lbl">Location</span><button class="map-fab-btn" id="map-fab-gps-btn" onclick="mapFabGps()" title="Follow my location">🎯</button></div>
       <div class="map-fab-row"><span class="map-fab-lbl">Tracker</span><button class="map-fab-btn" id="map-fab-tracker-btn" onclick="mapShowTrackerSheet()" title="Manage tracker categories">☰</button></div>
     </div>
 

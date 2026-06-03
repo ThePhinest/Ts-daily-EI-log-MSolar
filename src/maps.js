@@ -13,7 +13,8 @@ let _drawEntryType='installed'; // 'planned' | 'installed'
 let _activePlannedEntryId=null;
 let _fabOpen=false, _viewFabOpen=false, _gpsFollowActive=false, _gpsFollowWatch=null;
 // GPS location/direction mode cycle: 0=off, 1=locate, 2=direction(cone,north-up), 3=heading(cone+map spins)
-let _gpsMode=0, _compassActive=false, _compassHandler=null, _mapHeadingCone=null, _curHeading=0, _lastSpinTs=0;
+let _gpsMode=0, _compassActive=false, _compassHandler=null, _mapHeadingCone=null, _curHeading=0, _lastSpinTs=0, _origCompassHTML=null;
+let _captureEntryId=null; // entry awaiting a framed map capture
 let _pendingDrawFeature=null;
 let _pendingPhotoIds=[];
 let _pendingPhotoTypes={};
@@ -181,7 +182,7 @@ _mapInstance.on('mousedown', e => {
 });
 _mapInstance.on('mousemove', ()=> clearTimeout(_lpTimer));
 _mapInstance.on('mouseup', ()=> clearTimeout(_lpTimer));
-_mapInstance.on('dragstart', ()=>{ clearTimeout(_lpTimer); _lpStartPos=null; mapResetGpsFollow(); });
+_mapInstance.on('dragstart', ()=>{ clearTimeout(_lpTimer); _lpStartPos=null; });
 // Long press — touch
 _mapInstance.on('touchstart', e => {
   if(e.originalEvent.touches.length !== 1) return;
@@ -1902,7 +1903,7 @@ async function mapTrackerSaveAdd(){
 // ── Draw mode ────────────────────────────
 function mapActivateDrawMode(categoryId){
   mapCloseCategorySheet();
-  mapResetGpsFollow();
+  _pauseGpsForDraw();
   if(!_mapInstance) return;
   _drawCategory=categoryId;
   _drawMode='draw';
@@ -2360,7 +2361,7 @@ function mapNewMeasure(){
 
 function mapActivateMeasure(){
   if(!_mapInstance) return;
-  mapResetGpsFollow();
+  _pauseGpsForDraw();
   _drawMode='measure';
   _measureType='line';
   _measurePoints=[];
@@ -2431,6 +2432,17 @@ function mapResetGpsFollow(){
   _hideCone();
   _updateGpsBtn();
   if(_mapInstance){ try{ _mapInstance.easeTo({bearing:0,duration:300}); }catch(e){} } // unspin
+}
+
+// Drawing/measuring needs a still map. Stop auto-recenter and demote heading→direction
+// so the map stops spinning, but KEEP the cone + selected mode so it persists after.
+function _pauseGpsForDraw(){
+  _stopGpsFollow();
+  if(_gpsMode===3){
+    _gpsMode=2;
+    if(_mapInstance){ try{ _mapInstance.easeTo({bearing:0,duration:300}); }catch(e){} }
+    _updateGpsBtn();
+  }
 }
 
 // ── GPS / heading mode cycle ──────────────
@@ -2520,13 +2532,23 @@ function _stopCompass(){
 }
 
 function _updateGpsBtn(){
-  const btn=document.getElementById('map-fab-gps-btn');
+  // The bottom-right compass button IS the cycler: needle (off) → 🎯 (locate)
+  // → 🎯 amber (direction) → 🧭 amber (heading).
+  const btn=document.getElementById('map-compass');
   if(!btn) return;
-  const icons=['🎯','🎯','🧭','🧭'];
-  const titles=['Follow my location (off)','Location: centered on you','Direction: view cone, north up','Heading: cone + map rotates to your facing'];
-  btn.textContent=icons[_gpsMode];
-  btn.title=titles[_gpsMode];
-  btn.classList.toggle('active',_gpsMode>0);
+  if(_origCompassHTML==null) _origCompassHTML=btn.innerHTML; // capture needle markup once
+  btn.classList.remove('gps-active','gps-amber');
+  if(_gpsMode===0){
+    btn.innerHTML=_origCompassHTML; // restore the compass needle
+    const needle=document.getElementById('map-compass-needle');
+    if(needle&&_mapInstance) needle.style.transform=`rotate(${-_mapInstance.getBearing()}deg)`;
+    btn.title='Locate / cycle location modes';
+  } else {
+    btn.innerHTML=`<span style="font-size:18px;line-height:1">${_gpsMode===3?'🧭':'🎯'}</span>`;
+    btn.classList.add('gps-active');
+    if(_gpsMode>=2) btn.classList.add('gps-amber');
+    btn.title=['','Location: centered on you','Direction: view cone (north up)','Heading: map rotates to your facing'][_gpsMode];
+  }
   btn.dataset.gpsMode=_gpsMode;
 }
 
@@ -2859,21 +2881,56 @@ async function _compositeBrandWordmark(blob){
 
 // ── Capture-to-drawing: capture current map view, brand it, save as photo,
 //    link it to the popup's tracker entry, then open caption modal with prefill.
-async function mapCaptureForEntry(entryId){
+// Entry point from the popup 📷 button: close the popup and let the user FRAME the
+// shot first (the old flow captured instantly with no feedback, then sat on a silent
+// Firebase upload). They pan/zoom, then tap Capture.
+function mapCaptureForEntry(entryId){
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  if(typeof trGetEntry==='function' && !trGetEntry(entryId,pid)){ console.warn('mapCaptureForEntry: entry not found',entryId); return; }
+  _captureEntryId=entryId;
+  if(_trackerPopup){_trackerPopup.remove();_trackerPopup=null;}
+  _showCaptureBar();
+}
+window.mapCaptureForEntry=mapCaptureForEntry;
+
+function _showCaptureBar(){
+  _hideCaptureBar();
+  const bar=document.createElement('div');
+  bar.id='_gl-capture-bar';
+  bar.style.cssText='position:fixed;left:50%;transform:translateX(-50%);bottom:calc(96px + env(safe-area-inset-bottom));z-index:9600;background:rgba(15,31,46,0.96);border:1px solid var(--amber,#C9A84C);border-radius:12px;padding:10px 12px;display:flex;flex-direction:column;gap:8px;box-shadow:0 4px 18px rgba(0,0,0,.55);max-width:90vw';
+  bar.innerHTML=`
+    <div style="font-family:var(--mono);font-size:11px;color:#dce8f4;text-align:center;line-height:1.4">📸 Frame your shot — pan &amp; zoom the map, then Capture</div>
+    <div style="display:flex;gap:8px">
+      <button id="_gl-cap-cancel" style="flex:1;background:var(--s2,#1a2a38);border:1px solid var(--border,#334);color:var(--muted,#aaa);padding:9px;border-radius:8px;font-family:var(--mono);font-size:12px;cursor:pointer">Cancel</button>
+      <button id="_gl-cap-go" style="flex:2;background:var(--amber,#C9A84C);border:none;color:#111;padding:9px;border-radius:8px;font-family:var(--mono);font-size:12px;font-weight:700;cursor:pointer">📷 Capture</button>
+    </div>`;
+  document.body.appendChild(bar);
+  document.getElementById('_gl-cap-cancel').onclick=_hideCaptureBar;
+  document.getElementById('_gl-cap-go').onclick=()=>{ _hideCaptureBar(); _doCaptureForEntry(_captureEntryId); };
+}
+function _hideCaptureBar(){ const b=document.getElementById('_gl-capture-bar'); if(b) b.remove(); }
+function _showCaptureToast(msg){ _hideCaptureToast(); const t=document.createElement('div'); t.id='_gl-capture-toast'; t.style.cssText='position:fixed;left:50%;transform:translateX(-50%);bottom:calc(96px + env(safe-area-inset-bottom));z-index:9600;background:rgba(15,31,46,0.96);border:1px solid var(--border2,#445);border-radius:10px;padding:10px 16px;font-family:var(--mono);font-size:12px;color:#dce8f4;box-shadow:0 4px 18px rgba(0,0,0,.55)'; t.textContent=msg; document.body.appendChild(t); }
+function _hideCaptureToast(){ const t=document.getElementById('_gl-capture-toast'); if(t) t.remove(); }
+
+async function _doCaptureForEntry(entryId){
   if(!_mapInstance) return;
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
   const entry=(typeof trGetEntry==='function')?trGetEntry(entryId,pid):null;
-  if(!entry){ console.warn('mapCaptureForEntry: entry not found',entryId); return; }
+  if(!entry){ console.warn('_doCaptureForEntry: entry not found',entryId); return; }
+  _showCaptureToast('📷 Capturing…');
+  // Let the toast paint and the popup/bar fully clear before grabbing the canvas.
+  await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
   const canvas=_mapInstance.getCanvas();
   const today=new Date().toLocaleDateString('en-CA');
   const rawBlob=await new Promise(res=>canvas.toBlob(res,'image/png'));
-  if(!rawBlob){ console.warn('mapCaptureForEntry: canvas returned null'); return; }
+  if(!rawBlob){ _hideCaptureToast(); console.warn('_doCaptureForEntry: canvas returned null'); return; }
   const branded=await _compositeBrandWordmark(rawBlob);
-  if(typeof phSaveCapturedImage!=='function') return;
+  if(typeof phSaveCapturedImage!=='function'){ _hideCaptureToast(); return; }
+  _showCaptureToast('☁️ Saving…');
   const catName=(typeof tcGetName==='function')?tcGetName(entry.categoryId,pid):(entry.categoryName||'Drawing');
   const prefill=`${catName} · ${_fmtLabelDate(today)}`;
   const photoEntry=await phSaveCapturedImage(branded,today,prefill);
-  if(!photoEntry){ console.warn('mapCaptureForEntry: save failed'); return; }
+  if(!photoEntry){ _hideCaptureToast(); console.warn('_doCaptureForEntry: save failed'); return; }
   // Link to entry — also seed photoCaptions so ZIP export filename works
   if(typeof trAddPhotoLink==='function') trAddPhotoLink(entryId,photoEntry.id,pid,'general');
   const refreshed=(typeof trGetEntry==='function')?trGetEntry(entryId,pid):null;
@@ -2881,16 +2938,10 @@ async function mapCaptureForEntry(entryId){
     const caps={...(refreshed.photoCaptions||{}),[photoEntry.id]:prefill};
     trSaveEntry({...refreshed,photoCaptions:caps},pid);
   }
-  // Refresh popup so the photo badge count updates
-  if(_trackerPopup){
-    const lngLat=_trackerPopup.getLngLat();
-    const re=(typeof trGetEntry==='function')?trGetEntry(entryId,pid):entry;
-    _showTrackerEntryPopup(lngLat,{id:entryId,categoryId:re.categoryId,categoryName:re.categoryName,date:re.date,measurementValue:re.measurementValue,measurementUnit:re.measurementUnit,acres:re.acres,location:re.location,status:re.status,phase:re.phase,method:re.method,contractor:re.contractor,notes:re.notes});
-  }
-  // Open caption modal so user can confirm or edit the auto-caption
+  _hideCaptureToast();
+  // Popup was closed for framing — go straight to the caption modal.
   _showCaptureCaptionModal(entryId,photoEntry.id,prefill);
 }
-window.mapCaptureForEntry=mapCaptureForEntry;
 
 // Standalone caption modal for capture flow — writes directly to entry.photoCaptions
 // (since we're not inside the entry edit modal's pending state).
@@ -3115,12 +3166,14 @@ function _showTrackerEntryPopup(lngLat,props){
     ${badgeRow}
     ${photoStrip}
     ${entry?.parentId?`<div style="font-size:10px;color:#a0b8c8;margin-top:4px;border-top:1px solid rgba(255,255,255,.08);padding-top:4px">📍 Linked to planned area</div>`:''}
-    <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
-      ${entry?`<button onclick="mapToggleDateLabel('${props.id}')" style="background:${labelOn?'rgba(201,168,76,0.2)':'var(--s2,#1a2a38)'};border:1px solid ${labelOn?'var(--amber,#C9A84C)':'var(--border,#334)'};color:${labelOn?'var(--amber,#C9A84C)':'var(--muted,#888)'};padding:6px;border-radius:6px;font-family:var(--mono);font-size:11px;cursor:pointer;white-space:nowrap">🔖${labelOn?' On':' Label'}</button>`:''}
-      ${entry?`<button onclick="mapCaptureForEntry('${props.id}')" style="background:var(--s2,#1a2a38);border:1px solid var(--border,#334);color:var(--muted,#888);padding:6px;border-radius:6px;font-family:var(--mono);font-size:11px;cursor:pointer;white-space:nowrap" title="Capture map view as photo">📷</button>`:''}
-      ${entry?.entryType==='planned'?`<button onclick="mapActivatePlannedEntry('${props.id}')" style="flex:1;background:rgba(201,168,76,0.2);border:1px solid var(--amber,#C9A84C);color:var(--amber,#C9A84C);padding:6px;border-radius:6px;font-family:var(--mono);font-size:11px;cursor:pointer;font-weight:700;white-space:nowrap">📍 Activate</button>`:''}
-      <button onclick="mapEditTrackerEntry('${props.id}')" style="flex:1;background:var(--amber,#D97706);border:none;color:#111;padding:6px;border-radius:6px;font-family:var(--mono);font-size:11px;cursor:pointer;font-weight:700">✏️ Edit</button>
-      <button onclick="mapDeleteTrackerEntryFromPanel('${props.id}')" style="flex:1;background:var(--s2);border:1px solid var(--border);color:var(--muted);padding:6px;border-radius:6px;font-family:var(--mono);font-size:11px;cursor:pointer;">✕ Remove</button>
+    ${entry?`<div style="display:flex;gap:6px;margin-top:8px">
+      <button onclick="mapToggleDateLabel('${props.id}')" style="flex:1;background:${labelOn?'rgba(201,168,76,0.2)':'var(--s2,#1a2a38)'};border:1px solid ${labelOn?'var(--amber,#C9A84C)':'var(--border,#334)'};color:${labelOn?'var(--amber,#C9A84C)':'var(--muted,#888)'};padding:7px;border-radius:6px;font-family:var(--mono);font-size:11px;cursor:pointer;white-space:nowrap">🔖${labelOn?' On':' Label'}</button>
+      <button onclick="mapCaptureForEntry('${props.id}')" style="flex:1;background:var(--s2,#1a2a38);border:1px solid var(--border,#334);color:var(--muted,#888);padding:7px;border-radius:6px;font-family:var(--mono);font-size:11px;cursor:pointer;white-space:nowrap" title="Capture map view as photo">📷 Capture</button>
+      ${entry?.entryType==='planned'?`<button onclick="mapActivatePlannedEntry('${props.id}')" style="flex:1;background:rgba(201,168,76,0.2);border:1px solid var(--amber,#C9A84C);color:var(--amber,#C9A84C);padding:7px;border-radius:6px;font-family:var(--mono);font-size:11px;cursor:pointer;font-weight:700;white-space:nowrap">📍 Activate</button>`:''}
+    </div>`:''}
+    <div style="display:flex;gap:6px;margin-top:6px">
+      <button onclick="mapEditTrackerEntry('${props.id}')" style="flex:1;background:var(--amber,#D97706);border:none;color:#111;padding:7px;border-radius:6px;font-family:var(--mono);font-size:11px;cursor:pointer;font-weight:700">✏️ Edit</button>
+      <button onclick="mapDeleteTrackerEntryFromPanel('${props.id}')" style="flex:1;background:var(--s2);border:1px solid var(--border);color:var(--muted);padding:7px;border-radius:6px;font-family:var(--mono);font-size:11px;cursor:pointer;">✕ Remove</button>
     </div>
   </div>`;
   _trackerPopup=new mapboxgl.Popup({closeButton:true,closeOnClick:false,className:'gl-tracker-popup'})
@@ -3585,6 +3638,7 @@ window.mapSaveTrackerEntry = mapSaveTrackerEntry;
 window.mapActivateMeasure = mapActivateMeasure;
 window.mapToggleGpsFollow = mapToggleGpsFollow;
 window.mapResetGpsFollow = mapResetGpsFollow;
+window.mapCycleGpsMode = mapCycleGpsMode;
 window.mapShowTrackerSheet = mapShowTrackerSheet;
 window._renderTrackerSheet = _renderTrackerSheet;
 window.mapCloseTrackerSheet = mapCloseTrackerSheet;
