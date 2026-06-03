@@ -1575,6 +1575,7 @@ let _tcAddingColor=null;      // color staged for add row (hex string)
 let _tcConfirmDeleteId=null;  // id of category awaiting inline delete confirm
 let _tcColorTarget=null;      // 'add'|'edit' — which swatch the picker is serving
 let _tcAddingType='area';     // 'area'|'linear' — staged for add row
+let _tcAddingTemplate='seeding'; // template seed for the add row (2026-06-03)
 
 function mapShowTrackerSheet(){
   mapCloseFab();
@@ -1737,46 +1738,161 @@ const _INPUT_STYLE='width:100%;box-sizing:border-box;background:var(--s1);border
 const _LABEL_STYLE='font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:4px';
 function _cdField(label,inner){return `<div><label style="${_LABEL_STYLE}">${label}</label>${inner}</div>`;}
 
+// Working copy of the category's states while the details modal is open.
+let _cdStates=null;
+
+function _cdGenStateId(){ return 's-'+Math.random().toString(36).slice(2,8); }
+
+function _cdStyleOptions(isLinear, sel){
+  const styles = isLinear ? ['solid','dashed','dotted'] : ['solid','hatch','crosshatch','dots'];
+  const labels = isLinear
+    ? {solid:'— Solid',dashed:'– Dashed',dotted:'·· Dotted'}
+    : {solid:'■ Solid',hatch:'▥ Hatch',crosshatch:'▨ Cross',dots:'• Dots'};
+  return styles.map(s=>`<option value="${s}"${s===(sel||'solid')?' selected':''}>${labels[s]}</option>`).join('');
+}
+
+function _cdMiniBtn(extra){
+  return `background:var(--s2);border:1px solid var(--border);color:var(--muted);border-radius:4px;font-family:var(--mono);font-size:11px;padding:5px 7px;cursor:pointer;flex-shrink:0;${extra||''}`;
+}
+
+function _cdRenderStates(isLinear){
+  const wrap=document.getElementById('_cd-states-list');
+  if(!wrap||!_cdStates) return;
+  wrap.innerHTML=_cdStates.map((s,i)=>{
+    const col=/^#[0-9A-Fa-f]{6}$/.test(s.color)?s.color:'#888888';
+    return `<div style="display:flex;align-items:center;gap:5px;margin-bottom:6px">
+      <input type="color" value="${col}" oninput="_cdSetStateColor(${i},this.value)" title="State color" style="width:30px;height:30px;border:none;background:none;padding:0;flex-shrink:0;cursor:pointer">
+      <input type="text" value="${(s.label||'').replace(/"/g,'&quot;')}" oninput="_cdSetStateLabel(${i},this.value)" placeholder="State name" maxlength="24" style="flex:1;min-width:0;${_INPUT_STYLE}">
+      <select onchange="_cdSetStateStyle(${i},this.value)" title="Style" style="width:78px;flex-shrink:0;${_INPUT_STYLE}">${_cdStyleOptions(isLinear,s.style)}</select>
+      <button onclick="_cdSetPlanned(${i})" title="Plan baseline — renders faint" style="${_cdMiniBtn(s.isPlanned?'background:var(--amber);color:#111;border-color:var(--amber);font-weight:700':'')}">plan</button>
+      <button onclick="_cdMoveState(${i},-1)" ${i===0?'disabled style=opacity:.3':''} style="${_cdMiniBtn()}">↑</button>
+      <button onclick="_cdMoveState(${i},1)" ${i===_cdStates.length-1?'disabled style=opacity:.3':''} style="${_cdMiniBtn()}">↓</button>
+      <button onclick="_cdDelState(${i})" ${_cdStates.length<=1?'disabled style=opacity:.3':''} style="${_cdMiniBtn('color:#e74c3c')}">✕</button>
+    </div>`;
+  }).join('');
+}
+function _cdSetStateColor(i,v){ if(_cdStates[i]) _cdStates[i].color=v; }
+function _cdSetStateLabel(i,v){ if(_cdStates[i]) _cdStates[i].label=v; }
+function _cdSetStateStyle(i,v){ if(_cdStates[i]) _cdStates[i].style=v; }
+function _cdSetPlanned(i){
+  _cdStates.forEach((s,j)=>{ s.isPlanned=(j===i); });
+  _cdRenderStates(_cdIsLinear);
+}
+function _cdMoveState(i,dir){
+  const j=i+dir; if(j<0||j>=_cdStates.length) return;
+  const t=_cdStates[i]; _cdStates[i]=_cdStates[j]; _cdStates[j]=t;
+  _cdRenderStates(_cdIsLinear);
+}
+function _cdDelState(i){
+  if(_cdStates.length<=1) return;
+  const wasPlanned=_cdStates[i].isPlanned;
+  _cdStates.splice(i,1);
+  if(wasPlanned && !_cdStates.some(s=>s.isPlanned)) _cdStates[0].isPlanned=true;
+  _cdRenderStates(_cdIsLinear);
+}
+function _cdAddState(){
+  const palette=['#E67E22','#27AE60','#4A90E2','#9B59B6','#C9A84C','#E74C3C','#1E6B3A'];
+  _cdStates.push({id:_cdGenStateId(),label:'',color:palette[_cdStates.length%palette.length],style:'solid',pattern:null,isPlanned:false});
+  _cdRenderStates(_cdIsLinear);
+}
+function _cdToggleMaterial(on){
+  const box=document.getElementById('_cd-material-fields');
+  if(box) box.style.display=on?'flex':'none';
+}
+function _cdToggleCap(){
+  const mode=document.getElementById('_cd-progmode')?.value;
+  const box=document.getElementById('_cd-cap-row');
+  if(box) box.style.display=mode==='running-balance'?'block':'none';
+}
+
+let _cdIsLinear=false;
+
 function mapShowCategoryDetails(catId){
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
   const cat=(typeof tcGetCategory==='function')?tcGetCategory(catId,pid):null;
   if(!cat) return;
   if(document.getElementById('_cat-details-ov')) return;
   const isLinear=cat.measurementType==='linear';
-  let fields;
+  _cdIsLinear=isLinear;
+  // Deep-clone states (synthesizes legacy defaults) so edits don't touch the cache.
+  _cdStates=(typeof tcGetStates==='function'?tcGetStates(cat,pid):[]).map(s=>({...s}));
+  if(!_cdStates.some(s=>s.isPlanned)&&_cdStates.length) _cdStates[0].isPlanned=true;
+
+  const trackMat=(typeof tcTrackMaterial==='function')?tcTrackMaterial(cat,pid):true;
+  const progMode=(typeof tcProgressMode==='function')?tcProgressMode(cat,pid):'per-state-vs-plan';
+  const overMode=(typeof tcOverallMode==='function')?tcOverallMode(cat,pid):'terminal';
+  const statePat=(typeof tcStatePatterns==='function')?tcStatePatterns(cat,pid):false;
+  const capVal=cat.disturbanceCap!=null?cat.disturbanceCap:'';
+  const capUnit=cat.capUnit||cat.defaultUnit||(isLinear?'ft':'ac');
+
+  // Material block (area = lbs/ac calc; linear = spec/supplier descriptors).
+  let materialFields;
   if(isLinear){
-    fields=`
-      ${_cdField('Specification',`<input type="text" id="_cd-spec" value="${cat.specification||''}" placeholder="Standard, heavy duty, J-hook…" style="${_INPUT_STYLE}">`)}
-      ${_cdField('Supplier / Product',`<input type="text" id="_cd-supplier" value="${cat.supplier||''}" placeholder="Manufacturer or vendor name" style="${_INPUT_STYLE}">`)}
-      ${_cdField('Notes',`<input type="text" id="_cd-notes-det" value="${cat.detailNotes||''}" placeholder="Any additional details" style="${_INPUT_STYLE}">`)}`;
+    materialFields=`
+      ${_cdField('Specification',`<input type="text" id="_cd-spec" value="${(cat.specification||'').replace(/"/g,'&quot;')}" placeholder="Standard, heavy duty, J-hook…" style="${_INPUT_STYLE}">`)}
+      ${_cdField('Supplier / Product',`<input type="text" id="_cd-supplier" value="${(cat.supplier||'').replace(/"/g,'&quot;')}" placeholder="Manufacturer or vendor name" style="${_INPUT_STYLE}">`)}
+      ${_cdField('Notes',`<input type="text" id="_cd-notes-det" value="${(cat.detailNotes||'').replace(/"/g,'&quot;')}" placeholder="Any additional details" style="${_INPUT_STYLE}">`)}`;
   } else {
     const typeOptions=['None','Seeding','Lime','Fertilizer','Mulch','Other'];
     const unitOptions=['lbs/ac','tons/ac','gal/ac','bags/ac'];
-    fields=`
+    materialFields=`
       ${_cdField('Amendment Type',`<select id="_cd-type" style="${_INPUT_STYLE}">${typeOptions.map(t=>`<option value="${t}"${(cat.amendmentType||'None')===t?' selected':''}>${t}</option>`).join('')}</select>`)}
-      ${_cdField('Product Name',`<input type="text" id="_cd-product" value="${cat.productName||''}" placeholder="Seed mix, product, formula…" style="${_INPUT_STYLE}">`)}
+      ${_cdField('Product Name',`<input type="text" id="_cd-product" value="${(cat.productName||'').replace(/"/g,'&quot;')}" placeholder="Seed mix, product, formula…" style="${_INPUT_STYLE}">`)}
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
         ${_cdField('Target Rate',`<input type="number" id="_cd-rate" value="${cat.targetRate||''}" step="0.1" min="0" placeholder="e.g. 30" style="${_INPUT_STYLE}">`)}
         ${_cdField('Unit',`<select id="_cd-unit" style="${_INPUT_STYLE}">${unitOptions.map(u=>`<option value="${u}"${(cat.targetRateUnit||'lbs/ac')===u?' selected':''}>${u}</option>`).join('')}</select>`)}
       </div>`;
   }
+
+  const progModeOpts=[['per-state-vs-plan','Per-state vs plan'],['running-balance','Running balance (e.g. disturbed − stabilized)'],['simple-count','Simple count']]
+    .map(([v,l])=>`<option value="${v}"${v===progMode?' selected':''}>${l}</option>`).join('');
+  const overModeOpts=[['terminal','Final state %'],['average','Average of states'],['weighted','Weighted']]
+    .map(([v,l])=>`<option value="${v}"${v===overMode?' selected':''}>${l}</option>`).join('');
+  const capUnitOpts=(isLinear?['ft','yd','m','mi']:['ac','sqft','sqyd','sqm','ha'])
+    .map(u=>`<option value="${u}"${u===capUnit?' selected':''}>${u}</option>`).join('');
+
   const ov=document.createElement('div');
   ov.className='modal-overlay';
   ov.id='_cat-details-ov';
   ov.style.cssText='z-index:5000';
-  ov.innerHTML=`<div class="modal-box" style="max-width:320px;width:90%">
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px">
+  ov.innerHTML=`<div class="modal-box" style="max-width:380px;width:92%">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
       <div style="width:12px;height:12px;border-radius:50%;background:${cat.color||'#888'};flex-shrink:0"></div>
       <div class="modal-title" style="margin:0">${cat.name}</div>
     </div>
-    <div style="display:flex;flex-direction:column;gap:12px;margin-bottom:16px">${fields}</div>
+    <div style="display:flex;flex-direction:column;gap:14px;margin-bottom:16px;max-height:60vh;overflow-y:auto;padding-right:2px">
+      <div>
+        <label style="${_LABEL_STYLE}">States <span style="text-transform:none;color:var(--muted)">— ✏️ editable; ‘plan’ marks the faint baseline</span></label>
+        <div id="_cd-states-list"></div>
+        <button onclick="_cdAddState()" style="${_cdMiniBtn('width:100%;justify-content:center;padding:7px;color:var(--text)')}">+ Add state</button>
+      </div>
+      <label style="display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:11px;color:var(--text);cursor:pointer">
+        <input type="checkbox" id="_cd-statepat" ${statePat?'checked':''}> Distinguish states by pattern (not just color)
+      </label>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        ${_cdField('Progress mode',`<select id="_cd-progmode" onchange="_cdToggleCap()" style="${_INPUT_STYLE}">${progModeOpts}</select>`)}
+        ${_cdField('Overall %',`<select id="_cd-overmode" style="${_INPUT_STYLE}">${overModeOpts}</select>`)}
+      </div>
+      <div id="_cd-cap-row" style="display:${progMode==='running-balance'?'block':'none'}">
+        <label style="${_LABEL_STYLE}">Disturbance limit (warn above)</label>
+        <div style="display:grid;grid-template-columns:1fr 90px;gap:8px">
+          <input type="number" id="_cd-cap" value="${capVal}" step="0.1" min="0" placeholder="e.g. 5" style="${_INPUT_STYLE}">
+          <select id="_cd-capunit" style="${_INPUT_STYLE}">${capUnitOpts}</select>
+        </div>
+      </div>
+      <label style="display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:11px;color:var(--text);cursor:pointer">
+        <input type="checkbox" id="_cd-trackmat" ${trackMat?'checked':''} onchange="_cdToggleMaterial(this.checked)"> Track material / rate (lbs per acre, etc.)
+      </label>
+      <div id="_cd-material-fields" style="display:${trackMat?'flex':'none'};flex-direction:column;gap:12px">${materialFields}</div>
+    </div>
     <div class="modal-btns">
       <button class="modal-cancel" id="_cd-cancel">Cancel</button>
       <button class="modal-confirm" id="_cd-save">Save</button>
     </div>
   </div>`;
   document.body.appendChild(ov);
-  document.getElementById('_cd-cancel').onclick=()=>ov.remove();
+  _cdRenderStates(isLinear);
+  document.getElementById('_cd-cancel').onclick=()=>{ _cdStates=null; ov.remove(); };
   document.getElementById('_cd-save').onclick=()=>mapSaveCategoryDetails(catId,ov,isLinear);
 }
 
@@ -1784,24 +1900,49 @@ async function mapSaveCategoryDetails(catId, ov, isLinear){
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
   const existing=(typeof tcGetCategory==='function')?tcGetCategory(catId,pid):null;
   if(!existing) return;
-  let patch;
-  if(isLinear){
-    patch={
-      specification: document.getElementById('_cd-spec')?.value.trim()||null,
-      supplier:      document.getElementById('_cd-supplier')?.value.trim()||null,
-      detailNotes:   document.getElementById('_cd-notes-det')?.value.trim()||null
-    };
-  } else {
-    patch={
-      amendmentType: document.getElementById('_cd-type')?.value||'None',
-      productName:   document.getElementById('_cd-product')?.value.trim()||null,
-      targetRate:    parseFloat(document.getElementById('_cd-rate')?.value)||null,
-      targetRateUnit:document.getElementById('_cd-unit')?.value||'lbs/ac'
-    };
+  // States — drop blank-labeled rows; ensure ids + exactly one planned baseline.
+  let states=(_cdStates||[]).map(s=>({
+    id:s.id||_cdGenStateId(),
+    label:(s.label||'').trim()||'State',
+    color:/^#[0-9A-Fa-f]{6}$/.test(s.color)?s.color:'#888888',
+    style:s.style||'solid',
+    pattern:s.pattern||null,
+    isPlanned:!!s.isPlanned
+  }));
+  if(!states.length) states=[{id:_cdGenStateId(),label:'Planned',color:existing.color||'#888',style:'solid',pattern:null,isPlanned:true}];
+  if(!states.some(s=>s.isPlanned)) states[0].isPlanned=true;
+  // Only the first planned wins (guard against multiple)
+  let seenPlan=false;
+  states.forEach(s=>{ if(s.isPlanned){ if(seenPlan) s.isPlanned=false; else seenPlan=true; } });
+
+  const trackMaterial=!!document.getElementById('_cd-trackmat')?.checked;
+  const progressMode=document.getElementById('_cd-progmode')?.value||'per-state-vs-plan';
+  const overallMode=document.getElementById('_cd-overmode')?.value||'terminal';
+  const statePatterns=!!document.getElementById('_cd-statepat')?.checked;
+  const patch={ states, trackMaterial, progressMode, overallMode, statePatterns };
+
+  if(progressMode==='running-balance'){
+    const cv=parseFloat(document.getElementById('_cd-cap')?.value);
+    patch.disturbanceCap=isNaN(cv)?null:cv;
+    patch.capUnit=document.getElementById('_cd-capunit')?.value||existing.defaultUnit||(isLinear?'ft':'ac');
   }
+
+  if(isLinear){
+    patch.specification=document.getElementById('_cd-spec')?.value.trim()||null;
+    patch.supplier=document.getElementById('_cd-supplier')?.value.trim()||null;
+    patch.detailNotes=document.getElementById('_cd-notes-det')?.value.trim()||null;
+  } else if(trackMaterial){
+    patch.amendmentType=document.getElementById('_cd-type')?.value||'None';
+    patch.productName=document.getElementById('_cd-product')?.value.trim()||null;
+    patch.targetRate=parseFloat(document.getElementById('_cd-rate')?.value)||null;
+    patch.targetRateUnit=document.getElementById('_cd-unit')?.value||'lbs/ac';
+  }
+
   if(typeof tcSaveCategory==='function') await tcSaveCategory({...existing,...patch},pid);
+  _cdStates=null;
   ov.remove();
   _renderTrackerSheet();
+  if(typeof mapRenderTrackerLayers==='function') mapRenderTrackerLayers();
 }
 
 // ── Color picker popover ──────────────────
@@ -1870,10 +2011,21 @@ function mapTcSetAddType(type){
   const fillCtls=document.getElementById('map-tc-add-fill-controls');
   if(fillCtls) fillCtls.style.display=type==='linear'?'none':'';
 }
+// Template picker on the Add sheet — seeds measurement type, then the schema
+// is merged in on save (mapTrackerSaveAdd). 2026-06-03.
+function mapTcSetTemplate(template){
+  _tcAddingTemplate=template||'seeding';
+  // Templates that imply a measurement type pre-select it (user can still flip).
+  const impliedType = template==='linear-bmp' ? 'linear' : 'area';
+  mapTcSetAddType(impliedType);
+}
 function mapTrackerShowAdd(){
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
   _tcAddingColor=(typeof tcNextColor==='function')?tcNextColor(pid):'#E67E22';
   _tcAddingType='area';
+  _tcAddingTemplate='seeding';
+  const tplSel=document.getElementById('map-tc-add-template');
+  if(tplSel) tplSel.value='seeding';
   mapTcSetAddType('area');
   const add=document.getElementById('map-tracker-sheet-add');
   const preview=document.getElementById('map-tc-add-preview');
@@ -1898,7 +2050,11 @@ async function mapTrackerSaveAdd(){
   const lineWidth=parseInt(document.getElementById('map-tc-add-linewidth')?.value)||2;
   const fillStyle=measurementType==='linear'?'solid':(document.getElementById('map-tc-add-fillstyle')?.value||'solid');
   const fillOpacity=parseFloat(document.getElementById('map-tc-add-fillopacity')?.value)||0.35;
-  await tcSaveCategory({name,color:_tcAddingColor||'#E67E22',measurementType,defaultUnit,lineStyle,lineWidth,fillStyle,fillOpacity},pid);
+  // Seed the category schema from the chosen template; explicit user choices
+  // (name/color/type/unit/styling) override the template defaults.
+  const template=_tcAddingTemplate||'seeding';
+  const schema=(typeof tcTemplateSchema==='function')?tcTemplateSchema(template,measurementType):{};
+  await tcSaveCategory({...schema,template,name,color:_tcAddingColor||'#E67E22',measurementType,defaultUnit,lineStyle,lineWidth,fillStyle,fillOpacity},pid);
   mapTrackerHideAdd();
   _renderTrackerSheet();
 }
@@ -2084,9 +2240,10 @@ function mapShowTrackerModal(feat,category){
   _pendingPhotoTypes={};
   _pendingPhotoCaptions={};
   mapRefreshEntryPhotoStrip();
-  // Seed calculator — only relevant for area categories
+  // Seed calculator — area categories that track material only
+  const trackMat=(typeof tcTrackMaterial==='function')?tcTrackMaterial(catDetails,pid):true;
   const calcSection=document.getElementById('map-tr-calc-section');
-  if(calcSection) calcSection.style.display=measType==='linear'?'none':'';
+  if(calcSection) calcSection.style.display=(measType==='linear'||!trackMat)?'none':'';
   const rateEl=document.getElementById('map-tr-rate');
   const calcEl=document.getElementById('map-tr-calc-result');
   if(rateEl) rateEl.value=catDetails?.targetRate||'';
@@ -2109,10 +2266,23 @@ function mapShowTrackerModal(feat,category){
   const catName=(typeof tcGetName==='function')?tcGetName(category,pid):(category||'Unknown');
   document.getElementById('map-tracker-cat-dot').style.background=catColor;
   document.getElementById('map-tracker-cat-label').textContent=catName;
-  _populateEntryDropdowns();
+  const dd=_populateEntryDropdowns(category);
+  // State picker — child overlays pick a non-planned state; hidden for the plan baseline.
+  const stateRow=document.getElementById('map-tr-state-row');
+  if(stateRow){
+    if(isPlanned){ stateRow.style.display='none'; }
+    else {
+      const defState=(typeof tcDefaultChildState==='function')?tcDefaultChildState(category,pid):null;
+      _populateEntryStates(category, defState?defState.id:null);
+      const hasStates=(document.getElementById('map-tr-state')?.options.length||0)>0;
+      stateRow.style.display=hasStates?'block':'none';
+    }
+  }
   const areaFields=document.getElementById('map-tr-area-fields');
   const linearFields=document.getElementById('map-tr-linear-fields');
-  if(areaFields) areaFields.style.display=measType==='linear'?'none':'';
+  // Phase/method only show when this category actually defines them (drops seeding implication).
+  const hasDesc=(dd.phases&&dd.phases.length)||(dd.methods&&dd.methods.length);
+  if(areaFields) areaFields.style.display=(measType==='linear'||!hasDesc)?'none':'';
   if(linearFields) linearFields.style.display=measType==='linear'?'':'none';
   const phaseEl=document.getElementById('map-tr-phase');
   const methodEl=document.getElementById('map-tr-method');
@@ -2126,13 +2296,24 @@ function mapShowTrackerModal(feat,category){
   document.getElementById('map-tracker-modal').classList.add('open');
 }
 
-function _populateEntryDropdowns(){
-  const phases=window._amendmentPhases||['N/A'];
-  const methods=window._amendmentMethods||['N/A'];
+function _populateEntryDropdowns(category){
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const phases=(typeof tcCategoryPhases==='function')?tcCategoryPhases(category,pid):(window._amendmentPhases||['N/A']);
+  const methods=(typeof tcCategoryMethods==='function')?tcCategoryMethods(category,pid):(window._amendmentMethods||['N/A']);
   const phaseEl=document.getElementById('map-tr-phase');
   const methodEl=document.getElementById('map-tr-method');
-  if(phaseEl){ phaseEl.innerHTML=phases.map(p=>`<option value="${p}">${p}</option>`).join(''); }
-  if(methodEl){ methodEl.innerHTML=methods.map(m=>`<option value="${m}">${m}</option>`).join(''); }
+  if(phaseEl){ phaseEl.innerHTML=(phases.length?phases:['N/A']).map(p=>`<option value="${p}">${p}</option>`).join(''); }
+  if(methodEl){ methodEl.innerHTML=(methods.length?methods:['N/A']).map(m=>`<option value="${m}">${m}</option>`).join(''); }
+  return {phases,methods};
+}
+
+// Populate the State picker with the category's non-planned states (child overlay buckets).
+function _populateEntryStates(category, selectedStateId){
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const sel=document.getElementById('map-tr-state');
+  if(!sel) return;
+  const states=(typeof tcGetStates==='function')?tcGetStates(category,pid).filter(s=>!s.isPlanned):[];
+  sel.innerHTML=states.map(s=>`<option value="${s.id}"${s.id===selectedStateId?' selected':''}>${s.label}</option>`).join('');
 }
 
 function mapCloseTrackerModal(){
@@ -2274,6 +2455,14 @@ function mapSaveTrackerEntry(){
       if(_drawEntryType==='planned') return null;
       const sel=document.getElementById('map-tr-link-plan');
       return (sel&&sel.value)?sel.value:(_activePlannedEntryId||null);
+    })(),
+    // Which state bucket this child overlay belongs to (null for the plan baseline).
+    state:(()=>{
+      if(_drawEntryType==='planned') return null;
+      const sv=document.getElementById('map-tr-state')?.value;
+      if(sv) return sv;
+      const ds=(typeof tcDefaultChildState==='function')?tcDefaultChildState(_drawCategory,pid):null;
+      return ds?ds.id:null;
     })(),
   };
   // Editing an existing entry — preserve id so trSaveEntry updates in place
@@ -2673,10 +2862,13 @@ function _addCategoryFillLayer(srcId,cat){
   const fs=cat.fillStyle||'solid';
   const fo=cat.fillOpacity!=null?cat.fillOpacity:0.35;
   let paint;
+  // Per-state color is data-driven via the `stateColor` feature property (solid fills);
+  // hatch/crosshatch patterns remain category-colored (per-state pattern is a follow-up).
+  const fillColor=['coalesce',['get','stateColor'],color];
   if(fs==='hatch')        paint={'fill-pattern':'tr-hatch-'+cat.id};
   else if(fs==='crosshatch') paint={'fill-pattern':'tr-xhatch-'+cat.id};
-  else if(fs==='outline')    paint={'fill-color':color,'fill-opacity':0};
-  else                       paint={'fill-color':color,'fill-opacity':['case',['==',['get','entryType'],'planned'],0.07,fo]};
+  else if(fs==='outline')    paint={'fill-color':fillColor,'fill-opacity':0};
+  else                       paint={'fill-color':fillColor,'fill-opacity':['case',['get','faint'],0.07,fo]};
   _mapInstance.addLayer({id:srcId+'-fill',type:'fill',source:srcId,filter:['==',['geometry-type'],'Polygon'],paint});
 }
 
@@ -2684,7 +2876,8 @@ function _addCategoryLineLayer(srcId,cat){
   const color=cat.color||'#888';
   const lw=cat.lineWidth||2;
   const dashArr=_TC_DASH_ARRAYS[cat.lineStyle||'solid']||null;
-  const paint={'line-color':color,'line-width':['case',['==',['get','entryType'],'planned'],Math.max(1,lw-0.5),lw],'line-opacity':['case',['==',['get','entryType'],'planned'],0.45,0.9]};
+  const lineColor=['coalesce',['get','stateColor'],color];
+  const paint={'line-color':lineColor,'line-width':['case',['get','faint'],Math.max(1,lw-0.5),lw],'line-opacity':['case',['get','faint'],0.45,0.9]};
   if(dashArr) paint['line-dasharray']=dashArr;
   _mapInstance.addLayer({id:srcId+'-line',type:'line',source:srcId,
     filter:['any',['==',['geometry-type'],'Polygon'],['==',['geometry-type'],'LineString']],paint});
@@ -2695,7 +2888,7 @@ function _addCategoryCircleLayer(srcId,cat){
   const r=5+(cat.lineWidth||2);
   _mapInstance.addLayer({id:srcId+'-circle',type:'circle',source:srcId,
     filter:['==',['geometry-type'],'Point'],
-    paint:{'circle-color':color,'circle-radius':r,'circle-opacity':0.9,'circle-stroke-color':'#fff','circle-stroke-width':1.5}});
+    paint:{'circle-color':['coalesce',['get','stateColor'],color],'circle-radius':r,'circle-opacity':0.9,'circle-stroke-color':'#fff','circle-stroke-width':1.5}});
 }
 
 // ── Date label helpers ──
@@ -3074,16 +3267,23 @@ function mapRenderTrackerLayers(){
     }
   });
 
+  const _rtPid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
   cats.forEach(cat=>{
     const src='tracker-'+cat.id;
     const color=cat.color||'#888';
     const visible=_tcLayerVisible[cat.id]!==false;
-    const geojson={type:'FeatureCollection',features:(visible?byCategory[cat.id]:[]).map(e=>({
-      type:'Feature',
-      id:e.id,
-      properties:{id:e.id,categoryId:e.categoryId||e.category,categoryName:e.categoryName||e.category,date:e.date,acres:e.acres,measurementValue:e.measurementValue??null,measurementUnit:e.measurementUnit||null,notes:e.notes,location:e.location,phase:e.phase||null,method:e.method||null,status:e.status||null,contractor:e.contractor||null,entryType:e.entryType||'installed'},
-      geometry:e.geometry
-    }))};
+    const geojson={type:'FeatureCollection',features:(visible?byCategory[cat.id]:[]).map(e=>{
+      // Per-state render props: stateColor drives fill/line color; faint = plan baseline.
+      const st=(typeof tcEntryState==='function')?tcEntryState(e,cat,_rtPid):null;
+      const faint=st?!!st.isPlanned:(e.entryType==='planned');
+      const stateColor=(st&&/^#[0-9A-Fa-f]{6}$/.test(st.color))?st.color:color;
+      return {
+        type:'Feature',
+        id:e.id,
+        properties:{id:e.id,categoryId:e.categoryId||e.category,categoryName:e.categoryName||e.category,date:e.date,acres:e.acres,measurementValue:e.measurementValue??null,measurementUnit:e.measurementUnit||null,notes:e.notes,location:e.location,phase:e.phase||null,method:e.method||null,status:e.status||null,contractor:e.contractor||null,entryType:e.entryType||'installed',state:e.state||null,stateColor,faint},
+        geometry:e.geometry
+      };
+    })};
 
     _ensureCategoryPatternImages([cat]);
     if(_mapInstance.getSource(src)){
@@ -3247,7 +3447,18 @@ function mapEditTrackerEntry(entryId){
   document.getElementById('map-tr-date').value=entry.date||'';
   document.getElementById('map-tr-location').value=entry.location||'';
   document.getElementById('map-tr-notes').value=entry.notes||'';
-  _populateEntryDropdowns();
+  const dd=_populateEntryDropdowns(_drawCategory);
+  // State picker — pre-select the entry's current state (child overlays only).
+  const editStateRow=document.getElementById('map-tr-state-row');
+  if(editStateRow){
+    if(_drawEntryType==='planned'){ editStateRow.style.display='none'; }
+    else {
+      const dcs=(typeof tcDefaultChildState==='function')?tcDefaultChildState(_drawCategory,pid):null;
+      _populateEntryStates(_drawCategory, entry.state||(dcs?dcs.id:null));
+      const hasStates=(document.getElementById('map-tr-state')?.options.length||0)>0;
+      editStateRow.style.display=hasStates?'block':'none';
+    }
+  }
   const phaseEl=document.getElementById('map-tr-phase');
   const methodEl=document.getElementById('map-tr-method');
   const conEl=document.getElementById('map-tr-contractor');
@@ -3263,7 +3474,8 @@ function mapEditTrackerEntry(entryId){
   const editDefUnit=editCat?.defaultUnit||(editMeasType==='linear'?'ft':'ac');
   const editAreaFields=document.getElementById('map-tr-area-fields');
   const editLinearFields=document.getElementById('map-tr-linear-fields');
-  if(editAreaFields) editAreaFields.style.display=editMeasType==='linear'?'none':'';
+  const editHasDesc=(dd.phases&&dd.phases.length)||(dd.methods&&dd.methods.length);
+  if(editAreaFields) editAreaFields.style.display=(editMeasType==='linear'||!editHasDesc)?'none':'';
   if(editLinearFields) editLinearFields.style.display=editMeasType==='linear'?'':'none';
   const entryUnit=entry.measurementUnit||(entry.acres!=null?'ac':'ft');
   const entryValue=entry.measurementValue!==undefined?entry.measurementValue:entry.acres;
@@ -3276,8 +3488,9 @@ function mapEditTrackerEntry(entryId){
     unitSel.innerHTML=_buildUnitOpts(opts,entryUnit);
   }
   if(measInput){ measInput.value=entryValue||''; measInput.dataset.unit=entryUnit; }
+  const editTrackMat=(typeof tcTrackMaterial==='function')?tcTrackMaterial(editCat,editPid):true;
   const calcSection=document.getElementById('map-tr-calc-section');
-  if(calcSection) calcSection.style.display=editMeasType==='linear'?'none':'';
+  if(calcSection) calcSection.style.display=(editMeasType==='linear'||!editTrackMat)?'none':'';
   const rateEl=document.getElementById('map-tr-rate');
   if(rateEl) rateEl.value=entry.fields?.appliedRate||'';
   const calcEl=document.getElementById('map-tr-calc-result');
@@ -3695,6 +3908,17 @@ window.mapTrackerShowAdd = mapTrackerShowAdd;
 window.mapTrackerHideAdd = mapTrackerHideAdd;
 window.mapTrackerSaveAdd = mapTrackerSaveAdd;
 window.mapTcSetAddType   = mapTcSetAddType;
+window.mapTcSetTemplate  = mapTcSetTemplate;
+// Category schema editor (details modal) — 2026-06-03
+window._cdAddState       = _cdAddState;
+window._cdDelState       = _cdDelState;
+window._cdMoveState      = _cdMoveState;
+window._cdSetPlanned     = _cdSetPlanned;
+window._cdSetStateColor  = _cdSetStateColor;
+window._cdSetStateLabel  = _cdSetStateLabel;
+window._cdSetStateStyle  = _cdSetStateStyle;
+window._cdToggleMaterial = _cdToggleMaterial;
+window._cdToggleCap      = _cdToggleCap;
 window.mapTrackerUnitChange = mapTrackerUnitChange;
 window.mapShowColorPicker = mapShowColorPicker;
 window.mapSelectColor = mapSelectColor;

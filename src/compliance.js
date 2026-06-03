@@ -582,6 +582,76 @@ function clRefreshDetailPhotoStrip(entryId){
   clRenderTrackerCard();
 }
 
+// Per-state progress bars for schema categories (states + templates, 2026-06-03).
+// per-state-vs-plan → one bar per non-planned state vs the planned total + overall (terminal %).
+// running-balance   → net (active states − terminal state) vs editable cap, warns when over.
+function _catStateBars(cid, g, pid){
+  const cat=(typeof tcGetCategory==='function')?tcGetCategory(cid,pid):null;
+  if(!cat) return '';
+  const defUnit=(typeof tcGetDefaultUnit==='function')?tcGetDefaultUnit(cid,pid):'ac';
+  const mode=(typeof tcProgressMode==='function')?tcProgressMode(cid,pid):'per-state-vs-plan';
+  const states=(typeof tcGetStates==='function')?tcGetStates(cat,pid):[];
+  const childStates=states.filter(s=>!s.isPlanned);
+  if(!childStates.length) return '';
+  const planned=g.entries.filter(e=>e.entryType==='planned');
+  const installed=g.entries.filter(e=>e.entryType!=='planned');
+  const dcs=(typeof tcDefaultChildState==='function')?tcDefaultChildState(cat,pid):null;
+  const measure=(e)=>(typeof trEntryMeasure==='function')?trEntryMeasure(e,defUnit,pid):0;
+  const fmt=(v)=>(typeof tcFormatMeasurement==='function')?tcFormatMeasurement(v,defUnit):`${(v||0).toFixed(2)} ${defUnit}`;
+  const planTotal=planned.reduce((s,e)=>s+measure(e),0);
+  const stateTotal=(sid)=>installed.filter(e=>(e.state||(dcs?dcs.id:null))===sid).reduce((s,e)=>s+measure(e),0);
+
+  if(mode==='running-balance'){
+    const terminal=childStates[childStates.length-1];
+    const activeStates=childStates.slice(0,-1).length?childStates.slice(0,-1):[childStates[0]];
+    const activeTotal=activeStates.reduce((s,st)=>s+stateTotal(st.id),0);
+    const resolvedTotal=childStates.length>1?stateTotal(terminal.id):0;
+    const net=Math.max(0,activeTotal-resolvedTotal);
+    const cap=cat.disturbanceCap;
+    const over=cap!=null&&net>cap;
+    const pct=cap!=null&&cap>0?Math.min(100,(net/cap)*100):(net>0?100:0);
+    const color=over?'#e74c3c':(net>0?'var(--amber)':'var(--muted)');
+    const lhs=childStates.length>1?`${activeStates.map(s=>s.label).join('+')} − ${terminal.label}`:activeStates[0].label;
+    const capText=cap!=null?` / ${fmt(cap)} limit`:'';
+    return `<div style="padding:6px 16px 8px;background:var(--s1)">
+      <div style="display:flex;justify-content:space-between;font-family:var(--mono);font-size:9px;color:var(--muted);margin-bottom:3px">
+        <span>${lhs}: <b style="color:${color}">${fmt(net)}</b>${capText}</span>
+        ${over?`<span style="color:#e74c3c;font-weight:700">⚠ OVER LIMIT</span>`:(cap!=null?`<span style="color:${color}">${pct.toFixed(0)}%</span>`:'')}
+      </div>
+      ${cap!=null?`<div style="height:4px;background:var(--border);border-radius:2px;overflow:hidden"><div style="height:100%;width:${pct.toFixed(1)}%;background:${color};border-radius:2px"></div></div>`:''}
+    </div>`;
+  }
+
+  // per-state-vs-plan / simple-count: bar per state + overall
+  const rows=childStates.map(st=>{
+    const tot=stateTotal(st.id);
+    if(tot<=0 && planTotal<=0) return '';
+    const pct=planTotal>0?Math.min(100,(tot/planTotal)*100):null;
+    const col=(st.color&&/^#[0-9A-Fa-f]{6}$/.test(st.color))?st.color:'var(--amber)';
+    return `<div style="display:flex;align-items:center;gap:6px;margin-bottom:3px">
+      <span style="width:8px;height:8px;border-radius:2px;background:${col};flex-shrink:0"></span>
+      <span style="font-family:var(--mono);font-size:9px;color:var(--muted);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${st.label}: ${fmt(tot)}${planTotal>0?` / ${fmt(planTotal)}`:''}</span>
+      ${pct!=null?`<span style="font-family:var(--mono);font-size:9px;color:${col};flex-shrink:0">${pct.toFixed(0)}%</span>`:''}
+      <div style="width:54px;height:4px;background:var(--border);border-radius:2px;overflow:hidden;flex-shrink:0"><div style="height:100%;width:${pct!=null?pct.toFixed(1):0}%;background:${col};border-radius:2px"></div></div>
+    </div>`;
+  }).filter(Boolean).join('');
+  if(!rows) return '';
+  let overall='';
+  if(planTotal>0){
+    const overMode=(typeof tcOverallMode==='function')?tcOverallMode(cid,pid):'terminal';
+    let opct;
+    if(overMode==='average'){
+      const ps=childStates.map(st=>Math.min(100,(stateTotal(st.id)/planTotal)*100));
+      opct=ps.length?ps.reduce((a,b)=>a+b,0)/ps.length:0;
+    } else {
+      opct=Math.min(100,(stateTotal(childStates[childStates.length-1].id)/planTotal)*100);
+    }
+    const ocol=opct>=100?'var(--green)':'var(--amber)';
+    overall=`<div style="display:flex;justify-content:space-between;font-family:var(--mono);font-size:9px;color:var(--text);margin-top:4px;padding-top:4px;border-top:1px solid var(--border)"><span>Overall complete</span><span style="color:${ocol};font-weight:700">${opct.toFixed(0)}%</span></div>`;
+  }
+  return `<div style="padding:6px 16px 8px;background:var(--s1)">${rows}${overall}</div>`;
+}
+
 // ── Tracker Log modal ── full searchable database of all tracker entries
 function clShowTrackerLog(){
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
@@ -719,6 +789,14 @@ function clShowTrackerLog(){
             :e.acres?`<span style="font-family:var(--mono);font-size:10px;color:var(--amber);white-space:nowrap;flex-shrink:0">${e.acres} ac</span>`:'';
                 const isPlannedRow=e.entryType==='planned';
           const planBadge=isPlannedRow?`<span style="font-family:var(--mono);font-size:9px;font-weight:700;color:var(--amber);white-space:nowrap;flex-shrink:0;letter-spacing:.06em">PLAN</span>`:'';
+          // State badge (child overlays of schema categories) — colored dot + label.
+          const stBadge=(()=>{
+            if(isPlannedRow) return '';
+            const st=(typeof tcEntryState==='function')?tcEntryState(e,e.categoryId||e.category,pid):null;
+            if(!st||!st.label) return '';
+            const col=(st.color&&/^#[0-9A-Fa-f]{6}$/.test(st.color))?st.color:'var(--muted)';
+            return `<span style="display:inline-flex;align-items:center;gap:3px;flex-shrink:0;font-family:var(--mono);font-size:9px;color:var(--muted);white-space:nowrap"><span style="width:7px;height:7px;border-radius:2px;background:${col}"></span>${st.label}</span>`;
+          })();
           // For linear entries, show measurement context in middle column
           if(!amtText&&e.measurementValue!=null&&e.measurementUnit){
             const fv=parseFloat(e.measurementValue);
@@ -735,6 +813,7 @@ function clShowTrackerLog(){
           return `<div onclick="clShowTrackerDetail('${e.id}')" style="display:flex;align-items:center;gap:8px;padding:9px 16px 9px ${isPlannedRow?'27':'30'}px;border-top:1px solid var(--border);cursor:pointer;${isPlannedRow?'border-left:3px solid var(--amber);background:rgba(201,168,76,0.06)':''}">
             <span style="font-family:var(--mono);font-size:10px;color:var(--text);white-space:nowrap;flex-shrink:0;min-width:68px">${e.date||'—'}</span>
             ${planBadge}
+            ${stBadge}
             <span style="font-family:var(--mono);font-size:11px;color:var(--muted);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${amtText}</span>
             ${rowMeas}
             ${pc?`<span style="font-size:10px;flex-shrink:0;color:var(--text)">📷 ${pc}</span>`:''}
@@ -746,6 +825,9 @@ function clShowTrackerLog(){
         const meta=[_metaTotalText,gPhotos>0?`📷 ${gPhotos}`:'',gSeeds>0?`🏷️ ${gSeeds}`:'',gReports>0?`📋 ${gReports}`:'',`${_installed.length} ${_installed.length===1?'entry':'entries'}`].filter(Boolean).join(' · ');
         // Cumulative actual vs required bar — only when entries share the same actual unit
         const catBar=(()=>{
+          // Schema categories (custom states/templates) → per-state bars; legacy → existing material/linear bar.
+          const _catObj=(typeof tcGetCategory==='function')?tcGetCategory(cid,pid):null;
+          if(_catObj&&Array.isArray(_catObj.states)&&_catObj.states.length) return _catStateBars(cid,g,pid);
           const catMeasType=(typeof tcGetMeasurementType==='function')?tcGetMeasurementType(cid,pid):'area';
           if(catMeasType==='linear'){
             const defUnit=(typeof tcGetDefaultUnit==='function')?tcGetDefaultUnit(cid,pid):'ft';
@@ -997,12 +1079,13 @@ async function _tlogExportXlsx(scheme, entries, pid){
 
   const TEAL='006B75', AMBER='C9A84C', WHITE='FFFFFF';
   const TEAL_LIGHT='E8F4F5', GRAY_LIGHT='F2F2F2', GRAY_ROW='F9F9F9', AMBER_LIGHT='FDF5DC';
-  const NCOLS=15;
+  const NCOLS=16;
 
   const cols=[
     {header:'Date',            width:12},
     {header:'Category',        width:24},
     {header:'Type',            width:16},
+    {header:'State',           width:14},
     {header:'Measurement',     width:12},
     {header:'Location',        width:22},
     {header:'Notes',           width:36},
@@ -1068,8 +1151,13 @@ async function _tlogExportXlsx(scheme, entries, pid){
     const catName=e.categoryName||(typeof tcGetName==='function'?tcGetName(e.categoryId,pid):'Unknown');
     const f=e.fields||{};
     const rateUnit=f.requiredUnit?f.requiredUnit+'/ac':'';
+    const stLabel=(()=>{
+      if(e.entryType==='planned') return '';
+      const s=(typeof tcEntryState==='function')?tcEntryState(e,e.categoryId,pid):null;
+      return s?s.label:(e.state||'');
+    })();
     return [
-      e.date||'', catName, typeLabel,
+      e.date||'', catName, typeLabel, stLabel,
       e.measurementValue!=null?`${e.measurementValue} ${e.measurementUnit||''}`:e.acres!=null?`${e.acres} ac`:'',
       e.location||'', e.notes||'',
       Array.isArray(e.photoIds)?e.photoIds.length:'',
@@ -1138,7 +1226,7 @@ async function _tlogExportXlsx(scheme, entries, pid){
         :installed.length?`${installed.length} entr${installed.length!==1?'ies':'y'} — no amounts`:'';
 
       const pRow=ws.addRow([
-        '', catName, planTypeLabel,
+        '', catName, planTypeLabel, '',
         totalPlanMeas>0?`${totalPlanMeas.toFixed(2)} ${planMeasUnit}`:'',
         planLocations, planNotes,
         '', totalPlanSeeds||'', '',
@@ -1172,7 +1260,7 @@ async function _tlogExportXlsx(scheme, entries, pid){
         const totalSeeds=installed.reduce((s,e)=>s+(e.fields?.seedTagCount||0),0);
         const totalPhotos=installed.reduce((s,e)=>s+(Array.isArray(e.photoIds)?e.photoIds.length:0),0);
         const tRow=ws.addRow([
-          '', catName, `Category Total (${installed.length} entr${installed.length!==1?'ies':'y'})`,
+          '', catName, `Category Total (${installed.length} entr${installed.length!==1?'ies':'y'})`, '',
           totalMeas>0?`${totalMeas.toFixed(2)} ${measUnit}`:'',
           '', '',
           totalPhotos||'', totalSeeds||'', '',
@@ -1195,9 +1283,9 @@ async function _tlogExportXlsx(scheme, entries, pid){
     }
   });
 
-  // ── Data bar on Progress column (O) — renders on plan rows that have a numeric % value ──
+  // ── Data bar on Progress column (P) — renders on plan rows that have a numeric % value ──
   ws.addConditionalFormatting({
-    ref:'O10:O10000',
+    ref:'P10:P10000',
     rules:[{
       type:'dataBar',
       cfvo:[{type:'num',value:0},{type:'num',value:100}],

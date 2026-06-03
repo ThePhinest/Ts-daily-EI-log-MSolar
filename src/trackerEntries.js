@@ -235,6 +235,39 @@ function trGetCumulativeTotals(projectId){
   return Object.values(map).sort((a, b) => b.totalValue - a.totalValue);
 }
 
+// ── Per-state overlay helpers (added 2026-06-03) ──
+// A child overlay carries `state` (the category state-id it belongs to) and
+// `parentId` (the planned parent). Legacy children have neither → they fold
+// into the category's default child state via tcDefaultChildState.
+
+// Geometric measurement of an entry, normalized to `toUnit`. Handles the
+// new measurementValue/measurementUnit shape and the legacy `acres` field.
+function trEntryMeasure(entry, toUnit, projectId){
+  if(!entry) return 0;
+  const v = entry.measurementValue !== undefined ? parseFloat(entry.measurementValue)
+          : (entry.acres !== undefined ? parseFloat(entry.acres) : NaN);
+  if(isNaN(v) || !v) return 0;
+  const u = entry.measurementUnit || 'ac';
+  if(!toUnit || toUnit === u) return v;
+  return (typeof tcConvertMeasurement === 'function') ? (tcConvertMeasurement(v, u, toUnit) || 0) : v;
+}
+
+// Resolve the state-id a child overlay aggregates under (legacy → default child state).
+function trEntryStateId(entry, projectId){
+  if(entry && entry.entryType === 'planned') return null; // parent, not a state bucket
+  if(entry && entry.state) return entry.state;
+  if(typeof tcDefaultChildState === 'function'){
+    const s = tcDefaultChildState(entry?.categoryId, projectId);
+    return s ? s.id : null;
+  }
+  return null;
+}
+
+// Live child overlays of a parent plan (excludes the parent, soft-deleted, deletedFromMap).
+function trGetOverlaysForParent(parentId, projectId){
+  return trGetChildEntries(parentId, projectId).filter(e => !e.deletedAt && e.entryType !== 'planned');
+}
+
 // Photo linking — adds/removes a photoId from the entry's photoIds array.
 function trAddPhotoLink(entryId, photoId, projectId, type){
   const pid = projectId || ((typeof _activeProjectId === 'function') ? _activeProjectId() : 'default');
@@ -328,6 +361,9 @@ if(typeof window !== 'undefined'){
   window.trGetEntriesForDate = trGetEntriesForDate;
   window.trGetEntriesForCategory = trGetEntriesForCategory;
   window.trGetChildEntries = trGetChildEntries;
+  window.trEntryMeasure = trEntryMeasure;
+  window.trEntryStateId = trEntryStateId;
+  window.trGetOverlaysForParent = trGetOverlaysForParent;
   window.trGetCumulativeTotals = trGetCumulativeTotals;
   window.trGetEntry = trGetEntry;
   window.trAddPhotoLink = trAddPhotoLink;

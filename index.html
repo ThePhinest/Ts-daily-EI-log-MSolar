@@ -1957,6 +1957,16 @@ Anticipated rain — AM weather monitoring expected"></textarea>
           <button onclick="mapTrackerHideAdd()" class="map-tc-cancel-btn">✕</button>
         </div>
         <div style="display:flex;align-items:center;gap:6px;margin-top:8px;padding-left:28px">
+          <span style="font-family:var(--mono);font-size:10px;color:var(--muted)">Template</span>
+          <select id="map-tc-add-template" class="map-tc-unit-sel" onchange="mapTcSetTemplate(this.value)">
+            <option value="seeding">Seeding</option>
+            <option value="disturbance">Ground Disturbance</option>
+            <option value="linear-bmp">Linear BMP</option>
+            <option value="progress">Progress / Phases</option>
+            <option value="blank">Blank</option>
+          </select>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;margin-top:8px;padding-left:28px">
           <button id="map-tc-add-type-area" class="tc-type-btn active" onclick="mapTcSetAddType('area')">Area</button>
           <button id="map-tc-add-type-linear" class="tc-type-btn" onclick="mapTcSetAddType('linear')">Linear</button>
           <select id="map-tc-add-unit" class="map-tc-unit-sel">
@@ -2037,6 +2047,11 @@ Anticipated rain — AM weather monitoring expected"></textarea>
       <div style="margin-bottom:10px">
         <label style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;display:block;margin-bottom:4px">Location (description)</label>
         <input type="text" id="map-tr-location" placeholder="Area name or GPS ref" style="width:100%;box-sizing:border-box;background:var(--s1);border:1px solid var(--border);border-radius:6px;padding:7px 9px;color:var(--text);font-family:var(--mono);font-size:12px">
+      </div>
+      <!-- State picker (child overlays) -->
+      <div id="map-tr-state-row" style="display:none;margin-bottom:10px">
+        <label style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;display:block;margin-bottom:4px">State</label>
+        <select id="map-tr-state" style="width:100%;box-sizing:border-box;background:var(--s1);border:1px solid var(--border);border-radius:6px;padding:7px 9px;color:var(--text);font-family:var(--mono);font-size:12px"></select>
       </div>
       <!-- Area-only fields -->
       <div id="map-tr-area-fields">

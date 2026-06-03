@@ -163,6 +163,177 @@ async function tcDeleteCategory(catId, projectId){
   }
 }
 
+// ═══════════════════════════════════════════
+// CATEGORY SCHEMA — states / templates / progress (added 2026-06-03)
+// ═══════════════════════════════════════════
+//
+// Generalizes the seeding-centric tracker into a customizable, template-seeded
+// category system. All readers below synthesize legacy defaults when the new
+// fields are absent, so existing categories/entries behave exactly as before
+// until edited (additive — no migration; honors Tim's 6/2 no-migration rule).
+//
+// New category fields (all optional):
+//   template       'seeding'|'disturbance'|'linear-bmp'|'progress'|'blank'
+//   states[]       ordered { id, label, color, style, pattern, isPlanned }
+//                    - style: fill style (area) | line dash (linear)
+//                    - isPlanned:true on the plan-baseline state → renders faint
+//   trackMaterial  bool — show the lbs/ac + required/actual + seed-tag block?
+//   phases[]/methods[]  per-category descriptor lists (off the global config)
+//   progressMode   'per-state-vs-plan'|'running-balance'|'simple-count'
+//   overallMode    'terminal'|'average'|'weighted'   (default 'terminal')
+//   statePatterns  bool — distinguish states by color+pattern (vs color only)
+//   disturbanceCap/capUnit  editable limit for running-balance categories
+//
+// New entry field: state — the state-id a child overlay belongs to.
+
+const TC_FILL_STYLES = ['solid','hatch','crosshatch','dots'];
+const TC_LINE_STYLES = ['solid','dashed','dotted'];
+const TC_TEMPLATES   = ['seeding','disturbance','linear-bmp','progress','blank'];
+const TC_TEMPLATE_LABELS = {
+  seeding:'Seeding', disturbance:'Ground Disturbance', 'linear-bmp':'Linear BMP',
+  progress:'Progress / Phases', blank:'Blank'
+};
+
+function _tcGenStateId(){ return 's-' + Math.random().toString(36).slice(2,8); }
+
+// Template seed schema. `measurementType` is used for templates that defer to it.
+// Returns a partial category object (caller merges into the new category).
+function tcTemplateSchema(template, measurementType){
+  const mt = measurementType || 'area';
+  const defs = {
+    seeding: {
+      measurementType:'area', trackMaterial:true, statePatterns:false,
+      progressMode:'per-state-vs-plan', overallMode:'terminal',
+      phases:['N/A','Initial','1st Reseed','2nd Reseed','3rd Reseed','Final'],
+      methods:['N/A','Hydro Seeding','Drill Seeding','Broadcast Seeding','Hand Seeding','Lime Application','Fertilizer Application','Mulch Application'],
+      states:[
+        {label:'Planned',    color:'#8E9BA3', isPlanned:true},
+        {label:'Limed',      color:'#C9A84C'},
+        {label:'Fertilized', color:'#4A90E2'},
+        {label:'Seeded',     color:'#27AE60'},
+        {label:'Stabilized', color:'#1E6B3A'}
+      ]
+    },
+    disturbance: {
+      measurementType:'area', trackMaterial:false, statePatterns:false,
+      progressMode:'running-balance', overallMode:'terminal',
+      disturbanceCap:null, capUnit:'ac', phases:[], methods:[],
+      states:[
+        {label:'Planned',    color:'#8E9BA3', isPlanned:true},
+        {label:'Disturbed',  color:'#E67E22'},
+        {label:'Stabilized', color:'#27AE60'}
+      ]
+    },
+    'linear-bmp': {
+      measurementType:'linear', trackMaterial:false, statePatterns:false,
+      progressMode:'per-state-vs-plan', overallMode:'terminal', phases:[], methods:[],
+      states:[
+        {label:'Planned',    color:'#8E9BA3', isPlanned:true},
+        {label:'Installed',  color:'#4A90E2'},
+        {label:'Maintained', color:'#27AE60'},
+        {label:'Removed',    color:'#8E9BA3'}
+      ]
+    },
+    progress: {
+      measurementType:mt, trackMaterial:false, statePatterns:false,
+      progressMode:'per-state-vs-plan', overallMode:'terminal', phases:[], methods:[],
+      states:[
+        {label:'Planned',  color:'#8E9BA3', isPlanned:true},
+        {label:'Graded',   color:'#C9A84C'},
+        {label:'Active',   color:'#4A90E2'},
+        {label:'Complete', color:'#27AE60'}
+      ]
+    },
+    blank: {
+      measurementType:mt, trackMaterial:false, statePatterns:false,
+      progressMode:'simple-count', overallMode:'terminal', phases:[], methods:[],
+      states:[
+        {label:'Planned', color:'#8E9BA3', isPlanned:true},
+        {label:'Done',    color:'#27AE60'}
+      ]
+    }
+  };
+  const sch = defs[template] || defs.seeding;
+  sch.template = template;
+  sch.states = sch.states.map(s => ({
+    id:_tcGenStateId(), style:'solid', pattern:null, isPlanned:false, ...s
+  }));
+  return sch;
+}
+
+function _tcResolve(catOrId, projectId){
+  return (typeof catOrId === 'string') ? tcGetCategory(catOrId, projectId) : catOrId;
+}
+
+// Ordered states for a category. Synthesizes legacy [Planned(faint)+Installed] (both
+// the category color) when no states[] exists — preserving today's exact look.
+function tcGetStates(catOrId, projectId){
+  const cat = _tcResolve(catOrId, projectId);
+  if(cat && Array.isArray(cat.states) && cat.states.length) return cat.states;
+  const color = cat?.color || '#888888';
+  return [
+    {id:'planned',   label:'Planned',   color, isPlanned:true,  style:'solid', pattern:null},
+    {id:'installed', label:'Installed', color, isPlanned:false, style:'solid', pattern:null}
+  ];
+}
+
+function tcGetState(catOrId, stateId, projectId){
+  return tcGetStates(catOrId, projectId).find(s => s.id === stateId) || null;
+}
+
+// The plan-baseline state (faint / progress denominator).
+function tcPlannedState(catOrId, projectId){
+  const st = tcGetStates(catOrId, projectId);
+  return st.find(s => s.isPlanned) || st[0];
+}
+
+// Default state for a freshly-drawn child overlay (first non-planned).
+function tcDefaultChildState(catOrId, projectId){
+  const st = tcGetStates(catOrId, projectId);
+  return st.find(s => !s.isPlanned) || st[st.length-1] || null;
+}
+
+// Resolve an entry's render/aggregation state (handles legacy entryType).
+function tcEntryState(entry, catOrId, projectId){
+  const cat = _tcResolve(catOrId, projectId);
+  if(entry && entry.entryType === 'planned') return tcPlannedState(cat, projectId);
+  if(entry && entry.state){
+    const s = tcGetState(cat, entry.state, projectId);
+    if(s) return s;
+  }
+  return tcDefaultChildState(cat, projectId);
+}
+
+function tcTrackMaterial(catOrId, projectId){
+  const cat = _tcResolve(catOrId, projectId);
+  if(cat && typeof cat.trackMaterial === 'boolean') return cat.trackMaterial;
+  return true; // legacy = seeding = material block on
+}
+
+function tcProgressMode(catOrId, projectId){
+  return _tcResolve(catOrId, projectId)?.progressMode || 'per-state-vs-plan';
+}
+
+function tcOverallMode(catOrId, projectId){
+  return _tcResolve(catOrId, projectId)?.overallMode || 'terminal';
+}
+
+function tcStatePatterns(catOrId, projectId){
+  return _tcResolve(catOrId, projectId)?.statePatterns === true;
+}
+
+// Per-category phase/method lists; fall back to the legacy global config.
+function tcCategoryPhases(catOrId, projectId){
+  const cat = _tcResolve(catOrId, projectId);
+  if(cat && Array.isArray(cat.phases)) return cat.phases;
+  return (typeof window !== 'undefined' && window._amendmentPhases) ? window._amendmentPhases : [];
+}
+function tcCategoryMethods(catOrId, projectId){
+  const cat = _tcResolve(catOrId, projectId);
+  if(cat && Array.isArray(cat.methods)) return cat.methods;
+  return (typeof window !== 'undefined' && window._amendmentMethods) ? window._amendmentMethods : [];
+}
+
 // Invalidate cache for a project (e.g. on project switch before reload).
 function tcClearCache(projectId){
   if(projectId){
@@ -191,4 +362,21 @@ if(typeof window !== 'undefined'){
   window.TC_AREA_UNITS          = TC_AREA_UNITS;
   window.TC_LINEAR_UNITS        = TC_LINEAR_UNITS;
   window.TC_UNIT_LABELS         = TC_UNIT_LABELS;
+  // Category schema (2026-06-03)
+  window.tcTemplateSchema       = tcTemplateSchema;
+  window.tcGetStates            = tcGetStates;
+  window.tcGetState             = tcGetState;
+  window.tcPlannedState         = tcPlannedState;
+  window.tcDefaultChildState    = tcDefaultChildState;
+  window.tcEntryState           = tcEntryState;
+  window.tcTrackMaterial        = tcTrackMaterial;
+  window.tcProgressMode         = tcProgressMode;
+  window.tcOverallMode          = tcOverallMode;
+  window.tcStatePatterns        = tcStatePatterns;
+  window.tcCategoryPhases       = tcCategoryPhases;
+  window.tcCategoryMethods      = tcCategoryMethods;
+  window.TC_FILL_STYLES         = TC_FILL_STYLES;
+  window.TC_LINE_STYLES         = TC_LINE_STYLES;
+  window.TC_TEMPLATES           = TC_TEMPLATES;
+  window.TC_TEMPLATE_LABELS     = TC_TEMPLATE_LABELS;
 }
