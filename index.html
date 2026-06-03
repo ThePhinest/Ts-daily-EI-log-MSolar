@@ -92,6 +92,16 @@ body.theme-light{
 #map-compass.fab-open{bottom:calc(365px + env(safe-area-inset-bottom))}
 #map-compass.gps-active{border-color:var(--amber);box-shadow:0 0 0 1px var(--amber),0 2px 8px rgba(0,0,0,.45)}
 #map-compass.gps-amber{background:rgba(201,168,76,.25);border-color:var(--amber)}
+/* Heading compass rose */
+#map-heading-compass{position:fixed;top:calc(80px + env(safe-area-inset-top));left:14px;z-index:248;width:58px;height:58px;border-radius:50%;background:rgba(15,31,46,.85);border:1px solid var(--border2);box-shadow:0 2px 8px rgba(0,0,0,.45);display:none;align-items:center;justify-content:center}
+#map-heading-compass.on{display:flex}
+#map-heading-rose{position:relative;width:46px;height:46px;transition:transform .12s linear}
+.mhc-card{position:absolute;font-family:var(--mono);font-size:10px;font-weight:700;color:rgba(220,232,244,.85);text-shadow:0 1px 2px rgba(0,0,0,.8)}
+.mhc-n{top:-2px;left:50%;transform:translateX(-50%);color:#E74C3C}
+.mhc-s{bottom:-2px;left:50%;transform:translateX(-50%)}
+.mhc-e{right:-1px;top:50%;transform:translateY(-50%)}
+.mhc-w{left:-1px;top:50%;transform:translateY(-50%)}
+#map-heading-label{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-family:var(--mono);font-size:12px;font-weight:700;color:var(--amber);text-shadow:0 1px 2px rgba(0,0,0,.85)}
 #map-compass-needle{transition:transform .15s linear;display:flex;align-items:center;justify-content:center}
 /* FAB + palette */
 #map-fab{position:fixed;bottom:calc(105px + env(safe-area-inset-bottom));right:16px;z-index:250;width:52px;height:52px;border-radius:50%;background:var(--amber);border:none;color:#111;font-size:22px;cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;transition:background .18s,transform .18s}
@@ -1878,6 +1888,16 @@ Anticipated rain — AM weather monitoring expected"></textarea>
         </svg>
       </div>
     </button>
+    <!-- Heading compass rose (shown in direction / heading GPS modes) -->
+    <div id="map-heading-compass">
+      <div id="map-heading-rose">
+        <span class="mhc-card mhc-n">N</span>
+        <span class="mhc-card mhc-e">E</span>
+        <span class="mhc-card mhc-s">S</span>
+        <span class="mhc-card mhc-w">W</span>
+      </div>
+      <div id="map-heading-label">N</div>
+    </div>
     <!-- FAB -->
     <button id="map-fab" onclick="mapToggleFab()" title="Tracker tools">✚</button>
     <div id="map-fab-palette">

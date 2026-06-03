@@ -161,8 +161,11 @@ function mapSetup(token){
   _mapInstance.addControl(new mapboxgl.AttributionControl({compact:true}),'bottom-left');
   _mapInstance.addControl(new mapboxgl.NavigationControl({showCompass:false,showZoom:true}),'top-right');
   _mapInstance.on('rotate',()=>{
+    const b=_mapInstance.getBearing();
     const needle=document.getElementById('map-compass-needle');
-    if(needle) needle.style.transform=`rotate(${-_mapInstance.getBearing()}deg)`;
+    if(needle) needle.style.transform=`rotate(${-b}deg)`;
+    const rose=document.getElementById('map-heading-rose');
+    if(rose) rose.style.transform=`rotate(${-b}deg)`; // keep N pointing true north
   });
   _mapInstance.on('load',()=>{
     document.getElementById('map-loading').style.display='none';
@@ -2508,6 +2511,9 @@ function _showCone(){
 function _hideCone(){
   if(_mapInstance && _mapInstance.getLayer('gps-cone-layer')) _mapInstance.setLayoutProperty('gps-cone-layer','visibility','none');
 }
+function _cardinal(deg){
+  return ['N','NE','E','SE','S','SW','W','NW'][Math.round((((deg%360)+360)%360)/45)%8];
+}
 // Push the latest position + heading into the cone source (no-op when the cone isn't shown).
 function _updateConeData(){
   if(!_mapInstance || !_mapInstance.getSource('gps-cone')) return;
@@ -2533,6 +2539,8 @@ async function _startCompass(){
     const delta=((h-_curHeading+540)%360)-180;
     _curHeading=(_curHeading+delta*0.3+360)%360;
     _updateConeData(); // updates the cone's heading (and keeps it on the dot)
+    const lbl=document.getElementById('map-heading-label');
+    if(lbl) lbl.textContent=_cardinal(_curHeading);
     if(_gpsMode===3 && _mapInstance){ // heading-up: spin map (throttled)
       const now=Date.now();
       if(now-_lastSpinTs>110){ _lastSpinTs=now; _mapInstance.rotateTo(_curHeading,{duration:110}); }
@@ -2569,6 +2577,17 @@ function _updateGpsBtn(){
     btn.title=['','Location: centered on you','Direction: view cone (north up)','Heading: map rotates to your facing'][_gpsMode];
   }
   btn.dataset.gpsMode=_gpsMode;
+  // Heading compass rose: visible in direction + heading modes.
+  const hc=document.getElementById('map-heading-compass');
+  if(hc){
+    hc.classList.toggle('on',_gpsMode>=2);
+    if(_gpsMode>=2 && _mapInstance){
+      const rose=document.getElementById('map-heading-rose');
+      if(rose) rose.style.transform=`rotate(${-_mapInstance.getBearing()}deg)`;
+      const lbl=document.getElementById('map-heading-label');
+      if(lbl) lbl.textContent=_cardinal(_curHeading);
+    }
+  }
 }
 
 function mapCycleGpsMode(){
