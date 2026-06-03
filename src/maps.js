@@ -3,6 +3,22 @@
 // ═══════════════════════════════════════════
 import MapboxDraw from '@mapbox/mapbox-gl-draw';
 import '@mapbox/mapbox-gl-draw/dist/mapbox-gl-draw.css';
+// Snapping ("soft magnet") to the active parent plan — 2026-06-03. Severable module.
+import { SnapPolygonMode, SnapLineMode, SnapPointMode, SnapModeDrawStyles } from 'mapbox-gl-draw-snap-mode';
+
+// Snap source: when a planned parent is active, snap to ITS geometry (vertices + edges)
+// so child overlays trace the plan accurately. Returns [] when no plan is active
+// (the snap engine then falls back to the in-progress feature — standard behavior).
+function _snapGetFeatures(){
+  if(!_activePlannedEntryId) return [];
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const parent=(typeof trGetEntry==='function')?trGetEntry(_activePlannedEntryId,pid):null;
+  if(!parent||!parent.geometry) return [];
+  let geom=parent.geometry;
+  if(typeof geom==='string'){ try{ geom=JSON.parse(geom); }catch{ return []; } }
+  if(!geom||!geom.type) return [];
+  return [{ type:'Feature', id:'_snap-parent', properties:{}, geometry:geom }];
+}
 
 let _mapInstance=null, _mapGpsMarker=null, _mapGpsWatch=null;
 let _mapCurrentStyle=localStorage.getItem('gl_map_style')||'satellite-streets-v11';
@@ -2067,7 +2083,15 @@ function mapActivateDrawMode(categoryId){
   _drawCategory=categoryId;
   _drawMode='draw';
   if(!_drawInstance){
-    _drawInstance=new MapboxDraw({ displayControlsDefault:false, controls:{} });
+    _drawInstance=new MapboxDraw({
+      displayControlsDefault:false,
+      controls:{},
+      modes:{ ...MapboxDraw.modes, draw_point:SnapPointMode, draw_polygon:SnapPolygonMode, draw_line_string:SnapLineMode },
+      styles:SnapModeDrawStyles,
+      userProperties:true,
+      snap:true,
+      snapOptions:{ snapPx:15, snapToMidPoints:true, snapGetFeatures:_snapGetFeatures },
+    });
     _mapInstance.addControl(_drawInstance,'top-left');
     _mapInstance.on('draw.create',_onDrawCreate);
     _mapInstance.on('draw.delete',_onDrawDelete);
