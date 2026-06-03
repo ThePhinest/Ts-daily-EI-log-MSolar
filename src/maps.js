@@ -13,7 +13,7 @@ let _drawEntryType='installed'; // 'planned' | 'installed'
 let _activePlannedEntryId=null;
 let _fabOpen=false, _viewFabOpen=false, _gpsFollowActive=false, _gpsFollowWatch=null;
 // GPS location/direction mode cycle: 0=off, 1=locate, 2=direction(cone,north-up), 3=heading(cone+map spins)
-let _gpsMode=0, _compassActive=false, _compassHandler=null, _mapHeadingCone=null, _curHeading=0, _lastSpinTs=0, _origCompassHTML=null;
+let _gpsMode=0, _compassActive=false, _compassHandler=null, _curHeading=0, _lastSpinTs=0, _origCompassHTML=null, _followPaused=false;
 let _captureEntryId=null; // entry awaiting a framed map capture
 let _pendingDrawFeature=null;
 let _pendingPhotoIds=[];
@@ -182,7 +182,7 @@ _mapInstance.on('mousedown', e => {
 });
 _mapInstance.on('mousemove', ()=> clearTimeout(_lpTimer));
 _mapInstance.on('mouseup', ()=> clearTimeout(_lpTimer));
-_mapInstance.on('dragstart', ()=>{ clearTimeout(_lpTimer); _lpStartPos=null; });
+_mapInstance.on('dragstart', ()=>{ clearTimeout(_lpTimer); _lpStartPos=null; if(_gpsMode>0) _followPaused=true; });
 // Long press — touch
 _mapInstance.on('touchstart', e => {
   if(e.originalEvent.touches.length !== 1) return;
@@ -219,7 +219,7 @@ function mapAddGPSDot(){
       if(!_mapGpsMarker){
         _mapGpsMarker=new mapboxgl.Marker({element:el,anchor:'bottom'}).setLngLat([lng,lat]).addTo(_mapInstance);
       } else { _mapGpsMarker.setLngLat([lng,lat]); }
-      if(_mapHeadingCone) _mapHeadingCone.setLngLat([lng,lat]); // keep direction cone on the dot
+      _updateConeData(); // keep the direction cone glued to the dot's coordinate
     },
     err=>console.warn('GPS:',err.message),
     {enableHighAccuracy:true,maximumAge:5000}
@@ -2448,6 +2448,7 @@ function _pauseGpsForDraw(){
 // ── GPS / heading mode cycle ──────────────
 // off → locate → direction (cone, north-up) → heading (cone + map spins) → off
 function _startGpsFollow(){
+  _followPaused=false; // a fresh engage always re-centers
   if(_gpsFollowActive||!navigator.geolocation) return;
   _gpsFollowActive=true;
   navigator.geolocation.getCurrentPosition(pos=>{
@@ -2455,7 +2456,9 @@ function _startGpsFollow(){
     _mapInstance.flyTo({center:[pos.coords.longitude,pos.coords.latitude],zoom:17,duration:800});
   },null,{enableHighAccuracy:true});
   _gpsFollowWatch=navigator.geolocation.watchPosition(pos=>{
-    if(!_mapInstance||!_gpsFollowActive) return;
+    // Pause re-centering once the user pans away — no more snap-back. The dot + cone
+    // keep tracking; tap the compass again to re-engage centering.
+    if(!_mapInstance||!_gpsFollowActive||_followPaused) return;
     _mapInstance.easeTo({center:[pos.coords.longitude,pos.coords.latitude],duration:300});
   },null,{enableHighAccuracy:true,maximumAge:3000});
 }
@@ -2465,30 +2468,51 @@ function _stopGpsFollow(){
   _gpsFollowWatch=null;
 }
 
-function _makeConeEl(){
-  // 60° translucent amber fan (brand gold), apex at bottom-center (sits on the GPS
-  // dot), opening "up" = north at rotation 0. Longer reach than the dot radius.
-  const wrap=document.createElement('div');
-  wrap.style.cssText='width:160px;height:180px;pointer-events:none';
-  wrap.innerHTML=`<svg width="160" height="180" viewBox="0 0 160 180" style="display:block">
-    <defs><radialGradient id="gl-cone-grad" cx="50%" cy="100%" r="100%">
-      <stop offset="0%" stop-color="rgba(201,168,76,0.6)"/>
-      <stop offset="65%" stop-color="rgba(201,168,76,0.22)"/>
-      <stop offset="100%" stop-color="rgba(201,168,76,0)"/>
-    </radialGradient></defs>
-    <path d="M80 176 L5 46 A150 150 0 0 1 155 46 Z" fill="url(#gl-cone-grad)"/>
-  </svg>`;
-  return wrap;
+// The direction cone is a map GL symbol layer anchored to a GeoJSON point at the
+// user's location — so it can't drift from the dot, and icon-rotation-alignment:'map'
+// keeps it pointing at the true compass bearing as the map rotates.
+function _ensureConeImage(){
+  if(!_mapInstance || _mapInstance.hasImage('gps-cone-img')) return;
+  const W=240,H=280,apexX=120,apexY=H,r=270,half=Math.PI/6; // 60° fan, apex at bottom-center
+  const c=document.createElement('canvas'); c.width=W; c.height=H;
+  const ctx=c.getContext('2d');
+  const grad=ctx.createRadialGradient(apexX,apexY,0,apexX,apexY,r);
+  grad.addColorStop(0,'rgba(201,168,76,0.60)');
+  grad.addColorStop(0.65,'rgba(201,168,76,0.22)');
+  grad.addColorStop(1,'rgba(201,168,76,0)');
+  ctx.fillStyle=grad;
+  ctx.beginPath();
+  ctx.moveTo(apexX,apexY);
+  ctx.arc(apexX,apexY,r,-Math.PI/2-half,-Math.PI/2+half); // pie slice opening straight up
+  ctx.closePath();
+  ctx.fill();
+  _mapInstance.addImage('gps-cone-img',{width:W,height:H,data:ctx.getImageData(0,0,W,H).data},{pixelRatio:2});
+}
+function _coneFeatureCollection(){
+  const ll=_mapGpsMarker?_mapGpsMarker.getLngLat():_mapInstance.getCenter();
+  return {type:'FeatureCollection',features:[{type:'Feature',geometry:{type:'Point',coordinates:[ll.lng,ll.lat]},properties:{heading:_curHeading}}]};
 }
 function _showCone(){
-  if(!_mapInstance) return;
-  if(!_mapHeadingCone){
-    const ll=_mapGpsMarker?_mapGpsMarker.getLngLat():_mapInstance.getCenter();
-    _mapHeadingCone=new mapboxgl.Marker({element:_makeConeEl(),anchor:'bottom',rotationAlignment:'map',pitchAlignment:'map',rotation:_curHeading}).setLngLat(ll).addTo(_mapInstance);
+  if(!_mapInstance||!_mapInstance.isStyleLoaded()) return;
+  _ensureConeImage();
+  if(!_mapInstance.getSource('gps-cone')){
+    _mapInstance.addSource('gps-cone',{type:'geojson',data:_coneFeatureCollection()});
+    _mapInstance.addLayer({id:'gps-cone-layer',type:'symbol',source:'gps-cone',
+      layout:{'icon-image':'gps-cone-img','icon-anchor':'bottom','icon-rotate':['get','heading'],
+              'icon-rotation-alignment':'map','icon-allow-overlap':true,'icon-ignore-placement':true,'icon-size':1}});
+  } else {
+    _mapInstance.getSource('gps-cone').setData(_coneFeatureCollection());
+    if(_mapInstance.getLayer('gps-cone-layer')) _mapInstance.setLayoutProperty('gps-cone-layer','visibility','visible');
   }
 }
 function _hideCone(){
-  if(_mapHeadingCone){ _mapHeadingCone.remove(); _mapHeadingCone=null; }
+  if(_mapInstance && _mapInstance.getLayer('gps-cone-layer')) _mapInstance.setLayoutProperty('gps-cone-layer','visibility','none');
+}
+// Push the latest position + heading into the cone source (no-op when the cone isn't shown).
+function _updateConeData(){
+  if(!_mapInstance || !_mapInstance.getSource('gps-cone')) return;
+  if(_gpsMode<2) return;
+  _mapInstance.getSource('gps-cone').setData(_coneFeatureCollection());
 }
 
 async function _startCompass(){
@@ -2508,12 +2532,7 @@ async function _startCompass(){
     // Low-pass smoothing over the circular range to kill raw-compass jitter.
     const delta=((h-_curHeading+540)%360)-180;
     _curHeading=(_curHeading+delta*0.3+360)%360;
-    if(_mapHeadingCone){
-      _mapHeadingCone.setRotation(_curHeading);
-      // rotationAlignment:'map' recomputes the cone's screen angle on render; force a
-      // repaint so it tracks smoothly even when the map is static (direction mode).
-      if(_gpsMode===2 && _mapInstance) _mapInstance.triggerRepaint();
-    }
+    _updateConeData(); // updates the cone's heading (and keeps it on the dot)
     if(_gpsMode===3 && _mapInstance){ // heading-up: spin map (throttled)
       const now=Date.now();
       if(now-_lastSpinTs>110){ _lastSpinTs=now; _mapInstance.rotateTo(_curHeading,{duration:110}); }
