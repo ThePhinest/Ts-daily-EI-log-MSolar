@@ -1784,8 +1784,8 @@ function _cdRenderStates(isLinear){
         <input type="text" value="${(s.productName||'').replace(/"/g,'&quot;')}" oninput="_cdSetStateMat(${i},'productName',this.value)" placeholder="Product / mix" maxlength="40" style="flex:1;min-width:0;${_INPUT_STYLE}">
       </div>
       <div style="display:flex;align-items:center;gap:6px;margin-top:5px">
-        <input type="number" value="${s.targetRate??''}" oninput="_cdSetStateMat(${i},'targetRate',this.value)" placeholder="Target rate (e.g. 30)" step="0.1" min="0" style="flex:1;min-width:0;${_INPUT_STYLE}">
-        <select onchange="_cdSetStateMat(${i},'targetRateUnit',this.value)" title="Rate unit" style="width:96px;flex-shrink:0;${_INPUT_STYLE}">${_cdRateUnitOpts(s.targetRateUnit)}</select>
+        <input type="number" value="${s.targetRate??''}" oninput="_cdSetStateMat(${i},'targetRate',this.value)" placeholder="Target rate (e.g. 30)" step="0.1" min="0" style="${_INPUT_STYLE}flex:1 1 auto;min-width:0">
+        <select onchange="_cdSetStateMat(${i},'targetRateUnit',this.value)" title="Rate unit" style="${_INPUT_STYLE}flex:0 0 104px;width:104px">${_cdRateUnitOpts(s.targetRateUnit)}</select>
       </div>`:'';
     return `<div style="border:1px solid var(--border);border-radius:7px;padding:6px;margin-bottom:6px;background:var(--s1)">
       <div style="display:flex;align-items:center;gap:6px;margin-bottom:5px">
@@ -1892,7 +1892,7 @@ function mapShowCategoryDetails(catId){
   // Full-width bottom sheet (like the Tracker Log) — the schema editor has too much
   // to fit a small centered box; this gives the per-state rows room to breathe.
   ov.style.cssText='z-index:5000;align-items:flex-end;padding:0';
-  ov.innerHTML=`<div style="width:100%;max-width:560px;margin:0 auto;max-height:92dvh;background:var(--bg);border-top:1px solid var(--border);border-radius:16px 16px 0 0;display:flex;flex-direction:column;overflow:hidden;padding-bottom:env(safe-area-inset-bottom)">
+  ov.innerHTML=`<div style="width:100%;max-height:92dvh;background:var(--bg);border-top:1px solid var(--border);border-radius:16px 16px 0 0;display:flex;flex-direction:column;overflow:hidden;padding-bottom:env(safe-area-inset-bottom)">
     <div style="display:flex;align-items:center;gap:8px;padding:14px 16px 12px;border-bottom:1px solid var(--border);flex-shrink:0">
       <input type="color" value="${_cdCatColor}" oninput="_cdSetCatColor(this.value)" title="Category color" style="width:26px;height:26px;border:none;background:none;padding:0;flex-shrink:0;cursor:pointer">
       <div class="modal-title" style="margin:0;flex:1;font-size:15px">${cat.name}</div>
