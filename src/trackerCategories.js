@@ -359,7 +359,10 @@ function tcRampChip(catOrId, projectId, h){
     const c=(s.color&&/^#[0-9A-Fa-f]{6}$/.test(s.color))?s.color:'#888888';
     return `<span style="display:block;flex:1 1 0;min-width:0;background:${c}"></span>`;
   }).join('');
-  return `<span title="${(tcGetName(catOrId,projectId)||'').replace(/"/g,'&quot;')}" style="display:inline-flex;width:${w}px;height:${ht}px;border-radius:3px;overflow:hidden;flex-shrink:0;border:1px solid rgba(0,0,0,0.18);box-shadow:0 0 0 0.5px rgba(255,255,255,0.06) inset">${segs}</span>`;
+  // Accepts a category id OR a category object (callers pass either).
+  const _cat=_tcResolve(catOrId, projectId);
+  const nm=(_cat&&typeof _cat.name==='string')?_cat.name:'';
+  return `<span title="${nm.replace(/"/g,'&quot;')}" style="display:inline-flex;width:${w}px;height:${ht}px;border-radius:3px;overflow:hidden;flex-shrink:0;border:1px solid rgba(0,0,0,0.18);box-shadow:0 0 0 0.5px rgba(255,255,255,0.06) inset">${segs}</span>`;
 }
 
 // Invalidate cache for a project (e.g. on project switch before reload).
