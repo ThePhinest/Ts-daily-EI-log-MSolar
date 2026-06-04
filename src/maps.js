@@ -433,14 +433,14 @@ function mapRenderPhotoPins(){
     const cleanCaption = (p.caption||'').replace(/tilt_angle[^/]*\/?\s*roll_angle[^\n]*/i,'').trim();
     const popup = new mapboxgl.Popup({ offset:20, maxWidth:'220px', closeButton:true, className:'gl-photo-popup' })
       .setHTML(`
-        <div style="font-family:monospace;font-size:11px;color:#111">
+        <div style="font-family:monospace;font-size:11px;color:#e8e8e8">
           <img src="${p.thumb}" style="width:100%;border-radius:4px;margin-bottom:8px;display:block;cursor:pointer" onclick="phOpenLightbox('${p.id}')">
-          ${cleanCaption ? `<div style="font-weight:600;margin-bottom:4px;font-size:12px">${cleanCaption}</div>` : ''}
-          <div style="color:#555;margin-bottom:2px">${p.date}</div>
-          ${dirLabel ? `<div style="color:#555">📷 Facing ${dirLabel}</div>` : ''}
-          ${p.software ? `<div style="color:#999;margin-top:2px;font-size:10px">${p.software}</div>` : ''}
-          <div style="margin-top:8px;padding-top:6px;border-top:1px solid #ddd">
-            <button onclick="mapShowPhotoLinkPicker('${p.id}')" style="background:none;border:none;color:#006B75;font-family:monospace;font-size:10px;cursor:pointer;padding:0;text-decoration:underline">🔗 Link to tracker entry</button>
+          ${cleanCaption ? `<div style="font-weight:600;margin-bottom:4px;font-size:12px;color:#fff">${cleanCaption}</div>` : ''}
+          <div style="color:#c8d8e8;margin-bottom:2px">${p.date}</div>
+          ${dirLabel ? `<div style="color:#c8d8e8">📷 Facing ${dirLabel}</div>` : ''}
+          ${p.software ? `<div style="color:#a0b8c8;margin-top:2px;font-size:10px">${p.software}</div>` : ''}
+          <div style="margin-top:8px;padding-top:6px;border-top:1px solid rgba(255,255,255,.12)">
+            <button onclick="mapShowPhotoLinkPicker('${p.id}')" style="background:none;border:none;color:#4FD1C5;font-family:monospace;font-size:10px;cursor:pointer;padding:0;text-decoration:underline">🔗 Link to tracker entry</button>
           </div>
         </div>
       `);

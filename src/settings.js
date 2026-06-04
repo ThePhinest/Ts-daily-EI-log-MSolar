@@ -352,6 +352,9 @@ function appendField(fieldId,text){
   const el=document.getElementById(fieldId);if(!el)return;
   const cur=el.value.trim();el.value=cur?cur+'\n'+text:text;
   el.focus();el.scrollTop=el.scrollHeight;
+  // Programmatic value change doesn't fire 'input', so the auto-expand listener
+  // never runs — the box stayed collapsed until a manual re-render. Resize now.
+  if(el.classList.contains('auto-expand')&&typeof autoResize==='function')autoResize(el);
   debouncedAutoSave();
 }
 function renderAllChips(){
