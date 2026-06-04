@@ -342,6 +342,31 @@ function clRenderTrackerCard(search){
     else _catMap[cid].installedValue+=norm;
     _catMap[cid].entryCount++;
   });
+  // Schema categories (stacked states) — the naive installed SUM double-counts
+  // overlapping states (Lime + Fert on the same ground). Compute per-state totals
+  // and a non-double-counted headline (overall % vs plan, or net for running-balance).
+  Object.values(_catMap).forEach(t=>{
+    const cat=(typeof tcGetCategory==='function')?tcGetCategory(t.categoryId,pid):null;
+    if(!(cat&&Array.isArray(cat.states)&&cat.states.length)) return;
+    t.isSchema=true;
+    const mode=(typeof tcProgressMode==='function')?tcProgressMode(cat,pid):'per-state-vs-plan';
+    const childStates=((typeof tcGetStates==='function')?tcGetStates(cat,pid):[]).filter(s=>!s.isPlanned);
+    const dcs=(typeof tcDefaultChildState==='function')?tcDefaultChildState(cat,pid):null;
+    const stateTotal=(sid)=>_allProjEntries
+      .filter(e=>(e.categoryId===t.categoryId)&&e.entryType!=='planned'&&((e.state||(dcs?dcs.id:null))===sid))
+      .reduce((s,e)=>s+((typeof trEntryMeasure==='function')?trEntryMeasure(e,t.displayUnit,pid):0),0);
+    t.stateTotals=childStates.map(s=>({label:s.label,color:s.color,value:stateTotal(s.id)}));
+    if(mode==='running-balance'){
+      const term=childStates[childStates.length-1];
+      const active=childStates.slice(0,-1).length?childStates.slice(0,-1):[childStates[0]];
+      const net=Math.max(0,active.reduce((s,st)=>s+stateTotal(st.id),0)-(childStates.length>1?stateTotal(term.id):0));
+      t.headlineMode='area'; t.headlineVal=net;
+    } else if(t.plannedValue>0 && childStates.length){
+      t.headlineMode='pct'; t.headlinePct=Math.min(100,(stateTotal(childStates[childStates.length-1].id)/t.plannedValue)*100);
+    } else {
+      t.headlineMode='area'; t.headlineVal=childStates.length?stateTotal(childStates[childStates.length-1].id):0;
+    }
+  });
   const splitTotals=Object.values(_catMap).filter(t=>t.entryCount>0).sort((a,b)=>b.installedValue-a.installedValue);
   if(!entries.length && !splitTotals.length){ el.style.display='none'; return; }
 
@@ -379,14 +404,32 @@ function clRenderTrackerCard(search){
       const catColor=(typeof tcGetColor==='function')?tcGetColor(t.categoryId,pid):'#888';
       const fmt=(v)=>(typeof tcFormatMeasurement==='function')?tcFormatMeasurement(v,t.displayUnit):`${v.toFixed(2)} ${t.displayUnit}`;
       const planCell=_totHasPlan?`<span style="font-family:var(--mono);font-size:11px;color:var(--muted);text-align:right;white-space:nowrap">${t.plannedValue>0?fmt(t.plannedValue):'—'}</span>`:'';
-      return `<div style="display:grid;grid-template-columns:${_totCols};gap:0 6px;padding:5px 0;border-bottom:1px solid var(--border);align-items:center">
-        <div style="display:flex;align-items:center;gap:6px;min-width:0">
-          <div style="width:8px;height:8px;border-radius:50%;background:${catColor};flex-shrink:0"></div>
-          <span style="font-family:var(--mono);font-size:11px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${t.categoryName}</span>
+      // Headline: schema categories show overall % (or net) — not the double-counted sum.
+      let instCell, instColor='var(--amber)';
+      if(t.isSchema && t.headlineMode==='pct'){
+        instColor=t.headlinePct>=100?'var(--green)':'var(--amber)';
+        instCell=`${t.headlinePct.toFixed(0)}%`;
+      } else if(t.isSchema){
+        instCell=t.headlineVal>0?fmt(t.headlineVal):'—';
+      } else {
+        instCell=t.installedValue>0?fmt(t.installedValue):'—';
+      }
+      // Per-state glance chips (schema categories only).
+      const chips=(t.isSchema&&Array.isArray(t.stateTotals)&&t.stateTotals.some(s=>s.value>0))
+        ?`<div style="display:flex;flex-wrap:wrap;gap:8px;padding:0 0 6px 18px;margin-top:-2px">
+            ${t.stateTotals.map(s=>`<span style="display:inline-flex;align-items:center;gap:3px;font-family:var(--mono);font-size:9px;color:var(--muted)"><span style="width:7px;height:7px;border-radius:2px;background:${(s.color&&/^#[0-9A-Fa-f]{6}$/.test(s.color))?s.color:'#888'}"></span>${s.label} ${fmt(s.value)}</span>`).join('')}
+          </div>`:'';
+      return `<div style="border-bottom:1px solid var(--border)">
+        <div style="display:grid;grid-template-columns:${_totCols};gap:0 6px;padding:5px 0 ${chips?'2px':'5px'};align-items:center">
+          <div style="display:flex;align-items:center;gap:6px;min-width:0">
+            <div style="width:8px;height:8px;border-radius:50%;background:${catColor};flex-shrink:0"></div>
+            <span style="font-family:var(--mono);font-size:11px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${t.categoryName}</span>
+          </div>
+          <span style="font-family:var(--mono);font-size:11px;color:var(--muted);text-align:right">${t.entryCount}</span>
+          <span style="font-family:var(--mono);font-size:11px;color:${instColor};font-weight:600;text-align:right;white-space:nowrap">${instCell}</span>
+          ${planCell}
         </div>
-        <span style="font-family:var(--mono);font-size:11px;color:var(--muted);text-align:right">${t.entryCount}</span>
-        <span style="font-family:var(--mono);font-size:11px;color:var(--amber);font-weight:600;text-align:right;white-space:nowrap">${t.installedValue>0?fmt(t.installedValue):'—'}</span>
-        ${planCell}
+        ${chips}
       </div>`;
     }).join('')}
   </div>`:'';
