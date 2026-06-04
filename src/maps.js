@@ -2202,6 +2202,21 @@ async function mapTrackerSaveAdd(){
 }
 
 // ── Draw mode ────────────────────────────
+// Snap modes compute the snapped point only in onMouseMove, which never fires on a
+// touch tap (there's no hover before the tap). So on iOS the vertex landed raw — the
+// anchor "didn't work" (item C, 2026-06-04). Re-run the snap from the tap's own lngLat
+// in onClick/onTap so touch matches the desktop hover→click sequence. Desktop-safe:
+// onMouseMove already ran at that position, so re-running is idempotent.
+function _snapTouchMode(base){
+  const mode={...base};
+  const recompute=function(state,e){
+    if(e&&e.lngLat&&typeof base.onMouseMove==='function') base.onMouseMove.call(this,state,e);
+  };
+  mode.onClick=function(state,e){ recompute.call(this,state,e); return base.onClick.call(this,state,e); };
+  mode.onTap=function(state,e){ recompute.call(this,state,e); return (base.onTap||base.onClick).call(this,state,e); };
+  return mode;
+}
+
 function mapActivateDrawMode(categoryId){
   mapCloseCategorySheet();
   _pauseGpsForDraw();
@@ -2212,7 +2227,7 @@ function mapActivateDrawMode(categoryId){
     _drawInstance=new MapboxDraw({
       displayControlsDefault:false,
       controls:{},
-      modes:{ ...MapboxDraw.modes, draw_point:SnapPointMode, draw_polygon:SnapPolygonMode, draw_line_string:SnapLineMode },
+      modes:{ ...MapboxDraw.modes, draw_point:_snapTouchMode(SnapPointMode), draw_polygon:_snapTouchMode(SnapPolygonMode), draw_line_string:_snapTouchMode(SnapLineMode) },
       styles:SnapModeDrawStyles,
       userProperties:true,
       snap:true,
