@@ -3608,9 +3608,12 @@ function _showTrackerEntryPopup(lngLat,props){
     </div>
   </div>`:'';
   const labelOn=entry?.showDateLabel||false;
+  // Dot reflects the drawing's actual state color (matches the map fill), falling back
+  // to the category color for legacy entries that have no resolved state color.
+  const dotColor=(props.stateColor&&/^#[0-9A-Fa-f]{6}$/.test(props.stateColor))?props.stateColor:color;
   const html=`<div style="font-family:var(--mono);font-size:12px;min-width:180px;color:#e8e8e8">
     <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
-      <div style="width:10px;height:10px;border-radius:50%;background:${color};flex-shrink:0"></div>
+      <div style="width:10px;height:10px;border-radius:50%;background:${dotColor};flex-shrink:0"></div>
       <strong style="color:#fff">${label}</strong>
     </div>
     ${props.date?`<div style="color:#dce8f4">📅 ${props.date}</div>`:''}
