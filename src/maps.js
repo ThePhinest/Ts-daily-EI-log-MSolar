@@ -2202,18 +2202,23 @@ async function mapTrackerSaveAdd(){
 }
 
 // ── Draw mode ────────────────────────────
-// Snap modes compute the snapped point only in onMouseMove, which never fires on a
-// touch tap (there's no hover before the tap). So on iOS the vertex landed raw — the
-// anchor "didn't work" (item C, 2026-06-04). Re-run the snap from the tap's own lngLat
-// in onClick/onTap so touch matches the desktop hover→click sequence. Desktop-safe:
-// onMouseMove already ran at that position, so re-running is idempotent.
+// Touch snapping fix (item C, 2026-06-04). Two library quirks combine to break snap
+// on iOS taps:
+//  1. The snap mode computes the snapped point only in onMouseMove, which never fires
+//     on a tap (no hover before the tap).
+//  2. DrawPolygon sets `onTap = onClick`, but the snap library reassigns ONLY onClick
+//     to its snap-aware version — leaving onTap pointing at the BASE (non-snap) handler.
+//     mapbox-gl-draw routes touch taps through onTap, so taps bypassed snapping entirely.
+// Fix: define onTap to first recompute the snap from the tap's own lngLat, then route
+// through the SNAP-aware onClick (base.onClick) — never the inherited base onTap.
 function _snapTouchMode(base){
   const mode={...base};
   const recompute=function(state,e){
     if(e&&e.lngLat&&typeof base.onMouseMove==='function') base.onMouseMove.call(this,state,e);
   };
   mode.onClick=function(state,e){ recompute.call(this,state,e); return base.onClick.call(this,state,e); };
-  mode.onTap=function(state,e){ recompute.call(this,state,e); return (base.onTap||base.onClick).call(this,state,e); };
+  // Route taps through the snap-aware onClick (NOT base.onTap, which is the non-snap base).
+  mode.onTap=function(state,e){ recompute.call(this,state,e); return base.onClick.call(this,state,e); };
   return mode;
 }
 
@@ -2233,7 +2238,9 @@ function mapActivateDrawMode(categoryId){
       snap:true,
       // snapToMidPoints off + low vertex priority → edge-snap dominates, so the
       // anchor slides ALONG the line instead of jumping between preset points.
-      snapOptions:{ snapPx:15, snapToMidPoints:false, snapVertexPriorityDistance:0.0009, snapGetFeatures:_snapGetFeatures },
+      // snapPx 22 (was 15) — fingers are less precise than a cursor; a slightly wider
+      // catch radius makes tap-to-snap lock on reliably on touch without feeling sticky.
+      snapOptions:{ snapPx:22, snapToMidPoints:false, snapVertexPriorityDistance:0.0009, snapGetFeatures:_snapGetFeatures },
     });
     _mapInstance.addControl(_drawInstance,'top-left');
     _mapInstance.on('draw.create',_onDrawCreate);
