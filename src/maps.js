@@ -1863,7 +1863,8 @@ function mapShowCategoryDetails(catId){
   const capVal=cat.disturbanceCap!=null?cat.disturbanceCap:'';
   const capUnit=cat.capUnit||cat.defaultUnit||(isLinear?'ft':'ac');
 
-  // Material block (area = lbs/ac calc; linear = spec/supplier descriptors).
+  // Material block. Area = per-state (set on each state above); linear keeps its
+  // category-level spec/supplier descriptors (linear states have no rate calc).
   let materialFields;
   if(isLinear){
     materialFields=`
@@ -1871,15 +1872,7 @@ function mapShowCategoryDetails(catId){
       ${_cdField('Supplier / Product',`<input type="text" id="_cd-supplier" value="${(cat.supplier||'').replace(/"/g,'&quot;')}" placeholder="Manufacturer or vendor name" style="${_INPUT_STYLE}">`)}
       ${_cdField('Notes',`<input type="text" id="_cd-notes-det" value="${(cat.detailNotes||'').replace(/"/g,'&quot;')}" placeholder="Any additional details" style="${_INPUT_STYLE}">`)}`;
   } else {
-    const typeOptions=['None','Seeding','Lime','Fertilizer','Mulch','Other'];
-    const unitOptions=['lbs/ac','tons/ac','gal/ac','bags/ac'];
-    materialFields=`
-      ${_cdField('Amendment Type',`<select id="_cd-type" style="${_INPUT_STYLE}">${typeOptions.map(t=>`<option value="${t}"${(cat.amendmentType||'None')===t?' selected':''}>${t}</option>`).join('')}</select>`)}
-      ${_cdField('Product Name',`<input type="text" id="_cd-product" value="${(cat.productName||'').replace(/"/g,'&quot;')}" placeholder="Seed mix, product, formula…" style="${_INPUT_STYLE}">`)}
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-        ${_cdField('Target Rate',`<input type="number" id="_cd-rate" value="${cat.targetRate||''}" step="0.1" min="0" placeholder="e.g. 30" style="${_INPUT_STYLE}">`)}
-        ${_cdField('Unit',`<select id="_cd-unit" style="${_INPUT_STYLE}">${unitOptions.map(u=>`<option value="${u}"${(cat.targetRateUnit||'lbs/ac')===u?' selected':''}>${u}</option>`).join('')}</select>`)}
-      </div>`;
+    materialFields=`<div style="font-family:var(--mono);font-size:11px;color:var(--muted);line-height:1.5">Set the amendment + rate on each state above — each state can be its own material (Lime, Fertilizer, Seed…).</div>`;
   }
 
   const progModeOpts=[['per-state-vs-plan','Per-state vs plan'],['running-balance','Running balance (e.g. disturbed − stabilized)'],['simple-count','Simple count']]
@@ -1892,17 +1885,20 @@ function mapShowCategoryDetails(catId){
   const ov=document.createElement('div');
   ov.className='modal-overlay';
   ov.id='_cat-details-ov';
-  ov.style.cssText='z-index:5000';
-  ov.innerHTML=`<div class="modal-box" style="max-width:380px;width:92%">
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
+  // Full-width bottom sheet (like the Tracker Log) — the schema editor has too much
+  // to fit a small centered box; this gives the per-state rows room to breathe.
+  ov.style.cssText='z-index:5000;align-items:flex-end;padding:0';
+  ov.innerHTML=`<div style="width:100%;max-width:560px;margin:0 auto;max-height:92dvh;background:var(--bg);border-top:1px solid var(--border);border-radius:16px 16px 0 0;display:flex;flex-direction:column;overflow:hidden;padding-bottom:env(safe-area-inset-bottom)">
+    <div style="display:flex;align-items:center;gap:8px;padding:14px 16px 12px;border-bottom:1px solid var(--border);flex-shrink:0">
       <input type="color" value="${_cdCatColor}" oninput="_cdSetCatColor(this.value)" title="Category color" style="width:26px;height:26px;border:none;background:none;padding:0;flex-shrink:0;cursor:pointer">
-      <div class="modal-title" style="margin:0">${cat.name}</div>
+      <div class="modal-title" style="margin:0;flex:1;font-size:15px">${cat.name}</div>
+      <button id="_cd-x" style="background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;width:34px;height:34px">✕</button>
     </div>
-    <div style="display:flex;flex-direction:column;gap:14px;margin-bottom:16px;max-height:60vh;overflow-y:auto;padding-right:2px">
+    <div style="flex:1;overflow-y:auto;padding:14px 16px;display:flex;flex-direction:column;gap:14px">
       <div>
         <label style="${_LABEL_STYLE}">States <span style="text-transform:none;color:var(--muted)">— ✏️ editable; ‘plan’ marks the faint baseline</span></label>
         <div id="_cd-states-list"></div>
-        <button onclick="_cdAddState()" style="${_cdMiniBtn('width:100%;justify-content:center;padding:7px;color:var(--text)')}">+ Add state</button>
+        <button onclick="_cdAddState()" style="${_cdMiniBtn('width:100%;justify-content:center;padding:8px;color:var(--text)')}">+ Add state</button>
       </div>
       <label style="display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:11px;color:var(--text);cursor:pointer">
         <input type="checkbox" id="_cd-statepat" ${statePat?'checked':''}> Distinguish states by pattern (not just color)
@@ -1923,12 +1919,13 @@ function mapShowCategoryDetails(catId){
       </label>
       <div id="_cd-material-fields" style="display:${trackMat?'flex':'none'};flex-direction:column;gap:12px">${materialFields}</div>
     </div>
-    <div class="modal-btns">
-      <button class="modal-cancel" id="_cd-cancel">Cancel</button>
-      <button class="modal-confirm" id="_cd-save">Save</button>
+    <div style="display:flex;gap:8px;padding:12px 16px;border-top:1px solid var(--border);flex-shrink:0">
+      <button class="modal-cancel" id="_cd-cancel" style="flex:1">Cancel</button>
+      <button class="modal-confirm" id="_cd-save" style="flex:1">Save</button>
     </div>
   </div>`;
   document.body.appendChild(ov);
+  document.getElementById('_cd-x').onclick=()=>{ _cdStates=null; ov.remove(); };
   _cdRenderStates(isLinear);
   document.getElementById('_cd-cancel').onclick=()=>{ _cdStates=null; ov.remove(); };
   document.getElementById('_cd-save').onclick=()=>mapSaveCategoryDetails(catId,ov,isLinear);
@@ -1974,12 +1971,9 @@ async function mapSaveCategoryDetails(catId, ov, isLinear){
     patch.specification=document.getElementById('_cd-spec')?.value.trim()||null;
     patch.supplier=document.getElementById('_cd-supplier')?.value.trim()||null;
     patch.detailNotes=document.getElementById('_cd-notes-det')?.value.trim()||null;
-  } else if(trackMaterial){
-    patch.amendmentType=document.getElementById('_cd-type')?.value||'None';
-    patch.productName=document.getElementById('_cd-product')?.value.trim()||null;
-    patch.targetRate=parseFloat(document.getElementById('_cd-rate')?.value)||null;
-    patch.targetRateUnit=document.getElementById('_cd-unit')?.value||'lbs/ac';
   }
+  // Area material now lives per-state (states[].amendmentType/targetRate/targetRateUnit),
+  // so there's no category-level amendment block to read here anymore.
 
   if(typeof tcSaveCategory==='function') await tcSaveCategory({...existing,...patch},pid);
   _cdStates=null;
