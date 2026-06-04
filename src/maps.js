@@ -1778,10 +1778,14 @@ function _cdRenderStates(isLinear){
   // Two-line rows so the name field stays readable (single-line overflowed/squeezed it).
   wrap.innerHTML=_cdStates.map((s,i)=>{
     const col=/^#[0-9A-Fa-f]{6}$/.test(s.color)?s.color:'#888888';
-    const matLine=(showMat && !s.isPlanned)?`<div style="display:flex;align-items:center;gap:6px;margin-top:5px">
+    const matLine=(showMat && !s.isPlanned)?`
+      <div style="display:flex;align-items:center;gap:6px;margin-top:6px;padding-top:6px;border-top:1px dashed var(--border)">
         <select onchange="_cdSetStateMat(${i},'amendmentType',this.value)" title="Amendment" style="flex:1;min-width:0;${_INPUT_STYLE}">${_cdAmendOpts(s.amendmentType)}</select>
-        <input type="number" value="${s.targetRate??''}" oninput="_cdSetStateMat(${i},'targetRate',this.value)" placeholder="rate" step="0.1" min="0" style="width:62px;flex-shrink:0;${_INPUT_STYLE}">
-        <select onchange="_cdSetStateMat(${i},'targetRateUnit',this.value)" title="Rate unit" style="width:84px;flex-shrink:0;${_INPUT_STYLE}">${_cdRateUnitOpts(s.targetRateUnit)}</select>
+        <input type="text" value="${(s.productName||'').replace(/"/g,'&quot;')}" oninput="_cdSetStateMat(${i},'productName',this.value)" placeholder="Product / mix" maxlength="40" style="flex:1;min-width:0;${_INPUT_STYLE}">
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;margin-top:5px">
+        <input type="number" value="${s.targetRate??''}" oninput="_cdSetStateMat(${i},'targetRate',this.value)" placeholder="Target rate (e.g. 30)" step="0.1" min="0" style="flex:1;min-width:0;${_INPUT_STYLE}">
+        <select onchange="_cdSetStateMat(${i},'targetRateUnit',this.value)" title="Rate unit" style="width:96px;flex-shrink:0;${_INPUT_STYLE}">${_cdRateUnitOpts(s.targetRateUnit)}</select>
       </div>`:'';
     return `<div style="border:1px solid var(--border);border-radius:7px;padding:6px;margin-bottom:6px;background:var(--s1)">
       <div style="display:flex;align-items:center;gap:6px;margin-bottom:5px">
@@ -1943,8 +1947,9 @@ async function mapSaveCategoryDetails(catId, ov, isLinear){
     style:s.style||'solid',
     pattern:s.pattern||null,
     isPlanned:!!s.isPlanned,
-    // Per-state material (Lime/Fert/Seed each its own amendment + rate)
+    // Per-state material (Lime/Fert/Seed each its own amendment + product + rate)
     ...(s.amendmentType&&s.amendmentType!=='None'?{amendmentType:s.amendmentType}:{}),
+    ...(s.productName&&s.productName.trim()?{productName:s.productName.trim()}:{}),
     ...(s.targetRate!=null?{targetRate:s.targetRate}:{}),
     ...(s.targetRateUnit?{targetRateUnit:s.targetRateUnit}:{})
   }));
@@ -2372,6 +2377,10 @@ function mapTrStateChanged(){
   const rate=(st&&st.targetRate!=null)?st.targetRate:(cat?.targetRate??'');
   const rateEl=document.getElementById('map-tr-rate');
   if(rateEl) rateEl.value=rate||'';
+  // Prefill Mix/Product from the state's product (only if the field is empty,
+  // so we never clobber what the user already typed).
+  const mixEl=document.getElementById('map-tr-mix-product');
+  if(mixEl && !mixEl.value && st && st.productName) mixEl.value=st.productName;
   if(typeof mapTrackerCalc==='function') mapTrackerCalc();
 }
 window.mapTrStateChanged=mapTrStateChanged;
