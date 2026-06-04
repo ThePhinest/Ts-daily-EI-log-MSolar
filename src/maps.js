@@ -3,6 +3,32 @@
 // ═══════════════════════════════════════════
 import MapboxDraw from '@mapbox/mapbox-gl-draw';
 import '@mapbox/mapbox-gl-draw/dist/mapbox-gl-draw.css';
+// Snapping ("soft magnet") to the active plan + its sibling overlays. Severable.
+import { SnapPolygonMode, SnapLineMode, SnapPointMode, SnapModeDrawStyles } from 'mapbox-gl-draw-snap-mode';
+
+// Snap source: the active planned parent PLUS every sibling overlay under it, so
+// new overlays anchor to the plan AND to previous states (Lime→Fert→Seed) — no
+// gaps/overlaps. Returns [] when nothing is activated. Fully guarded so it can
+// never throw (the snap engine calls this on every move).
+function _snapGetFeatures(){
+  try{
+    if(!_activePlannedEntryId) return [];
+    const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+    const out=[];
+    const pushGeom=(e)=>{
+      if(!e||!e.geometry) return;
+      let g=e.geometry; if(typeof g==='string'){ try{ g=JSON.parse(g); }catch{ return; } }
+      if(g&&g.type) out.push({type:'Feature',id:'_snap-'+e.id,properties:{},geometry:g});
+    };
+    if(typeof trGetEntry==='function') pushGeom(trGetEntry(_activePlannedEntryId,pid));
+    if(typeof trGetEntriesForProject==='function'){
+      trGetEntriesForProject(pid)
+        .filter(e=>e.parentId===_activePlannedEntryId && !e.deletedAt && e.id!==_activePlannedEntryId)
+        .forEach(pushGeom);
+    }
+    return out;
+  }catch{ return []; }
+}
 
 let _mapInstance=null, _mapGpsMarker=null, _mapGpsWatch=null;
 let _mapCurrentStyle=localStorage.getItem('gl_map_style')||'satellite-streets-v11';
@@ -2109,7 +2135,17 @@ function mapActivateDrawMode(categoryId){
   _drawCategory=categoryId;
   _drawMode='draw';
   if(!_drawInstance){
-    _drawInstance=new MapboxDraw({ displayControlsDefault:false, controls:{} });
+    _drawInstance=new MapboxDraw({
+      displayControlsDefault:false,
+      controls:{},
+      modes:{ ...MapboxDraw.modes, draw_point:SnapPointMode, draw_polygon:SnapPolygonMode, draw_line_string:SnapLineMode },
+      styles:SnapModeDrawStyles,
+      userProperties:true,
+      snap:true,
+      // snapToMidPoints off + low vertex priority → edge-snap dominates, so the
+      // anchor slides ALONG the line instead of jumping between preset points.
+      snapOptions:{ snapPx:15, snapToMidPoints:false, snapVertexPriorityDistance:0.0009, snapGetFeatures:_snapGetFeatures },
+    });
     _mapInstance.addControl(_drawInstance,'top-left');
     _mapInstance.on('draw.create',_onDrawCreate);
     _mapInstance.on('draw.delete',_onDrawDelete);
@@ -2150,6 +2186,10 @@ function mapDeactivateDrawMode(){
   _activePlannedEntryId=null;
   _pendingDrawFeature=null;
   if(prevMode==='draw'&&_drawInstance){
+    // Switch to a non-snap mode FIRST so the active snap mode's onStop runs and
+    // removes its 'moveend' listener — otherwise it leaks and throws getAll-of-null
+    // on every zoom/scroll after the control is torn down.
+    try{ _drawInstance.changeMode('simple_select'); }catch{}
     _drawInstance.deleteAll();
     try{ _mapInstance.removeControl(_drawInstance); }catch{}
     _drawInstance=null;
