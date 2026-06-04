@@ -1,3 +1,11 @@
 source "https://rubygems.org"
 
 gem "fastlane"
+
+# Pinned explicitly to fix intermittent CI failure: "multi_json is not part of
+# the bundle" (Gem::LoadError). Without a committed Gemfile.lock, each CI run
+# re-resolves Fastlane's transitive gems fresh, and some resolutions drop
+# multi_json from the runtime bundle. Declaring it directly guarantees it's
+# always bundled. (Durable fix remains committing a Gemfile.lock — see
+# dependency-watch.md outstanding items.)
+gem "multi_json"
