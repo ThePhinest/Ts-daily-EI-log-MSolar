@@ -361,6 +361,10 @@ function clRenderTrackerCard(search){
       const active=childStates.slice(0,-1).length?childStates.slice(0,-1):[childStates[0]];
       const net=Math.max(0,active.reduce((s,st)=>s+stateTotal(st.id),0)-(childStates.length>1?stateTotal(term.id):0));
       t.headlineMode='area'; t.headlineVal=net;
+    } else if(mode==='running-total'){
+      // Cumulative — active states only, never subtract the terminal (Stabilized) state.
+      const active=childStates.slice(0,-1).length?childStates.slice(0,-1):[childStates[0]];
+      t.headlineMode='area'; t.headlineVal=active.reduce((s,st)=>s+stateTotal(st.id),0);
     } else if(t.plannedValue>0 && childStates.length){
       t.headlineMode='pct'; t.headlinePct=Math.min(100,(stateTotal(childStates[childStates.length-1].id)/t.plannedValue)*100);
     } else {
@@ -379,7 +383,7 @@ function clRenderTrackerCard(search){
       :(e.acres?`${e.acres} ac`:'');
     const isPlanned=e.entryType==='planned';
     return `<div onclick="clShowTrackerDetail('${e.id}')" style="display:flex;align-items:center;gap:10px;padding:9px ${isPlanned?'3':'6'}px 9px 6px;border-bottom:1px solid var(--border);cursor:pointer;border-radius:4px;${isPlanned?'border-left:3px solid var(--amber,#C9A84C);background:rgba(201,168,76,0.06)':''}">
-      <div style="width:12px;height:12px;border-radius:50%;background:${catColor};flex-shrink:0"></div>
+      ${(typeof tcRampChip==='function')?tcRampChip(e.categoryId,pid,12):`<div style="width:12px;height:12px;border-radius:50%;background:${catColor};flex-shrink:0"></div>`}
       <span style="font-family:var(--mono);font-size:12px;color:var(--text);flex:1">${catName}${isPlanned?' <span style="font-family:var(--mono);font-size:9px;font-weight:700;color:var(--amber,#C9A84C);letter-spacing:.06em">PLAN</span>':''}</span>
       ${measDisplay?`<span style="font-family:var(--mono);font-size:12px;color:var(--muted)">${measDisplay}</span>`:''}
       ${photoCount?`<span style="font-family:var(--mono);font-size:11px;color:var(--muted)">📷${photoCount}</span>`:''}
@@ -422,7 +426,7 @@ function clRenderTrackerCard(search){
       return `<div style="border-bottom:1px solid var(--border)">
         <div style="display:grid;grid-template-columns:${_totCols};gap:0 6px;padding:5px 0 ${chips?'2px':'5px'};align-items:center">
           <div style="display:flex;align-items:center;gap:6px;min-width:0">
-            <div style="width:8px;height:8px;border-radius:50%;background:${catColor};flex-shrink:0"></div>
+            ${(typeof tcRampChip==='function')?tcRampChip(t.categoryId,pid,9):`<div style="width:8px;height:8px;border-radius:50%;background:${catColor};flex-shrink:0"></div>`}
             <span style="font-family:var(--mono);font-size:11px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${t.categoryName}</span>
           </div>
           <span style="font-family:var(--mono);font-size:11px;color:var(--muted);text-align:right">${t.entryCount}</span>
@@ -667,6 +671,30 @@ function _catStateBars(cid, g, pid){
     </div>`;
   }
 
+  if(mode==='running-total'){
+    // Cumulative — active states only, never subtract the terminal (Stabilized) state.
+    const activeStates=childStates.slice(0,-1).length?childStates.slice(0,-1):[childStates[0]];
+    const total=activeStates.reduce((s,st)=>s+stateTotal(st.id),0);
+    const cap=cat.disturbanceCap;
+    const over=cap!=null&&total>cap;
+    const pct=cap!=null&&cap>0?Math.min(100,(total/cap)*100):(total>0?100:0);
+    const color=over?'#e74c3c':(total>0?'var(--amber)':'var(--muted)');
+    const lhs=activeStates.map(s=>s.label).join('+')+' (cumulative)';
+    const capText=cap!=null?` / ${fmt(cap)} limit`:'';
+    // Show the terminal (Stabilized) state as an informational chip — tracked, not subtracted.
+    const terminal=childStates[childStates.length-1];
+    const termTot=childStates.length>1?stateTotal(terminal.id):0;
+    const termChip=termTot>0?`<div style="font-family:var(--mono);font-size:9px;color:var(--muted);margin-top:3px"><span style="display:inline-block;width:7px;height:7px;border-radius:2px;background:${(terminal.color&&/^#[0-9A-Fa-f]{6}$/.test(terminal.color))?terminal.color:'var(--muted)'};margin-right:3px"></span>${terminal.label}: ${fmt(termTot)} (not deducted)</div>`:'';
+    return `<div style="padding:6px 16px 8px;background:var(--s1)">
+      <div style="display:flex;justify-content:space-between;font-family:var(--mono);font-size:9px;color:var(--muted);margin-bottom:3px">
+        <span>${lhs}: <b style="color:${color}">${fmt(total)}</b>${capText}</span>
+        ${over?`<span style="color:#e74c3c;font-weight:700">⚠ OVER LIMIT</span>`:(cap!=null?`<span style="color:${color}">${pct.toFixed(0)}%</span>`:'')}
+      </div>
+      ${cap!=null?`<div style="height:4px;background:var(--border);border-radius:2px;overflow:hidden"><div style="height:100%;width:${pct.toFixed(1)}%;background:${color};border-radius:2px"></div></div>`:''}
+      ${termChip}
+    </div>`;
+  }
+
   // per-state-vs-plan / simple-count: bar per state + overall
   const rows=childStates.map(st=>{
     const tot=stateTotal(st.id);
@@ -814,12 +842,20 @@ function clShowTrackerLog(){
         // into the category default unit before summing.
         const _metaType=(typeof tcGetMeasurementType==='function')?tcGetMeasurementType(cid,pid):'area';
         const _metaUnit=(typeof tcGetDefaultUnit==='function')?tcGetDefaultUnit(cid,pid):(_metaType==='linear'?'ft':'ac');
-        const _metaTotal=_installed.reduce((s,e)=>{
+        const _sumMeas=(arr)=>arr.reduce((s,e)=>{
           const v=parseFloat(e.measurementValue);
           if(!isNaN(v)) return s+((typeof tcConvertMeasurement==='function')?(tcConvertMeasurement(v,e.measurementUnit||_metaUnit,_metaUnit)??v):v);
           if(_metaType!=='linear'&&e.acres) return s+(parseFloat(e.acres)||0); // legacy area fallback
           return s;
         },0);
+        // Schema categories (stacked states): the category-row total should read the
+        // PLAN (one figure), not the sum of every state overlay — Lime+Fert+Seed on the
+        // same ground would otherwise inflate it. Legacy categories keep the installed sum.
+        const _catObjMeta=(typeof tcGetCategory==='function')?tcGetCategory(cid,pid):null;
+        const _isSchemaMeta=!!(_catObjMeta&&Array.isArray(_catObjMeta.states)&&_catObjMeta.states.length);
+        const _metaTotal=_isSchemaMeta
+          ?_sumMeas(g.entries.filter(e=>e.entryType==='planned'))
+          :_sumMeas(_installed);
         const _metaTotalText=_metaTotal>0?((typeof tcFormatMeasurement==='function')?tcFormatMeasurement(_metaTotal,_metaUnit):`${_metaTotal.toFixed(2)} ${_metaUnit}`):'';
         const gPhotos=_installed.reduce((s,e)=>s+(Array.isArray(e.photoIds)?e.photoIds.length:0),0);
         const gSeeds=_installed.reduce((s,e)=>s+(e.fields?.seedTagCount||0),0);
@@ -937,7 +973,7 @@ function clShowTrackerLog(){
         const collapsed=_tlCollapsed.has(cid);
         return `<div style="border-bottom:1px solid var(--border)">
           <div class="_tlog-cat-head" data-cat="${cid}" style="display:flex;align-items:center;gap:8px;padding:10px 16px;background:var(--s1);cursor:pointer">
-            <div style="width:10px;height:10px;border-radius:50%;background:${g.cat.color};flex-shrink:0"></div>
+            ${(typeof tcRampChip==='function')?tcRampChip(cid,pid,11):`<div style="width:10px;height:10px;border-radius:50%;background:${g.cat.color};flex-shrink:0"></div>`}
             <span style="font-family:var(--cond);font-weight:700;font-size:13px;letter-spacing:.04em;flex:1">${g.cat.name}</span>
             <span style="font-family:var(--mono);font-size:10px;color:var(--muted);white-space:nowrap">${meta}</span>
             <span style="color:var(--muted);font-size:11px;display:inline-block;transition:transform .15s;transform:rotate(${collapsed?'0':'90'}deg)">▸</span>

@@ -188,10 +188,10 @@ async function tcDeleteCategory(catId, projectId){
 
 const TC_FILL_STYLES = ['solid','hatch','crosshatch','dots'];
 const TC_LINE_STYLES = ['solid','dashed','dotted'];
-const TC_TEMPLATES   = ['seeding','disturbance','linear-bmp','progress','blank'];
+const TC_TEMPLATES   = ['seeding','disturbance','disturbance-cumulative','linear-bmp','progress','blank'];
 const TC_TEMPLATE_LABELS = {
-  seeding:'Seeding', disturbance:'Ground Disturbance', 'linear-bmp':'Linear BMP',
-  progress:'Progress / Phases', blank:'Blank'
+  seeding:'Seeding', disturbance:'Ground Disturbance', 'disturbance-cumulative':'Cumulative Disturbance',
+  'linear-bmp':'Linear BMP', progress:'Progress / Phases', blank:'Blank'
 };
 
 function _tcGenStateId(){ return 's-' + Math.random().toString(36).slice(2,8); }
@@ -217,6 +217,19 @@ function tcTemplateSchema(template, measurementType){
     disturbance: {
       measurementType:'area', trackMaterial:false, statePatterns:false,
       progressMode:'running-balance', overallMode:'terminal',
+      disturbanceCap:null, capUnit:'ac', phases:[], methods:[],
+      states:[
+        {label:'Planned',    color:'#8E9BA3', isPlanned:true},
+        {label:'Disturbed',  color:'#E67E22'},
+        {label:'Stabilized', color:'#27AE60'}
+      ]
+    },
+    // Like 'disturbance' but cumulative — overlays only ADD (Stabilized never
+    // subtracts). Tracks total acreage ever disturbed (SWPPP Condition 1) vs an
+    // optional cap, where 'disturbance' tracks net currently-open (the 125-ac cap).
+    'disturbance-cumulative': {
+      measurementType:'area', trackMaterial:false, statePatterns:false,
+      progressMode:'running-total', overallMode:'terminal',
       disturbanceCap:null, capUnit:'ac', phases:[], methods:[],
       states:[
         {label:'Planned',    color:'#8E9BA3', isPlanned:true},
@@ -334,6 +347,21 @@ function tcCategoryMethods(catOrId, projectId){
   return (typeof window !== 'undefined' && window._amendmentMethods) ? window._amendmentMethods : [];
 }
 
+// Category identity chip — a small horizontal ramp of the category's state colors,
+// in order. Replaces the old single category-color dot everywhere a category is
+// listed. Self-maintaining: edit a state color and every chip updates. Falls back
+// to a single swatch for a 1-state category. `h` = height px (default 10).
+function tcRampChip(catOrId, projectId, h){
+  const states=tcGetStates(catOrId, projectId);
+  const ht=h||10;
+  const w=Math.min(30, Math.max(12, states.length*6));
+  const segs=states.map(s=>{
+    const c=(s.color&&/^#[0-9A-Fa-f]{6}$/.test(s.color))?s.color:'#888888';
+    return `<span style="display:block;flex:1 1 0;min-width:0;background:${c}"></span>`;
+  }).join('');
+  return `<span title="${(tcGetName(catOrId,projectId)||'').replace(/"/g,'&quot;')}" style="display:inline-flex;width:${w}px;height:${ht}px;border-radius:3px;overflow:hidden;flex-shrink:0;border:1px solid rgba(0,0,0,0.18);box-shadow:0 0 0 0.5px rgba(255,255,255,0.06) inset">${segs}</span>`;
+}
+
 // Invalidate cache for a project (e.g. on project switch before reload).
 function tcClearCache(projectId){
   if(projectId){
@@ -351,6 +379,7 @@ if(typeof window !== 'undefined'){
   window.tcGetCategory          = tcGetCategory;
   window.tcGetColor             = tcGetColor;
   window.tcGetName              = tcGetName;
+  window.tcRampChip             = tcRampChip;
   window.tcNextColor            = tcNextColor;
   window.tcSaveCategory         = tcSaveCategory;
   window.tcDeleteCategory       = tcDeleteCategory;

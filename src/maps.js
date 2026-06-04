@@ -1660,7 +1660,7 @@ function _renderTrackerSheet(){
     }
     if(_tcConfirmDeleteId===c.id){
       return `<div class="map-tc-row" style="background:rgba(220,50,50,.08)">
-        <div class="map-tc-dot" style="background:${c.color||'#888'}"></div>
+        ${(typeof tcRampChip==='function')?tcRampChip(c,pid,12):`<div class="map-tc-dot" style="background:${c.color||'#888'}"></div>`}
         <span class="map-tc-name" style="color:var(--muted)">Delete "${c.name}"?</span>
         <button onclick="mapTrackerConfirmDelete('${c.id}')" class="map-tc-save-btn" style="background:#c0392b;color:#fff">Yes</button>
         <button onclick="mapTrackerCancelDelete()" class="map-tc-cancel-btn">No</button>
@@ -1671,7 +1671,7 @@ function _renderTrackerSheet(){
       :(c.productName||c.targetRate||(c.amendmentType&&c.amendmentType!=='None'));
     const typeBadge=`<span style="font-family:var(--mono);font-size:9px;color:var(--muted);padding:2px 5px;border:1px solid var(--border);border-radius:3px;white-space:nowrap">${c.measurementType==='linear'?'LN':'AC'}</span>`;
     return `<div class="map-tc-row">
-      <div class="map-tc-dot" style="background:${c.color||'#888'}"></div>
+      ${(typeof tcRampChip==='function')?tcRampChip(c,pid,12):`<div class="map-tc-dot" style="background:${c.color||'#888'}"></div>`}
       <span class="map-tc-name">${c.name}</span>
       ${typeBadge}
       <button class="map-tc-btn ${visible?'':'dim'}" onclick="mapTrackerToggleLayer('${c.id}')" title="${visible?'Hide':'Show'} layer">${visible?'●':'○'}</button>
@@ -1867,7 +1867,7 @@ function _cdToggleMaterial(on){
 function _cdToggleCap(){
   const mode=document.getElementById('_cd-progmode')?.value;
   const box=document.getElementById('_cd-cap-row');
-  if(box) box.style.display=mode==='running-balance'?'block':'none';
+  if(box) box.style.display=(mode==='running-balance'||mode==='running-total')?'block':'none';
 }
 
 let _cdIsLinear=false;
@@ -1905,7 +1905,7 @@ function mapShowCategoryDetails(catId){
     materialFields=`<div style="font-family:var(--mono);font-size:11px;color:var(--muted);line-height:1.5">Set the amendment + rate on each state above — each state can be its own material (Lime, Fertilizer, Seed…).</div>`;
   }
 
-  const progModeOpts=[['per-state-vs-plan','Per-state vs plan'],['running-balance','Running balance (e.g. disturbed − stabilized)'],['simple-count','Simple count']]
+  const progModeOpts=[['per-state-vs-plan','Per-state vs plan'],['running-balance','Running balance (e.g. disturbed − stabilized)'],['running-total','Running total (cumulative — never subtracts)'],['simple-count','Simple count']]
     .map(([v,l])=>`<option value="${v}"${v===progMode?' selected':''}>${l}</option>`).join('');
   const overModeOpts=[['terminal','Final state %'],['average','Average of states'],['weighted','Weighted']]
     .map(([v,l])=>`<option value="${v}"${v===overMode?' selected':''}>${l}</option>`).join('');
@@ -1920,7 +1920,7 @@ function mapShowCategoryDetails(catId){
   ov.style.cssText='z-index:5000;align-items:flex-end;padding:0';
   ov.innerHTML=`<div style="width:100%;max-height:92dvh;background:var(--bg);border-top:1px solid var(--border);border-radius:16px 16px 0 0;display:flex;flex-direction:column;overflow:hidden;padding-bottom:env(safe-area-inset-bottom)">
     <div style="display:flex;align-items:center;gap:8px;padding:14px 16px 12px;border-bottom:1px solid var(--border);flex-shrink:0">
-      <input type="color" value="${_cdCatColor}" oninput="_cdSetCatColor(this.value)" title="Category color" style="width:26px;height:26px;border:none;background:none;padding:0;flex-shrink:0;cursor:pointer">
+      ${(typeof tcRampChip==='function')?tcRampChip(cat,pid,14):''}
       <div class="modal-title" style="margin:0;flex:1;font-size:15px">${cat.name}</div>
       <button id="_cd-x" style="background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;width:34px;height:34px">✕</button>
     </div>
@@ -1937,7 +1937,7 @@ function mapShowCategoryDetails(catId){
         ${_cdField('Progress mode',`<select id="_cd-progmode" onchange="_cdToggleCap()" style="${_INPUT_STYLE}">${progModeOpts}</select>`)}
         ${_cdField('Overall %',`<select id="_cd-overmode" style="${_INPUT_STYLE}">${overModeOpts}</select>`)}
       </div>
-      <div id="_cd-cap-row" style="display:${progMode==='running-balance'?'block':'none'}">
+      <div id="_cd-cap-row" style="display:${(progMode==='running-balance'||progMode==='running-total')?'block':'none'}">
         <label style="${_LABEL_STYLE}">Disturbance limit (warn above)</label>
         <div style="display:grid;grid-template-columns:1fr 90px;gap:8px">
           <input type="number" id="_cd-cap" value="${capVal}" step="0.1" min="0" placeholder="e.g. 5" style="${_INPUT_STYLE}">
@@ -1989,10 +1989,12 @@ async function mapSaveCategoryDetails(catId, ov, isLinear){
   const progressMode=document.getElementById('_cd-progmode')?.value||'per-state-vs-plan';
   const overallMode=document.getElementById('_cd-overmode')?.value||'terminal';
   const statePatterns=!!document.getElementById('_cd-statepat')?.checked;
+  // Category color is no longer a paint channel — each state owns its fill+outline,
+  // and category identity is shown as the derived state-ramp chip. existing.color is
+  // left untouched (legacy categories without states[] still synthesize from it).
   const patch={ states, trackMaterial, progressMode, overallMode, statePatterns };
-  if(_cdCatColor&&/^#[0-9A-Fa-f]{6}$/.test(_cdCatColor)) patch.color=_cdCatColor;
 
-  if(progressMode==='running-balance'){
+  if(progressMode==='running-balance'||progressMode==='running-total'){
     const cv=parseFloat(document.getElementById('_cd-cap')?.value);
     patch.disturbanceCap=isNaN(cv)?null:cv;
     patch.capUnit=document.getElementById('_cd-capunit')?.value||existing.defaultUnit||(isLinear?'ft':'ac');
