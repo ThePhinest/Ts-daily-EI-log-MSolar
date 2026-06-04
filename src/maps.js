@@ -1857,7 +1857,9 @@ function _cdStyleOptions(isLinear, sel){
 }
 
 function _cdMiniBtn(extra){
-  return `background:var(--s2);border:1px solid var(--border);color:var(--muted);border-radius:4px;font-family:var(--mono);font-size:11px;padding:5px 7px;cursor:pointer;flex-shrink:0;${extra||''}`;
+  // Font stack includes system-symbol fallbacks so ↑/↓/✓/✕ glyphs always render
+  // (the mono webfont lacks some of these on iOS → they showed as blank ovals).
+  return `background:var(--s2);border:1px solid var(--border);color:var(--muted);border-radius:4px;font-family:var(--mono),-apple-system,'Segoe UI Symbol',sans-serif;font-size:11px;padding:5px 7px;cursor:pointer;flex-shrink:0;${extra||''}`;
 }
 
 const _CD_AMEND_TYPES=['None','Seeding','Lime','Fertilizer','Mulch','Other'];
@@ -1887,13 +1889,13 @@ function _cdRenderStates(isLinear){
       <div style="display:flex;align-items:center;gap:6px;margin-bottom:5px">
         <input type="color" value="${col}" oninput="_cdSetStateColor(${i},this.value)" title="State color" style="width:30px;height:30px;border:none;background:none;padding:0;flex-shrink:0;cursor:pointer">
         <input type="text" value="${(s.label||'').replace(/"/g,'&quot;')}" oninput="_cdSetStateLabel(${i},this.value)" placeholder="State name (e.g. Disturbed)" maxlength="24" style="flex:1;min-width:0;${_INPUT_STYLE}">
-        <button onclick="_cdDelState(${i})" ${_cdStates.length<=1?'disabled style=opacity:.3':''} title="Delete state" style="${_cdMiniBtn('color:#e74c3c')}">✕</button>
+        <button onclick="_cdDelState(${i})" ${_cdStates.length<=1?'disabled':''} title="Delete state" style="${_cdMiniBtn('color:#e74c3c'+(_cdStates.length<=1?';opacity:.3':''))}">✕</button>
       </div>
       <div style="display:flex;align-items:center;gap:6px">
         <select onchange="_cdSetStateStyle(${i},this.value)" title="Style" style="flex:1;min-width:0;${_INPUT_STYLE}">${_cdStyleOptions(isLinear,s.style)}</select>
         <button onclick="_cdSetPlanned(${i})" title="Plan baseline — renders faint" style="${_cdMiniBtn(s.isPlanned?'background:var(--amber);color:#111;border-color:var(--amber);font-weight:700':'')}">${s.isPlanned?'✓ plan':'plan'}</button>
-        <button onclick="_cdMoveState(${i},-1)" ${i===0?'disabled style=opacity:.3':''} style="${_cdMiniBtn()}">↑</button>
-        <button onclick="_cdMoveState(${i},1)" ${i===_cdStates.length-1?'disabled style=opacity:.3':''} style="${_cdMiniBtn()}">↓</button>
+        <button onclick="_cdMoveState(${i},-1)" ${i===0?'disabled':''} style="${_cdMiniBtn(i===0?'opacity:.3':'')}">↑</button>
+        <button onclick="_cdMoveState(${i},1)" ${i===_cdStates.length-1?'disabled':''} style="${_cdMiniBtn(i===_cdStates.length-1?'opacity:.3':'')}">↓</button>
       </div>
       ${matLine}
     </div>`;
