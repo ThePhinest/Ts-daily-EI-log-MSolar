@@ -497,6 +497,8 @@ function clShowTrackerDetail(entryId){
   document.getElementById('_cltrattach').onclick=()=>clShowPhotoAttachPicker(entryId);
   document.getElementById('_cltredit').onclick=()=>{
     ov.remove();
+    // Also close the Tracker Log modal behind it, else the entry popup opens under it.
+    document.querySelectorAll('.\_tlog-modal').forEach(el=>el.remove());
     if(typeof showPage==='function') showPage('map');
     setTimeout(()=>{
       if(typeof mapEditTrackerEntry==='function') mapEditTrackerEntry(entryId);
@@ -723,7 +725,12 @@ function clShowTrackerLog(){
         )) return false;
       }
       return true;
-    }).sort((a,b)=>b.date>a.date?1:b.date<a.date?-1:0);
+    }).sort((a,b)=>{
+      // Planned (the baseline) pins to the top of its category; then by date desc.
+      const ap=a.entryType==='planned'?0:1, bp=b.entryType==='planned'?0:1;
+      if(ap!==bp) return ap-bp;
+      return b.date>a.date?1:b.date<a.date?-1:0;
+    });
   }
 
   function _tlogRender(){

@@ -1720,6 +1720,13 @@ function mapTrackerCancelDelete(){
 }
 async function mapTrackerConfirmDelete(catId){
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  // Cascade: soft-delete every entry in this category so it also clears from the
+  // map AND the compliance/tracker-log surfaces (was leaving orphaned drawings).
+  if(typeof trGetEntriesForProject==='function' && typeof trDeleteEntry==='function'){
+    trGetEntriesForProject(pid)
+      .filter(e=>(e.categoryId===catId)||(e.category===catId))
+      .forEach(e=>{ try{ trDeleteEntry(e.id,pid); }catch{} });
+  }
   if(typeof tcDeleteCategory==='function') await tcDeleteCategory(catId,pid);
   _tcConfirmDeleteId=null;
   delete _tcLayerVisible[catId];
@@ -1731,6 +1738,8 @@ async function mapTrackerConfirmDelete(catId){
     try{ if(_mapInstance.getSource(src)) _mapInstance.removeSource(src); }catch{}
   }
   _renderTrackerSheet();
+  if(typeof mapRenderTrackerLayers==='function') mapRenderTrackerLayers();
+  if(typeof clRenderTrackerCard==='function') clRenderTrackerCard();
 }
 
 // ── Category details modal ────────────────
@@ -1758,16 +1767,21 @@ function _cdMiniBtn(extra){
 function _cdRenderStates(isLinear){
   const wrap=document.getElementById('_cd-states-list');
   if(!wrap||!_cdStates) return;
+  // Two-line rows so the name field stays readable (single-line overflowed/squeezed it).
   wrap.innerHTML=_cdStates.map((s,i)=>{
     const col=/^#[0-9A-Fa-f]{6}$/.test(s.color)?s.color:'#888888';
-    return `<div style="display:flex;align-items:center;gap:5px;margin-bottom:6px">
-      <input type="color" value="${col}" oninput="_cdSetStateColor(${i},this.value)" title="State color" style="width:30px;height:30px;border:none;background:none;padding:0;flex-shrink:0;cursor:pointer">
-      <input type="text" value="${(s.label||'').replace(/"/g,'&quot;')}" oninput="_cdSetStateLabel(${i},this.value)" placeholder="State name" maxlength="24" style="flex:1;min-width:0;${_INPUT_STYLE}">
-      <select onchange="_cdSetStateStyle(${i},this.value)" title="Style" style="width:78px;flex-shrink:0;${_INPUT_STYLE}">${_cdStyleOptions(isLinear,s.style)}</select>
-      <button onclick="_cdSetPlanned(${i})" title="Plan baseline — renders faint" style="${_cdMiniBtn(s.isPlanned?'background:var(--amber);color:#111;border-color:var(--amber);font-weight:700':'')}">plan</button>
-      <button onclick="_cdMoveState(${i},-1)" ${i===0?'disabled style=opacity:.3':''} style="${_cdMiniBtn()}">↑</button>
-      <button onclick="_cdMoveState(${i},1)" ${i===_cdStates.length-1?'disabled style=opacity:.3':''} style="${_cdMiniBtn()}">↓</button>
-      <button onclick="_cdDelState(${i})" ${_cdStates.length<=1?'disabled style=opacity:.3':''} style="${_cdMiniBtn('color:#e74c3c')}">✕</button>
+    return `<div style="border:1px solid var(--border);border-radius:7px;padding:6px;margin-bottom:6px;background:var(--s1)">
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:5px">
+        <input type="color" value="${col}" oninput="_cdSetStateColor(${i},this.value)" title="State color" style="width:30px;height:30px;border:none;background:none;padding:0;flex-shrink:0;cursor:pointer">
+        <input type="text" value="${(s.label||'').replace(/"/g,'&quot;')}" oninput="_cdSetStateLabel(${i},this.value)" placeholder="State name (e.g. Disturbed)" maxlength="24" style="flex:1;min-width:0;${_INPUT_STYLE}">
+        <button onclick="_cdDelState(${i})" ${_cdStates.length<=1?'disabled style=opacity:.3':''} title="Delete state" style="${_cdMiniBtn('color:#e74c3c')}">✕</button>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px">
+        <select onchange="_cdSetStateStyle(${i},this.value)" title="Style" style="flex:1;min-width:0;${_INPUT_STYLE}">${_cdStyleOptions(isLinear,s.style)}</select>
+        <button onclick="_cdSetPlanned(${i})" title="Plan baseline — renders faint" style="${_cdMiniBtn(s.isPlanned?'background:var(--amber);color:#111;border-color:var(--amber);font-weight:700':'')}">${s.isPlanned?'✓ plan':'plan'}</button>
+        <button onclick="_cdMoveState(${i},-1)" ${i===0?'disabled style=opacity:.3':''} style="${_cdMiniBtn()}">↑</button>
+        <button onclick="_cdMoveState(${i},1)" ${i===_cdStates.length-1?'disabled style=opacity:.3':''} style="${_cdMiniBtn()}">↓</button>
+      </div>
     </div>`;
   }).join('');
 }
@@ -1806,6 +1820,8 @@ function _cdToggleCap(){
 }
 
 let _cdIsLinear=false;
+let _cdCatColor=null;
+function _cdSetCatColor(v){ _cdCatColor=v; }
 
 function mapShowCategoryDetails(catId){
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
@@ -1814,6 +1830,7 @@ function mapShowCategoryDetails(catId){
   if(document.getElementById('_cat-details-ov')) return;
   const isLinear=cat.measurementType==='linear';
   _cdIsLinear=isLinear;
+  _cdCatColor=(cat.color&&/^#[0-9A-Fa-f]{6}$/.test(cat.color))?cat.color:'#888888';
   // Deep-clone states (synthesizes legacy defaults) so edits don't touch the cache.
   _cdStates=(typeof tcGetStates==='function'?tcGetStates(cat,pid):[]).map(s=>({...s}));
   if(!_cdStates.some(s=>s.isPlanned)&&_cdStates.length) _cdStates[0].isPlanned=true;
@@ -1857,7 +1874,7 @@ function mapShowCategoryDetails(catId){
   ov.style.cssText='z-index:5000';
   ov.innerHTML=`<div class="modal-box" style="max-width:380px;width:92%">
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
-      <div style="width:12px;height:12px;border-radius:50%;background:${cat.color||'#888'};flex-shrink:0"></div>
+      <input type="color" value="${_cdCatColor}" oninput="_cdSetCatColor(this.value)" title="Category color" style="width:26px;height:26px;border:none;background:none;padding:0;flex-shrink:0;cursor:pointer">
       <div class="modal-title" style="margin:0">${cat.name}</div>
     </div>
     <div style="display:flex;flex-direction:column;gap:14px;margin-bottom:16px;max-height:60vh;overflow-y:auto;padding-right:2px">
@@ -1920,6 +1937,7 @@ async function mapSaveCategoryDetails(catId, ov, isLinear){
   const overallMode=document.getElementById('_cd-overmode')?.value||'terminal';
   const statePatterns=!!document.getElementById('_cd-statepat')?.checked;
   const patch={ states, trackMaterial, progressMode, overallMode, statePatterns };
+  if(_cdCatColor&&/^#[0-9A-Fa-f]{6}$/.test(_cdCatColor)) patch.color=_cdCatColor;
 
   if(progressMode==='running-balance'){
     const cv=parseFloat(document.getElementById('_cd-cap')?.value);
@@ -2477,6 +2495,8 @@ function mapSaveTrackerEntry(){
   mapRenderTrackerLayers();
   mapUpdateKmlLayerList();
   if(typeof clRenderTrackerCard==='function') clRenderTrackerCard();
+  // Auto-exit draw mode once an entry is finalized (Tim 6/3 — was stuck in draw mode).
+  if(typeof mapDeactivateDrawMode==='function') mapDeactivateDrawMode();
 }
 
 // ── Measure mode ──────────────────────────
@@ -3919,6 +3939,7 @@ window._cdSetStateLabel  = _cdSetStateLabel;
 window._cdSetStateStyle  = _cdSetStateStyle;
 window._cdToggleMaterial = _cdToggleMaterial;
 window._cdToggleCap      = _cdToggleCap;
+window._cdSetCatColor    = _cdSetCatColor;
 window.mapTrackerUnitChange = mapTrackerUnitChange;
 window.mapShowColorPicker = mapShowColorPicker;
 window.mapSelectColor = mapSelectColor;
