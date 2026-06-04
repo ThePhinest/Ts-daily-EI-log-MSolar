@@ -1764,12 +1764,25 @@ function _cdMiniBtn(extra){
   return `background:var(--s2);border:1px solid var(--border);color:var(--muted);border-radius:4px;font-family:var(--mono);font-size:11px;padding:5px 7px;cursor:pointer;flex-shrink:0;${extra||''}`;
 }
 
+const _CD_AMEND_TYPES=['None','Seeding','Lime','Fertilizer','Mulch','Other'];
+const _CD_RATE_UNITS=['lbs/ac','tons/ac','gal/ac','bags/ac'];
+function _cdAmendOpts(sel){ return _CD_AMEND_TYPES.map(t=>`<option value="${t}"${(sel||'None')===t?' selected':''}>${t}</option>`).join(''); }
+function _cdRateUnitOpts(sel){ return _CD_RATE_UNITS.map(u=>`<option value="${u}"${(sel||'lbs/ac')===u?' selected':''}>${u}</option>`).join(''); }
+
 function _cdRenderStates(isLinear){
   const wrap=document.getElementById('_cd-states-list');
   if(!wrap||!_cdStates) return;
+  // Per-state material shows when the category tracks material (area only); the plan
+  // baseline has no material. Each state can be its own amendment (Lime/Fert/Seed).
+  const showMat=!isLinear && !!document.getElementById('_cd-trackmat')?.checked;
   // Two-line rows so the name field stays readable (single-line overflowed/squeezed it).
   wrap.innerHTML=_cdStates.map((s,i)=>{
     const col=/^#[0-9A-Fa-f]{6}$/.test(s.color)?s.color:'#888888';
+    const matLine=(showMat && !s.isPlanned)?`<div style="display:flex;align-items:center;gap:6px;margin-top:5px">
+        <select onchange="_cdSetStateMat(${i},'amendmentType',this.value)" title="Amendment" style="flex:1;min-width:0;${_INPUT_STYLE}">${_cdAmendOpts(s.amendmentType)}</select>
+        <input type="number" value="${s.targetRate??''}" oninput="_cdSetStateMat(${i},'targetRate',this.value)" placeholder="rate" step="0.1" min="0" style="width:62px;flex-shrink:0;${_INPUT_STYLE}">
+        <select onchange="_cdSetStateMat(${i},'targetRateUnit',this.value)" title="Rate unit" style="width:84px;flex-shrink:0;${_INPUT_STYLE}">${_cdRateUnitOpts(s.targetRateUnit)}</select>
+      </div>`:'';
     return `<div style="border:1px solid var(--border);border-radius:7px;padding:6px;margin-bottom:6px;background:var(--s1)">
       <div style="display:flex;align-items:center;gap:6px;margin-bottom:5px">
         <input type="color" value="${col}" oninput="_cdSetStateColor(${i},this.value)" title="State color" style="width:30px;height:30px;border:none;background:none;padding:0;flex-shrink:0;cursor:pointer">
@@ -1782,12 +1795,18 @@ function _cdRenderStates(isLinear){
         <button onclick="_cdMoveState(${i},-1)" ${i===0?'disabled style=opacity:.3':''} style="${_cdMiniBtn()}">↑</button>
         <button onclick="_cdMoveState(${i},1)" ${i===_cdStates.length-1?'disabled style=opacity:.3':''} style="${_cdMiniBtn()}">↓</button>
       </div>
+      ${matLine}
     </div>`;
   }).join('');
 }
 function _cdSetStateColor(i,v){ if(_cdStates[i]) _cdStates[i].color=v; }
 function _cdSetStateLabel(i,v){ if(_cdStates[i]) _cdStates[i].label=v; }
 function _cdSetStateStyle(i,v){ if(_cdStates[i]) _cdStates[i].style=v; }
+function _cdSetStateMat(i,field,v){
+  if(!_cdStates[i]) return;
+  if(field==='targetRate'){ const f=parseFloat(v); _cdStates[i].targetRate=isNaN(f)?null:f; }
+  else _cdStates[i][field]=v;
+}
 function _cdSetPlanned(i){
   _cdStates.forEach((s,j)=>{ s.isPlanned=(j===i); });
   _cdRenderStates(_cdIsLinear);
@@ -1812,6 +1831,8 @@ function _cdAddState(){
 function _cdToggleMaterial(on){
   const box=document.getElementById('_cd-material-fields');
   if(box) box.style.display=on?'flex':'none';
+  // Per-state material lines depend on this toggle — re-render the states list.
+  _cdRenderStates(_cdIsLinear);
 }
 function _cdToggleCap(){
   const mode=document.getElementById('_cd-progmode')?.value;
@@ -1924,7 +1945,11 @@ async function mapSaveCategoryDetails(catId, ov, isLinear){
     color:/^#[0-9A-Fa-f]{6}$/.test(s.color)?s.color:'#888888',
     style:s.style||'solid',
     pattern:s.pattern||null,
-    isPlanned:!!s.isPlanned
+    isPlanned:!!s.isPlanned,
+    // Per-state material (Lime/Fert/Seed each its own amendment + rate)
+    ...(s.amendmentType&&s.amendmentType!=='None'?{amendmentType:s.amendmentType}:{}),
+    ...(s.targetRate!=null?{targetRate:s.targetRate}:{}),
+    ...(s.targetRateUnit?{targetRateUnit:s.targetRateUnit}:{})
   }));
   if(!states.length) states=[{id:_cdGenStateId(),label:'Planned',color:existing.color||'#888',style:'solid',pattern:null,isPlanned:true}];
   if(!states.some(s=>s.isPlanned)) states[0].isPlanned=true;
@@ -2294,6 +2319,8 @@ function mapShowTrackerModal(feat,category){
       _populateEntryStates(category, defState?defState.id:null);
       const hasStates=(document.getElementById('map-tr-state')?.options.length||0)>0;
       stateRow.style.display=hasStates?'block':'none';
+      // Prefill rate from the default state's material (per-state material).
+      if(hasStates) mapTrStateChanged();
     }
   }
   const areaFields=document.getElementById('map-tr-area-fields');
@@ -2334,6 +2361,27 @@ function _populateEntryStates(category, selectedStateId){
   sel.innerHTML=states.map(s=>`<option value="${s.id}"${s.id===selectedStateId?' selected':''}>${s.label}</option>`).join('');
 }
 
+// The currently-selected state object in the entry modal (for per-state material).
+function _trSelectedState(){
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const sid=document.getElementById('map-tr-state')?.value;
+  if(!sid||typeof tcGetState!=='function') return null;
+  return tcGetState(_drawCategory,sid,pid);
+}
+
+// State changed in the entry form → prefill the rate from that state's material
+// (falls back to the category targetRate), then recompute the calc.
+function mapTrStateChanged(){
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const cat=(typeof tcGetCategory==='function')?tcGetCategory(_drawCategory,pid):null;
+  const st=_trSelectedState();
+  const rate=(st&&st.targetRate!=null)?st.targetRate:(cat?.targetRate??'');
+  const rateEl=document.getElementById('map-tr-rate');
+  if(rateEl) rateEl.value=rate||'';
+  if(typeof mapTrackerCalc==='function') mapTrackerCalc();
+}
+window.mapTrStateChanged=mapTrStateChanged;
+
 function mapCloseTrackerModal(){
   document.getElementById('map-tracker-modal').classList.remove('open');
 }
@@ -2352,11 +2400,15 @@ function _updateActivePlanIndicator(){
     el.style.display='none';
   }
 }
+// Activate ANY drawing (plan or overlay) as the draw target. Activating a plan
+// links new overlays to it; activating an overlay links new overlays to that
+// overlay's parent plan (siblings) so you can stack Lime→Fert→Seed by activating
+// the previous layer. (The trace/snap-to-it part lands with the snapping rework.)
 function mapActivatePlannedEntry(entryId){
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
   const entry=(typeof trGetEntry==='function')?trGetEntry(entryId,pid):null;
   if(!entry) return;
-  _activePlannedEntryId=entryId;
+  _activePlannedEntryId=(entry.entryType==='planned')?entry.id:(entry.parentId||entry.id);
   if(_trackerPopup){_trackerPopup.remove();_trackerPopup=null;}
   _drawEntryType='installed';
   if(!_drawMode) mapActivateDrawMode(entry.categoryId||entry.category);
@@ -3439,7 +3491,7 @@ function _showTrackerEntryPopup(lngLat,props){
       <button onclick="mapToggleDateLabel('${props.id}')" style="${_TRP_BTN}background:${labelOn?'rgba(201,168,76,0.2)':'var(--s2,#1a2a38)'};border:1px solid ${labelOn?'var(--amber,#C9A84C)':'var(--border,#334)'};color:${labelOn?'var(--amber,#C9A84C)':'var(--muted,#888)'}">🔖${labelOn?' On':' Label'}</button>
       <button onclick="mapCaptureForEntry('${props.id}')" style="${_TRP_BTN}background:var(--s2,#1a2a38);border:1px solid var(--border,#334);color:var(--muted,#888)" title="Capture map view as photo">📷 Capture</button>
       <button onclick="mapOpenCategoryFromPopup('${props.categoryId}')" style="${_TRP_BTN}background:var(--s2,#1a2a38);border:1px solid var(--border,#334);color:var(--muted,#888)" title="Category settings">⚙ Category</button>
-      ${entry?.entryType==='planned'?`<button onclick="mapActivatePlannedEntry('${props.id}')" style="${_TRP_BTN}background:rgba(201,168,76,0.2);border:1px solid var(--amber,#C9A84C);color:var(--amber,#C9A84C);font-weight:700">📍 Activate</button>`:''}
+      <button onclick="mapActivatePlannedEntry('${props.id}')" style="${_TRP_BTN}background:rgba(201,168,76,0.2);border:1px solid var(--amber,#C9A84C);color:var(--amber,#C9A84C);font-weight:700" title="${entry?.entryType==='planned'?'Draw overlays on this plan':'Stack the next state on this layer'}">📍 Activate</button>
     </div>`:''}
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px">
       <button onclick="mapEditTrackerEntry('${props.id}')" style="${_TRP_BTN}background:var(--amber,#D97706);border:none;color:#111;font-weight:700">✏️ Edit</button>
@@ -3568,7 +3620,9 @@ function mapEditTrackerEntry(entryId){
 function _catUnit(){
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
   const cat=(typeof tcGetCategory==='function')?tcGetCategory(_drawCategory,pid):null;
-  return cat?.targetRateUnit||'lbs/ac';
+  // Prefer the selected state's rate unit (per-state material), else the category's.
+  const st=(typeof _trSelectedState==='function')?_trSelectedState():null;
+  return (st&&st.targetRateUnit)||cat?.targetRateUnit||'lbs/ac';
 }
 function mapTrackerUnitChange(){
   const unitSel=document.getElementById('map-tr-unit');
@@ -3952,6 +4006,7 @@ window._cdSetStateStyle  = _cdSetStateStyle;
 window._cdToggleMaterial = _cdToggleMaterial;
 window._cdToggleCap      = _cdToggleCap;
 window._cdSetCatColor    = _cdSetCatColor;
+window._cdSetStateMat    = _cdSetStateMat;
 window.mapTrackerUnitChange = mapTrackerUnitChange;
 window.mapShowColorPicker = mapShowColorPicker;
 window.mapSelectColor = mapSelectColor;

@@ -2051,7 +2051,7 @@ Anticipated rain — AM weather monitoring expected"></textarea>
       <!-- State picker (child overlays) -->
       <div id="map-tr-state-row" style="display:none;margin-bottom:10px">
         <label style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;display:block;margin-bottom:4px">State</label>
-        <select id="map-tr-state" style="width:100%;box-sizing:border-box;background:var(--s1);border:1px solid var(--border);border-radius:6px;padding:7px 9px;color:var(--text);font-family:var(--mono);font-size:12px"></select>
+        <select id="map-tr-state" onchange="if(typeof mapTrStateChanged==='function')mapTrStateChanged()" style="width:100%;box-sizing:border-box;background:var(--s1);border:1px solid var(--border);border-radius:6px;padding:7px 9px;color:var(--text);font-family:var(--mono);font-size:12px"></select>
       </div>
       <!-- Area-only fields -->
       <div id="map-tr-area-fields">
