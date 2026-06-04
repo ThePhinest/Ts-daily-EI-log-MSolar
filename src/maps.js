@@ -3377,6 +3377,17 @@ function mapRenderTrackerLayers(){
   mapRefreshDateLabels();
 }
 
+// Shared popup-button base style — fixed-width grid cells so nothing sticks off the popup.
+const _TRP_BTN='width:100%;box-sizing:border-box;padding:7px 4px;border-radius:6px;font-family:var(--mono);font-size:11px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
+
+// Open the category schema editor from a drawing's popup (closes the popup first,
+// else the modal opens behind the higher-z-index popup).
+function mapOpenCategoryFromPopup(catId){
+  if(_trackerPopup){_trackerPopup.remove();_trackerPopup=null;}
+  if(typeof mapShowCategoryDetails==='function') mapShowCategoryDetails(catId);
+}
+window.mapOpenCategoryFromPopup=mapOpenCategoryFromPopup;
+
 function _showTrackerEntryPopup(lngLat,props){
   if(_trackerPopup){_trackerPopup.remove();_trackerPopup=null;}
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
@@ -3424,17 +3435,18 @@ function _showTrackerEntryPopup(lngLat,props){
     ${badgeRow}
     ${photoStrip}
     ${entry?.parentId?`<div style="font-size:10px;color:#a0b8c8;margin-top:4px;border-top:1px solid rgba(255,255,255,.08);padding-top:4px">📍 Linked to planned area</div>`:''}
-    ${entry?`<div style="display:flex;gap:6px;margin-top:8px">
-      <button onclick="mapToggleDateLabel('${props.id}')" style="flex:1;background:${labelOn?'rgba(201,168,76,0.2)':'var(--s2,#1a2a38)'};border:1px solid ${labelOn?'var(--amber,#C9A84C)':'var(--border,#334)'};color:${labelOn?'var(--amber,#C9A84C)':'var(--muted,#888)'};padding:7px;border-radius:6px;font-family:var(--mono);font-size:11px;cursor:pointer;white-space:nowrap">🔖${labelOn?' On':' Label'}</button>
-      <button onclick="mapCaptureForEntry('${props.id}')" style="flex:1;background:var(--s2,#1a2a38);border:1px solid var(--border,#334);color:var(--muted,#888);padding:7px;border-radius:6px;font-family:var(--mono);font-size:11px;cursor:pointer;white-space:nowrap" title="Capture map view as photo">📷 Capture</button>
-      ${entry?.entryType==='planned'?`<button onclick="mapActivatePlannedEntry('${props.id}')" style="flex:1;background:rgba(201,168,76,0.2);border:1px solid var(--amber,#C9A84C);color:var(--amber,#C9A84C);padding:7px;border-radius:6px;font-family:var(--mono);font-size:11px;cursor:pointer;font-weight:700;white-space:nowrap">📍 Activate</button>`:''}
+    ${entry?`<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px">
+      <button onclick="mapToggleDateLabel('${props.id}')" style="${_TRP_BTN}background:${labelOn?'rgba(201,168,76,0.2)':'var(--s2,#1a2a38)'};border:1px solid ${labelOn?'var(--amber,#C9A84C)':'var(--border,#334)'};color:${labelOn?'var(--amber,#C9A84C)':'var(--muted,#888)'}">🔖${labelOn?' On':' Label'}</button>
+      <button onclick="mapCaptureForEntry('${props.id}')" style="${_TRP_BTN}background:var(--s2,#1a2a38);border:1px solid var(--border,#334);color:var(--muted,#888)" title="Capture map view as photo">📷 Capture</button>
+      <button onclick="mapOpenCategoryFromPopup('${props.categoryId}')" style="${_TRP_BTN}background:var(--s2,#1a2a38);border:1px solid var(--border,#334);color:var(--muted,#888)" title="Category settings">⚙ Category</button>
+      ${entry?.entryType==='planned'?`<button onclick="mapActivatePlannedEntry('${props.id}')" style="${_TRP_BTN}background:rgba(201,168,76,0.2);border:1px solid var(--amber,#C9A84C);color:var(--amber,#C9A84C);font-weight:700">📍 Activate</button>`:''}
     </div>`:''}
-    <div style="display:flex;gap:6px;margin-top:6px">
-      <button onclick="mapEditTrackerEntry('${props.id}')" style="flex:1;background:var(--amber,#D97706);border:none;color:#111;padding:7px;border-radius:6px;font-family:var(--mono);font-size:11px;cursor:pointer;font-weight:700">✏️ Edit</button>
-      <button onclick="mapDeleteTrackerEntryFromPanel('${props.id}')" style="flex:1;background:var(--s2);border:1px solid var(--border);color:var(--muted);padding:7px;border-radius:6px;font-family:var(--mono);font-size:11px;cursor:pointer;">✕ Remove</button>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px">
+      <button onclick="mapEditTrackerEntry('${props.id}')" style="${_TRP_BTN}background:var(--amber,#D97706);border:none;color:#111;font-weight:700">✏️ Edit</button>
+      <button onclick="mapDeleteTrackerEntryFromPanel('${props.id}')" style="${_TRP_BTN}background:var(--s2);border:1px solid var(--border);color:var(--muted)">✕ Remove</button>
     </div>
   </div>`;
-  _trackerPopup=new mapboxgl.Popup({closeButton:true,closeOnClick:false,className:'gl-tracker-popup'})
+  _trackerPopup=new mapboxgl.Popup({offset:14,maxWidth:'250px',closeButton:true,closeOnClick:false,className:'gl-tracker-popup'})
     .setLngLat(lngLat).setHTML(html).addTo(_mapInstance);
 }
 
