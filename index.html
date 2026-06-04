@@ -1779,6 +1779,17 @@ Anticipated rain — AM weather monitoring expected"></textarea>
   <div style="position:relative;width:100%;height:calc(100dvh - 60px - env(safe-area-inset-bottom))">
     <div id="mapbox-map"></div>
 
+    <!-- Tracker legend overlay (toggle from FAB) — shows each visible category's
+         state color key so the map can be screenshotted/exported as a keyed view. -->
+    <div id="map-legend" style="display:none;position:absolute;top:64px;left:8px;z-index:15;max-width:48%;max-height:58%;overflow:auto;background:rgba(12,14,16,.82);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);border:1px solid var(--border2);border-radius:10px;padding:9px 11px;box-shadow:0 4px 16px rgba(0,0,0,.5)">
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:7px">
+        <span style="font-size:11px;flex-shrink:0">🏷️</span>
+        <span id="map-legend-title" style="font-family:var(--cond);font-weight:700;font-size:12px;letter-spacing:.03em;color:var(--gold,#C9A84C);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Legend</span>
+        <button onclick="mapHideLegend()" title="Hide legend" style="background:none;border:none;color:var(--muted);font-size:15px;cursor:pointer;line-height:1;padding:0 2px">✕</button>
+      </div>
+      <div id="map-legend-body"></div>
+    </div>
+
     <!-- Style toggle controls -->
     <!-- Locate me -->
     <button class="map-locate-btn" id="map-layers-btn" onclick="mapToggleLayerPanel()" title="Layers" style="top:124px;right:10px;bottom:auto;width:52px;height:52px;font-size:24px">🗂️</button>

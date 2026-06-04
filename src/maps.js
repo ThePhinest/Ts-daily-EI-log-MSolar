@@ -1033,6 +1033,64 @@ async function kmlLoadLayers(){
   mapUpdateKmlLayerList();
 }
 
+// Remembered folder collapse state for the layers slide-out. The list rebuilds on
+// every mapUpdateKmlLayerList() call, so without this the user's collapse choices
+// reset on each re-render and on slide-out close/reopen. Project-scoped; persisted.
+let _mapFolderCollapsed={key:null,set:null};
+function _folderCollapseSet(){
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const k='gl_layerFolderCollapsed_'+pid;
+  if(_mapFolderCollapsed.key!==k){
+    let set;
+    try{ set=new Set(JSON.parse(localStorage.getItem(k)||'[]')); }catch{ set=new Set(); }
+    _mapFolderCollapsed={key:k,set};
+  }
+  return _mapFolderCollapsed.set;
+}
+function _isFolderCollapsed(fid){ return _folderCollapseSet().has(fid); }
+function _setFolderCollapsed(fid, collapsed){
+  const set=_folderCollapseSet();
+  if(collapsed) set.add(fid); else set.delete(fid);
+  try{ localStorage.setItem(_mapFolderCollapsed.key, JSON.stringify([...set])); }catch{}
+}
+
+// ── Tracker legend overlay (screenshot/export color key) ─────────────────────
+// Per-category, one at a time: triggered from a drawing's popup, shows just THAT
+// category's state color key on the map so the user can screenshot a self-keyed
+// "map version of tracking". Showing a new one replaces the previous.
+let _legendCatId=null;
+function mapShowCategoryLegend(catId){
+  if(!catId) return;
+  _legendCatId=catId;
+  const box=document.getElementById('map-legend');
+  if(box) box.style.display='block';
+  mapRenderLegend();
+  if(typeof _trackerPopup!=='undefined' && _trackerPopup){ try{ _trackerPopup.remove(); }catch{} }
+}
+function mapHideLegend(){
+  _legendCatId=null;
+  const box=document.getElementById('map-legend');
+  if(box) box.style.display='none';
+}
+function mapRenderLegend(){
+  const box=document.getElementById('map-legend');
+  const body=document.getElementById('map-legend-body');
+  const titleEl=document.getElementById('map-legend-title');
+  if(!box||!body||!_legendCatId||box.style.display==='none') return;
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const cat=(typeof tcGetCategory==='function')?tcGetCategory(_legendCatId,pid):null;
+  if(!cat){ mapHideLegend(); return; }
+  if(titleEl) titleEl.textContent=cat.name;
+  const states=(typeof tcGetStates==='function')?tcGetStates(cat,pid):[];
+  body.innerHTML=states.map(s=>{
+    const col=(s.color&&/^#[0-9A-Fa-f]{6}$/.test(s.color))?s.color:'#888888';
+    return `<div style="display:flex;align-items:center;gap:6px;margin:3px 0">
+      <span style="width:13px;height:13px;border-radius:3px;background:${col};flex-shrink:0;opacity:${s.isPlanned?'0.5':'1'};border:1px solid rgba(255,255,255,0.18)"></span>
+      <span style="font-family:var(--mono);font-size:11px;color:var(--text);white-space:nowrap">${s.label}${s.isPlanned?' · planned':''}</span>
+    </div>`;
+  }).join('');
+}
+
 function mapUpdateKmlLayerList(){
   const list = document.getElementById('map-kml-layer-list');
   if(!list) return;
@@ -1115,12 +1173,18 @@ function mapUpdateKmlLayerList(){
     children.id = folderId+'-children';
     children.style.cssText = 'padding:4px 6px 4px 16px;';
     layers.forEach(layer => children.appendChild(makeLayerRow(layer)));
+    // Apply remembered collapse state.
+    if(_isFolderCollapsed(folderId)){
+      children.style.display='none';
+      const ch=header.querySelector(`#${folderId}-chev`); if(ch) ch.textContent='▸';
+    }
     // Collapse toggle
     header.addEventListener('click', function(e){
       if(e.target.type==='checkbox') return;
       const collapsed = children.style.display==='none';
       children.style.display = collapsed ? '' : 'none';
       document.getElementById(folderId+'-chev').textContent = collapsed ? '▾' : '▸';
+      _setFolderCollapsed(folderId, !collapsed);
     });
     // Folder-level checkbox — branches by mode
     header.querySelector(`#${folderId}-cb`).addEventListener('click', function(e){
@@ -1188,12 +1252,18 @@ function mapUpdateKmlLayerList(){
           <button onclick="mapDeleteTrackerEntryFromPanel('${e.id}')" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;padding:0;" title="Delete">✕</button>`;
         kids.appendChild(row);
       });
+      // Apply remembered collapse state.
+      if(_isFolderCollapsed(fid)){
+        kids.style.display='none';
+        const ch=hdr.querySelector(`#${fid}-chev`); if(ch) ch.textContent='▸';
+      }
       hdr.addEventListener('click',function(ev){
         if(ev.target.type==='checkbox') return;
         const collapsed=kids.style.display==='none';
         kids.style.display=collapsed?'':'none';
         const chev=document.getElementById(fid+'-chev');
         if(chev) chev.textContent=collapsed?'▾':'▸';
+        _setFolderCollapsed(fid, !collapsed);
       });
       hdr.querySelector(`#${fid}-cb`).addEventListener('click',function(ev){
         ev.stopPropagation();
@@ -3332,6 +3402,8 @@ function _showCaptureCaptionModal(entryId,photoId,prefill){
 
 function mapRenderTrackerLayers(){
   if(!_mapInstance||!_mapInstance.isStyleLoaded()) return;
+  // Keep an open legend in sync if a state color/label changed.
+  if(_legendCatId) mapRenderLegend();
 
   if(!_labelTopGuardRegistered){
     _labelTopGuardRegistered=true;
@@ -3484,6 +3556,9 @@ function mapOpenCategoryFromPopup(catId){
   if(typeof mapShowCategoryDetails==='function') mapShowCategoryDetails(catId);
 }
 window.mapOpenCategoryFromPopup=mapOpenCategoryFromPopup;
+window.mapShowCategoryLegend=mapShowCategoryLegend;
+window.mapHideLegend=mapHideLegend;
+window.mapRenderLegend=mapRenderLegend;
 
 function _showTrackerEntryPopup(lngLat,props){
   if(_trackerPopup){_trackerPopup.remove();_trackerPopup=null;}
@@ -3538,6 +3613,7 @@ function _showTrackerEntryPopup(lngLat,props){
       <button onclick="mapOpenCategoryFromPopup('${props.categoryId}')" style="${_TRP_BTN}background:var(--s2,#1a2a38);border:1px solid var(--border,#334);color:var(--muted,#888)" title="Category settings">⚙ Category</button>
       <button onclick="mapActivatePlannedEntry('${props.id}')" style="${_TRP_BTN}background:rgba(201,168,76,0.2);border:1px solid var(--amber,#C9A84C);color:var(--amber,#C9A84C);font-weight:700" title="${entry?.entryType==='planned'?'Draw overlays on this plan':'Stack the next state on this layer'}">📍 Activate</button>
     </div>`:''}
+    ${props.categoryId?`<button onclick="mapShowCategoryLegend('${props.categoryId}')" style="${_TRP_BTN}margin-top:6px;background:var(--s2,#1a2a38);border:1px solid var(--border,#334);color:var(--muted,#888)" title="Show this category's color key on the map (for screenshots)">🏷️ Legend</button>`:''}
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px">
       <button onclick="mapEditTrackerEntry('${props.id}')" style="${_TRP_BTN}background:var(--amber,#D97706);border:none;color:#111;font-weight:700">✏️ Edit</button>
       <button onclick="mapDeleteTrackerEntryFromPanel('${props.id}')" style="${_TRP_BTN}background:var(--s2);border:1px solid var(--border);color:var(--muted)">✕ Remove</button>
