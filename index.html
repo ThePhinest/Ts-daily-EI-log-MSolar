@@ -322,6 +322,14 @@ input:-webkit-autofill,input:-webkit-autofill:hover,input:-webkit-autofill:focus
 body.theme-light input:-webkit-autofill,body.theme-light input:-webkit-autofill:hover,body.theme-light input:-webkit-autofill:focus{-webkit-text-fill-color:var(--text);-webkit-box-shadow:0 0 0 1000px var(--bg) inset}
 textarea{resize:vertical;min-height:88px;line-height:1.6}
 textarea.short{min-height:56px}textarea.tall{min-height:120px;font-size:16px;touch-action:manipulation}
+/* Auto-expand textareas grow to fit and never scroll — kill the overflow so iOS
+   WebKit doesn't reserve a right-edge scrollbar gutter that eats the right padding
+   (made text run to the card edge in the Inspection Summary card). */
+textarea.auto-expand{overflow:hidden}
+/* Grid items default to min-width:auto and can refuse to shrink, pushing content
+   past the right edge (left stays anchored) — worst in nested grids like sec-03.
+   Let them shrink to their track. */
+.g>*{min-width:0}
 textarea.auto-expand{overflow-y:hidden;resize:none;touch-action:manipulation}
 select{cursor:pointer}
 
