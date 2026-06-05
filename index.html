@@ -37,10 +37,10 @@ button:active,[role="button"]:active,.nav-item:active,.more-row:active,.more-til
 .more-panel,.cl-form-panel,#map-tracker-modal,#map-tracker-sheet,#map-category-sheet,#map-view-palette,#map-fab-palette{overscroll-behavior:contain} /* scroll stays inside sheets */
 body:has(.more-overlay.open),body:has(#cl-form-overlay.open),body:has(#map-tracker-modal.open),body:has(#map-tracker-sheet.open),body:has(#map-category-sheet.open){overflow:hidden} /* lock background scroll behind sheets */
 .app-wordmark{display:inline-flex;align-items:center;justify-content:center;white-space:nowrap;line-height:1}
-.app-wm-ground{font-family:'Oswald','Barlow Condensed',sans-serif;font-weight:300;font-size:16px;letter-spacing:4px;text-transform:uppercase;color:var(--text)}
-.app-wm-bar{display:inline-block;width:2px;height:17px;background:var(--amber);margin:0 7px;flex-shrink:0}
-.app-wm-log{font-family:'Oswald','Barlow Condensed',sans-serif;font-weight:700;font-size:21px;letter-spacing:-0.5px;color:var(--s3);text-transform:uppercase}
-.app-wm-io{font-family:var(--mono);font-size:10px;color:var(--amber);margin-left:2px;align-self:flex-end;padding-bottom:1px}
+.app-wm-ground{font-family:'Oswald','Barlow Condensed',sans-serif;font-weight:300;font-size:19px;letter-spacing:4px;text-transform:uppercase;color:var(--text)}
+.app-wm-bar{display:inline-block;width:2px;height:20px;background:var(--amber);margin:0 8px;flex-shrink:0}
+.app-wm-log{font-family:'Oswald','Barlow Condensed',sans-serif;font-weight:700;font-size:25px;letter-spacing:-0.5px;color:var(--s3);text-transform:uppercase}
+.app-wm-io{font-family:var(--mono);font-size:12px;color:var(--amber);margin-left:2px;align-self:flex-end;padding-bottom:1px}
 body{background:var(--bg);color:var(--text);font-family:var(--body);font-size:17px;line-height:1.5;min-height:100vh;padding-bottom:80px}
 body.theme-light{
   --bg:#F5F5F0;--s1:#ffffff;--s2:#dde8ea;--s3:#006B75;
@@ -248,9 +248,9 @@ body.theme-light{
 .np-check{font-size:13px;color:var(--s3);font-weight:bold}
 
 /* APP BAR */
-.app-bar{position:sticky;top:0;z-index:300;background:var(--header-bg);border-bottom:2px solid var(--amber);padding:max(6px,calc(env(safe-area-inset-top) - 8px)) 20px 0;min-height:52px;display:flex;align-items:center;gap:12px}
+.app-bar{position:sticky;top:0;z-index:300;background:var(--header-bg);border-bottom:2px solid var(--amber);padding:max(6px,calc(env(safe-area-inset-top) - 4px)) 20px 0;min-height:58px;display:flex;align-items:center;gap:12px}
 .app-title{font-family:var(--cond);font-weight:800;font-size:21px;letter-spacing:.09em;text-transform:uppercase;color:var(--amber)}
-.app-sub{font-family:var(--mono);font-size:12px;color:var(--amber);letter-spacing:.04em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.app-sub{font-family:var(--mono);font-size:14px;color:var(--amber);letter-spacing:.04em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
 .bar-spacer{flex:1}
 .tab-btn{display:none}
 .icon-btn{background:transparent;border:1px solid var(--border2);color:var(--muted2);font-size:17px;padding:5px 10px;border-radius:5px;cursor:pointer;transition:all .15s}
@@ -782,7 +782,7 @@ body.is-native select { font-size: 16px !important; }
 <body>
 
 <!-- iOS safe-area top cover: solid bg behind Dynamic Island / status bar on full-screen PWA -->
-<div id="safe-area-top-cover" style="position:fixed;top:0;left:0;right:0;height:max(6px,calc(env(safe-area-inset-top) - 8px));background:var(--header-bg);z-index:9999;pointer-events:none"></div>
+<div id="safe-area-top-cover" style="position:fixed;top:0;left:0;right:0;height:max(6px,calc(env(safe-area-inset-top) - 4px));background:var(--header-bg);z-index:9999;pointer-events:none"></div>
 
 <!-- APP BAR -->
 <div class="app-bar" style="justify-content:space-between">
