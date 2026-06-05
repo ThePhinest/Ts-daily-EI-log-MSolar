@@ -630,6 +630,9 @@ function updateReportDateDow(){
   const [y,m,d]=val.split('-').map(Number);
   const dt=new Date(y,m-1,d);
   el.textContent=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][dt.getDay()];
+  // Contextual "Return to Today" button — only shows when the log is on a non-today date.
+  const tbtn=document.getElementById('btn-go-today');
+  if(tbtn) tbtn.style.display=(val && val!==localToday())?'inline-block':'none';
 }
 
 // ── Format date for display: "Mon, Mar 18" ──
@@ -764,6 +767,42 @@ function dlCancelLoad(){
   _ldPending=null;
 }
 
+// ── Return to today's live log (data-safe) ──
+// Mirrors the load-previous-day flow: files the current day's work first so
+// nothing is lost, then loads today (from archive if it exists, else a fresh
+// today form). The ONLY exception is when today is already the active log — in
+// that case we just show it and never reset/overwrite the live in-progress work.
+async function dlGoToToday(){
+  const today=localToday();
+  const currentDate=document.getElementById('reportDate')?.value||'';
+  if(currentDate===today){ if(typeof showPage==='function') showPage('log'); return; }
+  const curLabel=currentDate?dlFmtDisplay(currentDate):'your current log';
+  _confirmModal(
+    'Return to today’s log ('+dlFmtDisplay(today)+')? '+curLabel+' will be filed first so nothing is lost.',
+    async function(){
+      // File the current day's work before switching away.
+      if(currentDate) await dlArchive(currentDate);
+      const rec=dlGet(today);
+      document.getElementById('crewContainer').innerHTML='';
+      window.crewIds=[]; window.crewSeq=0;
+      if(rec){
+        window._editingArchivedDate=null; // today is the live log, never an archived edit
+        restoreFormState(rec);
+        try{ localStorage.setItem('msf_autosave', JSON.stringify(rec)); }catch{}
+      } else {
+        _resetFormCore(); // sets today's date + clears autosave
+      }
+      // Keep the cloud session in sync with the now-active today log.
+      if(typeof db!=='undefined'&&db&&_fbReady){
+        try{ await _udb().collection('sessions').doc(_activeProjectId()).set(collectFormState()); }catch{}
+      }
+      if(typeof showPage==='function') showPage('log');
+    },
+    '⊙ Return to Today',
+    'Return to Today'
+  );
+}
+
 // ── Window exposure ──
 window.collectFormState = collectFormState;
 window.restoreFormState = restoreFormState;
@@ -801,6 +840,7 @@ window.newDayLoadPrevious = newDayLoadPrevious;
 window.dlLoadFromCalendar = dlLoadFromCalendar;
 window.dlConfirmLoad = dlConfirmLoad;
 window.dlCancelLoad = dlCancelLoad;
+window.dlGoToToday = dlGoToToday;
 
 // ── Boot: restore form state after module loads ──
 (function dlBoot() {

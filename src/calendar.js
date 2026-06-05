@@ -323,7 +323,9 @@ function calRenderDayViewGrid(){
     const rec=all[dateStr]||null;
     const isToday=dateStr===today;
     if(rec&&_calHasContent(rec)){
-      cells+=`<div class="cal-cell has-log${isToday?' today':''}" onclick="calOpenDay('${dateStr}')">
+      // Today's cell routes to the live editable log (data-safe return), not the read-only day view.
+      const _click=isToday?'dlGoToToday()':`calOpenDay('${dateStr}')`;
+      cells+=`<div class="cal-cell has-log${isToday?' today':''}" onclick="${_click}">
         <div class="cal-cell-num">${d}</div>
         <div class="cal-cell-dots">${calGetDotIndicators(rec)}</div>
       </div>`;
@@ -393,7 +395,9 @@ function calRenderGrid(){
     const rec=all[dateStr]||null;
     const isToday=dateStr===today;
     if(rec&&_calHasContent(rec)){
-      cells+=`<div class="cal-cell has-log${isToday?' today':''}" onclick="calOpenDay('${dateStr}')">
+      // Today's cell routes to the live editable log (data-safe return), not the read-only day view.
+      const _click=isToday?'dlGoToToday()':`calOpenDay('${dateStr}')`;
+      cells+=`<div class="cal-cell has-log${isToday?' today':''}" onclick="${_click}">
         <div class="cal-cell-num">${d}</div>
         <div class="cal-cell-dots">${calGetDotIndicators(rec)}</div>
       </div>`;
@@ -448,10 +452,10 @@ function calRenderList(){
 
 function calOpenNewDay(date){
   const today=localToday();
-  // SAFETY: today's log is the live, in-progress working log — it may hold a full
-  // day of unsaved entries that aren't archived to storage yet. Clicking today must
-  // NEVER reset/overwrite it. Just open the live log page, which holds today's data.
-  if(date===today){ if(typeof showPage==='function') showPage('log'); return; }
+  // SAFETY: today's log is the live, in-progress working log. dlGoToToday is data-safe:
+  // if today is already the active log it just opens it (never resets); if you're on
+  // another day it files that day first, then returns you to today's log.
+  if(date===today){ if(typeof window.dlGoToToday==='function') window.dlGoToToday(); else if(typeof showPage==='function') showPage('log'); return; }
   _confirmModal('No log exists for '+dlFmtDisplay(date)+'. Start a new log for this day?', function(){
     _resetFormCore();
     const el=document.getElementById('reportDate');

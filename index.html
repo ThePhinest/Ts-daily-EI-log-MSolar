@@ -1388,7 +1388,7 @@ body.is-native select { font-size: 16px !important; }
     <div class="card-body">
       <div class="g g3">
         <div class="field full"><label>Project Name</label><input type="text" id="projectName" value="" readonly=""></div>
-        <div class="field"><label>Report Date</label><input type="date" id="reportDate" oninput="if(typeof updateReportDateDow==='function')updateReportDateDow()"><div id="reportDate-dow" style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:3px"></div></div>
+        <div class="field"><label>Report Date</label><input type="date" id="reportDate" oninput="if(typeof updateReportDateDow==='function')updateReportDateDow()"><div id="reportDate-dow" style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:3px"></div><button type="button" id="btn-go-today" class="btn btn-ghost" style="display:none;margin-top:6px;font-size:11px;padding:4px 11px" onclick="if(typeof dlGoToToday==='function')dlGoToToday()">⊙ Return to Today</button></div>
         <div class="field"><label>Prepared By</label><input type="text" id="preparedBy" value="" readonly></div>
         <div class="field"><label>Organization</label><input type="text" id="org" value="" readonly></div>
         <div class="field span2"><label>Current Activity</label><input type="text" id="activePhase" value="" readonly></div>
