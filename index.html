@@ -1,7 +1,7 @@
 ﻿<!DOCTYPE html>
 <html lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
 
-<meta name="viewport" content="width=device-width, initial-scale=1.0, interactive-widget=resizes-visual">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, interactive-widget=resizes-visual, viewport-fit=cover">
 <meta name="theme-color" content="#006B75">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -28,6 +28,14 @@
 --header-bg:#000000;
 }
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+/* ── Native-feel pass (Batch 1, 2026-06-04) — global iOS polish ── */
+html,body{overscroll-behavior:none}                                  /* kill page rubber-band bounce */
+*{-webkit-tap-highlight-color:transparent}                           /* no grey tap flash */
+button{-webkit-appearance:none;appearance:none}                      /* custom buttons never fall back to native chrome */
+button,[role="button"],.nav-item,.more-row,.more-tile,.map-cat-pill,.proj-row,.map-fab-btn{-webkit-touch-callout:none} /* no long-press magnifier on chrome */
+button:active,[role="button"]:active,.nav-item:active,.more-row:active,.more-tile:active,.map-cat-pill:active,.proj-row:active,.map-fab-btn:active{filter:brightness(.82)} /* native-style press dim */
+.more-panel,.cl-form-panel,#map-tracker-modal,#map-tracker-sheet,#map-category-sheet,#map-view-palette,#map-fab-palette{overscroll-behavior:contain} /* scroll stays inside sheets */
+body:has(.more-overlay.open),body:has(#cl-form-overlay.open),body:has(#map-tracker-modal.open),body:has(#map-tracker-sheet.open),body:has(#map-category-sheet.open){overflow:hidden} /* lock background scroll behind sheets */
 .app-wordmark{display:inline-flex;align-items:center;justify-content:center;white-space:nowrap;line-height:1}
 .app-wm-ground{font-family:'Oswald','Barlow Condensed',sans-serif;font-weight:300;font-size:16px;letter-spacing:4px;text-transform:uppercase;color:var(--text)}
 .app-wm-bar{display:inline-block;width:2px;height:17px;background:var(--amber);margin:0 7px;flex-shrink:0}
@@ -44,7 +52,7 @@ body.theme-light{
 --header-bg:#dde8e8;
 }
 .bottom-nav{position:fixed;bottom:0;left:0;right:0;z-index:200;background:var(--header-bg);border-top:1px solid var(--border);display:flex;align-items:stretch;height:95px;padding-bottom:env(safe-area-inset-bottom);transform:translateZ(0);-webkit-transform:translateZ(0)}
-.nav-item{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding-top:10px;gap:5px;cursor:pointer;border:none;background:transparent;padding-bottom:0;transition:all .15s;border-top:2px solid transparent;user-select:none;-webkit-user-select:none;}
+.nav-item{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding-top:10px;gap:5px;cursor:pointer;border:none;background:transparent;padding-bottom:0;transition:background-color .15s,border-color .15s;border-top:2px solid transparent;user-select:none;-webkit-user-select:none;}
 .nav-item.active{background:rgba(0,76,84,0.2);border-top-color:var(--s3);margin-bottom:-1px}
 .nav-item .nav-icon{font-size:26px;line-height:1}
 #tab-more .nav-icon{display:flex;align-items:center;justify-content:center;color:var(--text)}
@@ -88,8 +96,8 @@ body.theme-light{
 #mapbox-map{width:100%;height:calc(100dvh - 60px - env(safe-area-inset-bottom))}
 #map-loading,#map-no-token{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:var(--bg);z-index:20;padding:32px;text-align:center}
 /* Compass */
-#map-compass{position:fixed;bottom:calc(165px + env(safe-area-inset-bottom));right:16px;z-index:248;width:36px;height:36px;border-radius:50%;background:var(--bg);border:1px solid var(--border2);cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:0;transition:bottom .18s;outline:none}
-#map-compass.fab-open{bottom:calc(365px + env(safe-area-inset-bottom))}
+#map-compass{position:fixed;bottom:calc(165px + env(safe-area-inset-bottom));right:16px;z-index:248;width:36px;height:36px;border-radius:50%;background:var(--bg);border:1px solid var(--border2);cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:0;transition:transform .18s;outline:none}
+#map-compass.fab-open{transform:translateY(-200px)}
 #map-compass.gps-active{border-color:var(--amber);box-shadow:0 0 0 1px var(--amber),0 2px 8px rgba(0,0,0,.45)}
 #map-compass.gps-amber{background:rgba(201,168,76,.25);border-color:var(--amber)}
 /* Heading compass rose */

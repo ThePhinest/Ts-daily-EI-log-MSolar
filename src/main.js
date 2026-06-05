@@ -95,6 +95,7 @@ window.docx = docx
 // — see index.html style block).
 import { Keyboard } from '@capacitor/keyboard'
 import { App as CapApp } from '@capacitor/app'
+import { Haptics, ImpactStyle, NotificationType } from '@capacitor/haptics'
 if (Capacitor.isNativePlatform && Capacitor.isNativePlatform()) {
   document.body.classList.add('is-native')
 
@@ -111,6 +112,28 @@ if (Capacitor.isNativePlatform && Capacitor.isNativePlatform()) {
       window.checkNewDay()
     }
   })
+}
+
+// ─── Haptics (native only) ─────────────────────────────────────────────────
+// Light tactile tap on any button/tappable control, plus helpers for success
+// and warning feedback at key action points. window.glHaptic is ALWAYS defined
+// (no-ops on web) so callers never need to guard the platform.
+const _glNative = Capacitor.isNativePlatform && Capacitor.isNativePlatform()
+window.glHaptic = _glNative ? {
+  light:   () => Haptics.impact({ style: ImpactStyle.Light }).catch(()=>{}),
+  medium:  () => Haptics.impact({ style: ImpactStyle.Medium }).catch(()=>{}),
+  success: () => Haptics.notification({ type: NotificationType.Success }).catch(()=>{}),
+  warning: () => Haptics.notification({ type: NotificationType.Warning }).catch(()=>{}),
+} : { light(){}, medium(){}, success(){}, warning(){} }
+if (_glNative) {
+  // Capture-phase pointerdown = instant feedback the moment a control is pressed
+  // (more native than waiting for click). Matches only real tappable controls.
+  document.addEventListener('pointerdown', function(e){
+    const tgt = e.target
+    const hit = tgt && tgt.closest && tgt.closest('button,[role="button"],.nav-item,.more-row,.more-tile,.map-cat-pill,.map-fab-btn,.proj-row')
+    if (!hit || hit.disabled) return
+    window.glHaptic.light()
+  }, true)
 }
 
 // ─── Tap-outside dismisses keyboard ────────────────────────────────────────
