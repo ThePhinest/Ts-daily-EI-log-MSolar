@@ -26,6 +26,17 @@
   --mono:'IBM Plex Mono',monospace;--cond:'Barlow Condensed',sans-serif;--body:'Barlow',sans-serif;
   --r:7px;
 --header-bg:#000000;
+  /* ── Design tokens (Batch 2a, 2026-06-04) ── */
+  /* Type scale — biased larger ("feels small" fix). Tune these to rescale the whole app. */
+  --fs-2xs:12px;--fs-xs:13px;--fs-sm:14px;--fs-base:15px;--fs-md:16px;--fs-lg:18px;--fs-xl:21px;--fs-2xl:25px;
+  /* Spacing scale */
+  --sp-1:4px;--sp-2:8px;--sp-3:12px;--sp-4:16px;--sp-5:20px;--sp-6:24px;--sp-8:32px;
+  /* Radius scale (--r:7px above kept for back-compat) */
+  --r-sm:5px;--r-md:10px;--r-lg:14px;--r-pill:999px;
+  /* Elevation */
+  --shadow-sm:0 2px 8px rgba(0,0,0,.4);--shadow-md:0 4px 16px rgba(0,0,0,.5);--shadow-lg:0 8px 32px rgba(0,0,0,.5);
+  /* Motion */
+  --ease-sheet:cubic-bezier(.32,.72,0,1);--ease-std:cubic-bezier(.4,0,.2,1);--dur-fast:.15s;--dur-med:.25s;
 }
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 /* ── Native-feel pass (Batch 1, 2026-06-04) — global iOS polish ── */
@@ -290,9 +301,9 @@ body.theme-light{
 .card{background:var(--s1);border:1px solid var(--border);border-radius:var(--r);margin-bottom:16px;overflow:hidden}
 .card-head{background:var(--header-bg);border-bottom:1px solid var(--border);padding:10px 17px;display:flex;align-items:center;gap:10px;cursor:pointer;user-select:none;-webkit-user-select:none}
 @media(hover:hover){.card-head:hover{background:var(--bg)}}
-.card-num{font-family:var(--mono);font-size:12px;color:var(--muted);padding:2px 7px;border:1px solid var(--border2);border-radius:4px}
-.card-title{font-family:var(--cond);font-weight:700;font-size:15px;letter-spacing:.12em;text-transform:uppercase;color:var(--amber2)}
-.card-badge{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--muted)}
+.card-num{font-family:var(--mono);font-size:var(--fs-xs);color:var(--muted);padding:2px 7px;border:1px solid var(--border2);border-radius:4px}
+.card-title{font-family:var(--cond);font-weight:700;font-size:var(--fs-md);letter-spacing:.12em;text-transform:uppercase;color:var(--amber2)}
+.card-badge{margin-left:auto;font-family:var(--mono);font-size:var(--fs-xs);color:var(--muted)}
 .card-body{padding:17px}
 .card-chevron{margin-left:auto;font-size:13px;color:var(--muted);transition:transform .2s;line-height:1}
 .card.collapsed .card-chevron{transform:rotate(-90deg)}
@@ -305,7 +316,7 @@ body.theme-light{
 .card-personal{background:var(--personal-bg);border:1px solid var(--personal-border);border-radius:var(--r);margin-bottom:16px;overflow:hidden}
 .card-personal-head{background:rgba(0,76,84,0.25);border-bottom:1px solid var(--personal-border);padding:10px 17px;display:flex;align-items:center;gap:10px}
 .personal-icon{font-size:16px}
-.personal-title{font-family:var(--cond);font-weight:700;font-size:15px;letter-spacing:.12em;text-transform:uppercase;color:var(--personal-accent2)}
+.personal-title{font-family:var(--cond);font-weight:700;font-size:var(--fs-md);letter-spacing:.12em;text-transform:uppercase;color:var(--personal-accent2)}
 .personal-badge{margin-left:auto;font-family:var(--mono);font-size:9.5px;color:var(--personal-accent);background:rgba(0,76,84,0.15);border:1px solid rgba(0,76,84,0.4);padding:2px 9px;border-radius:20px;letter-spacing:.06em}
 .card-personal .card-body{padding:17px}
 .card-personal input[type=text],.card-personal input[type=number],.card-personal input[type=time],.card-personal textarea{border-color:var(--personal-border)}
@@ -320,7 +331,7 @@ body.theme-light{
 
 /* FIELDS */
 .field{display:flex;flex-direction:column;gap:4px}
-label{font-family:var(--mono);font-size:13px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted2)}
+label{font-family:var(--mono);font-size:var(--fs-sm);letter-spacing:.07em;text-transform:uppercase;color:var(--muted2)}
 .card-personal label{color:var(--personal-accent)}
 input[type=text],input[type=date],input[type=number],input[type=time],select,textarea{background:var(--bg);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--body);font-size:17px;padding:8px 11px;width:100%;box-sizing:border-box;transition:border-color .15s;-webkit-appearance:none}
 input[type=time],select{min-height:44px;box-sizing:border-box}
@@ -351,7 +362,7 @@ body.theme-light .preset-chip{background:var(--amber-bg);color:var(--amber);bord
 body.theme-light .preset-chip:hover{background:rgba(0,76,84,0.18);border-color:var(--amber);color:var(--amber2)}
 
 /* BUTTONS */
-.btn{font-family:var(--cond);font-weight:700;font-size:14px;letter-spacing:.1em;text-transform:uppercase;border:none;border-radius:5px;padding:8px 16px;cursor:pointer;transition:all .15s;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.btn{font-family:var(--cond);font-weight:700;font-size:var(--fs-base);letter-spacing:.1em;text-transform:uppercase;border:none;border-radius:5px;padding:8px 16px;cursor:pointer;transition:all .15s;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
 .btn-amber{background:var(--amber);color:#0d1018}.btn-amber:hover{background:var(--amber2)}
 .btn-outline{background:transparent;border:1px solid var(--border2);color:var(--text)}.btn-outline:hover{border-color:var(--amber);color:var(--amber)}
 .btn-proj-active{border-color:var(--amber)!important;color:var(--amber)!important}
@@ -372,7 +383,7 @@ body.theme-light .preset-chip:hover{background:rgba(0,76,84,0.18);border-color:v
 /* CREW BLOCK */
 .crew-block{background:var(--bg);border:1px solid var(--border);border-radius:var(--r);margin-bottom:12px;overflow:hidden}
 .crew-block-head{background:var(--s2);padding:8px 14px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border)}
-.crew-lbl{font-family:var(--mono);font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--amber2)}
+.crew-lbl{font-family:var(--mono);font-size:var(--fs-xs);letter-spacing:.08em;text-transform:uppercase;color:var(--amber2)}
 .crew-body{padding:14px}
 
 /* CHECKLIST */
@@ -395,8 +406,8 @@ body.theme-light .preset-chip:hover{background:rgba(0,76,84,0.18);border-color:v
 .flag-note-wrap{margin-top:7px;margin-left:29px;display:none}.flag-note-wrap.vis{display:block}
 .flag-note{width:100%;background:var(--bg);border:1px solid var(--red);border-radius:4px;color:var(--text);font-family:var(--body);font-size:13px;padding:6px 10px;resize:vertical;min-height:48px;line-height:1.5;transition:border-color .15s}
 .flag-note:focus{outline:none;border-color:var(--red)}
-.card-hint{font-family:var(--mono);font-size:10.5px;color:var(--muted);padding:6px 17px 0;letter-spacing:.03em}
-.card-hint-red{font-family:var(--mono);font-size:10.5px;color:rgba(231,76,60,0.65);padding:6px 17px 0;letter-spacing:.03em}
+.card-hint{font-family:var(--mono);font-size:var(--fs-2xs);color:var(--muted);padding:6px 17px 0;letter-spacing:.03em}
+.card-hint-red{font-family:var(--mono);font-size:var(--fs-2xs);color:rgba(231,76,60,0.65);padding:6px 17px 0;letter-spacing:.03em}
 
 /* EXPORT PANEL */
 .export-panel{background:var(--s1);border:1px solid var(--border);border-radius:var(--r);padding:14px;margin-bottom:16px}
@@ -413,7 +424,7 @@ body.theme-light .preset-chip:hover{background:rgba(0,76,84,0.18);border-color:v
 .config-head:active{background:var(--bg);color:inherit}
 .config-section.collapsed .config-body{display:none}
 .config-section.collapsed .config-head{border-bottom:none}
-.config-title{font-family:var(--cond);font-weight:700;font-size:15px;letter-spacing:.1em;text-transform:uppercase;color:var(--amber2)}
+.config-title{font-family:var(--cond);font-weight:700;font-size:var(--fs-md);letter-spacing:.1em;text-transform:uppercase;color:var(--amber2)}
 .config-sub{font-family:var(--mono);font-size:12px;color:var(--muted);flex:1 0 100%;order:3;margin-left:0}
 /* Nav-style settings cards — distinct from collapse/expand cards.
    Tap opens a dedicated subpage instead of expanding inline.
