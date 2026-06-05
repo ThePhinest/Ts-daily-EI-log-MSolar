@@ -448,6 +448,10 @@ function calRenderList(){
 
 function calOpenNewDay(date){
   const today=localToday();
+  // SAFETY: today's log is the live, in-progress working log — it may hold a full
+  // day of unsaved entries that aren't archived to storage yet. Clicking today must
+  // NEVER reset/overwrite it. Just open the live log page, which holds today's data.
+  if(date===today){ if(typeof showPage==='function') showPage('log'); return; }
   _confirmModal('No log exists for '+dlFmtDisplay(date)+'. Start a new log for this day?', function(){
     _resetFormCore();
     const el=document.getElementById('reportDate');
