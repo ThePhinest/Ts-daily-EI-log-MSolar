@@ -67,6 +67,7 @@ async function clLoadCloud(){
 function clSave(){
   clSaveLocal();
   clSaveCloud();
+  window.glHaptic && window.glHaptic.success();  // tactile confirm on compliance entry save
 }
 
 // ── Render ──

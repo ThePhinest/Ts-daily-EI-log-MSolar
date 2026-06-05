@@ -2577,6 +2577,7 @@ function _populateLinkToPlanDropdown(categoryId){
   }).join('');
 }
 function _showUndoToast(entry, pid){
+  window.glHaptic && window.glHaptic.success();  // tactile confirm on tracker entry save
   const existing=document.getElementById('_gl-undo-toast');
   if(existing) existing.remove();
   const toast=document.createElement('div');

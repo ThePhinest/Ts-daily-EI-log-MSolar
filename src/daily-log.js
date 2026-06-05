@@ -583,6 +583,7 @@ async function dlArchive(date){
     projectId: _activeProjectId()
   });
   dlSaveLocal(date, record);
+  window.glHaptic && window.glHaptic.success();  // tactile confirm on daily-log archive
   localStorage.removeItem('gl_formalized_date'); window._logFormalized = false;
   try{
     if(typeof db!=='undefined'&&db&&_fbReady){
