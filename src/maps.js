@@ -3619,7 +3619,7 @@ function _showTrackerEntryPopup(lngLat,props){
   // Category identity = the multicolor state-ramp chip (same as the tracker log),
   // not a single dot. Falls back to the entry's state color for no-category drawings.
   const _dotFallback=(props.stateColor&&/^#[0-9A-Fa-f]{6}$/.test(props.stateColor))?props.stateColor:color;
-  const html=`<div style="font-family:var(--mono);font-size:12px;min-width:180px;color:#e8e8e8">
+  const html=`<div style="font-family:var(--mono);font-size:12px;min-width:180px;color:#e8e8e8;max-height:calc(100vh - var(--app-bar-h) - 96px);overflow-y:auto;overflow-x:hidden">
     <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
       ${(props.categoryId&&typeof tcRampChip==='function')?tcRampChip(props.categoryId,pid,12):`<div style="width:10px;height:10px;border-radius:50%;background:${_dotFallback};flex-shrink:0"></div>`}
       <strong style="color:#fff">${label}</strong>
