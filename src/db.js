@@ -350,9 +350,14 @@ async function initFirebaseLoad() {
         if (fallbackDoc.exists) {
           const fallbackState = fallbackDoc.data();
           const fallbackTs = fallbackState._ts || 0;
+          // Only adopt the legacy sessions/active fallback if it's actually TODAY's session.
+          // A stale legacy doc (a pre-projects-migration session frozen on an old date) must
+          // never become the live form — that was the "always reverts to <old date>" boot bug.
+          const _fbToday = (window.localToday ? window.localToday() : new Date().toLocaleDateString('en-CA'));
+          const fbDate = (fallbackState.fields && fallbackState.fields.reportDate) || fallbackState.reportDate || '';
           let localTs2 = 0;
           try { localTs2 = JSON.parse(localStorage.getItem('msf_autosave') || '{}')._ts || 0; } catch {}
-          if (fallbackTs >= localTs2) {
+          if (fallbackTs >= localTs2 && fbDate === _fbToday) {
             document.getElementById('crewContainer').innerHTML = '';
             window.crewIds = []; window.crewSeq = 0;
             restoreFormState(fallbackState);
