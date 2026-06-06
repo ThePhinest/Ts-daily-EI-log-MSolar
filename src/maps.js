@@ -536,11 +536,11 @@ async function mapRenderFieldMarkers(){
       el.textContent = m.emoji;
       el.style.cssText = 'font-size:26px;cursor:pointer;filter:drop-shadow(0 2px 4px rgba(0,0,0,.6));line-height:1;width:30px;height:30px;text-align:center;transform-origin:bottom center;';
       el.dataset.markerId = doc.id;
-      const popup = new mapboxgl.Popup({ offset:20, maxWidth:'200px', closeButton:true })
-        .setHTML(`<div style="font-family:monospace;font-size:11px;color:#111">
+      const popup = new mapboxgl.Popup({ offset:20, maxWidth:'200px', closeButton:true, className:'gl-field-popup' })
+        .setHTML(`<div style="font-family:monospace;font-size:11px;color:#e8e8e8">
           <div style="font-size:22px;margin-bottom:4px">${m.emoji}</div>
           ${m.label ? `<div style="font-weight:600;margin-bottom:4px">${m.label}</div>` : ''}
-          <div style="color:#555;margin-bottom:6px">${m.scope==='global'?'🌐 Global':'📌 This Project'}</div>
+          <div style="color:#9fb0b2;margin-bottom:6px">${m.scope==='global'?'🌐 Global':'📌 This Project'}</div>
           <div style="display:flex;gap:6px">
             <button onclick="mapDeleteFieldMarker('${doc.id}')" style="background:#c00;color:#fff;border:none;padding:3px 8px;border-radius:4px;font-size:10px;cursor:pointer;">Delete</button>
             <button onclick="mapHideFieldMarker('${doc.id}')" style="background:#333;color:#fff;border:none;padding:3px 8px;border-radius:4px;font-size:10px;cursor:pointer;">Hide</button>
