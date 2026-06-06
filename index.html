@@ -26,9 +26,9 @@
   --mono:'IBM Plex Mono',monospace;--cond:'Barlow Condensed',sans-serif;--body:'Barlow',sans-serif;
   --r:7px;
 --header-bg:#000000;
-  /* App-bar total occupied height (safe-area-aware). Drives the body top-spacer, the top
-     banners, and popup max-heights. Biased a few px over actual so content never hides
-     under the fixed bar (min-height floor 58px = web; +26px over the notch inset = iOS). */
+  /* App-bar total occupied height (safe-area-aware). Drives the top banners + the
+     bottom-sheet / map-popup max-height caps (so their tops never slide under the bar).
+     min-height floor 58px = web; +26px over the notch inset = iOS. */
   --app-bar-h:max(58px,calc(env(safe-area-inset-top, 0px) + 26px));
   /* ── Design tokens (Batch 2a, 2026-06-04) ── */
   /* Type scale — biased larger ("feels small" fix). Tune these to rescale the whole app. */
@@ -56,7 +56,7 @@ body:has(.more-overlay.open),body:has(#cl-form-overlay.open),body:has(#map-track
 .app-wm-bar{display:inline-block;width:2px;height:20px;background:var(--amber);margin:0 8px;flex-shrink:0}
 .app-wm-log{font-family:'Oswald','Barlow Condensed',sans-serif;font-weight:700;font-size:25px;letter-spacing:-0.5px;color:var(--s3);text-transform:uppercase}
 .app-wm-io{font-family:var(--mono);font-size:12px;color:var(--amber);margin-left:2px;align-self:flex-end;padding-bottom:1px}
-body{background:var(--bg);color:var(--text);font-family:var(--body);font-size:17px;line-height:1.5;min-height:100vh;padding-top:var(--app-bar-h);padding-bottom:80px}
+body{background:var(--bg);color:var(--text);font-family:var(--body);font-size:17px;line-height:1.5;min-height:100vh;padding-bottom:80px}
 body.theme-light{
   --bg:#F5F5F0;--s1:#ffffff;--s2:#dde8ea;--s3:#006B75;
   --border:#b8c8cc;--border2:#b8c8cc;
@@ -151,16 +151,16 @@ body.theme-light{
 #map-measure-chip{position:absolute;bottom:calc(84px + env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);z-index:16;display:none;background:var(--bg);border:1px solid var(--border);border-radius:20px;padding:6px 16px;font-family:var(--mono);font-size:12px;color:var(--text);white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,.4)}
 #map-measure-chip.show{display:block}
 /* tracker entry modal */
-#map-tracker-modal{position:fixed;bottom:calc(95px + env(safe-area-inset-bottom));left:0;right:0;z-index:251;background:var(--bg);border-top:1px solid var(--border);border-radius:16px 16px 0 0;padding:16px 16px 16px;opacity:0;pointer-events:none;transform:translateY(100%);transition:transform .25s,opacity .2s;max-height:80dvh;overflow-y:auto}
+#map-tracker-modal{position:fixed;bottom:calc(95px + env(safe-area-inset-bottom));left:0;right:0;z-index:251;background:var(--bg);border-top:1px solid var(--border);border-radius:16px 16px 0 0;padding:16px 16px 16px;opacity:0;pointer-events:none;transform:translateY(100%);transition:transform .25s,opacity .2s;max-height:calc(100dvh - var(--app-bar-h) - 95px - env(safe-area-inset-bottom) - 8px);overflow-y:auto}
 #map-tracker-modal.open{transform:translateY(0);opacity:1;pointer-events:auto}
 /* category picker sheet (draw flow) */
-#map-category-sheet{position:fixed;bottom:calc(95px + env(safe-area-inset-bottom));left:0;right:0;z-index:251;background:var(--bg);border-top:1px solid var(--border);border-radius:16px 16px 0 0;padding:14px 14px 14px;opacity:0;transform:translateY(100%);transition:transform .25s,opacity .2s;pointer-events:none}
+#map-category-sheet{position:fixed;bottom:calc(95px + env(safe-area-inset-bottom));left:0;right:0;z-index:251;background:var(--bg);border-top:1px solid var(--border);border-radius:16px 16px 0 0;padding:14px 14px 14px;opacity:0;transform:translateY(100%);transition:transform .25s,opacity .2s;max-height:calc(100dvh - var(--app-bar-h) - 95px - env(safe-area-inset-bottom) - 8px);overflow-y:auto;pointer-events:none}
 #map-category-sheet.open{transform:translateY(0);opacity:1;pointer-events:auto}
 .map-cat-pill{display:flex;align-items:center;gap:8px;padding:9px 12px;border-radius:8px;border:1px solid var(--border);background:var(--s1);margin-bottom:6px;cursor:pointer;font-family:var(--mono);font-size:12px;color:var(--text);transition:background .12s}
 .map-cat-pill:hover{background:var(--s2)}
 .map-cat-dot{width:12px;height:12px;border-radius:50%;flex-shrink:0}
 /* tracker management sheet */
-#map-tracker-sheet{position:fixed;bottom:calc(95px + env(safe-area-inset-bottom));left:0;right:0;z-index:251;background:var(--bg);border-top:1px solid var(--border);border-radius:16px 16px 0 0;padding:14px 14px 0;opacity:0;pointer-events:none;transform:translateY(100%);transition:transform .25s,opacity .2s;max-height:75dvh;display:flex;flex-direction:column}
+#map-tracker-sheet{position:fixed;bottom:calc(95px + env(safe-area-inset-bottom));left:0;right:0;z-index:251;background:var(--bg);border-top:1px solid var(--border);border-radius:16px 16px 0 0;padding:14px 14px 0;opacity:0;pointer-events:none;transform:translateY(100%);transition:transform .25s,opacity .2s;max-height:calc(100dvh - var(--app-bar-h) - 95px - env(safe-area-inset-bottom) - 8px);display:flex;flex-direction:column}
 #map-tracker-sheet.open{transform:translateY(0);opacity:1;pointer-events:auto}
 #map-tracker-cat-list{flex:1;overflow-y:auto;padding:0 0 8px}
 .map-tc-row{display:flex;align-items:center;gap:8px;padding:9px 4px;border-bottom:1px solid var(--border)}
@@ -267,7 +267,7 @@ body.theme-light{
 .np-check{font-size:13px;color:var(--s3);font-weight:bold}
 
 /* APP BAR */
-.app-bar{position:fixed;top:0;left:0;right:0;z-index:300;background:var(--header-bg);border-bottom:2px solid var(--amber);padding:max(6px,calc(env(safe-area-inset-top) - 4px)) 20px 0;min-height:58px;display:flex;align-items:center;gap:12px;box-shadow:0 -400px 0 var(--header-bg)}
+.app-bar{position:sticky;top:0;z-index:300;background:var(--header-bg);border-bottom:2px solid var(--amber);padding:max(6px,calc(env(safe-area-inset-top) - 4px)) 20px 0;min-height:58px;display:flex;align-items:center;gap:12px;box-shadow:0 -400px 0 var(--header-bg);transform:translateZ(0);-webkit-transform:translateZ(0)}
 .app-title{font-family:var(--cond);font-weight:800;font-size:21px;letter-spacing:.09em;text-transform:uppercase;color:var(--amber)}
 .app-sub{font-family:var(--mono);font-size:14px;color:var(--amber);letter-spacing:.04em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
 .bar-spacer{flex:1}
@@ -666,7 +666,7 @@ button:disabled,button[disabled]{opacity:.45;cursor:not-allowed}
 .cl-form-footer{padding:12px 20px 16px;display:flex;gap:10px;justify-content:flex-end;border-top:1px solid var(--border)}
 
 @media print{
-  body{background:white;color:black;font-size:12px;padding-top:0!important}
+  body{background:white;color:black;font-size:12px}
   .app-bar,.export-panel,.action-row,.no-print{display:none!important}
   .card-personal{display:none!important}
   .card{border:1px solid #ccc;break-inside:avoid;background:white}
