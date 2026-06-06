@@ -130,7 +130,10 @@ if (_glNative) {
   // (more native than waiting for click). Matches only real tappable controls.
   document.addEventListener('pointerdown', function(e){
     const tgt = e.target
-    const hit = tgt && tgt.closest && tgt.closest('button,[role="button"],.nav-item,.more-row,.more-tile,.map-cat-pill,.map-fab-btn,.proj-row')
+    // [onclick] catches the app's dominant tappable pattern (div/span with an inline
+    // handler — popup buttons, category rows, tracker rows). The trailing classes are
+    // controls wired via addEventListener (no onclick attr) that still need feedback.
+    const hit = tgt && tgt.closest && tgt.closest('button,[role="button"],[onclick],.nav-item,.more-row,.more-tile,.map-cat-pill,.map-fab-btn,.proj-row,._tlog-chip,._tlog-cat-head')
     if (!hit || hit.disabled) return
     window.glHaptic.light()
   }, true)
