@@ -139,6 +139,25 @@ if (_glNative) {
   }, true)
 }
 
+// ─── Keep --app-bar-h synced to the REAL app-bar height ────────────────────
+// The bar grows/shrinks (wordmark + project-name sub-line + safe-area inset), so no
+// hardcoded constant is right on every device. Measure it and publish the value the
+// top banners + bottom-sheet/popup max-height caps read off --app-bar-h. (The CSS
+// fallback value only applies for the split second before this first runs.)
+function _setAppBarH(){
+  const bar=document.querySelector('.app-bar');
+  if(!bar) return;
+  const h=Math.ceil(bar.getBoundingClientRect().bottom);
+  if(h>0) document.documentElement.style.setProperty('--app-bar-h', h+'px');
+}
+window._setAppBarH=_setAppBarH;
+_setAppBarH();
+window.addEventListener('load',_setAppBarH);
+window.addEventListener('resize',_setAppBarH);
+window.addEventListener('orientationchange',()=>setTimeout(_setAppBarH,120));
+if(document.fonts&&document.fonts.ready) document.fonts.ready.then(_setAppBarH);
+setTimeout(_setAppBarH,400); setTimeout(_setAppBarH,1500); // project name + fonts settle async
+
 // ─── Tap-outside dismisses keyboard ────────────────────────────────────────
 // iOS WKWebView's default behavior for input.blur() vs. soft-keyboard dismiss
 // is undefined — sometimes it dismisses, sometimes it doesn't. Owning this
