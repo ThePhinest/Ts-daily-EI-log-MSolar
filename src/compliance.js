@@ -1014,7 +1014,7 @@ function clShowTrackerLog(){
           :e.acres?`<span style="font-family:var(--mono);font-size:11px;color:var(--amber);white-space:nowrap;flex-shrink:0">${e.acres} ac</span>`:'';
         const isPlannedFlat=e.entryType==='planned';
         return `<div onclick="clShowTrackerDetail('${e.id}')" style="display:flex;align-items:center;gap:10px;padding:10px ${isPlannedFlat?'13':'16'}px;border-bottom:1px solid var(--border);cursor:pointer;${isPlannedFlat?'border-left:3px solid var(--amber);background:rgba(201,168,76,0.06)':''}">
-          <div style="width:10px;height:10px;border-radius:50%;background:${cat.color};flex-shrink:0"></div>
+          ${(typeof tcRampChip==='function')?tcRampChip(e.categoryId,pid,10):`<div style="width:10px;height:10px;border-radius:50%;background:${cat.color};flex-shrink:0"></div>`}
           <div style="flex:1;min-width:0">
             <div style="font-family:var(--mono);font-size:11px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${cat.name}${isPlannedFlat?' <span style="font-family:var(--mono);font-size:9px;font-weight:700;color:var(--amber);letter-spacing:.06em">PLAN</span>':''}</div>
             <div style="font-family:var(--mono);font-size:10px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${sub.slice(0,52)}</div>
