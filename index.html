@@ -26,6 +26,10 @@
   --mono:'IBM Plex Mono',monospace;--cond:'Barlow Condensed',sans-serif;--body:'Barlow',sans-serif;
   --r:7px;
 --header-bg:#000000;
+  /* App-bar total occupied height (safe-area-aware). Drives the body top-spacer, the top
+     banners, and popup max-heights. Biased a few px over actual so content never hides
+     under the fixed bar (min-height floor 58px = web; +26px over the notch inset = iOS). */
+  --app-bar-h:max(58px,calc(env(safe-area-inset-top, 0px) + 26px));
   /* ── Design tokens (Batch 2a, 2026-06-04) ── */
   /* Type scale — biased larger ("feels small" fix). Tune these to rescale the whole app. */
   --fs-2xs:12px;--fs-xs:13px;--fs-sm:14px;--fs-base:15px;--fs-md:16px;--fs-lg:18px;--fs-xl:21px;--fs-2xl:25px;
@@ -52,7 +56,7 @@ body:has(.more-overlay.open),body:has(#cl-form-overlay.open),body:has(#map-track
 .app-wm-bar{display:inline-block;width:2px;height:20px;background:var(--amber);margin:0 8px;flex-shrink:0}
 .app-wm-log{font-family:'Oswald','Barlow Condensed',sans-serif;font-weight:700;font-size:25px;letter-spacing:-0.5px;color:var(--s3);text-transform:uppercase}
 .app-wm-io{font-family:var(--mono);font-size:12px;color:var(--amber);margin-left:2px;align-self:flex-end;padding-bottom:1px}
-body{background:var(--bg);color:var(--text);font-family:var(--body);font-size:17px;line-height:1.5;min-height:100vh;padding-bottom:80px}
+body{background:var(--bg);color:var(--text);font-family:var(--body);font-size:17px;line-height:1.5;min-height:100vh;padding-top:var(--app-bar-h);padding-bottom:80px}
 body.theme-light{
   --bg:#F5F5F0;--s1:#ffffff;--s2:#dde8ea;--s3:#006B75;
   --border:#b8c8cc;--border2:#b8c8cc;
@@ -263,7 +267,7 @@ body.theme-light{
 .np-check{font-size:13px;color:var(--s3);font-weight:bold}
 
 /* APP BAR */
-.app-bar{position:sticky;top:0;z-index:300;background:var(--header-bg);border-bottom:2px solid var(--amber);padding:max(6px,calc(env(safe-area-inset-top) - 4px)) 20px 0;min-height:58px;display:flex;align-items:center;gap:12px;box-shadow:0 -400px 0 var(--header-bg)}
+.app-bar{position:fixed;top:0;left:0;right:0;z-index:300;background:var(--header-bg);border-bottom:2px solid var(--amber);padding:max(6px,calc(env(safe-area-inset-top) - 4px)) 20px 0;min-height:58px;display:flex;align-items:center;gap:12px;box-shadow:0 -400px 0 var(--header-bg)}
 .app-title{font-family:var(--cond);font-weight:800;font-size:21px;letter-spacing:.09em;text-transform:uppercase;color:var(--amber)}
 .app-sub{font-family:var(--mono);font-size:14px;color:var(--amber);letter-spacing:.04em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
 .bar-spacer{flex:1}
@@ -662,7 +666,7 @@ button:disabled,button[disabled]{opacity:.45;cursor:not-allowed}
 .cl-form-footer{padding:12px 20px 16px;display:flex;gap:10px;justify-content:flex-end;border-top:1px solid var(--border)}
 
 @media print{
-  body{background:white;color:black;font-size:12px}
+  body{background:white;color:black;font-size:12px;padding-top:0!important}
   .app-bar,.export-panel,.action-row,.no-print{display:none!important}
   .card-personal{display:none!important}
   .card{border:1px solid #ccc;break-inside:avoid;background:white}

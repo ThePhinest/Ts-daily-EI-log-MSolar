@@ -857,7 +857,7 @@ window.dlGoToToday = dlGoToToday;
       restoreFormState(state);
       const banner = document.createElement('div');
       banner.id = 'autosave-banner';
-      banner.style.cssText = 'position:fixed;top:56px;left:0;right:0;z-index:999;background:#001a1c;border-bottom:1px solid #006A75;color:#7ab5b8;font-family:monospace;font-size:12px;padding:8px 18px;display:flex;justify-content:space-between;align-items:center;';
+      banner.style.cssText = 'position:fixed;top:var(--app-bar-h);left:0;right:0;z-index:999;background:#001a1c;border-bottom:1px solid #006A75;color:#7ab5b8;font-family:monospace;font-size:12px;padding:8px 18px;display:flex;justify-content:space-between;align-items:center;';
       banner.innerHTML = '<span>⟳ Auto-saved session restored — your entries are back.</span><button onclick="document.getElementById(\'autosave-banner\').remove()" style="background:none;border:none;color:#6ecf6e;cursor:pointer;font-size:16px;line-height:1;">✕</button>';
       document.body.prepend(banner);
       setTimeout(() => { const b = document.getElementById('autosave-banner'); if (b) b.remove(); }, 6000);
