@@ -818,7 +818,9 @@ function clShowTrackerLog(){
       return;
     }
 
-    const isGrouped=!_tlSearch&&!_tlFrom&&!_tlTo&&!_tlCat;
+    // Category-chip filter still renders grouped (category header + ramp chip on top,
+    // state-colored rows below) — only free-text search / date-range go flat.
+    const isGrouped=!_tlSearch&&!_tlFrom&&!_tlTo;
 
     if(isGrouped){
       // Group by category, newest entry first within each group
@@ -999,6 +1001,10 @@ function clShowTrackerLog(){
         const cached=liveCats.find(c=>c.id===e.categoryId);
         const catName=cached?cached.name:(e.categoryName&&!e.categoryName.startsWith('cat-')?e.categoryName:'Unknown');
         const cat=cached||{color:'#888',name:catName};
+        // Individual drawing rows show their own STATE color — the ramp chip belongs only
+        // on the category header (grouped view), never on every row.
+        const _flatSt=(typeof tcEntryState==='function')?tcEntryState(e,e.categoryId||e.category,pid):null;
+        const _flatDot=(_flatSt&&_flatSt.color&&/^#[0-9A-Fa-f]{6}$/.test(_flatSt.color))?_flatSt.color:cat.color;
         const pc=Array.isArray(e.photoIds)?e.photoIds.length:0;
         const rc=Array.isArray(e.reportIds)?e.reportIds.length:0;
         const stc=e.fields?.seedTagCount||0;
@@ -1014,7 +1020,7 @@ function clShowTrackerLog(){
           :e.acres?`<span style="font-family:var(--mono);font-size:11px;color:var(--amber);white-space:nowrap;flex-shrink:0">${e.acres} ac</span>`:'';
         const isPlannedFlat=e.entryType==='planned';
         return `<div onclick="clShowTrackerDetail('${e.id}')" style="display:flex;align-items:center;gap:10px;padding:10px ${isPlannedFlat?'13':'16'}px;border-bottom:1px solid var(--border);cursor:pointer;${isPlannedFlat?'border-left:3px solid var(--amber);background:rgba(201,168,76,0.06)':''}">
-          ${(typeof tcRampChip==='function')?tcRampChip(e.categoryId,pid,10):`<div style="width:10px;height:10px;border-radius:50%;background:${cat.color};flex-shrink:0"></div>`}
+          <div style="width:10px;height:10px;border-radius:50%;background:${_flatDot};flex-shrink:0"></div>
           <div style="flex:1;min-width:0">
             <div style="font-family:var(--mono);font-size:11px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${cat.name}${isPlannedFlat?' <span style="font-family:var(--mono);font-size:9px;font-weight:700;color:var(--amber);letter-spacing:.06em">PLAN</span>':''}</div>
             <div style="font-family:var(--mono);font-size:10px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${sub.slice(0,52)}</div>
