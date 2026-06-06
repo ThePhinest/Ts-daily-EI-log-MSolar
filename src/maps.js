@@ -2211,14 +2211,37 @@ async function mapTrackerSaveAdd(){
 //     mapbox-gl-draw routes touch taps through onTap, so taps bypassed snapping entirely.
 // Fix: define onTap to first recompute the snap from the tap's own lngLat, then route
 // through the SNAP-aware onClick (base.onClick) — never the inherited base onTap.
-function _snapTouchMode(base){
+function _snapTouchMode(base,kind){
   const mode={...base};
   const recompute=function(state,e){
     if(e&&e.lngLat&&typeof base.onMouseMove==='function') base.onMouseMove.call(this,state,e);
   };
-  mode.onClick=function(state,e){ recompute.call(this,state,e); return base.onClick.call(this,state,e); };
+  // A finger tap rarely lands dead-on the tiny vertex hit-target, so mapbox-gl-draw's
+  // native "tap first vertex to close / last vertex to finish" never fires on touch — and
+  // the snap onClick just drops another vertex (polygons never close, lines never finish).
+  // Detect the finish tap ourselves with a finger-friendly radius: near the FIRST vertex
+  // (polygon, >=3 placed) closes; near the LAST placed vertex (line, >=2 placed) finishes.
+  // changeMode('simple_select') runs the draw mode's onStop, which auto-closes the ring,
+  // validates, and fires draw.create — the identical save path as a native completion.
+  const tryFinish=function(state,e){
+    try{
+      if(kind==='point'||!e||!e.point||!this.map) return false;
+      const feat=kind==='polygon'?state.polygon:state.line;
+      if(!feat) return false;
+      let ring=feat.coordinates; if(kind==='polygon') ring=ring&&ring[0];
+      if(!Array.isArray(ring)) return false;
+      const placed=ring.slice(0,-1);                       // drop the trailing cursor-follow coord
+      if(placed.length<(kind==='polygon'?3:2)) return false;
+      const t=kind==='polygon'?placed[0]:placed[placed.length-1];
+      if(!Array.isArray(t)) return false;
+      const p=this.map.project({lng:t[0],lat:t[1]});
+      if(Math.hypot(p.x-e.point.x,p.y-e.point.y)<=24){ this.changeMode('simple_select'); return true; }
+    }catch(_){}
+    return false;
+  };
+  mode.onClick=function(state,e){ recompute.call(this,state,e); if(tryFinish.call(this,state,e)) return; return base.onClick.call(this,state,e); };
   // Route taps through the snap-aware onClick (NOT base.onTap, which is the non-snap base).
-  mode.onTap=function(state,e){ recompute.call(this,state,e); return base.onClick.call(this,state,e); };
+  mode.onTap=function(state,e){ recompute.call(this,state,e); if(tryFinish.call(this,state,e)) return; return base.onClick.call(this,state,e); };
   return mode;
 }
 
@@ -2232,7 +2255,7 @@ function mapActivateDrawMode(categoryId){
     _drawInstance=new MapboxDraw({
       displayControlsDefault:false,
       controls:{},
-      modes:{ ...MapboxDraw.modes, draw_point:_snapTouchMode(SnapPointMode), draw_polygon:_snapTouchMode(SnapPolygonMode), draw_line_string:_snapTouchMode(SnapLineMode) },
+      modes:{ ...MapboxDraw.modes, draw_point:_snapTouchMode(SnapPointMode,'point'), draw_polygon:_snapTouchMode(SnapPolygonMode,'polygon'), draw_line_string:_snapTouchMode(SnapLineMode,'line') },
       styles:SnapModeDrawStyles,
       userProperties:true,
       snap:true,
