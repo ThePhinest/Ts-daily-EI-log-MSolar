@@ -2211,6 +2211,27 @@ async function mapTrackerSaveAdd(){
 //     mapbox-gl-draw routes touch taps through onTap, so taps bypassed snapping entirely.
 // Fix: define onTap to first recompute the snap from the tap's own lngLat, then route
 // through the SNAP-aware onClick (base.onClick) — never the inherited base onTap.
+// TEMP instrumentation (Bug A: iOS line-tap downward offset) — REMOVE after diagnosis.
+// Per draw tap, capture the finger's real clientX/Y, mapbox's computed canvas pixel,
+// the lngLat, and the map container rect, written to Firestore _debug/drawtaps (no
+// console on iOS). The tell: compare finger.y to (rectTop + point.y) — a mismatch =
+// the touch→canvas-pixel mapping is offset (which is what drops points below the line).
+window._glDrawTaps = window._glDrawTaps || [];
+function _glLogDrawTap(e, kind){
+  try{
+    const oe = e && e.originalEvent;
+    const t = oe && ((oe.touches && oe.touches[0]) || (oe.changedTouches && oe.changedTouches[0]));
+    const rect = _mapInstance && _mapInstance.getContainer().getBoundingClientRect();
+    window._glDrawTaps.push({
+      kind, type: oe && oe.type,
+      finger: t ? {x:Math.round(t.clientX), y:Math.round(t.clientY)} : null,
+      point: e.point ? {x:Math.round(e.point.x), y:Math.round(e.point.y)} : null,
+      rectTop: rect ? Math.round(rect.top) : null,
+      lngLat: e.lngLat ? {lng:+e.lngLat.lng.toFixed(6), lat:+e.lngLat.lat.toFixed(6)} : null,
+    });
+    if(window._udb) window._udb().collection('_debug').doc('drawtaps').set({taps: window._glDrawTaps.slice(-40), updated: Date.now()}).catch(()=>{});
+  }catch(_){}
+}
 function _snapTouchMode(base,kind){
   const mode={...base};
   const recompute=function(state,e){
@@ -2241,7 +2262,7 @@ function _snapTouchMode(base,kind){
   };
   mode.onClick=function(state,e){ recompute.call(this,state,e); if(tryFinish.call(this,state,e)) return; return base.onClick.call(this,state,e); };
   // Route taps through the snap-aware onClick (NOT base.onTap, which is the non-snap base).
-  mode.onTap=function(state,e){ recompute.call(this,state,e); if(tryFinish.call(this,state,e)) return; return base.onClick.call(this,state,e); };
+  mode.onTap=function(state,e){ _glLogDrawTap(e,kind); recompute.call(this,state,e); if(tryFinish.call(this,state,e)) return; return base.onClick.call(this,state,e); };
   return mode;
 }
 

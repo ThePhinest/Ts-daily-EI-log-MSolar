@@ -176,6 +176,10 @@ document.addEventListener('pointerdown', function(e){
   // Tapping into a different input — let it focus naturally
   const tt = tgt.tagName
   if (tt === 'INPUT' || tt === 'TEXTAREA' || tt === 'SELECT') return
+  // Tapping a button/link — DON'T dismiss here. Hiding the keyboard on pointerdown
+  // shifts the layout and cancels the control's click on iOS (the dead Save/Cancel
+  // bug). The control's own action changes the view, which dismisses the keyboard.
+  if (tgt.closest && tgt.closest('button,[role="button"],a')) return
   // Tapped elsewhere — dismiss keyboard
   active.blur()
   if (Capacitor.isNativePlatform && Capacitor.isNativePlatform()) {
