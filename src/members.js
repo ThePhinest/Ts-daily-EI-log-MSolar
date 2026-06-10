@@ -25,6 +25,9 @@ const INVITE_TTL_MS = 14 * 86400000; // invites live 14 days
 
 // ── Pending-invite capture — runs at module import, before auth exists.
 // Either skin lands here: link/QR (?join=TOKEN) or typed code (stored directly).
+// NOTE (iOS): a QR scanned with the camera opens SAFARI, not the installed PWA —
+// and iOS gives them separate localStorage. A stash made in one context is
+// invisible in the other; the typed-code skin is the cross-context recovery.
 (function _glCaptureJoinParam() {
   try {
     const url = new URL(window.location.href);
@@ -32,12 +35,33 @@ const INVITE_TTL_MS = 14 * 86400000; // invites live 14 days
       || (window.location.hash.match(/join=([A-Za-z0-9-]+)/) || [])[1];
     if (tok) {
       localStorage.setItem('gl_pending_invite', _glNormToken(tok));
+      console.log('GroundLog invite: token captured from URL');
       url.searchParams.delete('join');
       url.hash = url.hash.replace(/join=[A-Za-z0-9-]+&?/, '').replace(/[#&]$/, '');
       history.replaceState(null, '', url.pathname + url.search + url.hash);
     }
   } catch (e) { /* malformed URL — ignore */ }
 })();
+
+// Sign-in page hint — keeps the invite visible through the sign-in/sign-up wall
+// (the "I created an account and the invite vanished" disorientation).
+function _glSigninInviteHint() {
+  try {
+    if (!localStorage.getItem('gl_pending_invite')) return;
+    const page = document.getElementById('page-signin');
+    if (!page || document.getElementById('_gl-si-invite-hint')) return;
+    const card = page.querySelector('.si-card');
+    if (!card) return;
+    const hint = document.createElement('div');
+    hint.id = '_gl-si-invite-hint';
+    hint.style.cssText = 'max-width:340px;margin:0 auto 14px;background:rgba(201,160,39,.1);border:1px solid rgba(201,160,39,.45);border-radius:8px;padding:10px 14px;font-family:var(--mono);font-size:11.5px;line-height:1.55;color:var(--amber);text-align:center';
+    hint.textContent = '📩 You have a project invite waiting — sign in or create your account to accept it.';
+    card.parentNode.insertBefore(hint, card);
+  } catch (e) { /* cosmetic only */ }
+}
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', _glSigninInviteHint);
+} else { _glSigninInviteHint(); }
 
 // ── Helpers ──
 function _sdb() {
@@ -151,7 +175,7 @@ async function glBackfillSharedProjects() {
 
 async function glCreateInvite(role) {
   const d = _sdb();
-  if (!d || !GL_ROLES[role] || role === 'lead') return null;
+  if (!d || !GL_ROLES[role]) return null;
   const pid = _activeProjectId();
   const cfg = (typeof loadProjectConfig === 'function') ? loadProjectConfig() : {};
   const token = _glToken();
@@ -168,16 +192,17 @@ async function glCreateInvite(role) {
 
 // Role picker → mint → skins. Lead-only button renders this.
 function glShowInviteModal() {
+  document.getElementById('_gl-invite-modal')?.remove();
   const ov = document.createElement('div');
   ov.className = 'modal-overlay';
   ov.id = '_gl-invite-modal';
   ov.style.zIndex = '9100';
   ov.onclick = e => { if (e.target === ov) ov.remove(); };
-  const roleCard = (key) => {
+  const roleCard = (key, extra) => {
     const r = GL_ROLES[key];
     return `<div class="gl-role-pick" onclick="_glInvitePickRole('${key}')">
       <div class="gl-role-pick-name">${r.icon} ${r.name}</div>
-      <div class="gl-role-pick-sub">${r.sub}</div>
+      <div class="gl-role-pick-sub">${r.sub}${extra ? '<br><span style="color:var(--amber)">' + extra + '</span>' : ''}</div>
     </div>`;
   };
   ov.innerHTML = `<div class="modal-box" style="max-width:360px">
@@ -185,6 +210,7 @@ function glShowInviteModal() {
     <div class="modal-msg" style="margin-bottom:12px">Pick the role for this invite — one invite, one person.</div>
     ${roleCard('reviewer')}
     ${roleCard('field')}
+    ${roleCard('lead', 'Equal control to you — including members and invites. Only for someone you completely trust.')}
     <div class="modal-btns" style="margin-top:14px">
       <button class="modal-cancel" onclick="document.getElementById('_gl-invite-modal').remove()">Cancel</button>
     </div>
@@ -208,6 +234,7 @@ async function _glInvitePickRole(role) {
 
 // One token, three skins: link · short code · QR.
 function glShowInviteSkins(inv) {
+  document.getElementById('_gl-skins-modal')?.remove();
   const r = GL_ROLES[inv.role] || GL_ROLES.reviewer;
   const url = _glJoinUrl(inv.token);
   const ov = document.createElement('div');
@@ -245,11 +272,15 @@ function glShowInviteSkins(inv) {
 
 // Called post-auth from initFirebaseLoad. Reads the stashed token, validates,
 // shows the accept sheet. Clears the stash on every terminal outcome.
+let _glInviteCheckBusy = false;
 async function glCheckPendingInvite() {
   const token = localStorage.getItem('gl_pending_invite');
   if (!token) return;
   const d = _sdb();
-  if (!d) return; // not signed in yet — stash survives for the post-auth run
+  if (!d) { console.log('GroundLog invite: pending token waiting for sign-in'); return; }
+  if (_glInviteCheckBusy) return;   // boot timeout + manual entry can overlap
+  _glInviteCheckBusy = true;
+  console.log('GroundLog invite: checking pending token');
   const clear = () => localStorage.removeItem('gl_pending_invite');
   let inv;
   try {
@@ -261,7 +292,10 @@ async function glCheckPendingInvite() {
     inv = doc.data();
   } catch (e) {
     clear();
+    console.warn('GroundLog invite: lookup failed —', e.message);
     return _confirmModal('Couldn\'t look up the invite: ' + e.message, function(){}, 'Invite', 'OK');
+  } finally {
+    _glInviteCheckBusy = false;
   }
   if (inv.status !== 'active') {
     clear();
@@ -283,6 +317,11 @@ async function glCheckPendingInvite() {
 }
 
 function _glShowAcceptSheet(inv, token, clear) {
+  // Singleton — a boot-time check and a manual code entry can both land here;
+  // two stacked sheets share button ids and the visible one ends up with no
+  // handlers (the dead "Join project" bug). Replace, never stack.
+  document.getElementById('_gl-accept-modal')?.remove();
+  console.log('GroundLog invite: showing accept sheet for', inv.projectName || inv.pid);
   const r = GL_ROLES[inv.role] || GL_ROLES.reviewer;
   const ov = document.createElement('div');
   ov.className = 'modal-overlay';
@@ -299,15 +338,20 @@ function _glShowAcceptSheet(inv, token, clear) {
     </div>
   </div>`;
   document.body.appendChild(ov);
-  document.getElementById('_gl-accept-no').onclick = () => { clear(); ov.remove(); };
-  document.getElementById('_gl-accept-yes').onclick = async () => {
-    const btn = document.getElementById('_gl-accept-yes');
-    btn.disabled = true; btn.textContent = 'Joining…';
+  // Handlers bind to THIS sheet's nodes (never id-lookups that can hit a stale twin).
+  const noBtn = ov.querySelector('#_gl-accept-no');
+  const yesBtn = ov.querySelector('#_gl-accept-yes');
+  noBtn.onclick = () => { clear(); ov.remove(); };
+  yesBtn.onclick = async () => {
+    yesBtn.disabled = true; yesBtn.textContent = 'Joining…';
+    console.log('GroundLog invite: accepting…');
     try {
       await glAcceptInvite(inv, token);
       clear(); ov.remove();
+      console.log('GroundLog invite: joined', inv.pid);
     } catch (e) {
       clear(); ov.remove();
+      console.warn('GroundLog invite: join failed —', e.message);
       _confirmModal('Couldn\'t join: ' + e.message, function(){}, 'Join failed', 'OK');
     }
   };
@@ -320,7 +364,7 @@ async function glAcceptInvite(inv, token) {
   const now = Date.now();
   // 1. Membership — the rules-checked write (invite must be live + role match).
   await d.collection('projects').doc(inv.pid).collection('members').doc(uid).set({
-    role: inv.role, level: 1,
+    role: inv.role, level: inv.role === 'lead' ? 0 : 1,
     addedBy: inv.createdBy, addedAt: now, inviteToken: token,
     displayName: _glMyName(), email: _currentUser.email || ''
   });
@@ -401,9 +445,11 @@ function _glShowOrientation(inv) {
 }
 
 // Manual code entry — the phone skin. Reachable from the project switcher.
+// Also the cross-context recovery when a QR/link stash landed in a different
+// browser context (Safari tab vs installed PWA).
 function glShowJoinByCode() {
-  const existing = document.getElementById('_proj-switcher');
-  if (existing) existing.remove();
+  document.getElementById('_proj-switcher')?.remove();
+  document.getElementById('_gl-join-modal')?.remove();
   const ov = document.createElement('div');
   ov.className = 'modal-overlay';
   ov.id = '_gl-join-modal';
@@ -414,21 +460,23 @@ function glShowJoinByCode() {
     <div class="modal-msg" style="margin-bottom:10px">Enter the invite code you were given — like <span style="font-family:var(--mono)">7H2KM-9XQ4D</span>.</div>
     <input id="_gl-join-code" autocomplete="off" autocapitalize="characters" placeholder="XXXXX-XXXXX" style="width:100%;box-sizing:border-box;background:var(--s2);border:1px solid var(--border2);border-radius:6px;color:var(--text);font-family:var(--mono);font-size:18px;letter-spacing:.12em;text-align:center;padding:10px;margin-bottom:14px">
     <div class="modal-btns">
-      <button class="modal-cancel" onclick="document.getElementById('_gl-join-modal').remove()">Cancel</button>
+      <button class="modal-cancel" id="_gl-join-cancel">Cancel</button>
       <button class="modal-confirm" id="_gl-join-go" style="background:var(--amber);border-color:var(--amber);color:#0e0e0e">Look up invite</button>
     </div>
   </div>`;
   document.body.appendChild(ov);
-  const input = document.getElementById('_gl-join-code');
+  const input = ov.querySelector('#_gl-join-code');
+  const goBtn = ov.querySelector('#_gl-join-go');
+  ov.querySelector('#_gl-join-cancel').onclick = () => ov.remove();
   setTimeout(() => input.focus(), 60);
-  document.getElementById('_gl-join-go').onclick = () => {
+  goBtn.onclick = () => {
     const tok = _glNormToken(input.value);
     if (tok.length < 6) { input.style.borderColor = 'var(--red)'; return; }
     localStorage.setItem('gl_pending_invite', tok);
     ov.remove();
     glCheckPendingInvite();
   };
-  input.addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('_gl-join-go').click(); });
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') goBtn.click(); });
 }
 
 // ═══════════════════════════════════════════

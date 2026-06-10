@@ -51,12 +51,13 @@ service cloud.firestore {
       allow get: if request.auth != null;
       // Leads list only the invites they created (query must constrain createdBy).
       allow list: if request.auth != null && resource.data.createdBy == request.auth.uid;
-      // Only the project's lead mints invites; self-attributed; v1 never invites
-      // another lead (role escalation ceiling).
+      // Only the project's lead mints invites; self-attributed. A lead MAY
+      // invite another lead (super-trusted delegate — Tim, 2026-06-10); the
+      // role set is still closed to the known v1 keys.
       allow create: if request.auth != null
         && request.resource.data.createdBy == request.auth.uid
         && request.resource.data.pid is string
-        && request.resource.data.role in ['field', 'reviewer']
+        && request.resource.data.role in ['lead', 'field', 'reviewer']
         && request.resource.data.status == 'active'
         && request.resource.data.expiresAt is number
         && isLeadOf(request.resource.data.pid);

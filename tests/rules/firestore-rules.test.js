@@ -219,9 +219,20 @@ describe('invites — top-level token capability', () => {
   it('non-member cannot mint an invite for a project', () =>
     assertFails(setDoc(doc(as('stranger'), 'invites/tok-stranger'),
       { pid: PID, role: 'reviewer', status: 'active', createdBy: 'stranger', expiresAt: FUTURE })));
-  it('lead cannot mint a LEAD invite (v1 escalation ceiling)', () =>
-    assertFails(setDoc(doc(as('tim'), 'invites/tok-lead'),
+  it('lead MAY mint a LEAD invite (super-trusted delegate)', () =>
+    assertSucceeds(setDoc(doc(as('tim'), 'invites/tok-lead'),
       { pid: PID, role: 'lead', status: 'active', createdBy: 'tim', expiresAt: FUTURE })));
+  it('invite with an unknown role key is rejected', () =>
+    assertFails(setDoc(doc(as('tim'), 'invites/tok-admin'),
+      { pid: PID, role: 'admin', status: 'active', createdBy: 'tim', expiresAt: FUTURE })));
+  it('lead-invite accept enrolls a second lead', async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'invites/tok-colead'),
+        { pid: PID, role: 'lead', status: 'active', createdBy: 'tim', expiresAt: FUTURE });
+    });
+    await assertSucceeds(setDoc(doc(as('co-lead'), `projects/${PID}/members/co-lead`),
+      { role: 'lead', inviteToken: 'tok-colead' }));
+  });
   it('lead cannot forge createdBy', () =>
     assertFails(setDoc(doc(as('tim'), 'invites/tok-forged'),
       { pid: PID, role: 'field', status: 'active', createdBy: 'boots', expiresAt: FUTURE })));
