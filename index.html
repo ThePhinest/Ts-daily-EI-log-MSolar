@@ -984,6 +984,28 @@ body.is-native select { font-size: 16px !important; }
   </div>
 </div>
 
+<!-- ══════════════════════════════════
+     PROJECT SPACE PAGE — the shared-project hub (submissions feed v1;
+     search + photo gallery + published map iterate in per the design)
+══════════════════════════════════ -->
+<div class="page" id="page-projectSpace"><div class="wrap">
+  <div class="card">
+    <div class="card-head">
+      <span class="card-num">🤝</span>
+      <span class="card-title">Project Space</span>
+      <span id="pspace-proj-name" style="margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--muted2)"></span>
+    </div>
+    <div class="card-body">
+      <div style="font-family:var(--mono);font-size:11px;color:var(--muted2);line-height:1.75;margin-bottom:14px">
+        <span style="color:var(--amber);font-weight:500">Everything shared to this project.</span><br>
+        What you see here is exactly what every project member sees — submitted daily logs first; shared photos, map state, and search are on the way.
+      </div>
+      <div class="gl-inv-label" style="margin-bottom:8px">Submitted daily logs</div>
+      <div id="pspace-list"><div class="gl-mem-empty">Loading submissions…</div></div>
+    </div>
+  </div>
+</div></div>
+
 <!-- MORE SLIDE-UP PANEL -->
 <div class="more-overlay" id="more-overlay" onclick="closeMoreMenu()"></div>
 <div class="more-panel" id="more-panel">
@@ -1022,6 +1044,10 @@ body.is-native select { font-size: 16px !important; }
       <div class="more-tile" onclick="showPage('docs');closeMoreMenu()">
         <span class="more-tile-icon">📁</span>
         <span class="more-tile-label">Docs</span>
+      </div>
+      <div class="more-tile" onclick="showPage('projectSpace');closeMoreMenu()">
+        <span class="more-tile-icon">🤝</span>
+        <span class="more-tile-label">Project Space</span>
       </div>
       <div class="more-tile" onclick="showPage('config');closeMoreMenu()">
         <span class="more-tile-icon">⚙️</span>
@@ -3345,6 +3371,7 @@ function showPage(name){
   if(name==='timesheet'){ tsPushFromDailyLog(); tsRenderCurrentWeek(); tsRenderHistory(); tsRenderCumulative(); tsCheckArchivePrompt(); }
   if(name==='compliance'){ clInit(); clAutoDetect(); }
   if(name==='photos'){ phResetAndRender(); }
+  if(name==='projectSpace'){ if(typeof glRenderProjectSpacePage==='function') glRenderProjectSpacePage(); }
 }
 
 function showPageBack(name){
@@ -3471,6 +3498,7 @@ var PAGE_REGISTRY = [
   { id:'calendar',   label:'Calendar',    icon:'📅' },
   { id:'reports',    label:'Reports',     icon:'📄' },
   { id:'docs',       label:'Docs',        icon:'📁' },
+  { id:'projectSpace', label:'Project Space', icon:'🤝' },
   { id:'config',          label:'Settings',      icon:'⚙'  },
   { id:'aiBranding',      label:'AI & Branding', icon:'✦' },
   { id:'accountSettings', label:'Account',        icon:'👤' },

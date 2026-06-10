@@ -723,23 +723,45 @@ function glBuildSubmissionPayload() {
   return { fields, sky: state.sky || [], checklist, flags, crew };
 }
 
-async function glSubmitDay() {
-  const d = _sdb();
-  const btn = document.getElementById('btn-submit-day');
+function _glSubmitSay(msg, bad) {
   const st = document.getElementById('submit-day-status');
-  const say = (msg, bad) => {
-    if (!st) return;
-    st.textContent = msg;
-    st.style.color = bad ? 'var(--red)' : 'var(--green)';
-    st.style.opacity = '1';
-    setTimeout(() => { st.style.opacity = '0'; }, 4500);
-  };
-  if (!d) return say('Sign in first.', true);
+  if (!st) return;
+  st.textContent = msg;
+  st.style.color = bad ? 'var(--red)' : 'var(--green)';
+  st.style.opacity = '1';
+  setTimeout(() => { st.style.opacity = '0'; }, 4500);
+}
+
+// Entry point — confirm first (submitting is the day's integrity watermark).
+function glSubmitDay() {
+  const d = _sdb();
+  if (!d) return _glSubmitSay('Sign in first.', true);
   const pid = _activeProjectId();
-  if (!pid || pid === 'default') return say('Open a project first.', true);
+  if (!pid || pid === 'default') return _glSubmitSay('Open a project first.', true);
   const payload = glBuildSubmissionPayload();
-  if (!payload) return say('Nothing to submit.', true);
+  if (!payload) return _glSubmitSay('Nothing to submit.', true);
   const date = payload.fields.reportDate || new Date().toLocaleDateString('en-CA');
+  const projName = (typeof loadProjectConfig === 'function' ? loadProjectConfig().projectName : '') || 'this project';
+  _confirmModal(
+    'Submit the ' + _glSubFmtDate(date) + ' log to <b>' + _glEsc(projName) + '</b>?<br><br>'
+    + 'Everyone on the project sees this snapshot. Your personal section is never included. '
+    + 'You can keep editing afterwards — changes stay yours until you resubmit.',
+    function() { _glDoSubmitDay(payload, date); },
+    'Submit day', 'Submit'
+  );
+  // Submit is an affirmative act, not a destructive one — teal, not red.
+  setTimeout(() => {
+    const b = document.getElementById('_mok');
+    if (b) { b.style.background = 'var(--s3)'; b.style.borderColor = 'var(--s3)'; }
+  }, 0);
+}
+
+async function _glDoSubmitDay(payload, date) {
+  const d = _sdb();
+  if (!d) return;
+  const pid = _activeProjectId();
+  const say = _glSubmitSay;
+  const btn = document.getElementById('btn-submit-day');
   if (btn) { btn.disabled = true; btn.textContent = 'Submitting…'; }
   let version = 1;
   try {
@@ -775,26 +797,24 @@ function _glSubFmtDate(ds) {
   } catch (e) { return ds || ''; }
 }
 
-// Project Space v1 — the submissions feed. Members-readable by rules.
-async function glShowProjectSpace() {
-  document.getElementById('_gl-pspace')?.remove();
+// Project Space — its own page (page-projectSpace); this renders the
+// submissions feed into it. Members-readable by rules.
+function glShowProjectSpace() {
+  if (typeof showPage === 'function') showPage('projectSpace');
+}
+
+async function glRenderProjectSpacePage() {
+  const list = document.getElementById('pspace-list');
+  if (!list) return;
+  const nameEl = document.getElementById('pspace-proj-name');
+  if (nameEl && typeof loadProjectConfig === 'function') nameEl.textContent = loadProjectConfig().projectName || '';
   const d = _sdb();
-  if (!d) return;
+  if (!d) {
+    list.innerHTML = '<div class="gl-mem-empty">Sign in to see this project\'s shared space.</div>';
+    return;
+  }
+  list.innerHTML = '<div class="gl-mem-empty">Loading submissions…</div>';
   const pid = _activeProjectId();
-  const ov = document.createElement('div');
-  ov.className = 'proj-switcher-overlay';
-  ov.id = '_gl-pspace';
-  ov.onclick = e => { if (e.target === ov) ov.remove(); };
-  ov.innerHTML = `<div class="proj-switcher-sheet" style="max-height:86vh">
-    <div class="proj-switcher-header">
-      <span class="proj-switcher-title">📁 Project Space</span>
-      <button class="proj-switcher-close" onclick="document.getElementById('_gl-pspace').remove()">✕</button>
-    </div>
-    <div class="gl-inv-label" style="margin-bottom:8px">Submitted daily logs</div>
-    <div id="_gl-pspace-list"><div class="gl-mem-empty">Loading submissions…</div></div>
-  </div>`;
-  document.body.appendChild(ov);
-  const list = ov.querySelector('#_gl-pspace-list');
   const subs = [];
   try {
     const snap = await d.collection('projects').doc(pid).collection('submissions').get();
@@ -957,6 +977,7 @@ window.glHostMapToken = glHostMapToken;
 window.glBuildSubmissionPayload = glBuildSubmissionPayload;
 window.glSubmitDay = glSubmitDay;
 window.glShowProjectSpace = glShowProjectSpace;
+window.glRenderProjectSpacePage = glRenderProjectSpacePage;
 window.glShowSubmission = glShowSubmission;
 window.glWithdrawSubmission = glWithdrawSubmission;
 window._glCopy = _glCopy;
