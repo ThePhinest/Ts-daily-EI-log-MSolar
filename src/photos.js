@@ -347,7 +347,7 @@ function phRender(){
 
   lib.innerHTML = visibleDates.map(date => `
     <div class="ph-day-group">
-      <div class="ph-day-label">${phDayLabel(date)} — ${grouped[date].length} photo${grouped[date].length>1?'s':''}</div>
+      <div class="ph-day-label">${phDayLabel(date)} <span class="ph-day-count">${grouped[date].length} photo${grouped[date].length>1?'s':''}</span></div>
       <div class="ph-grid">
         ${grouped[date].map(p=>`
           <div class="ph-thumb" onclick="phOpenLightbox('${p.id}')">
@@ -392,9 +392,9 @@ function _phRenderTrash(){
     '</div>';
   }).join('');
   box.innerHTML =
-    '<div class="ph-day-label" style="margin-top:18px;cursor:pointer;user-select:none" onclick="_phToggleTrash()">'+
+    '<div class="ph-day-label ph-trash" style="margin-top:18px;cursor:pointer;user-select:none" onclick="_phToggleTrash()">'+
       (_phTrashOpen?'▾':'▸')+' 🗑 Recently Deleted ('+trash.length+')'+
-      ' <span style="opacity:.55;font-weight:400">— restorable for 30 days</span>'+
+      ' <span class="ph-day-count">restorable for 30 days</span>'+
     '</div>'+
     (_phTrashOpen ? '<div class="ph-grid">'+rows+'</div>' : '');
 }

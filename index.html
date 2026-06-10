@@ -586,7 +586,12 @@ button:disabled,button[disabled]{opacity:.45;cursor:not-allowed}
 .ph-upload-txt{font-family:var(--cond);font-weight:700;font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted2)}
 .ph-upload-sub{font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:4px}
 .ph-day-group{margin-bottom:20px}
-.ph-day-label{font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted2);padding:6px 0;border-bottom:1px solid var(--border);margin-bottom:10px}
+.ph-day-label{display:flex;align-items:center;gap:9px;font-family:var(--cond);font-size:15px;letter-spacing:.14em;text-transform:uppercase;color:var(--text);font-weight:600;padding:7px 0;margin-bottom:10px}
+.ph-day-label::before{content:'';width:4px;height:16px;border-radius:2px;background:linear-gradient(180deg,var(--amber2),var(--amber));flex:none}
+.ph-day-label::after{content:'';flex:1 1 12px;min-width:12px;height:1px;background:linear-gradient(90deg,rgba(201,168,76,.5),rgba(201,168,76,.08) 70%,transparent)}
+.ph-day-label.ph-trash::before{background:linear-gradient(180deg,#ff8c80,var(--red))}
+.ph-day-label.ph-trash::after{background:linear-gradient(90deg,rgba(231,76,60,.45),rgba(231,76,60,.08) 70%,transparent)}
+.ph-day-count{color:var(--muted2);font-size:12px;letter-spacing:.08em;font-weight:600}
 .ph-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px}
 @media(max-width:400px){.ph-grid{grid-template-columns:repeat(2,1fr)}}
 .ph-thumb{position:relative;border-radius:var(--r);overflow:hidden;background:var(--s2);border:1px solid var(--border);cursor:pointer;aspect-ratio:4/3}
