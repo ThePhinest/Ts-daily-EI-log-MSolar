@@ -333,6 +333,7 @@ function phRender(){
         : 'No photos match the current filters.'
     )+'</div>';
     document.getElementById('ph-load-more').style.display = 'none';
+    _phRenderTrash();
     return;
   }
 
@@ -360,6 +361,31 @@ function phRender(){
   `).join('');
 
   document.getElementById('ph-load-more').style.display = hasMore ? 'block' : 'none';
+  _phRenderTrash();
+}
+
+// ── Recently Deleted section (collapsed by default; restore within 30 days) ──
+let _phTrashOpen = false;
+function _phToggleTrash(){ _phTrashOpen = !_phTrashOpen; _phRenderTrash(); }
+function _phRenderTrash(){
+  const box = document.getElementById('ph-trash');
+  if(!box) return;
+  const trash = [...(window._phTrash||[])].sort((a,b)=>(b.deletedAt||0)-(a.deletedAt||0));
+  if(!trash.length){ box.innerHTML=''; return; }
+  const rows = trash.map(p=>{
+    const daysLeft = Math.max(0, Math.ceil((p.deletedAt + PH_TRASH_RETENTION_MS - Date.now())/86400000));
+    return '<div class="ph-thumb" style="cursor:default">'+
+      '<img src="'+p.thumb+'" alt="" loading="lazy" style="filter:grayscale(.7) brightness(.7)">'+
+      '<div class="ph-thumb-caption">'+phDayLabel(p.date)+' · '+daysLeft+'d left</div>'+
+      '<button onclick="phUndoDelete(\''+p.id+'\')" style="position:absolute;top:6px;right:6px;background:rgba(0,0,0,.75);border:1px solid #E8B84B;color:#E8B84B;font-size:11px;font-weight:700;border-radius:8px;padding:4px 8px;cursor:pointer">RESTORE</button>'+
+    '</div>';
+  }).join('');
+  box.innerHTML =
+    '<div class="ph-day-label" style="margin-top:18px;cursor:pointer;user-select:none" onclick="_phToggleTrash()">'+
+      (_phTrashOpen?'▾':'▸')+' 🗑 Recently Deleted ('+trash.length+')'+
+      ' <span style="opacity:.55;font-weight:400">— restorable for 30 days</span>'+
+    '</div>'+
+    (_phTrashOpen ? '<div class="ph-grid">'+rows+'</div>' : '');
 }
 
 function phLoadMore(){
@@ -631,4 +657,5 @@ window.phLbPrev = phLbPrev;
 window.phSaveCaption = phSaveCaption;
 window.phConfirmDelete = phConfirmDelete;
 window.phUndoDelete = phUndoDelete;
+window._phToggleTrash = _phToggleTrash;
 window.phBearingLabel = phBearingLabel;
