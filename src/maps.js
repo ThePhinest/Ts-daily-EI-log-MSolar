@@ -107,6 +107,21 @@ async function mapInit(){
       }
     }catch(e){/* not a member of a shared project / nothing shared — fall through */}
   }
+  // Tier 4: platform-hosted default (appConfig/mapKey, admin-published) — a
+  // brand-new user on their own project gets a working map with zero setup.
+  if(!token&&db&&_fbReady){
+    try{
+      const hostedDoc=await db.collection('appConfig').doc('mapKey').get();
+      if(hostedDoc.exists){
+        const hd=hostedDoc.data();
+        token=((hd[firestoreField]||hd.mapboxToken||hd.mapboxTokenNative)||'').trim();
+        if(token){
+          localStorage.setItem(storageKey,token);
+          console.log('GroundLog: using platform default map token');
+        }
+      }
+    }catch(e){/* hosted key unset — fall through to the no-token UI */}
+  }
   if(!token){
     document.getElementById('map-loading').style.display='none';
     document.getElementById('map-no-token').style.display='flex';

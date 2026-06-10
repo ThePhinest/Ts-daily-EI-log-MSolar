@@ -2619,6 +2619,14 @@ Anticipated rain — AM weather monitoring expected"></textarea>
         <span id="cfg-map-share-status" style="font-family:var(--mono);font-size:11px;margin-left:10px;opacity:0;transition:opacity .4s"></span>
         <div class="config-hint" style="margin-top:4px">Lets everyone on this project load the Field Map using your token. Map usage counts toward your Mapbox account.</div>
       </div>
+      <!-- Admin-only (visibility set by _glInitMapHostBtn): publish the PLATFORM
+           default token to appConfig/mapKey — every signed-in user's map works
+           out of the box. Rules: any-authed read, admin-only write. -->
+      <div id="cfg-map-host-wrap" style="display:none;margin-bottom:12px">
+        <button class="btn btn-outline" style="font-size:11px;padding:7px 14px" onclick="glHostMapToken()">Host map token as the GroundLog default (all users)</button>
+        <span id="cfg-map-host-status" style="font-family:var(--mono);font-size:11px;margin-left:10px;opacity:0;transition:opacity .4s"></span>
+        <div class="config-hint" style="margin-top:4px">Platform default — new users get a working map with zero setup. Their own or project-shared tokens still take priority.</div>
+      </div>
       <button class="btn btn-amber" style="font-size:11px;padding:7px 14px" onclick="mapSaveSettings()">Save Map Settings</button>
       <span id="cfg-map-status" style="font-family:var(--mono);font-size:11px;color:var(--green);margin-left:12px;opacity:0;transition:opacity .4s"></span>
     </div>
@@ -3315,7 +3323,7 @@ function showPage(name){
     const moreBtn=document.getElementById('tab-more');
     if(moreBtn)moreBtn.classList.add('active');
   }
-  if(name==='config'){ renderConfig(); tsLoadConfigFields(); renderNavConfig(); mapLoadSettingsFields(); }
+  if(name==='config'){ renderConfig(); tsLoadConfigFields(); renderNavConfig(); mapLoadSettingsFields(); if(typeof glRenderMembersCard==='function') glRenderMembersCard(); if(typeof _glInitMapShareBtn==='function') _glInitMapShareBtn(); if(typeof _glInitMapHostBtn==='function') _glInitMapHostBtn(); }
   if(name==='aiBranding'){ if(typeof aiBrandingInit==='function') aiBrandingInit(); }
   if(name==='accountSettings'){ acctInitPage(); }
   if(name==='map'){ mapInit(); setTimeout(()=>{ mapResize(); },200); }

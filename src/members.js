@@ -688,6 +688,45 @@ async function glShareMapToken() {
   }
 }
 
+// ── Platform-hosted DEFAULT map token (tier 4 of the key chain) ──
+// A new user on their own project must get a working map with ZERO setup.
+// Admin (Tim) publishes the platform token once to appConfig/mapKey — rules
+// already allow any-authed read / admin-only write on appConfig/*. Per-user
+// and per-project tokens still override (tiers 1-3).
+const GL_ADMIN_UID = 'Z1RZWSUTXfR1Ys76VMd8FTqydaq1';
+
+function _glInitMapHostBtn() {
+  const wrap = document.getElementById('cfg-map-host-wrap');
+  if (!wrap) return;
+  wrap.style.display = (window._currentUser && _currentUser.uid === GL_ADMIN_UID) ? '' : 'none';
+}
+
+async function glHostMapToken() {
+  const d = _sdb();
+  if (!d) return;
+  const st = document.getElementById('cfg-map-host-status');
+  const say = (msg, bad) => {
+    if (!st) return;
+    st.textContent = msg;
+    st.style.color = bad ? 'var(--red)' : 'var(--green)';
+    st.style.opacity = '1';
+    setTimeout(() => { st.style.opacity = '0'; }, 3500);
+  };
+  try {
+    const cfgDoc = await _udb().collection('settings').doc('projectConfig').get();
+    const cfg = cfgDoc.exists ? cfgDoc.data() : {};
+    const web = (cfg.mapboxToken || localStorage.getItem('gl_map_token') || '').trim();
+    const native = (cfg.mapboxTokenNative || localStorage.getItem('gl_map_token_native') || '').trim();
+    if (!web && !native) return say('Save your Mapbox token above first.', true);
+    await d.collection('appConfig').doc('mapKey').set({
+      mapboxToken: web, mapboxTokenNative: native, _ts: Date.now()
+    });
+    say('✓ Hosted — every signed-in user now gets a map by default');
+  } catch (e) {
+    say('Hosting failed: ' + e.message, true);
+  }
+}
+
 // ── Window exposure ──
 window.GL_ROLES = GL_ROLES;
 window.glEnsureSharedProject = glEnsureSharedProject;
@@ -706,4 +745,6 @@ window.glRevokeInvite = glRevokeInvite;
 window.glRepairSharedStubs = glRepairSharedStubs;
 window._glInitMapShareBtn = _glInitMapShareBtn;
 window.glShareMapToken = glShareMapToken;
+window._glInitMapHostBtn = _glInitMapHostBtn;
+window.glHostMapToken = glHostMapToken;
 window._glCopy = _glCopy;
