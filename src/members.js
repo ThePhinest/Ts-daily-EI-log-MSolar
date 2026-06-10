@@ -584,7 +584,9 @@ async function glRenderMembersCard() {
       }).join('') : '<div class="gl-mem-sub" style="padding:4px 0 2px">None — mint one below.</div>'}
       <button class="btn btn-amber" style="font-size:11px;padding:7px 14px;margin-top:10px" onclick="glShowInviteModal()">+ Invite someone</button>`;
   }
-  host.innerHTML = rows + invitesHtml;
+  host.innerHTML = rows
+    + `<button class="btn btn-outline" style="font-size:11px;padding:7px 14px;margin-top:10px" onclick="glShowProjectSpace()">📁 Project Space</button>`
+    + invitesHtml;
 }
 
 // Manual fallback if boot backfill didn't reach this project yet.
@@ -688,6 +690,211 @@ async function glShareMapToken() {
   }
 }
 
+// ═══════════════════════════════════════════
+// SUBMISSIONS — close-day snapshots (v1)
+// ═══════════════════════════════════════════
+// Submit = the integrity watermark: an immutable, versioned snapshot of the
+// day shared to the project. Post-submit edits stay private until an explicit
+// resubmit (new version doc). Personal fields (p-*) are excluded at the data
+// layer — they never exist in any snapshot. Checklist/flag item TEXT is
+// embedded so the snapshot stays self-contained when configs change later.
+
+function glBuildSubmissionPayload() {
+  if (typeof collectFormState !== 'function') return null;
+  const state = collectFormState();
+  const fields = {};
+  Object.entries(state.fields || {}).forEach(([id, val]) => {
+    if (!id.startsWith('p-')) fields[id] = val;   // personal data never leaves user space
+  });
+  const checklist = (window.checklistItems || []).map(c => ({
+    id: c.id, text: c.text,
+    checked: !!(state.checklist && state.checklist[c.id] && state.checklist[c.id].checked),
+    note: (state.checklist && state.checklist[c.id] && state.checklist[c.id].note) || ''
+  }));
+  const flags = (window.flagItems || []).map(f => ({
+    id: f.id, text: f.text,
+    flagged: !!(state.checkboxes && state.checkboxes[f.id]),
+    note: (state.flagNotes && state.flagNotes[f.id.replace('flag-', '')]) || ''
+  }));
+  const crew = (state.crew || []).map(b => ({
+    name: b.name || '', time: b.time || '', loc: b.loc || '', acts: b.acts || '',
+    envcomp: b.envcomp || '', issues: b.issues || '', notes: b.notes || ''
+  }));
+  return { fields, sky: state.sky || [], checklist, flags, crew };
+}
+
+async function glSubmitDay() {
+  const d = _sdb();
+  const btn = document.getElementById('btn-submit-day');
+  const st = document.getElementById('submit-day-status');
+  const say = (msg, bad) => {
+    if (!st) return;
+    st.textContent = msg;
+    st.style.color = bad ? 'var(--red)' : 'var(--green)';
+    st.style.opacity = '1';
+    setTimeout(() => { st.style.opacity = '0'; }, 4500);
+  };
+  if (!d) return say('Sign in first.', true);
+  const pid = _activeProjectId();
+  if (!pid || pid === 'default') return say('Open a project first.', true);
+  const payload = glBuildSubmissionPayload();
+  if (!payload) return say('Nothing to submit.', true);
+  const date = payload.fields.reportDate || new Date().toLocaleDateString('en-CA');
+  if (btn) { btn.disabled = true; btn.textContent = 'Submitting…'; }
+  let version = 1;
+  try {
+    const snap = await d.collection('projects').doc(pid).collection('submissions')
+      .where('date', '==', date).get();
+    snap.forEach(s => { const v = s.data().version || 1; if (v >= version) version = v + 1; });
+  } catch (e) { /* first submission for the project */ }
+  try {
+    await d.collection('projects').doc(pid).collection('submissions').doc(date + '_v' + version).set({
+      date, version, status: 'active', audience: 'project',
+      submittedBy: _currentUser.uid, submittedByName: _glMyName(),
+      submittedAt: Date.now(),
+      projectName: (typeof loadProjectConfig === 'function' ? (loadProjectConfig().projectName || '') : ''),
+      payload
+    });
+    say(version > 1 ? ('✓ Resubmitted — v' + version + ' posted') : '✓ Day submitted to the project');
+    showCloudBanner('✓ ' + date + ' submitted to the project' + (version > 1 ? ' (v' + version + ')' : '') + '.');
+    console.log('GroundLog submissions: posted', date, 'v' + version);
+  } catch (e) {
+    say(e.code === 'permission-denied'
+      ? 'Your role on this project is view-only — nothing to submit.'
+      : ('Submit failed: ' + e.message), true);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '📤 Submit Day to Project'; }
+  }
+}
+
+function _glSubFmtDate(ds) {
+  try {
+    const [y, m, dd] = (ds || '').split('-').map(Number);
+    return new Date(y, m - 1, dd).toLocaleDateString(undefined,
+      { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+  } catch (e) { return ds || ''; }
+}
+
+// Project Space v1 — the submissions feed. Members-readable by rules.
+async function glShowProjectSpace() {
+  document.getElementById('_gl-pspace')?.remove();
+  const d = _sdb();
+  if (!d) return;
+  const pid = _activeProjectId();
+  const ov = document.createElement('div');
+  ov.className = 'proj-switcher-overlay';
+  ov.id = '_gl-pspace';
+  ov.onclick = e => { if (e.target === ov) ov.remove(); };
+  ov.innerHTML = `<div class="proj-switcher-sheet" style="max-height:86vh">
+    <div class="proj-switcher-header">
+      <span class="proj-switcher-title">📁 Project Space</span>
+      <button class="proj-switcher-close" onclick="document.getElementById('_gl-pspace').remove()">✕</button>
+    </div>
+    <div class="gl-inv-label" style="margin-bottom:8px">Submitted daily logs</div>
+    <div id="_gl-pspace-list"><div class="gl-mem-empty">Loading submissions…</div></div>
+  </div>`;
+  document.body.appendChild(ov);
+  const list = ov.querySelector('#_gl-pspace-list');
+  const subs = [];
+  try {
+    const snap = await d.collection('projects').doc(pid).collection('submissions').get();
+    snap.forEach(s => subs.push(Object.assign({ _id: s.id }, s.data())));
+  } catch (e) {
+    list.innerHTML = '<div class="gl-mem-empty">No access to this project\'s submissions.</div>';
+    return;
+  }
+  if (!subs.length) {
+    list.innerHTML = '<div class="gl-mem-empty">Nothing submitted yet — daily logs submitted with 📤 appear here for everyone on the project.</div>';
+    return;
+  }
+  // Latest version per date, newest first; older versions stay in the trail.
+  const byDate = new Map();
+  subs.forEach(s => {
+    const cur = byDate.get(s.date);
+    if (!cur || (s.version || 1) > (cur.version || 1)) byDate.set(s.date, s);
+  });
+  window._glPSpaceCache = {};
+  subs.forEach(s => { window._glPSpaceCache[s._id] = s; });
+  list.innerHTML = [...byDate.values()]
+    .sort((a, b) => (b.date || '').localeCompare(a.date || ''))
+    .map(s => {
+      const withdrawn = s.status === 'withdrawn';
+      return `<div class="proj-row" onclick="glShowSubmission('${s._id}')"${withdrawn ? ' style="opacity:.45"' : ''}>
+        <div class="proj-row-info">
+          <div class="proj-row-name">${_glEsc(_glSubFmtDate(s.date))}${(s.version || 1) > 1 ? ' <span class="gl-role-chip">v' + s.version + '</span>' : ''}${withdrawn ? ' <span class="gl-mem-you">withdrawn</span>' : ''}</div>
+          <div class="proj-row-meta">${_glEsc(s.submittedByName || '')} · ${new Date(s.submittedAt || 0).toLocaleString()}</div>
+        </div>
+        <span style="color:var(--muted2)">›</span>
+      </div>`;
+    }).join('');
+}
+
+// Rendered read-only view of one submission snapshot.
+function glShowSubmission(id) {
+  const s = (window._glPSpaceCache || {})[id];
+  if (!s) return;
+  document.getElementById('_gl-sub-detail')?.remove();
+  const p = s.payload || {}, f = p.fields || {};
+  const kv = (label, val) => val ? `<div class="gl-sub-kv"><span>${label}</span><b>${_glEsc(val)}</b></div>` : '';
+  const para = (label, val) => val ? `<div class="gl-sub-para"><div class="gl-inv-label">${label}</div><div>${_glEsc(val)}</div></div>` : '';
+  const checked = (p.checklist || []).filter(c => c.checked);
+  const flagged = (p.flags || []).filter(fl => fl.flagged);
+  const mine = window._currentUser && s.submittedBy === _currentUser.uid;
+  const ov = document.createElement('div');
+  ov.className = 'proj-switcher-overlay';
+  ov.id = '_gl-sub-detail';
+  ov.style.zIndex = '9050';
+  ov.onclick = e => { if (e.target === ov) ov.remove(); };
+  ov.innerHTML = `<div class="proj-switcher-sheet" style="max-height:88vh">
+    <div class="proj-switcher-header">
+      <span class="proj-switcher-title">${_glEsc(_glSubFmtDate(s.date))}${(s.version || 1) > 1 ? ' · v' + s.version : ''}</span>
+      <button class="proj-switcher-close" onclick="document.getElementById('_gl-sub-detail').remove()">✕</button>
+    </div>
+    <div class="proj-row-meta" style="margin:-8px 0 12px">Submitted by ${_glEsc(s.submittedByName || '')} · ${new Date(s.submittedAt || 0).toLocaleString()}${s.status === 'withdrawn' ? ' · <b>WITHDRAWN</b>' : ''}</div>
+    <div class="gl-sub-sect">
+      ${kv('Project', f.projectName)}${kv('Prepared by', f.preparedBy)}${kv('Organization', f.org)}
+      ${kv('Activity', f.activePhase)}${kv('Contractor', f.contractor)}${kv('Reviewed by', f.reviewedBy)}
+    </div>
+    <div class="gl-sub-sect">
+      <div class="gl-inv-label">Weather</div>
+      ${kv('Sky', (p.sky || []).join(', '))}${kv('Temp AM / PM', [f.tempAM, f.tempPM].filter(Boolean).join(' / '))}
+      ${kv('Wind', f.wind)}${kv('Precip', f.precip)}${kv('Soil', f.soilCond)}
+      ${kv('Sun', [f.wxSunrise, f.wxSunset].filter(Boolean).join(' – '))}
+    </div>
+    ${para('Inspection summary', f.inspSummary)}
+    ${para('Agency inspections', f.agencyInsp)}${para('Landowner', f.landowner)}
+    ${para('RTE / species', f.rte)}${para('Non-compliance', f.nonCompliance)}
+    ${checked.length ? `<div class="gl-sub-sect"><div class="gl-inv-label">Checklist (${checked.length} checked)</div>
+      ${checked.map(c => `<div class="gl-sub-kv"><span>✓</span><b>${_glEsc(c.text)}${c.note ? ' — ' + _glEsc(c.note) : ''}</b></div>`).join('')}</div>` : ''}
+    ${flagged.length ? `<div class="gl-sub-sect" style="border-color:rgba(192,57,43,.4)"><div class="gl-inv-label" style="color:var(--red)">⚑ Flags (${flagged.length})</div>
+      ${flagged.map(fl => `<div class="gl-sub-kv"><span>⚑</span><b>${_glEsc(fl.text)}${fl.note ? ' — ' + _glEsc(fl.note) : ''}</b></div>`).join('')}</div>` : ''}
+    ${(p.crew || []).map((b, i) => `<div class="gl-sub-sect"><div class="gl-inv-label">Crew block ${i + 1}${b.name ? ' — ' + _glEsc(b.name) : ''}</div>
+      ${kv('Hours', b.time)}${kv('Location', b.loc)}
+      ${para('Activities', b.acts)}${para('Env. compliance', b.envcomp)}${para('Issues', b.issues)}${para('Notes', b.notes)}</div>`).join('')}
+    ${para('General communications', f.genComms)}
+    ${para('Lookahead', f.lookahead)}${para('Expected weather', f.lookaheadWeather)}
+    ${mine && s.status !== 'withdrawn' ? `<button class="btn btn-outline" style="font-size:11px;padding:7px 14px;margin-top:8px;color:var(--red)" onclick="glWithdrawSubmission('${s._id}')">Withdraw submission</button>` : ''}
+  </div>`;
+  document.body.appendChild(ov);
+}
+
+function glWithdrawSubmission(id) {
+  const d = _sdb();
+  const s = (window._glPSpaceCache || {})[id];
+  if (!d || !s) return;
+  _confirmModal('Withdraw this submission? Project members lose access to it now. Your own log is untouched, and the version trail keeps the record that it existed.', async function() {
+    try {
+      const pid = _activeProjectId();
+      await d.collection('projects').doc(pid).collection('submissions').doc(id)
+        .update({ status: 'withdrawn', statusChangedAt: Date.now() });
+      document.getElementById('_gl-sub-detail')?.remove();
+      glShowProjectSpace();
+    } catch (e) {
+      _confirmModal('Could not withdraw: ' + e.message, function(){}, 'Submissions', 'OK');
+    }
+  }, 'Withdraw submission', 'Withdraw');
+}
+
 // ── Platform-hosted DEFAULT map token (tier 4 of the key chain) ──
 // A new user on their own project must get a working map with ZERO setup.
 // Admin (Tim) publishes the platform token once to appConfig/mapKey — rules
@@ -747,4 +954,9 @@ window._glInitMapShareBtn = _glInitMapShareBtn;
 window.glShareMapToken = glShareMapToken;
 window._glInitMapHostBtn = _glInitMapHostBtn;
 window.glHostMapToken = glHostMapToken;
+window.glBuildSubmissionPayload = glBuildSubmissionPayload;
+window.glSubmitDay = glSubmitDay;
+window.glShowProjectSpace = glShowProjectSpace;
+window.glShowSubmission = glShowSubmission;
+window.glWithdrawSubmission = glWithdrawSubmission;
 window._glCopy = _glCopy;

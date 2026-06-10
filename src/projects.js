@@ -615,7 +615,11 @@ async function loadProject(projectId, projDataOverride) {
       try { localStorage.removeItem('msf_autosave'); } catch {}
     }
     showCloudBanner('↳ Switched to ' + (projData.projectName || 'project'));
-  } catch(e) { console.warn('loadProject failed:', e.message); }
+  } catch(e) {
+    console.warn('loadProject failed:', e.message, e);
+    // Surface it — a silent failure here reads as "the switcher does nothing".
+    if (typeof showCloudBanner === 'function') showCloudBanner('⚠ Project switch failed: ' + e.message);
+  }
 }
 
 // ── Create a brand-new project ──
@@ -673,6 +677,7 @@ function showProjectSwitcher() {
   if (document.getElementById('_proj-switcher')) return;
   const activeProjId = _activeProjectId();
   const known = knownProjectsGet();
+  console.log('GroundLog switcher: open —', known.length, 'projects, active', activeProjId);
 
   const ov = document.createElement('div');
   ov.className = 'proj-switcher-overlay';
@@ -734,12 +739,18 @@ function showProjectSwitcher() {
     ov.innerHTML = buildSheet(false);
   };
   window._projSwitcherSelect = async function(projectId) {
+    console.log('GroundLog switcher: tapped', projectId, projectId === activeProjId ? '(already active)' : '');
     if (projectId === activeProjId) { ov.remove(); return; }
     const proj = known.find(p => p.projectId === projectId);
     const name = proj ? proj.projectName : 'this project';
     _confirmModal('Switch to ' + name + '? Your current log will be saved.', async function() {
       ov.remove();
-      await loadProject(projectId);
+      try {
+        await loadProject(projectId);
+      } catch(e) {
+        console.warn('GroundLog switcher: loadProject threw —', e.message, e);
+        showCloudBanner('⚠ Project switch failed: ' + e.message);
+      }
     }, 'Switch Project', 'Switch');
   };
   window._projSwitcherCreate = async function() {

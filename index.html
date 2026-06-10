@@ -726,6 +726,13 @@ button:disabled,button[disabled]{opacity:.45;cursor:not-allowed}
 .gl-role-pick-sub{font-family:var(--mono);font-size:11px;color:var(--muted2);line-height:1.5}
 .gl-inv-label{font-family:var(--mono);font-size:9.5px;color:var(--muted);letter-spacing:.12em;text-transform:uppercase;margin-bottom:5px}
 .gl-inv-code{font-family:var(--mono);font-size:22px;letter-spacing:.14em;text-align:center;color:var(--amber);background:var(--s2);border:1px dashed var(--border2);border-radius:8px;padding:10px;cursor:pointer;user-select:all}
+/* Project Space submission detail */
+.gl-sub-sect{border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:10px}
+.gl-sub-kv{display:flex;gap:10px;font-size:12.5px;padding:2px 0;color:var(--muted2)}
+.gl-sub-kv span{font-family:var(--mono);font-size:10.5px;min-width:84px;flex-shrink:0;padding-top:1px}
+.gl-sub-kv b{color:var(--text);font-weight:500;word-break:break-word}
+.gl-sub-para{margin-bottom:10px}
+.gl-sub-para>div:last-child{font-size:13px;color:var(--text);line-height:1.55;white-space:pre-wrap;word-break:break-word}
 
 /* CUSTOM CONFIRM MODAL */
 .modal-overlay{position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;padding:20px}
@@ -1678,6 +1685,13 @@ Anticipated rain — AM weather monitoring expected"></textarea>
   <div class="export-panel">
     <div class="export-title">Export &amp; Save</div>
     <div class="action-row">
+      <!-- Close-day submission (submission-sharing-model): immutable versioned
+           snapshot to the shared project. Personal section never included. -->
+      <button class="btn btn-export" id="btn-submit-day" onclick="glSubmitDay()" style="font-size:13px;padding:12px 18px;letter-spacing:.08em;color:var(--s3);border-color:var(--s3)">📤 Submit Day to Project</button>
+      <div id="submit-day-status" style="font-family:var(--mono);font-size:11px;text-align:center;min-height:16px;margin-top:6px;opacity:0;transition:opacity .3s"></div>
+      <div class="export-hint">Shares a snapshot of this day with everyone on the project — your personal section is never included. Edits after submitting stay yours until you resubmit.</div>
+      <button class="btn btn-outline" onclick="glShowProjectSpace()" style="font-size:11px;padding:7px 14px;width:100%;justify-content:center;margin-top:6px">📁 Project Space — submitted logs</button>
+      <div class="divider-export"></div>
       <button class="btn btn-outline" id="btn-formalize-log" onclick="polishLog()" style="font-size:12px;padding:10px 16px;width:100%;justify-content:center;margin-bottom:4px;color:var(--amber)">✦ Formalize Log</button>
       <div class="export-hint" style="margin-bottom:12px">AI rewrites selected fields in professional language — in place, no report generated.</div>
       <button class="btn btn-export" id="btn-generate-report" onclick="generateReport()" style="font-size:15px;padding:15px 20px;letter-spacing:.1em;color:var(--amber)">✦ Generate Report</button>
