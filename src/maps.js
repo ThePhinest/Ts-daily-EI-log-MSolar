@@ -90,6 +90,23 @@ async function mapInit(){
       }
     }catch(e){console.warn('mapInit Firestore fetch failed:',e.message);}
   }
+  // Tier 3: project-shared token (lead pressed "Share map token" — members.js).
+  // Prefer this platform's field; fall back to the other (a web URL-restricted
+  // token can 403 on the capacitor origin, but trying beats a blank map).
+  if(!token&&db&&_fbReady){
+    try{
+      const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+      const sharedDoc=await db.collection('projects').doc(pid).collection('config').doc('mapKey').get();
+      if(sharedDoc.exists){
+        const sd=sharedDoc.data();
+        token=((sd[firestoreField]||sd.mapboxToken||sd.mapboxTokenNative)||'').trim();
+        if(token){
+          localStorage.setItem(storageKey,token);
+          console.log('GroundLog: using project-shared map token');
+        }
+      }
+    }catch(e){/* not a member of a shared project / nothing shared — fall through */}
+  }
   if(!token){
     document.getElementById('map-loading').style.display='none';
     document.getElementById('map-no-token').style.display='flex';

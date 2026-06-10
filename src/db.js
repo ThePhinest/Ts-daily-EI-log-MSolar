@@ -488,7 +488,9 @@ function _projData(pid) {
 function _glSharedBoot() {
   try {
     if (typeof glBackfillSharedProjects === 'function') glBackfillSharedProjects();
+    if (typeof glRepairSharedStubs === 'function') glRepairSharedStubs();
     if (typeof glCheckPendingInvite === 'function') setTimeout(glCheckPendingInvite, 600);
+    if (typeof _glInitMapShareBtn === 'function') _glInitMapShareBtn();
   } catch(e) { console.warn('shared-projects boot:', e.message); }
 }
 

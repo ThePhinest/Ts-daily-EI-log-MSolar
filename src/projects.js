@@ -575,6 +575,9 @@ async function loadProject(projectId, projDataOverride) {
     // Update lastUsed
     _udb().collection('settings').doc(projectId).set({ lastUsed: Date.now() }, { merge: true }).catch(() => {});
 
+    // Map-share button visibility follows the active project's lead status.
+    if (typeof _glInitMapShareBtn === 'function') _glInitMapShareBtn();
+
     // Load this project's session
     const sessionDoc = await _udb().collection('sessions').doc(projectId).get();
     document.getElementById('crewContainer').innerHTML = '';

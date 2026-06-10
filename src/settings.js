@@ -715,6 +715,12 @@ window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', fun
 // ═══════════════════════════════════════════
 // WINDOW EXPOSURE
 // ═══════════════════════════════════════════
+// Defaults MUST be window-exposed: projects.js (createProject) and members.js
+// (invite-accept stub) read them cross-module — module-local consts are
+// invisible there (vite-esm-cross-module). Missing exposure = new projects
+// throw + joined projects get empty checklist/flags.
+window.DEFAULT_CHECKLIST_ITEMS = DEFAULT_CHECKLIST_ITEMS;
+window.DEFAULT_FLAG_ITEMS = DEFAULT_FLAG_ITEMS;
 window.loadCardTitles = loadCardTitles;
 window.saveCardLabels = saveCardLabels;
 window.initCardTitles = initCardTitles;

@@ -357,6 +357,59 @@ function _glShowAcceptSheet(inv, token, clear) {
   };
 }
 
+// Per-project settings stub for a joined project. Defaults are read off
+// window (vite-esm-cross-module: settings.js consts are module-local — a bare
+// typeof check silently yielded [] and emptied the joiner's checklist/flags).
+function _glDefaultStub(projectName, role, now) {
+  return {
+    projectName,
+    preparedBy: _glMyName(), org: '', activePhase: '',
+    contractor: '', location: '', reviewedBy: '',
+    createdAt: now, lastUsed: now, _ts: now,
+    shared: true, sharedRole: role,
+    checklistItems: [...(window.DEFAULT_CHECKLIST_ITEMS || [])],
+    checklistTitle: 'Compliance Checklist',
+    flagItems: [...(window.DEFAULT_FLAG_ITEMS || [])],
+    flagsTitle: 'Regulatory & Incident Flags',
+    presets: Object.assign({}, window.DEFAULT_PRESETS || {}),
+    phases: [...(window.DEFAULT_PHASES || [])],
+    cardTitles: {},
+    tsConfig: Object.assign({}, window.TS_DEFAULTS || {}),
+    phaseC_migrated: true
+  };
+}
+
+// One-time repair for stubs written before the window-exposure fix: joined
+// projects whose settings doc carries empty checklist/flags (and the old
+// 178 per-diem default) get the real defaults merged in.
+async function glRepairSharedStubs() {
+  if (!_sdb() || typeof knownProjectsGet !== 'function') return;
+  const shared = knownProjectsGet().filter(p => p.projectId && p.shared);
+  for (const p of shared) {
+    try {
+      const ref = _udb().collection('settings').doc(p.projectId);
+      const doc = await ref.get();
+      if (!doc.exists || !doc.data().shared) continue;
+      const d = doc.data();
+      const fix = {};
+      if (!Array.isArray(d.checklistItems) || !d.checklistItems.length)
+        fix.checklistItems = [...(window.DEFAULT_CHECKLIST_ITEMS || [])];
+      if (!Array.isArray(d.flagItems) || !d.flagItems.length)
+        fix.flagItems = [...(window.DEFAULT_FLAG_ITEMS || [])];
+      if (!d.phases || !d.phases.length) fix.phases = [...(window.DEFAULT_PHASES || [])];
+      if (!d.presets || !Object.keys(d.presets).length) fix.presets = Object.assign({}, window.DEFAULT_PRESETS || {});
+      if (d.tsConfig && d.tsConfig.perDiem === 178) fix.tsConfig = Object.assign({}, d.tsConfig, { perDiem: 0 });
+      if (Object.keys(fix).length) {
+        await ref.set(Object.assign(fix, { _ts: Date.now() }), { merge: true });
+        console.log('GroundLog: repaired shared-project stub for', p.projectName);
+        if (p.projectId === _activeProjectId() && typeof _applyProjectSettings === 'function') {
+          _applyProjectSettings(Object.assign({}, d, fix));
+        }
+      }
+    } catch (e) { /* repair is best-effort */ }
+  }
+}
+
 async function glAcceptInvite(inv, token) {
   const d = _sdb();
   if (!d) throw new Error('not signed in');
@@ -378,22 +431,7 @@ async function glAcceptInvite(inv, token) {
   });
   // 4. Own per-project settings stub — loadProject/syncs work unchanged for
   //    shared projects, and per-project personal prefs get a home (nav defaults later).
-  const stub = {
-    projectName: inv.projectName || 'Shared project',
-    preparedBy: _glMyName(), org: '', activePhase: '',
-    contractor: '', location: '', reviewedBy: '',
-    createdAt: now, lastUsed: now, _ts: now,
-    shared: true, sharedRole: inv.role,
-    checklistItems: (typeof DEFAULT_CHECKLIST_ITEMS !== 'undefined') ? [...DEFAULT_CHECKLIST_ITEMS] : [],
-    checklistTitle: 'Compliance Checklist',
-    flagItems: (typeof DEFAULT_FLAG_ITEMS !== 'undefined') ? [...DEFAULT_FLAG_ITEMS] : [],
-    flagsTitle: 'Regulatory & Incident Flags',
-    presets: (typeof DEFAULT_PRESETS !== 'undefined') ? Object.assign({}, DEFAULT_PRESETS) : {},
-    phases: (typeof DEFAULT_PHASES !== 'undefined') ? [...DEFAULT_PHASES] : [],
-    cardTitles: {},
-    tsConfig: (typeof TS_DEFAULTS !== 'undefined') ? Object.assign({}, TS_DEFAULTS) : {},
-    phaseC_migrated: true
-  };
+  const stub = _glDefaultStub(inv.projectName || 'Shared project', inv.role, now);
   await _udb().collection('settings').doc(inv.pid).set(stub, { merge: true });
   // 5. Local known-projects entry (shared-flagged) so the switcher lists it.
   try {
@@ -599,6 +637,57 @@ function glRevokeInvite(token) {
   }, 'Revoke invite', 'Revoke');
 }
 
+// ═══════════════════════════════════════════
+// PROJECT-SHARED MAP TOKEN (api-key-scoping: project-scoped, never global)
+// ═══════════════════════════════════════════
+// Lead shares their Mapbox token to projects/{pid}/config/mapKey (rules:
+// members read, lead writes — already deployed). Members' mapInit falls back
+// to it after their own token sources. Mapbox pk tokens are public-by-design;
+// usage meters to the lead's Mapbox account.
+
+// Show the share button (Settings → Map Settings) only to a lead of the
+// active shared project.
+async function _glInitMapShareBtn() {
+  const wrap = document.getElementById('cfg-map-share-wrap');
+  if (!wrap) return;
+  if (!_sdb()) { wrap.style.display = 'none'; return; }
+  try {
+    const pid = _activeProjectId();
+    if (!pid || pid === 'default') { wrap.style.display = 'none'; return; }
+    const mir = await _udb().collection('memberships').doc(pid).get();
+    wrap.style.display = (mir.exists && mir.data().role === 'lead') ? '' : 'none';
+  } catch (e) { wrap.style.display = 'none'; }
+}
+
+async function glShareMapToken() {
+  const d = _sdb();
+  if (!d) return;
+  const st = document.getElementById('cfg-map-share-status');
+  const say = (msg, bad) => {
+    if (!st) return;
+    st.textContent = msg;
+    st.style.color = bad ? 'var(--red)' : 'var(--green)';
+    st.style.opacity = '1';
+    setTimeout(() => { st.style.opacity = '0'; }, 3500);
+  };
+  try {
+    // Own settings doc is the cross-platform source (web + native token fields);
+    // current platform's localStorage is the fallback.
+    const cfgDoc = await _udb().collection('settings').doc('projectConfig').get();
+    const cfg = cfgDoc.exists ? cfgDoc.data() : {};
+    const web = (cfg.mapboxToken || localStorage.getItem('gl_map_token') || '').trim();
+    const native = (cfg.mapboxTokenNative || localStorage.getItem('gl_map_token_native') || '').trim();
+    if (!web && !native) return say('Save your Mapbox token above first.', true);
+    await d.collection('projects').doc(_activeProjectId()).collection('config').doc('mapKey').set({
+      mapboxToken: web, mapboxTokenNative: native,
+      sharedBy: _currentUser.uid, sharedByName: _glMyName(), _ts: Date.now()
+    });
+    say('✓ Map token shared with project members');
+  } catch (e) {
+    say('Share failed: ' + e.message, true);
+  }
+}
+
 // ── Window exposure ──
 window.GL_ROLES = GL_ROLES;
 window.glEnsureSharedProject = glEnsureSharedProject;
@@ -614,4 +703,7 @@ window.glRenderMembersCard = glRenderMembersCard;
 window.glEnableSharing = glEnableSharing;
 window.glRemoveMember = glRemoveMember;
 window.glRevokeInvite = glRevokeInvite;
+window.glRepairSharedStubs = glRepairSharedStubs;
+window._glInitMapShareBtn = _glInitMapShareBtn;
+window.glShareMapToken = glShareMapToken;
 window._glCopy = _glCopy;

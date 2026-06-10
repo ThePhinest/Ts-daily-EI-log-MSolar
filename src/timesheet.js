@@ -1,7 +1,9 @@
 // ═══════════════════════════════════════════
 // TIMESHEET
 // ═══════════════════════════════════════════
-const TS_DEFAULTS={weekStartDay:0,perDiem:178,mileageRate:0.725,supervisorName:'',hourlyRate:0,payType:'hourly',otType:'daily'};
+// No project-specific dollar amounts in defaults — per diem starts 0 and is
+// set per project in Timesheet Settings (no-project-specific-hardcoding).
+const TS_DEFAULTS={weekStartDay:0,perDiem:0,mileageRate:0.725,supervisorName:'',hourlyRate:0,payType:'hourly',otType:'daily'};
 
 // ── Per-project tsConfig storage (E1.1 Option C — Stage 2) ──
 // Each project's per-diem / mileage / hourly / OT settings live at
@@ -597,7 +599,7 @@ function tsShowView(v){
 function saveTsConfig(){
   const cfg={
     weekStartDay:parseInt(document.getElementById('cfg-ts-weekstart')?.value)||0,
-    perDiem:parseFloat(document.getElementById('cfg-ts-perdiem')?.value)||178,
+    perDiem:parseFloat(document.getElementById('cfg-ts-perdiem')?.value)||0,
     mileageRate:parseFloat(document.getElementById('cfg-ts-mileage')?.value)||0.725,
     supervisorName:document.getElementById('cfg-ts-supervisor')?.value.trim()||'',
     hourlyRate:parseFloat(document.getElementById('cfg-ts-hourlyrate')?.value)||0,

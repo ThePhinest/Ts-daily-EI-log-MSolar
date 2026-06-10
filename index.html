@@ -2612,6 +2612,13 @@ Anticipated rain — AM weather monitoring expected"></textarea>
           <option value="outdoors-v11">🏔 Topo / Outdoors</option>
         </select>
       </div>
+      <!-- Lead-only (visibility set by _glInitMapShareBtn): publish the map token
+           to projects/{pid}/config/mapKey so members' maps work without their own. -->
+      <div id="cfg-map-share-wrap" style="display:none;margin-bottom:12px">
+        <button class="btn btn-outline" style="font-size:11px;padding:7px 14px" onclick="glShareMapToken()">Share map token with project members</button>
+        <span id="cfg-map-share-status" style="font-family:var(--mono);font-size:11px;margin-left:10px;opacity:0;transition:opacity .4s"></span>
+        <div class="config-hint" style="margin-top:4px">Lets everyone on this project load the Field Map using your token. Map usage counts toward your Mapbox account.</div>
+      </div>
       <button class="btn btn-amber" style="font-size:11px;padding:7px 14px" onclick="mapSaveSettings()">Save Map Settings</button>
       <span id="cfg-map-status" style="font-family:var(--mono);font-size:11px;color:var(--green);margin-left:12px;opacity:0;transition:opacity .4s"></span>
     </div>
