@@ -112,7 +112,7 @@ jobs:
 
       - name: Upload IPA artifact (debug aid)
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: GroundLog-${{ github.run_number }}.ipa
           path: ios/build/GroundLog.ipa
