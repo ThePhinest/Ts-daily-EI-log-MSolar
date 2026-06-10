@@ -1,6 +1,12 @@
 source "https://rubygems.org"
 
-gem "fastlane"
+# Pinned 2026-06-09: fastlane 2.236.0 (released after the 6/6 good builds)
+# broke the TestFlight upload — pilot/altool fails with "file isn't in the
+# correct format (259)" on an IPA that built and signed fine. 2.235.0 is the
+# last known-good. Same root cause as the multi_json incident below: no
+# committed Gemfile.lock means every CI run re-resolves gems fresh.
+# Unpin only after verifying a newer fastlane uploads successfully.
+gem "fastlane", "2.235.0"
 
 # Pinned explicitly to fix intermittent CI failure: "multi_json is not part of
 # the bundle" (Gem::LoadError). Without a committed Gemfile.lock, each CI run
