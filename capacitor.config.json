@@ -8,7 +8,7 @@
   },
   "ios": {
     "scheme": "GroundLog",
-    "contentInset": "always",
+    "contentInset": "never",
     "limitsNavigationsToAppBoundDomains": true
   },
   "plugins": {

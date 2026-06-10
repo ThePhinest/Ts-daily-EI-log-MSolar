@@ -55,7 +55,8 @@ if(window.visualViewport){
   window.visualViewport.addEventListener('resize',function(){
       const nav=document.querySelector('.bottom-nav');
       if(!nav) return;
-      const offset=window.innerHeight-window.visualViewport.height-window.visualViewport.offsetTop;
+      let offset=window.innerHeight-window.visualViewport.height-window.visualViewport.offsetTop;
+      if(offset>0&&offset<100)offset=0; // keyboard-only compensation: sub-100px deltas are safe-area/inset jitter, real keyboards are 200px+
       nav.style.transform=offset>0?`translateY(-${offset}px) translateZ(0)`:'translateZ(0)';
       // Scroll focused element into view after keyboard opens
       const focused=document.activeElement;
@@ -67,7 +68,8 @@ if(window.visualViewport){
       const nav=document.querySelector('.bottom-nav');
       if(!nav) return;
       if(window.visualViewport.offsetTop < 0) return;
-      const offset=window.innerHeight-window.visualViewport.height-window.visualViewport.offsetTop;
+      let offset=window.innerHeight-window.visualViewport.height-window.visualViewport.offsetTop;
+      if(offset>0&&offset<100)offset=0; // keyboard-only compensation: sub-100px deltas are safe-area/inset jitter, real keyboards are 200px+
       nav.style.transform=offset>0?`translateY(-${offset}px) translateZ(0)`:'translateZ(0)';
     });
 }
