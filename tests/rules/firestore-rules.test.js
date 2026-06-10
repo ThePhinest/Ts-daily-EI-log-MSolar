@@ -147,6 +147,23 @@ describe('non-member / unauthenticated — nothing', () => {
   });
 });
 
+describe('appConfig — shared hosted key (reconciled live block)', () => {
+  const ADMIN = 'Z1RZWSUTXfR1Ys76VMd8FTqydaq1';
+  beforeEach(async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'appConfig/hosted'), { encApiKey: 'enc-blob' });
+    });
+  });
+  it('any authed user reads the hosted key doc', () =>
+    assertSucceeds(getDoc(doc(as('forest'), 'appConfig/hosted'))));
+  it('unauthenticated cannot read', () =>
+    assertFails(getDoc(doc(anon(), 'appConfig/hosted'))));
+  it('non-admin authed user CANNOT write (tightened from live rules)', () =>
+    assertFails(setDoc(doc(as('stranger'), 'appConfig/hosted'), { encApiKey: 'evil' })));
+  it('admin writes (Share-key button keeps working)', () =>
+    assertSucceeds(setDoc(doc(as(ADMIN), 'appConfig/hosted'), { encApiKey: 'enc-blob2' })));
+});
+
 describe('project creation + invite flow', () => {
   it('any signed-in user creates a self-attributed project then self-enrolls as lead', async () => {
     const db = as('newbie');
