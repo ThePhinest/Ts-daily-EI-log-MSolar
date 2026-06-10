@@ -2235,6 +2235,7 @@ Anticipated rain — AM weather monitoring expected"></textarea>
       </div>
     </div>
     <button class="btn btn-amber" onclick="document.getElementById('ph-file-input').click()">+ Upload Photos</button>
+    <button class="btn" id="ph-trash-btn" style="display:none;background:transparent;border:1.5px solid #e25555;color:#e25555;font-weight:700" onclick="phJumpToTrash()">🗑 <span id="ph-trash-count">0</span></button>
     <input type="file" id="ph-file-input" accept="image/*" multiple style="display:none" onchange="phHandleFiles(this.files)">
   </div>
 

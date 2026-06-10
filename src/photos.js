@@ -367,10 +367,21 @@ function phRender(){
 // ── Recently Deleted section (collapsed by default; restore within 30 days) ──
 let _phTrashOpen = false;
 function _phToggleTrash(){ _phTrashOpen = !_phTrashOpen; _phRenderTrash(); }
+function phJumpToTrash(){
+  if(!(window._phTrash||[]).length) return;
+  if(!_phTrashOpen){ _phTrashOpen = true; _phRenderTrash(); }
+  document.getElementById('ph-trash')?.scrollIntoView({ behavior:'smooth', block:'start' });
+}
 function _phRenderTrash(){
   const box = document.getElementById('ph-trash');
   if(!box) return;
   const trash = [...(window._phTrash||[])].sort((a,b)=>(b.deletedAt||0)-(a.deletedAt||0));
+  const btn = document.getElementById('ph-trash-btn');
+  if(btn){
+    btn.style.display = trash.length ? '' : 'none';
+    const c = document.getElementById('ph-trash-count');
+    if(c) c.textContent = trash.length;
+  }
   if(!trash.length){ box.innerHTML=''; return; }
   const rows = trash.map(p=>{
     const daysLeft = Math.max(0, Math.ceil((p.deletedAt + PH_TRASH_RETENTION_MS - Date.now())/86400000));
@@ -658,4 +669,5 @@ window.phSaveCaption = phSaveCaption;
 window.phConfirmDelete = phConfirmDelete;
 window.phUndoDelete = phUndoDelete;
 window._phToggleTrash = _phToggleTrash;
+window.phJumpToTrash = phJumpToTrash;
 window.phBearingLabel = phBearingLabel;
