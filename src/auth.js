@@ -117,18 +117,10 @@ function _obInitSwipe() {
 // AUTH — SIGN IN / REGISTER / SIGN OUT
 // ═══════════════════════════════════════════
 
-// Apple Sign-In requires a nonce to prevent replay attacks. Generate one
-// locally, pass the SHA-256 hash to Apple, and the raw value to Firebase.
-function _generateNonce(len) {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~';
-  const arr = crypto.getRandomValues(new Uint8Array(len));
-  return Array.from(arr, function(v) { return chars[v % chars.length]; }).join('');
-}
-
-async function _sha256Hex(str) {
-  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
-  return Array.from(new Uint8Array(buf), function(b) { return b.toString(16).padStart(2, '0'); }).join('');
-}
+// Apple Sign-In nonce note: the @capacitor-firebase/authentication plugin generates
+// and manages its own nonce (AppleAuthProviderHandler.swift) — never generate one
+// app-side; use result.credential.nonce. Two prior local-nonce attempts both failed
+// with auth/missing-or-invalid-nonce before this was understood (2026-06-09).
 
 // Hide Google sign-in on iOS PWA — OAuth redirect breaks in that context.
 // Capacitor native uses the @capacitor-firebase/authentication plugin path
@@ -249,13 +241,15 @@ async function siAppleSignIn() {
   if (window.Capacitor?.isNativePlatform?.()) {
     try {
       const { FirebaseAuthentication } = await import('@capacitor-firebase/authentication');
-      const rawNonce = _generateNonce(32);
-      const result = await FirebaseAuthentication.signInWithApple({ nonce: rawNonce });
+      // The plugin IGNORES any nonce passed in — AppleAuthProviderHandler.swift always
+      // generates its own (randomNonceString → request.nonce = sha256(own)) and returns
+      // the raw one in result.credential.nonce. Firebase must get THAT raw nonce.
+      const result = await FirebaseAuthentication.signInWithApple();
       if (!result || !result.credential || !result.credential.idToken) {
         return siSetError('Apple sign-in was cancelled.');
       }
       const provider = new firebase.auth.OAuthProvider('apple.com');
-      const credential = provider.credential({ idToken: result.credential.idToken, rawNonce: rawNonce });
+      const credential = provider.credential({ idToken: result.credential.idToken, rawNonce: result.credential.nonce });
       await auth.signInWithCredential(credential);
       return;
     } catch(e) {
@@ -531,11 +525,11 @@ async function acctLinkApple() {
   try {
     if (window.Capacitor?.isNativePlatform?.()) {
       const { FirebaseAuthentication } = await import('@capacitor-firebase/authentication');
-      const rawNonce = _generateNonce(32);
-      const result = await FirebaseAuthentication.signInWithApple({ nonce: rawNonce });
+      // Plugin ignores a passed nonce — use the raw nonce IT generated (see siAppleSignIn).
+      const result = await FirebaseAuthentication.signInWithApple();
       if (!result?.credential?.idToken) return _acctShowStatus('acct-link-status', 'Apple sign-in was cancelled.', true);
       const provider = new firebase.auth.OAuthProvider('apple.com');
-      const credential = provider.credential({ idToken: result.credential.idToken, rawNonce: rawNonce });
+      const credential = provider.credential({ idToken: result.credential.idToken, rawNonce: result.credential.nonce });
       await user.linkWithCredential(credential);
     } else {
       await user.linkWithPopup(new firebase.auth.OAuthProvider('apple.com'));
