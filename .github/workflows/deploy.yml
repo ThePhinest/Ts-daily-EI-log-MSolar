@@ -33,7 +33,9 @@ jobs:
           SENTRY_PROJECT: ${{ secrets.SENTRY_PROJECT }}
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
         run: npm run build
-      - uses: actions/upload-pages-artifact@v3
+      # v4 drops the internal upload-artifact@v4 (Node 20) dependency — GitHub
+      # forces Node 24 on runners June 16, 2026.
+      - uses: actions/upload-pages-artifact@v4
         with:
           path: dist
 
