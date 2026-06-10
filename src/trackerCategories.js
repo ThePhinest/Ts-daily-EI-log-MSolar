@@ -71,8 +71,30 @@ function _tcStoragePath(projectId){
   return _projData(projectId).collection('trackerCategories');
 }
 
+// Shared-project mirror — category definitions/schemas are live-visible
+// reference data for members (submission-sharing-model visibility matrix).
+// Rules allow create self-attributed; update/delete owner-or-lead; a
+// reviewer's write attempt dies silently at the rules.
+function _tcMirrorShared(pid, cat){
+  if(!db || !window._currentUser) return;
+  try {
+    db.collection('projects').doc(pid).collection('trackerCategories').doc(cat.id)
+      .set(Object.assign({}, cat, { ownerUid: cat.ownerUid || _currentUser.uid }))
+      .catch(() => {});
+  } catch(e){ /* silent */ }
+}
+function _tcMirrorSharedDelete(pid, catId){
+  if(!db || !window._currentUser) return;
+  try {
+    db.collection('projects').doc(pid).collection('trackerCategories').doc(catId)
+      .delete().catch(() => {});
+  } catch(e){ /* silent */ }
+}
+
 // Load all categories for a project from Firestore into memory cache.
-// Call on auth-ready and on project switch.
+// Call on auth-ready and on project switch. Own categories merge with the
+// shared-project set (members see the lead's schemas; own edits win on id
+// conflicts since the mirror lags the local write).
 async function tcLoadForProject(projectId){
   const pid = projectId || ((typeof _activeProjectId === 'function') ? _activeProjectId() : 'default');
   if(!pid || pid === 'default') return;
@@ -82,6 +104,19 @@ async function tcLoadForProject(projectId){
     const snap = await _tcStoragePath(pid).orderBy('order').get();
     const cats = [];
     snap.forEach(doc => cats.push(doc.data()));
+    try {
+      const ssnap = await db.collection('projects').doc(pid).collection('trackerCategories').get();
+      const sharedIds = new Set();
+      ssnap.forEach(doc => {
+        sharedIds.add(doc.id);
+        if(!cats.find(c => c.id === doc.id)) cats.push(doc.data());
+      });
+      // One-time sync: own categories that predate the mirror get published
+      // so members see existing schemas, not just future edits.
+      cats.filter(c => !sharedIds.has(c.id) && snap.docs.find(d => d.id === c.id))
+        .forEach(c => _tcMirrorShared(pid, c));
+      cats.sort((a, b) => (a.order || 0) - (b.order || 0));
+    } catch(e){ /* not a member of a shared project — own set stands */ }
     _tcCache[pid] = cats;
     _tcLoaded[pid] = true;
   } catch(e){ console.warn('tcLoadForProject:', e.message); }
@@ -141,6 +176,7 @@ async function tcSaveCategory(cat, projectId){
       _tcStoragePath(pid).doc(cat.id).set(cat)
         .catch(e => console.warn('tcSaveCategory Firestore:', e.message));
     } catch(e){ /* silent */ }
+    _tcMirrorShared(pid, cat);
   }
   return cat;
 }
@@ -160,6 +196,7 @@ async function tcDeleteCategory(catId, projectId){
       _tcStoragePath(pid).doc(catId).delete()
         .catch(e => console.warn('tcDeleteCategory Firestore:', e.message));
     } catch(e){ /* silent */ }
+    _tcMirrorSharedDelete(pid, catId);
   }
 }
 

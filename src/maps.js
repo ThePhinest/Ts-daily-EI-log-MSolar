@@ -809,14 +809,52 @@ function kmlSaveLayers(){
   const pid = (typeof _activeProjectId === 'function') ? _activeProjectId() : 'default';
   const data = _mapKmlLayers.map(l => ({
     id: l.id, name: l.name, folderName: l.folderName || '',
-    visible: l.visible, storagePath: l.storagePath || ''
+    visible: l.visible, storagePath: l.storagePath || '',
+    downloadUrl: l.downloadUrl || ''
   }));
   try { localStorage.setItem(_kmlStorageKey(), JSON.stringify(data)); } catch {}
   if(db && _fbReady){
     _projData(pid).collection('kml').doc('layers')
       .set({ data, _ts: Date.now() })
       .catch(e => console.warn('kmlSaveLayers:', e.message));
+    // Shared-project mirror — KML layers are live-visible reference data for
+    // members (submission-sharing-model visibility matrix). Rules let only the
+    // owner/lead land this write; a member's local visibility toggles are
+    // denied here and stay their own view state. Silent on purpose.
+    if(window._currentUser){
+      db.collection('projects').doc(pid).collection('kmlLayers').doc('layers')
+        .set({ data, ownerUid: _currentUser.uid, _ts: Date.now() })
+        .catch(() => {});
+    }
   }
+}
+
+// Fetch a KML file's text. Own files: Storage ref by path. Another member's
+// files: Storage rules deny foreign paths — fall back to the token downloadUrl
+// persisted in layer metadata (same capability model photos already use).
+async function _kmlFetchKmlText(storagePath, layers){
+  let lastErr = null;
+  if(storage && storagePath){
+    try{
+      const url = await storage.ref(storagePath).getDownloadURL();
+      const res = await fetch(url);
+      if(!res.ok) throw new Error('HTTP ' + res.status + ' ' + (res.statusText||''));
+      // Owner path succeeded — stamp the token URL so project members can
+      // fetch this file without Storage access. Persisted by the caller.
+      if(layers && layers.length && !layers.find(l => l.downloadUrl)){
+        layers.forEach(l => { l.downloadUrl = url; });
+        window._kmlUrlBackfillPending = true;
+      }
+      return await res.text();
+    }catch(err){ lastErr = err; }
+  }
+  const dl = layers && layers.find(l => l.downloadUrl);
+  if(dl){
+    const res = await fetch(dl.downloadUrl);
+    if(!res.ok) throw new Error('HTTP ' + res.status + ' (shared url)');
+    return await res.text();
+  }
+  throw (lastErr || new Error('no KML fetch path available'));
 }
   
 function kmlParseLayerById(kmlText, layerName){
@@ -977,6 +1015,19 @@ async function kmlLoadLayers(){
       const doc = await _projData(pid).collection('kml').doc('layers').get();
       if(doc.exists) data = doc.data().data;
     } catch(e){ console.warn('kmlLoadLayers cloud:', e.message); }
+    // Shared-project layer set (live reference data, member-readable). The
+    // shared set is canonical for the layer LIST; the user's own copy only
+    // overlays per-layer visibility (view state is personal, never shared).
+    try {
+      const sdoc = await db.collection('projects').doc(pid).collection('kmlLayers').doc('layers').get();
+      if(sdoc.exists && Array.isArray(sdoc.data().data) && sdoc.data().data.length){
+        const shared = sdoc.data().data;
+        const ownById = new Map((data || []).map(l => [l.id, l]));
+        const merged = shared.map(s => ownById.has(s.id) ? { ...s, visible: ownById.get(s.id).visible } : s);
+        (data || []).forEach(o => { if(!shared.find(s => s.id === o.id)) merged.push(o); });
+        data = merged;
+      }
+    } catch(e){ /* not a member of a shared project — own copy stands */ }
   }
   if(!data){ try { const raw = localStorage.getItem(_kmlStorageKey()); if(raw) data = JSON.parse(raw); } catch {} }
   if(!data || !data.length) return;
@@ -993,27 +1044,22 @@ async function kmlLoadLayers(){
       continue;
     }
 
-    // Fetch KML once for this file
+    // Fetch KML once for this file (own Storage path, or shared downloadUrl)
     let kmlText = null;
-    if(storage){
-      try{
-        const url = await storage.ref(storagePath).getDownloadURL();
-        const res = await fetch(url);
-        if(!res.ok) throw new Error('HTTP ' + res.status + ' ' + (res.statusText||''));
-        kmlText = await res.text();
-      }catch(err){
-        console.warn('kmlLoadLayers fetch failed:', err.message);
-        // Forward to β.1 — initial KML load on map open. If this silently
-        // fails on iOS native, layers will appear in the panel but won't
-        // render on the map. Same iOS-WebView CORS hypothesis as toggle path.
-        if(typeof window._reportError === 'function'){
-          window._reportError({
-            type: 'kml-load-failed',
-            message: 'kmlLoadLayers fetch failed: ' + (err && err.message ? err.message : String(err)),
-            stack: err && err.stack ? err.stack : null,
-            kmlStoragePath: storagePath
-          });
-        }
+    try{
+      kmlText = await _kmlFetchKmlText(storagePath, layers);
+    }catch(err){
+      console.warn('kmlLoadLayers fetch failed:', err.message);
+      // Forward to β.1 — initial KML load on map open. If this silently
+      // fails on iOS native, layers will appear in the panel but won't
+      // render on the map. Same iOS-WebView CORS hypothesis as toggle path.
+      if(typeof window._reportError === 'function'){
+        window._reportError({
+          type: 'kml-load-failed',
+          message: 'kmlLoadLayers fetch failed: ' + (err && err.message ? err.message : String(err)),
+          stack: err && err.stack ? err.stack : null,
+          kmlStoragePath: storagePath
+        });
       }
     }
 
@@ -1061,6 +1107,26 @@ async function kmlLoadLayers(){
         }
       }
     });
+  }
+  // Owner-side: persist freshly-stamped downloadUrls (also stamping hidden
+  // groups, so members can fetch files the owner hasn't viewed this session).
+  if(window._kmlUrlBackfillPending){
+    window._kmlUrlBackfillPending = false;
+    if(storage){
+      for(const [path, ls] of Object.entries(byPath)){
+        if(path && !ls.find(l => l.downloadUrl)){
+          try{
+            const u = await storage.ref(path).getDownloadURL();
+            ls.forEach(l => {
+              l.downloadUrl = u;
+              const reg = _mapKmlLayers.find(r => r.id === l.id);
+              if(reg) reg.downloadUrl = u;
+            });
+          }catch(e){ /* foreign/hidden path — skip */ }
+        }
+      }
+    }
+    kmlSaveLayers();
   }
   mapUpdateKmlLayerList();
 }
@@ -1345,11 +1411,9 @@ async function kmlToggleFolderVisibility(folderName, visible){
       if(!_mapInstance.getSource(layer.id)){
         if(layer.features && layer.features.length){
           mapReaddKmlLayer(layer, layer.features);
-        } else if(layer.storagePath && storage){
+        } else if(layer.storagePath || layer.downloadUrl){
           try{
-            const url = await storage.ref(layer.storagePath).getDownloadURL();
-            const res = await fetch(url);
-            const kmlText = await res.text();
+            const kmlText = await _kmlFetchKmlText(layer.storagePath, [layer]);
             const features = await _kmlReparseFeaturesForLayer(kmlText, layer);
             layer.features = features;
             mapReaddKmlLayer(layer, features);
@@ -1377,11 +1441,9 @@ async function mapToggleKmlLayer(i, visible){
     if(!_mapInstance.getSource(layer.id)){
       if(layer.features && layer.features.length){
         mapReaddKmlLayer(layer, layer.features);
-      } else if(layer.storagePath && storage){
+      } else if(layer.storagePath || layer.downloadUrl){
         try{
-          const url = await storage.ref(layer.storagePath).getDownloadURL();
-          const res = await fetch(url);
-          const kmlText = await res.text();
+          const kmlText = await _kmlFetchKmlText(layer.storagePath, [layer]);
           const features = await _kmlReparseFeaturesForLayer(kmlText, layer);
           layer.features = features;
           mapReaddKmlLayer(layer, features);
@@ -1425,12 +1487,9 @@ async function mapToggleKmlLayerById(id, visible){
     if(!_mapInstance.getSource(layer.id)){
       if(layer.features && layer.features.length){
         mapReaddKmlLayer(layer, layer.features);
-      } else if(layer.storagePath && storage){
+      } else if(layer.storagePath || layer.downloadUrl){
         try{
-          const url = await storage.ref(layer.storagePath).getDownloadURL();
-          const res = await fetch(url);
-          if(!res.ok) throw new Error('HTTP ' + res.status + ' ' + (res.statusText||''));
-          const kmlText = await res.text();
+          const kmlText = await _kmlFetchKmlText(layer.storagePath, [layer]);
           const features = await _kmlReparseFeaturesForLayer(kmlText, layer);
           layer.features = features;
           mapReaddKmlLayer(layer, features);

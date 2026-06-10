@@ -186,6 +186,11 @@ function saveProjectConfig() {
   try{if(typeof db!=='undefined'&&db&&_fbReady){
     _udb().collection('settings').doc('projectConfig').set(Object.assign({},cfg,{_ts:Date.now()}),{merge:true}).catch(()=>{});
     if (_pid !== 'active') _udb().collection('settings').doc(_pid).set(Object.assign({},cfg,{lastUsed:Date.now(),_ts:Date.now()}),{merge:true}).catch(()=>{});
+    // Keep the shared projects/{pid} meta in step so members see current
+    // project info. Rules let only the lead land this write (silent otherwise).
+    if (_pid !== 'active' && _currentUser) db.collection('projects').doc(_pid).set(
+      {name:cfg.projectName,contractor:cfg.contractor,location:cfg.location,phase:cfg.activePhase,_ts:Date.now()},
+      {merge:true}).catch(()=>{});
   }}catch(e){}
   knownProjectsUpsert(cfg, _pid);
   renderKnownProjectsDatalist();
@@ -536,6 +541,26 @@ async function loadProject(projectId, projDataOverride) {
 
     // Apply project-scoped settings (Phase C) — must run before restoreFormState
     _applyProjectSettings(projData);
+
+    // Shared project: the live projects/{pid} meta (name/contractor/location/
+    // phase) wins over the local join-stub so members see the lead's current
+    // project info, not the placeholder captured at accept time.
+    if (projData.shared && db) {
+      try {
+        const metaDoc = await db.collection('projects').doc(projectId).get();
+        if (metaDoc.exists) {
+          const m = metaDoc.data();
+          const liveCfg = Object.assign({}, cfg, {
+            projectName: m.name || cfg.projectName,
+            contractor:  m.contractor || cfg.contractor,
+            location:    m.location || cfg.location,
+            activePhase: m.phase || cfg.activePhase
+          });
+          localStorage.setItem('msf_projectconfig', JSON.stringify(liveCfg));
+          applyProjectConfig();
+        }
+      } catch(e) { /* meta read failed — stub config stands */ }
+    }
 
     // B2 Stage 1.4 — KML layers are project-scoped. Tear down the previous
     // project's mounted layers + state, then reload from the new project's
