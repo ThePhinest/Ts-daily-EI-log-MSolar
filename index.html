@@ -72,7 +72,7 @@ body.theme-light{
 --header-bg:#dde8e8;
 }
 .bottom-nav{position:fixed;bottom:0;left:0;right:0;z-index:200;background:var(--header-bg);border-top:1px solid var(--border);display:flex;align-items:stretch;height:95px;transform:translateZ(0);-webkit-transform:translateZ(0)}
-.nav-item{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding-top:10px;gap:5px;cursor:pointer;border:none;background:transparent;padding-bottom:env(safe-area-inset-bottom);transition:background-color .15s,border-color .15s;border-top:2px solid transparent;user-select:none;-webkit-user-select:none;}
+.nav-item{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding-top:28px;gap:5px;cursor:pointer;border:none;background:transparent;padding-bottom:env(safe-area-inset-bottom);transition:background-color .15s,border-color .15s;border-top:2px solid transparent;user-select:none;-webkit-user-select:none;} /* padding-top is the button-height knob: buttons are top-anchored in the fixed 95px bar, so this slides icons+labels down toward the home indicator without moving the bar or its 95px-dependent offsets (Tim design call 2026-06-10) */
 .nav-item.active{background:rgba(0,76,84,0.2);border-top-color:var(--s3);margin-bottom:-1px}
 .nav-item .nav-icon{font-size:26px;line-height:1}
 #tab-more .nav-icon{display:flex;align-items:center;justify-content:center;color:var(--text)}
