@@ -1,0 +1,154 @@
+rules_version = '2';
+
+// GroundLog Firestore rules — Phase 4.5 multi-tenant foundation (2026-06-10)
+//
+// Two worlds:
+//   users/{uid}/**     — user-private subtree. Unchanged: hard per-user isolation.
+//                        ALL pre-4.5 app data lives here (incl. users/{uid}/projects/{pid}/...
+//                        tracker mirrors and users/{uid}/_debug error reports).
+//   projects/{pid}/**  — shared projects (submission-sharing-model). Membership-gated;
+//                        work product is publish-gated (`published == true`) for non-owners;
+//                        writes are role-gated.
+//
+// v1 roles are FIXED (lead / field / reviewer) with capabilities baked into the
+// functions below. The editable roles/{roleId}.caps doc model (multi-tenant-data-model)
+// arrives with the firm role-tree editor; the rules tests encode the access contract
+// so that swap is behavior-preserving.
+//
+// DO NOT DEPLOY without reconciling against the live console ruleset first.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── User-private subtree (pre-4.5 model, unchanged) ──
+    match /users/{uid}/{document=**} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+
+    // ── Shared projects ──
+    match /projects/{pid} {
+
+      function isSignedIn() { return request.auth != null; }
+      function isMember() {
+        return isSignedIn()
+          && exists(/databases/$(database)/documents/projects/$(pid)/members/$(request.auth.uid));
+      }
+      function myRole() {
+        return get(/databases/$(database)/documents/projects/$(pid)/members/$(request.auth.uid)).data.role;
+      }
+      function isLead()       { return isMember() && myRole() == 'lead'; }
+      function canFieldWrite(){ return isMember() && (myRole() == 'lead' || myRole() == 'field'); }
+      // Reviewer ("Glasses") holds no write capability anywhere.
+
+      // Owner-or-published: non-owners only see published work product.
+      function canSeeWorkDoc() {
+        return isMember()
+          && (resource.data.published == true || resource.data.ownerUid == request.auth.uid);
+      }
+      // Work-product writes: author-stamped creates; edit-own-only, lead may edit any.
+      function workCreateOk() {
+        return canFieldWrite() && request.resource.data.ownerUid == request.auth.uid;
+      }
+      function workEditOk() {
+        return canFieldWrite() && (resource.data.ownerUid == request.auth.uid || isLead());
+      }
+
+      // Project doc (meta): create = self-attributed; read members; settings = lead.
+      allow create: if isSignedIn() && request.resource.data.createdBy == request.auth.uid;
+      allow get: if isMember();
+      allow list: if false;        // project discovery goes through users/{uid}/memberships mirror
+      allow update: if isLead();
+      allow delete: if false;      // no project deletion in v1 (archive comes later)
+
+      // ── Membership ──
+      match /members/{uid} {
+        function projectDoc() {
+          return get(/databases/$(database)/documents/projects/$(pid)).data;
+        }
+        function inviteFor(token) {
+          return get(/databases/$(database)/documents/projects/$(pid)/invites/$(token)).data;
+        }
+        // Creator self-enrolls as lead right after creating the project doc.
+        function selfLeadBootstrap() {
+          return uid == request.auth.uid
+            && request.resource.data.role == 'lead'
+            && projectDoc().createdBy == request.auth.uid;
+        }
+        // Invite acceptance: membership doc carries the inviteToken it was born from;
+        // role must match the invite exactly, invite must be live.
+        function selfInviteAccept() {
+          return uid == request.auth.uid
+            && request.resource.data.inviteToken is string
+            && inviteFor(request.resource.data.inviteToken).status == 'active'
+            && inviteFor(request.resource.data.inviteToken).role == request.resource.data.role;
+        }
+        allow get, list: if isMember();
+        allow create: if isSignedIn() && (isLead() || selfLeadBootstrap() || selfInviteAccept());
+        allow update: if isLead();                              // role changes
+        allow delete: if isLead() || request.auth.uid == uid;   // remove member / self-leave
+      }
+
+      // ── Invites (doc id = unguessable token; one mechanism behind link/code/QR) ──
+      match /invites/{token} {
+        allow get: if isSignedIn();        // capability-by-token: knowing the id is the key
+        allow list: if isLead();
+        allow create, delete: if isLead();
+        // Invitee consumes their invite (status flip only, self-attributed).
+        allow update: if isLead()
+          || (isSignedIn()
+              && resource.data.status == 'active'
+              && request.resource.data.usedBy == request.auth.uid);
+      }
+
+      // ── Live-visible reference data (not work product) ──
+      match /config/{doc} {
+        allow read: if isMember();
+        allow write: if isLead();
+      }
+      match /kmlLayers/{id} {
+        allow read: if isMember();
+        allow create: if workCreateOk();
+        allow update, delete: if workEditOk();
+      }
+      match /trackerCategories/{id} {   // category definitions / schemas — live
+        allow read: if isMember();
+        allow create: if workCreateOk();
+        allow update, delete: if workEditOk();
+      }
+
+      // ── Publish-gated work product ──
+      match /trackerEntries/{id} {
+        allow read: if canSeeWorkDoc();
+        allow create: if workCreateOk();
+        allow update, delete: if workEditOk();
+      }
+      match /fieldMarkers/{id} {
+        allow read: if canSeeWorkDoc();
+        allow create: if workCreateOk();
+        allow update, delete: if workEditOk();
+      }
+      match /photos/{id} {
+        allow read: if canSeeWorkDoc();
+        allow create: if workCreateOk();
+        allow update, delete: if workEditOk();
+      }
+      match /complianceLog/{id} {
+        allow read: if canSeeWorkDoc();
+        allow create: if workCreateOk();
+        allow update, delete: if workEditOk();
+      }
+
+      // ── Submissions (close-day snapshots; immutable except status) ──
+      match /submissions/{sid} {
+        allow read: if isMember();
+        allow create: if canFieldWrite()
+          && request.resource.data.submittedBy == request.auth.uid;
+        // Withdraw / status changes by the submitter or lead; no payload rewrites
+        // (resubmit = new version doc), no deletes (version trail persists).
+        allow update: if (isLead() || resource.data.submittedBy == request.auth.uid)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'statusChangedAt']);
+        allow delete: if false;
+      }
+    }
+  }
+}

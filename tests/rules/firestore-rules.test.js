@@ -1,0 +1,175 @@
+// Firestore security-rules tests — the multi-user access contract
+// (forest-onboarding-gate Tier-2 #7; contract defined in submission-sharing-model).
+//
+// Run: npm run test:rules   (wraps vitest in `firebase emulators:exec --only firestore`)
+
+import { readFileSync } from 'node:fs';
+import { beforeAll, afterAll, beforeEach, describe, it } from 'vitest';
+import {
+  initializeTestEnvironment,
+  assertSucceeds,
+  assertFails,
+} from '@firebase/rules-unit-testing';
+import {
+  doc, getDoc, setDoc, updateDoc, deleteDoc,
+  collection, getDocs, query, where,
+} from 'firebase/firestore';
+
+let env;
+const PID = 'moraine';
+
+beforeAll(async () => {
+  env = await initializeTestEnvironment({
+    projectId: 'groundlog-rules-test',
+    firestore: { rules: readFileSync('firestore.rules', 'utf8') },
+  });
+});
+afterAll(async () => { await env.cleanup(); });
+
+beforeEach(async () => {
+  await env.clearFirestore();
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore();
+    await setDoc(doc(db, `projects/${PID}`), { name: 'Moraine Solar', createdBy: 'tim' });
+    await setDoc(doc(db, `projects/${PID}/members/tim`),    { role: 'lead' });
+    await setDoc(doc(db, `projects/${PID}/members/boots`),  { role: 'field' });
+    await setDoc(doc(db, `projects/${PID}/members/forest`), { role: 'reviewer' });
+    await setDoc(doc(db, `projects/${PID}/trackerEntries/pub1`),
+      { ownerUid: 'tim', published: true,  acres: 2.1 });
+    await setDoc(doc(db, `projects/${PID}/trackerEntries/draft1`),
+      { ownerUid: 'tim', published: false, acres: 0.4 });
+    await setDoc(doc(db, `projects/${PID}/trackerEntries/bootsdraft`),
+      { ownerUid: 'boots', published: false, acres: 1.0 });
+    await setDoc(doc(db, `projects/${PID}/kmlLayers/lod`), { ownerUid: 'tim', name: 'LOD' });
+    await setDoc(doc(db, `projects/${PID}/config/main`), { cap: 5 });
+    await setDoc(doc(db, `projects/${PID}/submissions/s1`),
+      { submittedBy: 'tim', version: 1, status: 'active', date: '2026-06-09' });
+    await setDoc(doc(db, `projects/${PID}/invites/tok-glasses`),
+      { role: 'reviewer', status: 'active', createdBy: 'tim' });
+    await setDoc(doc(db, 'users/tim/dailyLogs/2026-06-10'),
+      { summary: 'private notes', personalNotes: 'never shared' });
+  });
+});
+
+const as = (uid) => env.authenticatedContext(uid).firestore();
+const anon = () => env.unauthenticatedContext().firestore();
+
+describe('reviewer (Glasses) — sees published, edits nothing', () => {
+  it('reads published work product', () =>
+    assertSucceeds(getDoc(doc(as('forest'), `projects/${PID}/trackerEntries/pub1`))));
+  it('cannot read unpublished work product', () =>
+    assertFails(getDoc(doc(as('forest'), `projects/${PID}/trackerEntries/draft1`))));
+  it('lists work product when query is constrained to published', () =>
+    assertSucceeds(getDocs(query(
+      collection(as('forest'), `projects/${PID}/trackerEntries`),
+      where('published', '==', true)))));
+  it('cannot list unconstrained work product', () =>
+    assertFails(getDocs(collection(as('forest'), `projects/${PID}/trackerEntries`))));
+  it('reads live reference data (KML, config, project meta)', async () => {
+    await assertSucceeds(getDoc(doc(as('forest'), `projects/${PID}/kmlLayers/lod`)));
+    await assertSucceeds(getDoc(doc(as('forest'), `projects/${PID}/config/main`)));
+    await assertSucceeds(getDoc(doc(as('forest'), `projects/${PID}`)));
+  });
+  it('reads submissions', () =>
+    assertSucceeds(getDoc(doc(as('forest'), `projects/${PID}/submissions/s1`))));
+  it('CANNOT read the owner private daily log', () =>
+    assertFails(getDoc(doc(as('forest'), 'users/tim/dailyLogs/2026-06-10'))));
+  it('cannot write anything', async () => {
+    await assertFails(setDoc(doc(as('forest'), `projects/${PID}/trackerEntries/x`),
+      { ownerUid: 'forest', published: true }));
+    await assertFails(updateDoc(doc(as('forest'), `projects/${PID}`), { name: 'hax' }));
+    await assertFails(setDoc(doc(as('forest'), `projects/${PID}/submissions/s2`),
+      { submittedBy: 'forest', version: 1 }));
+    await assertFails(updateDoc(doc(as('forest'), `projects/${PID}/config/main`), { cap: 125 }));
+  });
+});
+
+describe('owner / lead (Tim)', () => {
+  it('reads own unpublished drafts', () =>
+    assertSucceeds(getDoc(doc(as('tim'), `projects/${PID}/trackerEntries/draft1`))));
+  it('lists own drafts via ownerUid-constrained query', () =>
+    assertSucceeds(getDocs(query(
+      collection(as('tim'), `projects/${PID}/trackerEntries`),
+      where('ownerUid', '==', 'tim')))));
+  it('creates self-attributed work product', () =>
+    assertSucceeds(setDoc(doc(as('tim'), `projects/${PID}/trackerEntries/new1`),
+      { ownerUid: 'tim', published: false })));
+  it('cannot forge ownerUid on create', () =>
+    assertFails(setDoc(doc(as('tim'), `projects/${PID}/trackerEntries/forged`),
+      { ownerUid: 'boots', published: false })));
+  it('publishes own draft (Share now / submit-day stamp)', () =>
+    assertSucceeds(updateDoc(doc(as('tim'), `projects/${PID}/trackerEntries/draft1`),
+      { published: true })));
+  it('lead may edit another member\'s work product', () =>
+    assertSucceeds(updateDoc(doc(as('tim'), `projects/${PID}/trackerEntries/bootsdraft`),
+      { acres: 1.2 })));
+  it('creates submissions self-attributed; withdraws via status only', async () => {
+    await assertSucceeds(setDoc(doc(as('tim'), `projects/${PID}/submissions/s2`),
+      { submittedBy: 'tim', version: 2, status: 'active' }));
+    await assertSucceeds(updateDoc(doc(as('tim'), `projects/${PID}/submissions/s1`),
+      { status: 'withdrawn', statusChangedAt: 1 }));
+    await assertFails(updateDoc(doc(as('tim'), `projects/${PID}/submissions/s1`),
+      { date: '2026-06-08' })); // payload is immutable — resubmit = new version doc
+    await assertFails(deleteDoc(doc(as('tim'), `projects/${PID}/submissions/s1`)));
+  });
+  it('manages members and invites', async () => {
+    await assertSucceeds(setDoc(doc(as('tim'), `projects/${PID}/invites/tok2`),
+      { role: 'field', status: 'active', createdBy: 'tim' }));
+    await assertSucceeds(deleteDoc(doc(as('tim'), `projects/${PID}/members/forest`)));
+  });
+});
+
+describe('field (Boots) — works in the project, own records only', () => {
+  it('creates self-attributed entries', () =>
+    assertSucceeds(setDoc(doc(as('boots'), `projects/${PID}/trackerEntries/b2`),
+      { ownerUid: 'boots', published: false })));
+  it('cannot edit someone else\'s record', () =>
+    assertFails(updateDoc(doc(as('boots'), `projects/${PID}/trackerEntries/pub1`),
+      { acres: 99 })));
+  it('cannot manage members or project settings', async () => {
+    await assertFails(setDoc(doc(as('boots'), `projects/${PID}/members/pal`), { role: 'field' }));
+    await assertFails(updateDoc(doc(as('boots'), `projects/${PID}`), { name: 'x' }));
+  });
+});
+
+describe('non-member / unauthenticated — nothing', () => {
+  it('non-member reads nothing in the project', async () => {
+    await assertFails(getDoc(doc(as('stranger'), `projects/${PID}`)));
+    await assertFails(getDoc(doc(as('stranger'), `projects/${PID}/trackerEntries/pub1`)));
+    await assertFails(getDoc(doc(as('stranger'), `projects/${PID}/submissions/s1`)));
+  });
+  it('non-member cannot self-enroll', () =>
+    assertFails(setDoc(doc(as('stranger'), `projects/${PID}/members/stranger`),
+      { role: 'reviewer' })));
+  it('unauthenticated reads nothing', async () => {
+    await assertFails(getDoc(doc(anon(), `projects/${PID}`)));
+    await assertFails(getDoc(doc(anon(), 'users/tim/dailyLogs/2026-06-10')));
+  });
+});
+
+describe('project creation + invite flow', () => {
+  it('any signed-in user creates a self-attributed project then self-enrolls as lead', async () => {
+    const db = as('newbie');
+    await assertSucceeds(setDoc(doc(db, 'projects/p2'), { name: 'My Job', createdBy: 'newbie' }));
+    await assertSucceeds(setDoc(doc(db, 'projects/p2/members/newbie'), { role: 'lead' }));
+  });
+  it('cannot create a project attributed to someone else', () =>
+    assertFails(setDoc(doc(as('newbie'), 'projects/p3'), { name: 'x', createdBy: 'tim' })));
+  it('cannot bootstrap as lead into a project you did not create', () =>
+    assertFails(setDoc(doc(as('stranger'), `projects/${PID}/members/stranger`),
+      { role: 'lead' })));
+  it('invite accept: token grants exactly the invited role', async () => {
+    const db = as('glasses-guy');
+    await assertSucceeds(setDoc(doc(db, `projects/${PID}/members/glasses-guy`),
+      { role: 'reviewer', inviteToken: 'tok-glasses' }));
+  });
+  it('invite accept with escalated role is rejected', () =>
+    assertFails(setDoc(doc(as('glasses-guy'), `projects/${PID}/members/glasses-guy`),
+      { role: 'lead', inviteToken: 'tok-glasses' })));
+  it('invite accept with a bogus token is rejected', () =>
+    assertFails(setDoc(doc(as('glasses-guy'), `projects/${PID}/members/glasses-guy`),
+      { role: 'reviewer', inviteToken: 'nope' })));
+  it('invitee consumes the invite (status flip, self-attributed)', () =>
+    assertSucceeds(updateDoc(doc(as('glasses-guy'), `projects/${PID}/invites/tok-glasses`),
+      { status: 'used', usedBy: 'glasses-guy' })));
+});
