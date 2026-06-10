@@ -10,7 +10,9 @@
 //
 // Storage paths:
 //   localStorage : msf_proj_<projectId>_tracker_entries  -> { entries: [...], _ts }
-//   Firestore    : users/{uid}/projects/{projectId}/trackerEntries/{entryId}
+//   Firestore    : _projData(pid).collection('trackerEntries') — today
+//                  users/{uid}/projects/{pid}/...; the Phase 4.5 data flip
+//                  redirects _projData (db.js) to the shared projects/{pid} root.
 //
 // Soft-delete pattern per polish-phase #7 data integrity layer — entries
 // gain `deletedAt: timestamp` instead of being removed from the array.
@@ -112,7 +114,7 @@ function trSaveEntry(entry, projectId){
   // Firestore mirror — fire-and-forget per polished-narrative cache pattern.
   if(typeof _udb === 'function' && typeof _fbReady !== 'undefined' && _fbReady && typeof _currentUser !== 'undefined' && _currentUser){
     try {
-      _udb().collection('projects').doc(pid).collection('trackerEntries').doc(entry.id).set(_trToFs(entry))
+      _projData(pid).collection('trackerEntries').doc(entry.id).set(_trToFs(entry))
         .catch(e => {
           console.warn('trSaveEntry Firestore:', e.message);
           if(typeof showCloudBanner === 'function') showCloudBanner('⚠ Entry saved locally — cloud sync failed: ' + e.message);
@@ -136,7 +138,7 @@ function trMarkDeletedFromMap(entryId, projectId){
   _trSaveRaw(pid, data);
   if(typeof _udb === 'function' && typeof _fbReady !== 'undefined' && _fbReady && typeof _currentUser !== 'undefined' && _currentUser){
     try {
-      _udb().collection('projects').doc(pid).collection('trackerEntries').doc(entryId)
+      _projData(pid).collection('trackerEntries').doc(entryId)
         .set(_trToFs(data.entries[idx]))
         .catch(e => console.warn('trMarkDeletedFromMap Firestore:', e.message));
     } catch(e){ /* silent */ }
@@ -158,7 +160,7 @@ function trArchiveFromMap(entryId, projectId){
   _trSaveRaw(pid, data);
   if(typeof _udb === 'function' && typeof _fbReady !== 'undefined' && _fbReady && typeof _currentUser !== 'undefined' && _currentUser){
     try {
-      _udb().collection('projects').doc(pid).collection('trackerEntries').doc(entryId)
+      _projData(pid).collection('trackerEntries').doc(entryId)
         .set(_trToFs(data.entries[idx]))
         .catch(e => console.warn('trArchiveFromMap Firestore:', e.message));
     } catch(e){ /* silent */ }
@@ -178,7 +180,7 @@ function trSetMapVisibility(entryId, visible, projectId){
   _trSaveRaw(pid, data);
   if(typeof _udb === 'function' && typeof _fbReady !== 'undefined' && _fbReady && typeof _currentUser !== 'undefined' && _currentUser){
     try {
-      _udb().collection('projects').doc(pid).collection('trackerEntries').doc(entryId)
+      _projData(pid).collection('trackerEntries').doc(entryId)
         .set(_trToFs(data.entries[idx]))
         .catch(e => console.warn('trSetMapVisibility Firestore:', e.message));
     } catch(e){ /* silent */ }
@@ -198,7 +200,7 @@ function trDeleteEntry(entryId, projectId){
   _trSaveRaw(pid, data);
   if(typeof _udb === 'function' && typeof _fbReady !== 'undefined' && _fbReady && typeof _currentUser !== 'undefined' && _currentUser){
     try {
-      _udb().collection('projects').doc(pid).collection('trackerEntries').doc(entryId)
+      _projData(pid).collection('trackerEntries').doc(entryId)
         .set(_trToFs(data.entries[idx]))
         .catch(e => console.warn('trDeleteEntry Firestore:', e.message));
     } catch(e){ /* silent */ }
@@ -283,7 +285,7 @@ function trAddPhotoLink(entryId, photoId, projectId, type){
   _trSaveRaw(pid, data);
   if(typeof _udb === 'function' && typeof _fbReady !== 'undefined' && _fbReady && typeof _currentUser !== 'undefined' && _currentUser){
     try {
-      _udb().collection('projects').doc(pid).collection('trackerEntries').doc(entryId)
+      _projData(pid).collection('trackerEntries').doc(entryId)
         .set(_trToFs(data.entries[idx]))
         .catch(e => console.warn('trAddPhotoLink Firestore:', e.message));
     } catch(e){ /* silent */ }
@@ -304,7 +306,7 @@ function trRemovePhotoLink(entryId, photoId, projectId){
   _trSaveRaw(pid, data);
   if(typeof _udb === 'function' && typeof _fbReady !== 'undefined' && _fbReady && typeof _currentUser !== 'undefined' && _currentUser){
     try {
-      _udb().collection('projects').doc(pid).collection('trackerEntries').doc(entryId)
+      _projData(pid).collection('trackerEntries').doc(entryId)
         .set(_trToFs(data.entries[idx]))
         .catch(e => console.warn('trRemovePhotoLink Firestore:', e.message));
     } catch(e){ /* silent */ }
@@ -319,7 +321,7 @@ async function trLoadFromFirestore(projectId){
   if(typeof _udb !== 'function' || typeof _fbReady === 'undefined' || !_fbReady) return;
   if(!_udb()) return;
   try {
-    const snap = await _udb().collection('projects').doc(pid).collection('trackerEntries').get();
+    const snap = await _projData(pid).collection('trackerEntries').get();
     const remote = [];
     snap.forEach(doc => {
       const d = doc.data();
@@ -338,7 +340,7 @@ async function trLoadFromFirestore(projectId){
     const merged = Array.from(byId.values());
     _trSaveRaw(pid, { entries: merged });
     // Push any local-only entries to Firestore (recovery for silent write failures).
-    const ref = _udb().collection('projects').doc(pid).collection('trackerEntries');
+    const ref = _projData(pid).collection('trackerEntries');
     for(const e of merged){
       const rem = remote.find(r => r.id === e.id);
       if(!rem || (e.updatedAt||0) > (rem.updatedAt||0)){

@@ -394,6 +394,7 @@ async function initFirebaseLoad() {
       loadChecklistCloud();
       loadFlagsCloud();
       _trackerStartupLoad();
+      _glSharedBoot();
       return;
     }
 
@@ -459,12 +460,36 @@ async function initFirebaseLoad() {
   }
   window._fbReady = true; // allow cloudSave from this point forward
   _trackerStartupLoad();
+  _glSharedBoot();
 }
 
 // ── User namespace helper — all post-migration paths use this ──
 function _udb() {
   if (!db || !_currentUser) return null;
   return db.collection('users').doc(_currentUser.uid);
+}
+
+// ── Project-data root — THE path-abstraction choke point (Phase 4.5) ──
+// Every project-scoped work-product collection (trackerEntries, trackerCategories,
+// kml, …) hangs off this. Today it returns the per-user mirror
+// users/{uid}/projects/{pid}; the Phase 4.5 data flip moves work product to the
+// shared root projects/{pid} by changing THIS function (+ rules + migration),
+// never the call sites.
+function _projData(pid) {
+  const u = _udb();
+  if (!u) return null;
+  return u.collection('projects').doc(pid || _activeProjectId());
+}
+
+// ── Shared-projects boot hooks (members.js) — called from every
+// initFirebaseLoad exit path once _fbReady is true. Backfill mints the shared
+// projects/{pid} + members + memberships mirror for locally-known projects;
+// the pending-invite check completes a ?join= / typed-code accept after auth.
+function _glSharedBoot() {
+  try {
+    if (typeof glBackfillSharedProjects === 'function') glBackfillSharedProjects();
+    if (typeof glCheckPendingInvite === 'function') setTimeout(glCheckPendingInvite, 600);
+  } catch(e) { console.warn('shared-projects boot:', e.message); }
 }
 
 // ── Window exposure ──
@@ -477,3 +502,5 @@ window._confirmModal = _confirmModal;
 window.resetForm = resetForm;
 window.initFirebaseLoad = initFirebaseLoad;
 window._udb = _udb;
+window._projData = _projData;
+window._glSharedBoot = _glSharedBoot;

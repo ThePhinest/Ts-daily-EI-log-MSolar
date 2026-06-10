@@ -17,6 +17,8 @@ import {
 
 let env;
 const PID = 'moraine';
+const FUTURE = Date.now() + 14 * 86400000;
+const PAST = Date.now() - 1000;
 
 beforeAll(async () => {
   env = await initializeTestEnvironment({
@@ -44,8 +46,14 @@ beforeEach(async () => {
     await setDoc(doc(db, `projects/${PID}/config/main`), { cap: 5 });
     await setDoc(doc(db, `projects/${PID}/submissions/s1`),
       { submittedBy: 'tim', version: 1, status: 'active', date: '2026-06-09' });
-    await setDoc(doc(db, `projects/${PID}/invites/tok-glasses`),
-      { role: 'reviewer', status: 'active', createdBy: 'tim' });
+    // Invites are TOP-LEVEL (token = doc id = the link/code/QR capability).
+    await setDoc(doc(db, 'invites/tok-glasses'),
+      { pid: PID, role: 'reviewer', status: 'active', createdBy: 'tim',
+        projectName: 'Moraine Solar', createdByName: 'Tim', expiresAt: FUTURE });
+    await setDoc(doc(db, 'invites/tok-expired'),
+      { pid: PID, role: 'reviewer', status: 'active', createdBy: 'tim', expiresAt: PAST });
+    await setDoc(doc(db, 'invites/tok-used'),
+      { pid: PID, role: 'reviewer', status: 'used', usedBy: 'someone', createdBy: 'tim', expiresAt: FUTURE });
     await setDoc(doc(db, 'users/tim/dailyLogs/2026-06-10'),
       { summary: 'private notes', personalNotes: 'never shared' });
   });
@@ -113,8 +121,8 @@ describe('owner / lead (Tim)', () => {
     await assertFails(deleteDoc(doc(as('tim'), `projects/${PID}/submissions/s1`)));
   });
   it('manages members and invites', async () => {
-    await assertSucceeds(setDoc(doc(as('tim'), `projects/${PID}/invites/tok2`),
-      { role: 'field', status: 'active', createdBy: 'tim' }));
+    await assertSucceeds(setDoc(doc(as('tim'), 'invites/tok2'),
+      { pid: PID, role: 'field', status: 'active', createdBy: 'tim', expiresAt: FUTURE }));
     await assertSucceeds(deleteDoc(doc(as('tim'), `projects/${PID}/members/forest`)));
   });
 });
@@ -186,7 +194,53 @@ describe('project creation + invite flow', () => {
   it('invite accept with a bogus token is rejected', () =>
     assertFails(setDoc(doc(as('glasses-guy'), `projects/${PID}/members/glasses-guy`),
       { role: 'reviewer', inviteToken: 'nope' })));
+  it('invite accept with an EXPIRED invite is rejected', () =>
+    assertFails(setDoc(doc(as('glasses-guy'), `projects/${PID}/members/glasses-guy`),
+      { role: 'reviewer', inviteToken: 'tok-expired' })));
+  it('invite accept with an already-used invite is rejected', () =>
+    assertFails(setDoc(doc(as('glasses-guy'), `projects/${PID}/members/glasses-guy`),
+      { role: 'reviewer', inviteToken: 'tok-used' })));
   it('invitee consumes the invite (status flip, self-attributed)', () =>
-    assertSucceeds(updateDoc(doc(as('glasses-guy'), `projects/${PID}/invites/tok-glasses`),
-      { status: 'used', usedBy: 'glasses-guy' })));
+    assertSucceeds(updateDoc(doc(as('glasses-guy'), 'invites/tok-glasses'),
+      { status: 'used', usedBy: 'glasses-guy', usedAt: Date.now() })));
+  it('invitee cannot rewrite invite payload while consuming', () =>
+    assertFails(updateDoc(doc(as('glasses-guy'), 'invites/tok-glasses'),
+      { status: 'used', usedBy: 'glasses-guy', role: 'lead' })));
+});
+
+describe('invites — top-level token capability', () => {
+  it('any signed-in token holder reads the invite (pre-membership accept screen)', () =>
+    assertSucceeds(getDoc(doc(as('stranger'), 'invites/tok-glasses'))));
+  it('unauthenticated cannot read an invite', () =>
+    assertFails(getDoc(doc(anon(), 'invites/tok-glasses'))));
+  it('non-lead member cannot mint an invite', () =>
+    assertFails(setDoc(doc(as('boots'), 'invites/tok-boots-made'),
+      { pid: PID, role: 'reviewer', status: 'active', createdBy: 'boots', expiresAt: FUTURE })));
+  it('non-member cannot mint an invite for a project', () =>
+    assertFails(setDoc(doc(as('stranger'), 'invites/tok-stranger'),
+      { pid: PID, role: 'reviewer', status: 'active', createdBy: 'stranger', expiresAt: FUTURE })));
+  it('lead cannot mint a LEAD invite (v1 escalation ceiling)', () =>
+    assertFails(setDoc(doc(as('tim'), 'invites/tok-lead'),
+      { pid: PID, role: 'lead', status: 'active', createdBy: 'tim', expiresAt: FUTURE })));
+  it('lead cannot forge createdBy', () =>
+    assertFails(setDoc(doc(as('tim'), 'invites/tok-forged'),
+      { pid: PID, role: 'field', status: 'active', createdBy: 'boots', expiresAt: FUTURE })));
+  it('invite without expiresAt is rejected', () =>
+    assertFails(setDoc(doc(as('tim'), 'invites/tok-noexp'),
+      { pid: PID, role: 'field', status: 'active', createdBy: 'tim' })));
+  it('lead lists own invites via createdBy-constrained query', () =>
+    assertSucceeds(getDocs(query(
+      collection(as('tim'), 'invites'),
+      where('createdBy', '==', 'tim'), where('pid', '==', PID)))));
+  it('cannot list invites unconstrained (no token fishing)', () =>
+    assertFails(getDocs(collection(as('stranger'), 'invites'))));
+  it('lead revokes an invite (status flip + delete)', async () => {
+    await assertSucceeds(updateDoc(doc(as('tim'), 'invites/tok-glasses'),
+      { status: 'revoked' }));
+    await assertSucceeds(deleteDoc(doc(as('tim'), 'invites/tok-used')));
+  });
+  it('random member cannot revoke or delete someone\'s invite', async () => {
+    await assertFails(updateDoc(doc(as('boots'), 'invites/tok-glasses'), { status: 'revoked' }));
+    await assertFails(deleteDoc(doc(as('boots'), 'invites/tok-glasses')));
+  });
 });

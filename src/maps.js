@@ -781,7 +781,7 @@ function kmlSaveLayers(){
   }));
   try { localStorage.setItem(_kmlStorageKey(), JSON.stringify(data)); } catch {}
   if(db && _fbReady){
-    _udb().collection('projects').doc(pid).collection('kml').doc('layers')
+    _projData(pid).collection('kml').doc('layers')
       .set({ data, _ts: Date.now() })
       .catch(e => console.warn('kmlSaveLayers:', e.message));
   }
@@ -942,7 +942,7 @@ async function kmlLoadLayers(){
   const pid = (typeof _activeProjectId === 'function') ? _activeProjectId() : 'default';
   if(db && _fbReady){
     try {
-      const doc = await _udb().collection('projects').doc(pid).collection('kml').doc('layers').get();
+      const doc = await _projData(pid).collection('kml').doc('layers').get();
       if(doc.exists) data = doc.data().data;
     } catch(e){ console.warn('kmlLoadLayers cloud:', e.message); }
   }

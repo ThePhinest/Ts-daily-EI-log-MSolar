@@ -68,7 +68,7 @@ function tcGenId(){
 }
 
 function _tcStoragePath(projectId){
-  return _udb().collection('projects').doc(projectId).collection('trackerCategories');
+  return _projData(projectId).collection('trackerCategories');
 }
 
 // Load all categories for a project from Firestore into memory cache.

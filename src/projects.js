@@ -25,6 +25,9 @@ function knownProjectsUpsert(cfg, projectId){
   const list=knownProjectsGet();
   const idx=list.findIndex(p=>p.projectId ? p.projectId===(projectId||null) : p.projectName===cfg.projectName);
   const entry={projectId:projectId||null,projectName:cfg.projectName,preparedBy:cfg.preparedBy,org:cfg.org,activePhase:cfg.activePhase,contractor:cfg.contractor,location:cfg.location,reviewedBy:cfg.reviewedBy,lastUsed:Date.now()};
+  // Joined-project entries carry shared/role flags (members.js) — preserve them
+  // through config-save upserts so the switcher badge + backfill filter hold.
+  if(idx>=0 && list[idx].shared){ entry.shared=true; entry.role=list[idx].role; }
   if(idx>=0) list[idx]=entry; else list.push(entry);
   localStorage.setItem('gl_known_projects',JSON.stringify(list));
   // Mirror to Firestore so all devices share the project list
@@ -592,7 +595,9 @@ async function createProject(name, location, contractor) {
   if (!name || !name.trim() || !db || !_fbReady) return;
   name = name.trim();
   const activeCfg = loadProjectConfig();
-  const projectId = 'proj_' + Date.now();
+  // Random suffix: ids live in the SHARED projects/{pid} namespace now —
+  // a bare timestamp could collide across users creating at the same moment.
+  const projectId = 'proj_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
   const projData = {
     projectName:     name,
     preparedBy:      activeCfg.preparedBy  || '',
@@ -618,6 +623,12 @@ async function createProject(name, location, contractor) {
   };
   try {
     await _udb().collection('settings').doc(projectId).set(projData);
+    // Shared trio (projects/{pid} + members lead + memberships mirror) — the
+    // membership anchor invites hang off. Fire-and-forget: a failure here is
+    // self-healed by the boot backfill (glBackfillSharedProjects).
+    if (typeof glEnsureSharedProject === 'function') {
+      glEnsureSharedProject(projectId, projData).catch(e => console.warn('shared project create:', e.message));
+    }
     knownProjectsUpsert(projData, projectId);
     await loadProject(projectId, projData);
     showPage('config');
@@ -645,11 +656,13 @@ function showProjectSwitcher() {
     return sorted.map(p => {
       const isActive = p.projectId === activeProjId;
       const lastUsedStr = p.lastUsed ? _projRelativeDate(p.lastUsed) : '';
+      const roleInfo = (window.GL_ROLES || {})[p.role];
+      const sharedStr = p.shared ? ('Shared · ' + (roleInfo ? roleInfo.icon + ' ' + roleInfo.name : p.role || 'member')) : '';
       return `<div class="proj-row${isActive?' active':''}" onclick="_projSwitcherSelect('${p.projectId}')">
         <div class="proj-dot${isActive?' active':''}"></div>
         <div class="proj-row-info">
           <div class="proj-row-name">${p.projectName||'Unnamed Project'}</div>
-          <div class="proj-row-meta">${[p.location,lastUsedStr].filter(Boolean).join(' · ')}</div>
+          <div class="proj-row-meta">${[sharedStr,p.location,lastUsedStr].filter(Boolean).join(' · ')}</div>
         </div>
       </div>`;
     }).join('');
@@ -676,6 +689,7 @@ function showProjectSwitcher() {
         ${renderList()}
         <hr class="proj-divider">
         <button class="proj-new-btn" onclick="_projSwitcherShowForm()">+ New Project</button>
+        <button class="proj-new-btn" style="margin-top:8px" onclick="glShowJoinByCode()">⌗ Join with an invite code</button>
       `}
     </div>`;
   }

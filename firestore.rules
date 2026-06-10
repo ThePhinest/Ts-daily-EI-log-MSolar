@@ -37,6 +37,39 @@ service cloud.firestore {
         && request.auth.uid == 'Z1RZWSUTXfR1Ys76VMd8FTqydaq1';   // Tim (admin)
     }
 
+    // ── Invites — TOP-LEVEL, doc id = the unguessable token ──
+    // One token, three skins (link / short code / QR): a typed-in short code must
+    // resolve the project BY ITSELF, so the token cannot live nested under a pid.
+    // Knowing the token is the capability; the doc carries pid + role + denormalized
+    // display fields (projectName, createdByName) for the accept screen.
+    match /invites/{token} {
+      function isLeadOf(p) {
+        return get(/databases/$(database)/documents/projects/$(p)/members/$(request.auth.uid)).data.role == 'lead';
+      }
+      // Capability-by-token: any signed-in holder of the token may read it
+      // (the invitee is by definition not yet a member).
+      allow get: if request.auth != null;
+      // Leads list only the invites they created (query must constrain createdBy).
+      allow list: if request.auth != null && resource.data.createdBy == request.auth.uid;
+      // Only the project's lead mints invites; self-attributed; v1 never invites
+      // another lead (role escalation ceiling).
+      allow create: if request.auth != null
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.pid is string
+        && request.resource.data.role in ['field', 'reviewer']
+        && request.resource.data.status == 'active'
+        && request.resource.data.expiresAt is number
+        && isLeadOf(request.resource.data.pid);
+      // Invitee consumes (status flip only, self-attributed) — checked FIRST so it
+      // short-circuits before the lead get(); lead may revoke/re-flip.
+      allow update: if request.auth != null
+        && ((resource.data.status == 'active'
+              && request.resource.data.usedBy == request.auth.uid
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'usedBy', 'usedAt']))
+            || isLeadOf(resource.data.pid));
+      allow delete: if request.auth != null && isLeadOf(resource.data.pid);
+    }
+
     // ── Shared projects ──
     match /projects/{pid} {
 
@@ -78,7 +111,7 @@ service cloud.firestore {
           return get(/databases/$(database)/documents/projects/$(pid)).data;
         }
         function inviteFor(token) {
-          return get(/databases/$(database)/documents/projects/$(pid)/invites/$(token)).data;
+          return get(/databases/$(database)/documents/invites/$(token)).data;
         }
         // Creator self-enrolls as lead right after creating the project doc.
         function selfLeadBootstrap() {
@@ -87,29 +120,19 @@ service cloud.firestore {
             && projectDoc().createdBy == request.auth.uid;
         }
         // Invite acceptance: membership doc carries the inviteToken it was born from;
-        // role must match the invite exactly, invite must be live.
+        // invite must be live, unexpired, FOR this project, and role must match exactly.
         function selfInviteAccept() {
           return uid == request.auth.uid
             && request.resource.data.inviteToken is string
             && inviteFor(request.resource.data.inviteToken).status == 'active'
-            && inviteFor(request.resource.data.inviteToken).role == request.resource.data.role;
+            && inviteFor(request.resource.data.inviteToken).pid == pid
+            && inviteFor(request.resource.data.inviteToken).role == request.resource.data.role
+            && request.time.toMillis() < inviteFor(request.resource.data.inviteToken).expiresAt;
         }
         allow get, list: if isMember();
         allow create: if isSignedIn() && (isLead() || selfLeadBootstrap() || selfInviteAccept());
         allow update: if isLead();                              // role changes
         allow delete: if isLead() || request.auth.uid == uid;   // remove member / self-leave
-      }
-
-      // ── Invites (doc id = unguessable token; one mechanism behind link/code/QR) ──
-      match /invites/{token} {
-        allow get: if isSignedIn();        // capability-by-token: knowing the id is the key
-        allow list: if isLead();
-        allow create, delete: if isLead();
-        // Invitee consumes their invite (status flip only, self-attributed).
-        allow update: if isLead()
-          || (isSignedIn()
-              && resource.data.status == 'active'
-              && request.resource.data.usedBy == request.auth.uid);
       }
 
       // ── Live-visible reference data (not work product) ──
