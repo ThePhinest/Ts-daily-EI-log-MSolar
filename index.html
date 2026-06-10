@@ -50,13 +50,18 @@ button{-webkit-appearance:none;appearance:none}                      /* custom b
 button,[role="button"],.nav-item,.more-row,.more-tile,.map-cat-pill,.proj-row,.map-fab-btn{-webkit-touch-callout:none} /* no long-press magnifier on chrome */
 button:active,[role="button"]:active,.nav-item:active,.more-row:active,.more-tile:active,.map-cat-pill:active,.proj-row:active,.map-fab-btn:active{filter:brightness(.82)} /* native-style press dim */
 .more-panel,.cl-form-panel,#map-tracker-modal,#map-tracker-sheet,#map-category-sheet,#map-view-palette,#map-fab-palette{overscroll-behavior:contain} /* scroll stays inside sheets */
-body:has(.more-overlay.open),body:has(#cl-form-overlay.open),body:has(#map-tracker-modal.open),body:has(#map-tracker-sheet.open),body:has(#map-category-sheet.open){overflow:hidden} /* lock background scroll behind sheets */
+body:has(.more-overlay.open) #scroll-root,body:has(#cl-form-overlay.open) #scroll-root,body:has(#map-tracker-modal.open) #scroll-root,body:has(#map-tracker-sheet.open) #scroll-root,body:has(#map-category-sheet.open) #scroll-root{overflow:hidden} /* lock background scroll behind sheets */
+/* ── Scroll-container refactor (2026-06-10) — body is locked to the viewport; #scroll-root owns all page
+   scrolling, so WKWebView's native pan has no document overscroll to rubber-band (iOS nav-drift fix).
+   #scroll-root must NEVER get transform/filter/contain — fixed descendants (FABs, sheets, popovers)
+   must keep the viewport as their containing block. ── */
+#scroll-root{flex:1 1 0;min-height:0;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;padding-bottom:80px}
 .app-wordmark{display:inline-flex;align-items:center;justify-content:center;white-space:nowrap;line-height:1}
 .app-wm-ground{font-family:'Oswald','Barlow Condensed',sans-serif;font-weight:300;font-size:19px;letter-spacing:4px;text-transform:uppercase;color:var(--text)}
 .app-wm-bar{display:inline-block;width:2px;height:20px;background:var(--amber);margin:0 8px;flex-shrink:0}
 .app-wm-log{font-family:'Oswald','Barlow Condensed',sans-serif;font-weight:700;font-size:25px;letter-spacing:-0.5px;color:var(--s3);text-transform:uppercase}
 .app-wm-io{font-family:var(--mono);font-size:12px;color:var(--amber);margin-left:2px;align-self:flex-end;padding-bottom:1px}
-body{background:var(--bg);color:var(--text);font-family:var(--body);font-size:17px;line-height:1.5;min-height:100vh;padding-bottom:80px}
+body{background:var(--bg);color:var(--text);font-family:var(--body);font-size:17px;line-height:1.5;height:100vh;height:100dvh;display:flex;flex-direction:column;overflow:hidden}
 body.theme-light{
   --bg:#F5F5F0;--s1:#ffffff;--s2:#dde8ea;--s3:#006B75;
   --border:#b8c8cc;--border2:#b8c8cc;
@@ -671,7 +676,8 @@ button:disabled,button[disabled]{opacity:.45;cursor:not-allowed}
 .cl-form-footer{padding:12px 20px 16px;display:flex;gap:10px;justify-content:flex-end;border-top:1px solid var(--border)}
 
 @media print{
-  body{background:white;color:black;font-size:12px}
+  body{background:white;color:black;font-size:12px;height:auto;display:block;overflow:visible}
+  #scroll-root{height:auto;overflow:visible;padding-bottom:0}
   .app-bar,.export-panel,.action-row,.no-print{display:none!important}
   .card-personal{display:none!important}
   .card{border:1px solid #ccc;break-inside:avoid;background:white}
@@ -1383,6 +1389,7 @@ body.is-native select { font-size: 16px !important; }
 <!-- ══════════════════════════════════
      DAILY LOG PAGE
 ══════════════════════════════════ -->
+<div id="scroll-root">
 <div class="page active" id="page-log"><div class="wrap">
 
   <!-- COLLAPSE ALL / EXPAND ALL -->
@@ -3160,6 +3167,7 @@ Anticipated rain — AM weather monitoring expected"></textarea>
   </div>
 
 </div></div><!-- /page-accountSettings -->
+</div><!-- /scroll-root -->
 
 
 <script>

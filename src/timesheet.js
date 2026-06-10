@@ -577,7 +577,7 @@ function _tsShowArchiveBanner(ws,we){
   const s=tsParseDate(ws),e=tsParseDate(we);
   const banner=document.createElement('div');
   banner.id='ts-archive-banner';
-  banner.style.cssText='position:fixed;top:56px;left:0;right:0;z-index:999;background:var(--s1);border-bottom:1px solid var(--amber);color:var(--amber);font-family:var(--mono);font-size:12px;padding:8px 18px;display:flex;justify-content:space-between;align-items:center;';
+  banner.style.cssText='position:fixed;top:var(--app-bar-h);left:0;right:0;z-index:999;background:var(--s1);border-bottom:1px solid var(--amber);color:var(--amber);font-family:var(--mono);font-size:12px;padding:8px 18px;display:flex;justify-content:space-between;align-items:center;';
   banner.innerHTML=`<span>Week of ${tsWeekLabel(s,e)} not archived — <button onclick="_tsDoArchive(tsParseDate('${ws}'),tsParseDate('${we}'))" style="background:none;border:none;color:var(--green);cursor:pointer;font-family:var(--mono);font-size:12px;text-decoration:underline;">archive now</button></span><button onclick="document.getElementById('ts-archive-banner').remove()" style="background:none;border:none;color:var(--muted2);cursor:pointer;font-size:16px;">✕</button>`;
   document.body.prepend(banner);
 }
