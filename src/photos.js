@@ -2,6 +2,7 @@
 // PHOTOS
 // ═══════════════════════════════════════════
 window._phPhotos = window._phPhotos || [];
+window._phTrash = window._phTrash || [];
 var _phLbId = null;
 var _phLbList = [];      // ordered photo ids the lightbox navigates through
 var _phLbIndex = -1;     // current position within _phLbList
@@ -194,15 +195,33 @@ async function phHandleFiles(files){
 }
 
 // ── Persistence ──
+// Soft delete: _phPhotos holds only live photos, so every consumer (gallery, map
+// pins, compliance links, exports) stays deleted-free without per-site filters.
+// Deleted photos live in _phTrash for the 30-day undo window.
+const PH_TRASH_RETENTION_MS = 30*24*60*60*1000;
+function _phPartition(list){
+  const live=[], trash=[];
+  (list||[]).forEach(p => { (p && p.deletedAt ? trash : live).push(p); });
+  window._phPhotos = live;
+  window._phTrash = trash;
+}
+
 function phSaveLocal(){
   try{ localStorage.setItem('ph_photos', JSON.stringify(window._phPhotos)); }catch{}
+  try{ localStorage.setItem('ph_trash', JSON.stringify(window._phTrash||[])); }catch{}
 }
 
 function phLoadLocal(){
+  let list = [];
   try{
     const raw = localStorage.getItem('ph_photos');
-    if(raw) window._phPhotos = JSON.parse(raw);
-  }catch{ window._phPhotos = []; }
+    if(raw) list = JSON.parse(raw);
+  }catch{ list = []; }
+  try{
+    const rawT = localStorage.getItem('ph_trash');
+    if(rawT) list = list.concat(JSON.parse(rawT));
+  }catch{}
+  _phPartition(list);
 }
 
 async function phSaveCloud(){
@@ -222,7 +241,9 @@ async function phSaveCloud(){
       if(p.software) doc.software = p.software;
       if(p.projectId) doc.projectId = p.projectId;
       if(p.type) doc.type = p.type;
-      batch.set(ref, doc);
+      // merge:true so a device that hasn't seen a delete yet can't strip
+      // deletedAt off the cloud doc and resurrect a deleted photo
+      batch.set(ref, doc, { merge: true });
     });
     await batch.commit();
   }catch(e){ console.warn('phSaveCloud failed:', e.message); }
@@ -239,8 +260,9 @@ async function phLoadCloud(){
   try{
     const snap = await _udb().collection('photos').get();
     if(!snap.empty){
-      window._phPhotos = snap.docs.map(d => d.data());
+      _phPartition(snap.docs.map(d => d.data()));
       phSaveLocal();
+      _phSweepTrash();
       return true;
     }
   }catch(e){ console.warn('phLoadCloud failed:', e.message); }
@@ -422,7 +444,7 @@ function phSaveCaption(){
   phCloseLightbox();
 }
 
-// ── Delete with confirm ──
+// ── Delete with confirm (soft delete — 30-day undo window) ──
 function phConfirmDelete(id){
   const p = window._phPhotos.find(x=>x.id===id);
   if(!p) return;
@@ -430,7 +452,7 @@ function phConfirmDelete(id){
   ov.className = 'modal-overlay';
   ov.innerHTML = '<div class="modal-box">' +
     '<div class="modal-title">⚠ Delete Photo?</div>' +
-    '<div class="modal-msg">Delete the photo from <strong>' + phDayLabel(p.date) + '</strong>?<br><br>This cannot be undone.</div>' +
+    '<div class="modal-msg">Delete the photo from <strong>' + phDayLabel(p.date) + '</strong>?<br><br>You can undo for 30 days.</div>' +
     '<div class="modal-btns">' +
       '<button class="modal-cancel" id="_phmc">Cancel</button>' +
       '<button class="modal-confirm" id="_phmok">Delete</button>' +
@@ -440,20 +462,70 @@ function phConfirmDelete(id){
   document.getElementById('_phmok').onclick = async function(){
     ov.remove();
     const p = window._phPhotos.find(x=>x.id===id);
+    if(!p) return;
+    p.deletedAt = Date.now();
     window._phPhotos = window._phPhotos.filter(x=>x.id!==id);
+    window._phTrash.push(p);
     phSaveLocal();
+    phRender();
+    mapRenderPhotoPins();
+    _phShowUndoToast(id);
+    // Storage file intentionally NOT deleted here — needed for undo; _phSweepTrash removes it after 30 days.
     if(db){
       try{
-        await _udb().collection('photos').doc(id).delete();
-      }catch(e){ console.warn('phDelete Firestore failed:', e.message); }
+        await _udb().collection('photos').doc(id).update({ deletedAt: p.deletedAt });
+      }catch(e){
+        try{ await _udb().collection('photos').doc(id).set({ id: id, deletedAt: p.deletedAt }, { merge:true }); }
+        catch(e2){ console.warn('phDelete soft-delete failed:', e2.message); }
+      }
     }
-    if(p && p.storageUrl && storage){
-      try{
-        await storage.refFromURL(p.storageUrl).delete();
-      }catch(e){ console.warn('phDelete Storage failed:', e.message); }
-    }
-    phRender();
   };
+}
+
+function phUndoDelete(id){
+  const i = (window._phTrash||[]).findIndex(x=>x.id===id);
+  if(i<0) return;
+  const p = window._phTrash.splice(i,1)[0];
+  delete p.deletedAt;
+  window._phPhotos.push(p);
+  phSaveLocal();
+  phRender();
+  mapRenderPhotoPins();
+  if(db){
+    _udb().collection('photos').doc(id).update({ deletedAt: null })
+      .catch(e => console.warn('phUndoDelete failed:', e.message));
+  }
+}
+
+function _phShowUndoToast(id){
+  document.getElementById('ph-undo-toast')?.remove();
+  const t = document.createElement('div');
+  t.id = 'ph-undo-toast';
+  t.style.cssText = 'position:fixed;left:50%;transform:translateX(-50%);bottom:calc(78px + env(safe-area-inset-bottom,0px));z-index:400;background:rgba(0,0,0,.88);color:#eee;padding:10px 16px;border-radius:10px;display:flex;gap:16px;align-items:center;font-size:14px;box-shadow:0 4px 14px rgba(0,0,0,.5)';
+  t.innerHTML = 'Photo deleted <button style="background:none;border:none;color:#E8B84B;font-weight:700;font-size:14px;padding:4px 6px;cursor:pointer">UNDO</button>';
+  t.querySelector('button').onclick = function(){ t.remove(); phUndoDelete(id); };
+  document.body.appendChild(t);
+  setTimeout(function(){ t.remove(); }, 8000);
+}
+
+// Hard-delete trash older than 30 days: Storage file first (retry-safe), then the doc.
+async function _phSweepTrash(){
+  if(!db || !_fbReady) return;
+  const cutoff = Date.now() - PH_TRASH_RETENTION_MS;
+  const expired = (window._phTrash||[]).filter(p => p.deletedAt && p.deletedAt < cutoff);
+  if(!expired.length) return;
+  for(const p of expired){
+    if(p.storageUrl && storage){
+      try{ await storage.refFromURL(p.storageUrl).delete(); }
+      catch(e){
+        if(e.code !== 'storage/object-not-found'){ console.warn('phSweep storage failed:', e.message); continue; }
+      }
+    }
+    try{ await _udb().collection('photos').doc(p.id).delete(); }
+    catch(e){ console.warn('phSweep doc failed:', e.message); continue; }
+    window._phTrash = window._phTrash.filter(x => x.id !== p.id);
+  }
+  phSaveLocal();
 }
 
 // ── Close lightbox on backdrop tap ──
@@ -558,4 +630,5 @@ window.phLbNext = phLbNext;
 window.phLbPrev = phLbPrev;
 window.phSaveCaption = phSaveCaption;
 window.phConfirmDelete = phConfirmDelete;
+window.phUndoDelete = phUndoDelete;
 window.phBearingLabel = phBearingLabel;
