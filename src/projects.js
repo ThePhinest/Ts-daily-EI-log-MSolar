@@ -569,6 +569,13 @@ async function loadProject(projectId, projDataOverride) {
     if(typeof mapResetGpsFollow === 'function') mapResetGpsFollow();
     if(typeof mapDeactivateDrawMode === 'function') mapDeactivateDrawMode();
     if(typeof mapRenderPhotoPins === 'function') mapRenderPhotoPins();
+    // Other members' published photos belong to the project context — reload
+    // the shared set for the new project, then refresh the pins with it.
+    if(typeof phLoadShared === 'function'){
+      phLoadShared(projectId).then(() => {
+        if(typeof mapRenderPhotoPins === 'function') mapRenderPhotoPins();
+      }).catch(() => {});
+    }
     if(typeof kmlLoadLayers === 'function'){
       // Fire-and-forget — kmlLoadLayers is async but project switch must not
       // block on Storage fetches.

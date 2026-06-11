@@ -470,12 +470,22 @@ function _udb() {
 }
 
 // ── Project-data root — THE path-abstraction choke point (Phase 4.5) ──
-// Every project-scoped work-product collection (trackerEntries, trackerCategories,
-// kml, …) hangs off this. Today it returns the per-user mirror
-// users/{uid}/projects/{pid}; the Phase 4.5 data flip moves work product to the
-// shared root projects/{pid} by changing THIS function (+ rules + migration),
-// never the call sites.
+// FLIPPED 2026-06-11: work product (trackerEntries, trackerCategories) now
+// lives at the SHARED root projects/{pid}. Rules gate it: members-only,
+// publish-gated reads for non-owners (published == true), role-gated writes
+// (firestore.rules + tests/rules). The old per-user mirror
+// users/{uid}/projects/{pid} is left untouched as a frozen backup;
+// _glMigrateWorkProductFlip (members.js) copies it forward once per project.
+// NOTE: lists on publish-gated collections must use rules-provable queries
+// (ownerUid == me / published == true) — unconstrained .get() is denied.
 function _projData(pid) {
+  if (!db || !_currentUser) return null;
+  return db.collection('projects').doc(pid || _activeProjectId());
+}
+
+// Personal per-project view state (e.g. the KML layer-visibility copy) stays
+// in the user's own subtree — view state is personal, never shared.
+function _projDataUser(pid) {
   const u = _udb();
   if (!u) return null;
   return u.collection('projects').doc(pid || _activeProjectId());
@@ -484,11 +494,17 @@ function _projData(pid) {
 // ── Shared-projects boot hooks (members.js) — called from every
 // initFirebaseLoad exit path once _fbReady is true. Backfill mints the shared
 // projects/{pid} + members + memberships mirror for locally-known projects;
+// the work-product flip migration MUST run after backfill (membership is what
+// authorizes the shared-root writes) and refreshes the tracker if it copied;
 // the pending-invite check completes a ?join= / typed-code accept after auth.
-function _glSharedBoot() {
+async function _glSharedBoot() {
   try {
-    if (typeof glBackfillSharedProjects === 'function') glBackfillSharedProjects();
+    if (typeof glBackfillSharedProjects === 'function') await glBackfillSharedProjects();
     if (typeof glRepairSharedStubs === 'function') glRepairSharedStubs();
+    if (typeof _glMigrateWorkProductFlip === 'function') {
+      const copied = await _glMigrateWorkProductFlip();
+      if (copied) _trackerStartupLoad();
+    }
     if (typeof glCheckPendingInvite === 'function') setTimeout(glCheckPendingInvite, 600);
     if (typeof _glInitMapShareBtn === 'function') _glInitMapShareBtn();
     if (typeof _glInitMapHostBtn === 'function') _glInitMapHostBtn();
@@ -506,4 +522,5 @@ window.resetForm = resetForm;
 window.initFirebaseLoad = initFirebaseLoad;
 window._udb = _udb;
 window._projData = _projData;
+window._projDataUser = _projDataUser;
 window._glSharedBoot = _glSharedBoot;

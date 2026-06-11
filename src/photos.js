@@ -3,6 +3,7 @@
 // ═══════════════════════════════════════════
 window._phPhotos = window._phPhotos || [];
 window._phTrash = window._phTrash || [];
+window._phShared = window._phShared || [];   // other members' PUBLISHED photos (project mirror)
 var _phLbId = null;
 var _phLbList = [];      // ordered photo ids the lightbox navigates through
 var _phLbIndex = -1;     // current position within _phLbList
@@ -241,6 +242,7 @@ async function phSaveCloud(){
       if(p.software) doc.software = p.software;
       if(p.projectId) doc.projectId = p.projectId;
       if(p.type) doc.type = p.type;
+      if(p.published !== undefined){ doc.published = p.published; doc.publishedAt = p.publishedAt || null; }
       // merge:true so a device that hasn't seen a delete yet can't strip
       // deletedAt off the cloud doc and resurrect a deleted photo
       batch.set(ref, doc, { merge: true });
@@ -293,12 +295,82 @@ async function phRecoverStorageUrls(){
   }
 }
 
+// Find a photo by id — own library first, then the project's shared mirror
+// (other members' published photos, opened from map pins).
+function _phById(id){
+  return window._phPhotos.find(x=>x.id===id)
+    || (window._phShared||[]).find(x=>x.id===id)
+    || null;
+}
+
 // ── Load full image for lightbox ──
 async function phGetFull(id){
-  const p = window._phPhotos.find(x=>x.id===id);
+  const p = _phById(id);
   if(p && p.storageUrl) return p.storageUrl;
   if(p && p.full) return p.full; // backwards compat for old entries
   return p ? p.thumb : '';
+}
+
+// ── Publish / unpublish photos (submit-day batch + lightbox Share button) ──
+// "Explicit publish, keep your original": the library doc gets the published
+// stamp; a capability-carrying copy (storageUrl = the token, same trust model
+// as KML downloadUrl) is mirrored into projects/{pid}/photos for members.
+// Unshare deletes the mirror — revocation is real.
+async function phSetPublished(ids, publish, projectId){
+  const pid = projectId || ((typeof _activeProjectId==='function') ? _activeProjectId() : 'default');
+  const list = Array.isArray(ids) ? ids : [ids];
+  const now = Date.now();
+  const touched = [];
+  list.forEach(id => {
+    const p = window._phPhotos.find(x=>x.id===id);
+    if(!p) return;
+    p.published = !!publish;
+    p.publishedAt = publish ? now : null;
+    touched.push(p);
+  });
+  if(!touched.length) return 0;
+  phSaveLocal();
+  if(db && _fbReady && _currentUser && pid && pid !== 'default'){
+    try{
+      const batch = db.batch();
+      touched.forEach(p => {
+        batch.set(_udb().collection('photos').doc(p.id),
+          { published: p.published, publishedAt: p.publishedAt }, { merge:true });
+        const mref = db.collection('projects').doc(pid).collection('photos').doc(p.id);
+        if(publish){
+          const m = { id:p.id, date:p.date||'', caption:p.caption||'', thumb:p.thumb||'',
+            projectId: pid, ownerUid: _currentUser.uid,
+            published: true, publishedAt: now, uploadedAt: p.uploadedAt||now };
+          if(p.storageUrl) m.storageUrl = p.storageUrl;
+          if(p.lat !== undefined){ m.lat = p.lat; m.lng = p.lng; }
+          if(p.direction !== undefined) m.direction = p.direction;
+          if(p.takenAt) m.takenAt = p.takenAt;
+          batch.set(mref, m);
+        } else {
+          batch.delete(mref);
+        }
+      });
+      await batch.commit();
+    }catch(e){ console.warn('phSetPublished:', e.message); }
+  }
+  return touched.length;
+}
+
+// ── Other members' published photos for the active project (map pins etc.) ──
+async function phLoadShared(projectId){
+  window._phShared = [];
+  if(!db || !_fbReady || !_currentUser) return;
+  const pid = projectId || ((typeof _activeProjectId==='function') ? _activeProjectId() : 'default');
+  if(!pid || pid === 'default') return;
+  try{
+    const snap = await db.collection('projects').doc(pid).collection('photos')
+      .where('published','==',true).get();
+    const mine = _currentUser.uid;
+    snap.forEach(d => {
+      const p = d.data();
+      if(p.ownerUid !== mine) window._phShared.push(p);
+    });
+  }catch(e){ /* not a member of a shared project — nothing to show */ }
 }
 
 // ── Current filtered + sorted photo set (shared by library render + lightbox nav) ──
@@ -427,7 +499,7 @@ async function _phLbShow(index){
   _phLbIndex = index;
   const id = _phLbList[index];
   _phLbId = id;
-  const p = window._phPhotos.find(x=>x.id===id);
+  const p = _phById(id);
   if(!p) return;
   const img = document.getElementById('ph-lb-img');
   const cap = document.getElementById('ph-lb-caption');
@@ -435,6 +507,17 @@ async function _phLbShow(index){
   img.src = p.thumb;            // instant
   if(cap) cap.value = p.caption||'';
   if(dat) dat.textContent = phDayLabel(p.date);
+  // Share button + caption editability track ownership: another member's
+  // published photo is read-only here.
+  const own = window._phPhotos.some(x=>x.id===id);
+  const share = document.getElementById('ph-lb-share');
+  if(share){
+    const pid = (typeof _activeProjectId==='function') ? _activeProjectId() : 'default';
+    const inProject = own && p.projectId === pid && pid !== 'default';
+    share.style.display = inProject ? '' : 'none';
+    share.textContent = p.published ? '🌐 Shared ✓ — tap to unshare' : '📤 Share to project';
+  }
+  if(cap) cap.readOnly = !own;
   _phLbUpdateNav();
   const full = await phGetFull(id);
   if(_phLbId === id) img.src = full;   // only swap in full-res if still on this photo
@@ -477,8 +560,30 @@ function phSaveCaption(){
     p.caption = cap;
     phSave();
     phRender();
+    // Published photo: keep the project mirror's caption current — in the
+    // photo's OWN project (the library can show other projects' photos too).
+    if(p.published && typeof phSetPublished === 'function') phSetPublished([p.id], true, p.projectId);
   }
   phCloseLightbox();
+}
+
+// ── Lightbox Share / Unshare toggle (own photos in the active project) ──
+async function phShareCurrent(){
+  if(!_phLbId) return;
+  const p = window._phPhotos.find(x=>x.id===_phLbId);
+  if(!p) return;
+  const btn = document.getElementById('ph-lb-share');
+  if(btn) btn.disabled = true;
+  const target = !p.published;
+  await phSetPublished([p.id], target, p.projectId);
+  if(btn){
+    btn.disabled = false;
+    btn.textContent = target ? '🌐 Shared ✓ — tap to unshare' : '📤 Share to project';
+  }
+  if(typeof showCloudBanner === 'function'){
+    showCloudBanner(target ? '✓ Photo shared — project members can see it now.'
+      : 'Photo unshared — members lose access on their next refresh.');
+  }
 }
 
 // ── Delete with confirm (soft delete — 30-day undo window) ──
@@ -515,6 +620,12 @@ function phConfirmDelete(id){
         try{ await _udb().collection('photos').doc(id).set({ id: id, deletedAt: p.deletedAt }, { merge:true }); }
         catch(e2){ console.warn('phDelete soft-delete failed:', e2.message); }
       }
+      // Published photo: pull the project mirror too (members must not keep a
+      // deleted photo). The published flag stays on the record so undo re-shares.
+      if(p.published && p.projectId && p.projectId !== 'default'){
+        db.collection('projects').doc(p.projectId).collection('photos').doc(id)
+          .delete().catch(()=>{});
+      }
     }
   };
 }
@@ -531,6 +642,8 @@ function phUndoDelete(id){
   if(db){
     _udb().collection('photos').doc(id).update({ deletedAt: null })
       .catch(e => console.warn('phUndoDelete failed:', e.message));
+    // Was published when deleted — restore the project mirror with it.
+    if(p.published && typeof phSetPublished === 'function') phSetPublished([id], true, p.projectId);
   }
 }
 
@@ -616,6 +729,10 @@ async function phInit(){
   phRender();
   phRecoverStorageUrls();
   _glMigratePhaseD();
+  // Other members' published photos (shared projects) — feed the map pins.
+  phLoadShared().then(()=>{
+    if((window._phShared||[]).length && typeof mapRenderPhotoPins === 'function') mapRenderPhotoPins();
+  }).catch(()=>{});
 }
 
 // ── Reset day window and re-render (called from showPage) ──
@@ -666,6 +783,10 @@ window.phCloseLightbox = phCloseLightbox;
 window.phLbNext = phLbNext;
 window.phLbPrev = phLbPrev;
 window.phSaveCaption = phSaveCaption;
+window.phShareCurrent = phShareCurrent;
+window.phSetPublished = phSetPublished;
+window.phLoadShared = phLoadShared;
+window._phById = _phById;
 window.phConfirmDelete = phConfirmDelete;
 window.phUndoDelete = phUndoDelete;
 window._phToggleTrash = _phToggleTrash;

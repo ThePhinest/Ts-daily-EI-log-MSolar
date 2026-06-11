@@ -443,7 +443,11 @@ function mapRenderPhotoPins(){
   const toDate   = document.getElementById('map-pin-to')?.value || '';
 
   const pid = (typeof _activeProjectId === 'function') ? _activeProjectId() : 'default';
-  const photos = (window._phPhotos || []).filter(p => {
+  // Own library + other members' published photos (project mirror), deduped by id.
+  const ownIds = new Set((window._phPhotos||[]).map(p => p.id));
+  const pool = (window._phPhotos || []).concat(
+    (window._phShared || []).filter(s => !ownIds.has(s.id)));
+  const photos = pool.filter(p => {
     if(!p.lat || !p.lng) return false;
     if(pid && p.projectId !== pid) return false;
     if(_mapPinFilter === 'today') return p.date === today;
@@ -558,34 +562,81 @@ async function mapRenderFieldMarkers(){
   _mapFieldMarkersData = [];
   if(!db || !_fbReady) return;
   const projectName = (JSON.parse(localStorage.getItem('msf_projectconfig')||'{}').projectName) || '';
+  const _fmAdd = (id, m, popupHtml) => {
+    const el = document.createElement('div');
+    el.textContent = m.emoji;
+    el.style.cssText = 'font-size:26px;cursor:pointer;filter:drop-shadow(0 2px 4px rgba(0,0,0,.6));line-height:1;width:30px;height:30px;text-align:center;transform-origin:bottom center;';
+    el.dataset.markerId = id;
+    const popup = new mapboxgl.Popup({ offset:20, maxWidth:'200px', closeButton:true, className:'gl-field-popup' })
+      .setHTML(popupHtml);
+    const marker = new mapboxgl.Marker({ element:el, anchor:'bottom' })
+      .setLngLat([m.lng, m.lat]).setPopup(popup).addTo(_mapInstance);
+    if(!_fieldMarkersVisible || _hiddenMarkerIds.has(id)) marker.getElement().style.display='none';
+    _mapFieldMarkers.push(marker);
+  };
+  const ownIds = new Set();
   try {
     const snap = await _udb().collection('fieldMarkers').get();
     snap.forEach(doc => {
       const m = doc.data();
       if(m.scope !== 'global' && m.projectName !== projectName) return;
+      ownIds.add(doc.id);
       _mapFieldMarkersData.push({...m, id: doc.id});
-      const el = document.createElement('div');
-      el.textContent = m.emoji;
-      el.style.cssText = 'font-size:26px;cursor:pointer;filter:drop-shadow(0 2px 4px rgba(0,0,0,.6));line-height:1;width:30px;height:30px;text-align:center;transform-origin:bottom center;';
-      el.dataset.markerId = doc.id;
-      const popup = new mapboxgl.Popup({ offset:20, maxWidth:'200px', closeButton:true, className:'gl-field-popup' })
-        .setHTML(`<div style="font-family:monospace;font-size:11px;color:#e8e8e8">
+      // Share-now: project-scoped markers publish a mirror copy to project space.
+      const shareBtn = m.scope !== 'global'
+        ? `<button onclick="mapShareFieldMarker('${doc.id}')" style="background:${m.published?'rgba(79,209,197,.18)':'#333'};color:${m.published?'#4FD1C5':'#fff'};border:${m.published?'1px solid #4FD1C5':'none'};padding:3px 8px;border-radius:4px;font-size:10px;cursor:pointer;">${m.published?'🌐 Shared ✓':'📤 Share'}</button>`
+        : '';
+      _fmAdd(doc.id, m, `<div style="font-family:monospace;font-size:11px;color:#e8e8e8">
           <div style="font-size:22px;margin-bottom:4px">${m.emoji}</div>
           ${m.label ? `<div style="font-weight:600;margin-bottom:4px">${m.label}</div>` : ''}
           <div style="color:#9fb0b2;margin-bottom:6px">${m.scope==='global'?'🌐 Global':'📌 This Project'}</div>
-          <div style="display:flex;gap:6px">
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
             <button onclick="mapDeleteFieldMarker('${doc.id}')" style="background:#c00;color:#fff;border:none;padding:3px 8px;border-radius:4px;font-size:10px;cursor:pointer;">Delete</button>
             <button onclick="mapHideFieldMarker('${doc.id}')" style="background:#333;color:#fff;border:none;padding:3px 8px;border-radius:4px;font-size:10px;cursor:pointer;">Hide</button>
+            ${shareBtn}
           </div>
         </div>`);
-      const marker = new mapboxgl.Marker({ element:el, anchor:'bottom' })
-        .setLngLat([m.lng, m.lat]).setPopup(popup).addTo(_mapInstance);
-      if(!_fieldMarkersVisible || _hiddenMarkerIds.has(doc.id)) marker.getElement().style.display='none';
-      _mapFieldMarkers.push(marker);
     });
   } catch(e){ console.error('Render field markers failed:', e); }
+  // Other members' published markers (project mirror) — read-only, hideable locally.
+  try {
+    const pid = (typeof _activeProjectId === 'function') ? _activeProjectId() : 'default';
+    if(pid && pid !== 'default' && window._currentUser){
+      const ssnap = await db.collection('projects').doc(pid).collection('fieldMarkers')
+        .where('published','==',true).get();
+      ssnap.forEach(doc => {
+        if(ownIds.has(doc.id)) return;
+        const m = doc.data();
+        if(m.ownerUid === _currentUser.uid) return;
+        _mapFieldMarkersData.push({...m, id: doc.id, shared: true});
+        _fmAdd(doc.id, m, `<div style="font-family:monospace;font-size:11px;color:#e8e8e8">
+            <div style="font-size:22px;margin-bottom:4px">${m.emoji}</div>
+            ${m.label ? `<div style="font-weight:600;margin-bottom:4px">${m.label}</div>` : ''}
+            <div style="color:#4FD1C5;margin-bottom:6px">🌐 Shared by ${(m.ownerName||'a project member').replace(/[<>&"]/g,'')}</div>
+            <button onclick="mapHideFieldMarker('${doc.id}')" style="background:#333;color:#fff;border:none;padding:3px 8px;border-radius:4px;font-size:10px;cursor:pointer;">Hide</button>
+          </div>`);
+      });
+    }
+  } catch(e){ /* not a member of a shared project */ }
   mapUpdateFieldMarkerList();
 }
+
+// Share-now / Unshare a field marker (own, project-scoped). Uses the same
+// publish-mirror helper the submit-day sheet uses.
+async function mapShareFieldMarker(id){
+  const m = _mapFieldMarkersData.find(x => x.id === id);
+  if(!m || typeof glSetMarkersPublished !== 'function') return;
+  const pid = (typeof _activeProjectId === 'function') ? _activeProjectId() : 'default';
+  if(!pid || pid === 'default') return;
+  const target = !m.published;
+  await glSetMarkersPublished({ [id]: m }, [id], target, pid);
+  if(typeof showCloudBanner === 'function'){
+    showCloudBanner(target ? '✓ Marker shared — project members can see it now.'
+      : 'Marker unshared — it\'s private again.');
+  }
+  mapRenderFieldMarkers();
+}
+window.mapShareFieldMarker = mapShareFieldMarker;
 
 function mapHideFieldMarker(id){
   _hiddenMarkerIds.add(id);
@@ -618,8 +669,16 @@ function mapToggleFieldMarkers(){
 
 async function mapDeleteFieldMarker(id){
   if(!db || !_fbReady) return;
+  const m = _mapFieldMarkersData.find(x => x.id === id);
   try { await _udb().collection('fieldMarkers').doc(id).delete(); }
   catch(e){ console.error('Delete marker failed:', e); }
+  // Published marker: pull the project mirror too (members must not keep it).
+  if(m && m.published){
+    const pid = (typeof _activeProjectId === 'function') ? _activeProjectId() : 'default';
+    if(pid && pid !== 'default'){
+      db.collection('projects').doc(pid).collection('fieldMarkers').doc(id).delete().catch(()=>{});
+    }
+  }
   mapRenderFieldMarkers();
 }
 
@@ -631,7 +690,7 @@ function mapUpdateFieldMarkerList(){
   _mapFieldMarkersData.forEach(m => {
     const row = document.createElement('div');
     row.style.cssText = 'display:flex;align-items:center;gap:6px;padding:5px 8px;background:var(--s1);border-radius:6px;margin-bottom:4px;font-family:var(--mono);font-size:11px;color:var(--text);';
-    row.innerHTML = `<span style="font-size:16px">${m.emoji}</span><span style="flex:1">${m.label||m.emoji}</span><span style="color:var(--muted)">${m.scope==='global'?'🌐':'📌'}</span>`;
+    row.innerHTML = `<span style="font-size:16px">${m.emoji}</span><span style="flex:1">${m.label||m.emoji}</span><span style="color:var(--muted)" title="${m.shared?'Shared by a project member':(m.scope==='global'?'Global':'This project')}">${m.shared?'👥':(m.scope==='global'?'🌐':'📌')}</span>`;
     list.appendChild(row);
   });
 }
@@ -814,7 +873,8 @@ function kmlSaveLayers(){
   }));
   try { localStorage.setItem(_kmlStorageKey(), JSON.stringify(data)); } catch {}
   if(db && _fbReady){
-    _projData(pid).collection('kml').doc('layers')
+    // Personal copy (per-layer visibility = view state) — user subtree, never shared.
+    _projDataUser(pid).collection('kml').doc('layers')
       .set({ data, _ts: Date.now() })
       .catch(e => console.warn('kmlSaveLayers:', e.message));
     // Shared-project mirror — KML layers are live-visible reference data for
@@ -1012,7 +1072,7 @@ async function kmlLoadLayers(){
   const pid = (typeof _activeProjectId === 'function') ? _activeProjectId() : 'default';
   if(db && _fbReady){
     try {
-      const doc = await _projData(pid).collection('kml').doc('layers').get();
+      const doc = await _projDataUser(pid).collection('kml').doc('layers').get();
       if(doc.exists) data = doc.data().data;
     } catch(e){ console.warn('kmlLoadLayers cloud:', e.message); }
     // Shared-project layer set (live reference data, member-readable). The
@@ -3755,6 +3815,12 @@ function _showTrackerEntryPopup(lngLat,props){
     </div>
   </div>`:'';
   const labelOn=entry?.showDateLabel||false;
+  // Share-now (submission-sharing-model): owners publish a single record
+  // immediately; published records can be unshared (revocation is real).
+  const _mineEntry=entry&&(!entry.ownerUid||(window._currentUser&&entry.ownerUid===_currentUser.uid));
+  const _isPub=!!entry?.published;
+  const shareBtn=_mineEntry?`<button onclick="mapShareTrackerEntry('${props.id}')" style="${_TRP_BTN}grid-column:1/-1;background:${_isPub?'rgba(79,209,197,0.15)':'var(--s2,#1a2a38)'};border:1px solid ${_isPub?'#4FD1C5':'var(--border,#334)'};color:${_isPub?'#4FD1C5':'var(--muted,#888)'}" title="${_isPub?'Visible to project members — tap to unshare':'Publish this drawing to project members now'}">${_isPub?'🌐 Shared with project ✓':'📤 Share with project'}</button>`:'';
+  const sharedByNote=(!_mineEntry&&entry)?`<div style="font-size:10px;color:#4FD1C5;margin-top:4px;border-top:1px solid rgba(255,255,255,.08);padding-top:4px">🌐 Shared by a project member</div>`:'';
   // Category identity = the multicolor state-ramp chip (same as the tracker log),
   // not a single dot. Falls back to the entry's state color for no-category drawings.
   const _dotFallback=(props.stateColor&&/^#[0-9A-Fa-f]{6}$/.test(props.stateColor))?props.stateColor:color;
@@ -3774,6 +3840,7 @@ function _showTrackerEntryPopup(lngLat,props){
     ${badgeRow}
     ${photoStrip}
     ${entry?.parentId?`<div style="font-size:10px;color:#a0b8c8;margin-top:4px;border-top:1px solid rgba(255,255,255,.08);padding-top:4px">📍 Linked to planned area</div>`:''}
+    ${sharedByNote}
     ${entry?`<div style="margin-top:8px">
       <button onclick="mapActivatePlannedEntry('${props.id}')" style="${_TRP_BTN}padding:11px 4px;font-size:12px;background:rgba(201,168,76,0.22);border:1px solid var(--amber,#C9A84C);color:var(--amber,#C9A84C);font-weight:700" title="${entry?.entryType==='planned'?'Draw overlays on this plan':'Stack the next state on this layer'}">📍 Activate</button>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px">
@@ -3781,6 +3848,7 @@ function _showTrackerEntryPopup(lngLat,props){
         <button onclick="mapShowCategoryLegend('${props.categoryId}')" style="${_TRP_BTN}background:var(--s2,#1a2a38);border:1px solid var(--border,#334);color:var(--muted,#888)" title="Show this category's color key on the map (for screenshots)">🏷️ Legend</button>
         <button onclick="mapOpenCategoryFromPopup('${props.categoryId}')" style="${_TRP_BTN}background:var(--s2,#1a2a38);border:1px solid var(--border,#334);color:var(--muted,#888)" title="Category settings">⚙ Category</button>
         <button onclick="mapCaptureForEntry('${props.id}')" style="${_TRP_BTN}background:var(--s2,#1a2a38);border:1px solid var(--border,#334);color:var(--muted,#888)" title="Capture map view as photo">📷 Capture</button>
+        ${shareBtn}
       </div>
     </div>`:''}
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px">
@@ -3791,6 +3859,25 @@ function _showTrackerEntryPopup(lngLat,props){
   _trackerPopup=new mapboxgl.Popup({offset:14,maxWidth:'250px',closeButton:true,closeOnClick:false,className:'gl-tracker-popup'})
     .setLngLat(lngLat).setHTML(html).addTo(_mapInstance);
 }
+
+// Share-now / Unshare a single tracker entry from its popup.
+async function mapShareTrackerEntry(id){
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const e=(typeof trGetEntry==='function')?trGetEntry(id,pid):null;
+  if(!e||typeof trSetPublished!=='function') return;
+  if(e.published){
+    _confirmModal('Stop sharing this drawing? Project members lose access to it on their next refresh. Your record is untouched.',async function(){
+      await trSetPublished([id],false,pid);
+      if(_trackerPopup){_trackerPopup.remove();_trackerPopup=null;}
+      if(typeof showCloudBanner==='function') showCloudBanner('Drawing unshared — it\'s private again.');
+    },'Unshare drawing','Unshare');
+  } else {
+    await trSetPublished([id],true,pid);
+    if(_trackerPopup){_trackerPopup.remove();_trackerPopup=null;}
+    if(typeof showCloudBanner==='function') showCloudBanner('✓ Drawing shared — project members can see it now.');
+  }
+}
+window.mapShareTrackerEntry=mapShareTrackerEntry;
 
 // Toggle the collapsible photo strip inside a tracker entry popup.
 function mapTogglePopupPhotos(hdr){

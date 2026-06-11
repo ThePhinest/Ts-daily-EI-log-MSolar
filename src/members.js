@@ -1,12 +1,14 @@
 // ═══════════════════════════════════════════
-// SHARED PROJECTS — membership, invites, members UI (Phase 4.5 chunk 1)
+// SHARED PROJECTS — membership, invites, members UI, publish flow (Phase 4.5)
 //
 // The shared world lives at projects/{pid} (meta + members + invites-by-token
-// at top-level /invites). This module owns every write to it. Work-product
-// collections still live at users/{uid}/projects/{pid}/... (see _projData in
-// db.js) — the publish-gated data flip is the next chunk; this chunk makes
-// membership real: create/backfill shared project docs, mint + accept invites,
-// render the members card.
+// at top-level /invites). This module owns membership (create/backfill shared
+// project docs, mint + accept invites, members card) and the PUBLISH flow:
+// work product (trackerEntries/trackerCategories) lives at the shared root
+// since the 2026-06-11 _projData flip (db.js) — publish-gated per record;
+// photos + field markers publish as mirror copies ("explicit publish, keep
+// your original"); the submit-day review sheet batch-publishes a day and
+// posts the close-day submission snapshot.
 //
 // Design contract: submission-sharing-model.md + multi-tenant-data-model.md.
 // Rules contract: firestore.rules (proven by tests/rules — npm run test:rules).
@@ -117,6 +119,20 @@ function _glCopyFallback(text, done) {
   } catch (e) { /* copy unavailable — code is visible to transcribe */ }
 }
 
+// ── My role on a project, synchronously (no Firestore round-trip).
+// Shared projects carry role on the known-projects entry (stamped at accept);
+// anything not shared is my own project — I'm its lead. Used by write guards
+// (the rules are the real gate; this keeps local caches from diverging).
+function glMyRoleFor(pid) {
+  try {
+    if (typeof knownProjectsGet === 'function') {
+      const p = knownProjectsGet().find(x => x.projectId === pid);
+      if (p && p.shared) return p.role || 'reviewer';
+    }
+  } catch (e) { /* fall through to lead */ }
+  return 'lead';
+}
+
 // ═══════════════════════════════════════════
 // SHARED PROJECT CREATE + BACKFILL
 // ═══════════════════════════════════════════
@@ -167,6 +183,93 @@ async function glBackfillSharedProjects() {
       console.warn('GroundLog: shared backfill failed for', p.projectName, '—', e.message);
     }
   }
+}
+
+// ═══════════════════════════════════════════
+// WORK-PRODUCT FLIP MIGRATION (2026-06-11)
+// ═══════════════════════════════════════════
+// One-time per project: copy the old per-user mirror
+// users/{uid}/projects/{pid}/{trackerEntries,trackerCategories,kml} forward to
+// the shared root projects/{pid}/... that _projData now points at. COPY ONLY —
+// the old docs stay untouched as a frozen backup. Everything lands stamped
+// ownerUid + published:false (fails safe: members see nothing until published).
+// Runs after glBackfillSharedProjects (membership authorizes the writes).
+// Returns the number of docs copied so the boot path can refresh the tracker.
+async function _glMigrateWorkProductFlip() {
+  if (!_sdb() || typeof knownProjectsGet !== 'function') return 0;
+  const uid = _currentUser.uid;
+  let copiedTotal = 0;
+  for (const p of knownProjectsGet()) {
+    const pid = p.projectId;
+    if (!pid || pid === 'default') continue;
+    if (p.shared && p.role === 'reviewer') continue;   // no write caps, nothing of ours to move
+    const key = 'gl_flip_workproduct_' + pid;
+    if (localStorage.getItem(key)) continue;
+    try {
+      const oldRoot = _udb().collection('projects').doc(pid);
+      const newRoot = db.collection('projects').doc(pid);
+      let batch = db.batch(), n = 0;
+      const queue = async (ref, payload) => {
+        batch.set(ref, payload);
+        copiedTotal++;
+        if (++n >= 400) { await batch.commit(); batch = db.batch(); n = 0; }
+      };
+
+      // Tracker entries — geometry is already a JSON string in Firestore docs.
+      const [oldE, ownE, pubE] = await Promise.all([
+        oldRoot.collection('trackerEntries').get(),
+        newRoot.collection('trackerEntries').where('ownerUid', '==', uid).get(),
+        newRoot.collection('trackerEntries').where('published', '==', true).get()
+      ]);
+      const have = new Map();
+      [ownE, pubE].forEach(s => s.forEach(d => {
+        const x = d.data();
+        const prev = have.get(d.id);
+        if (!prev || (x.updatedAt || 0) >= (prev.updatedAt || 0)) have.set(d.id, x);
+      }));
+      for (const d of oldE.docs) {
+        const e = d.data();
+        const cur = have.get(d.id);
+        if (cur && (cur.updatedAt || 0) >= (e.updatedAt || 0)) continue;
+        if (!e.ownerUid) e.ownerUid = e.createdBy || uid;
+        if (e.ownerUid !== uid) continue;                // rules: can only create own
+        if (e.published === undefined) e.published = false;
+        await queue(newRoot.collection('trackerEntries').doc(d.id), e);
+      }
+
+      // Categories — live reference data; most already mirrored by chunk 2a.
+      const [oldC, newC] = await Promise.all([
+        oldRoot.collection('trackerCategories').get(),
+        newRoot.collection('trackerCategories').get()
+      ]);
+      const haveCats = new Set(newC.docs.map(d => d.id));
+      for (const d of oldC.docs) {
+        if (haveCats.has(d.id)) continue;
+        const c = d.data();
+        if (!c.ownerUid) c.ownerUid = uid;
+        if (c.ownerUid !== uid) continue;
+        await queue(newRoot.collection('trackerCategories').doc(d.id), c);
+      }
+
+      // KML layer list — shared doc already canonical if kmlSaveLayers ran since 2a.
+      const sharedKml = await newRoot.collection('kmlLayers').doc('layers').get();
+      if (!sharedKml.exists) {
+        const oldKml = await oldRoot.collection('kml').doc('layers').get();
+        if (oldKml.exists && Array.isArray(oldKml.data().data) && oldKml.data().data.length) {
+          await queue(newRoot.collection('kmlLayers').doc('layers'),
+            { data: oldKml.data().data, ownerUid: uid, _ts: Date.now() });
+        }
+      }
+
+      if (n) await batch.commit();
+      localStorage.setItem(key, '1');
+      if (copiedTotal) console.log('GroundLog flip: migrated work product for', p.projectName || pid);
+    } catch (e) {
+      console.warn('GroundLog flip migration failed for', pid, '—', e.message);
+      // No localStorage stamp on failure — retried next boot.
+    }
+  }
+  return copiedTotal;
 }
 
 // ═══════════════════════════════════════════
@@ -732,7 +835,11 @@ function _glSubmitSay(msg, bad) {
   setTimeout(() => { st.style.opacity = '0'; }, 4500);
 }
 
-// Entry point — confirm first (submitting is the day's integrity watermark).
+// Entry point — the submit-day REVIEW SHEET (submission-sharing-model §publish
+// mechanics): log summary + that day's unpublished work product, all checked by
+// default; uncheck to hold back. Held items stay private and reappear in the
+// next submit (or Share-now later). Earlier unpublished items ride along as a
+// collapsed, default-unchecked group — that's also the bulk-publish-history lever.
 function glSubmitDay() {
   const d = _sdb();
   if (!d) return _glSubmitSay('Sign in first.', true);
@@ -741,22 +848,160 @@ function glSubmitDay() {
   const payload = glBuildSubmissionPayload();
   if (!payload) return _glSubmitSay('Nothing to submit.', true);
   const date = payload.fields.reportDate || new Date().toLocaleDateString('en-CA');
-  const projName = (typeof loadProjectConfig === 'function' ? loadProjectConfig().projectName : '') || 'this project';
-  _confirmModal(
-    'Submit the ' + _glSubFmtDate(date) + ' log to <b>' + _glEsc(projName) + '</b>?<br><br>'
-    + 'Everyone on the project sees this snapshot. Your personal section is never included. '
-    + 'You can keep editing afterwards — changes stay yours until you resubmit.',
-    function() { _glDoSubmitDay(payload, date); },
-    'Submit day', 'Submit'
-  );
-  // Submit is an affirmative act, not a destructive one — teal, not red.
-  setTimeout(() => {
-    const b = document.getElementById('_mok');
-    if (b) { b.style.background = 'var(--s3)'; b.style.borderColor = 'var(--s3)'; }
-  }, 0);
+  _glShowSubmitReview(payload, date, pid)
+    .catch(e => _glSubmitSay('Could not open the review sheet: ' + e.message, true));
 }
 
-async function _glDoSubmitDay(payload, date) {
+async function _glShowSubmitReview(payload, date, pid) {
+  const projName = (typeof loadProjectConfig === 'function' ? loadProjectConfig().projectName : '') || 'this project';
+  // Unpublished work product, this project. Entries/photos come from the live
+  // local caches; markers from the user's own collection (small).
+  const entries = (typeof trGetEntriesForProject === 'function' ? trGetEntriesForProject(pid) : [])
+    .filter(e => !e.published);
+  const photos = (window._phPhotos || []).filter(p => p.projectId === pid && !p.published);
+  const markersById = {};
+  let markers = [];
+  try {
+    // Markers are scoped by the RAW config projectName (matching
+    // mapRenderFieldMarkers) — not the 'this project' display fallback.
+    const cfgName = (typeof loadProjectConfig === 'function' ? loadProjectConfig().projectName : '') || '';
+    const snap = await _udb().collection('fieldMarkers').get();
+    snap.forEach(m => {
+      const v = Object.assign({ id: m.id }, m.data());
+      if (v.scope !== 'global' && cfgName && v.projectName === cfgName && !v.published) {
+        markers.push(v);
+        markersById[m.id] = v;
+      }
+    });
+  } catch (e) { /* markers are optional in the sheet */ }
+
+  const mDate = m => new Date(m.createdAt || 0).toLocaleDateString('en-CA');
+  const row = (type, id, label, sub, checked) =>
+    `<label style="display:flex;align-items:center;gap:10px;padding:7px 2px;border-bottom:1px solid rgba(255,255,255,.07);cursor:pointer">
+      <input type="checkbox" data-type="${type}" data-id="${_glEsc(id)}"${checked ? ' checked' : ''} style="width:17px;height:17px;accent-color:var(--amber,#C9A84C);flex-shrink:0">
+      <span style="flex:1;min-width:0;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${label}</span>
+      ${sub ? `<span style="font-size:10.5px;color:var(--muted2);flex-shrink:0">${sub}</span>` : ''}
+    </label>`;
+  const entryRow = (e, c) => row('entry', e.id,
+    '✏️ ' + _glEsc(e.categoryName || 'Drawing') + (e.entryType === 'planned' ? ' · plan' : ''), _glEsc(e.date || ''), c);
+  const photoRow = (p, c) => row('photo', p.id, '📷 ' + _glEsc(p.caption || p.filename || 'Photo'), _glEsc(p.date || ''), c);
+  const markerRow = (m, c) => row('marker', m.id, (m.emoji || '📍') + ' ' + _glEsc(m.label || 'Field marker'), _glEsc(mDate(m)), c);
+
+  const dayE = entries.filter(e => e.date === date), preE = entries.filter(e => e.date !== date);
+  const dayP = photos.filter(p => p.date === date),  preP = photos.filter(p => p.date !== date);
+  const dayM = markers.filter(m => mDate(m) === date), preM = markers.filter(m => mDate(m) !== date);
+  const dayCount = dayE.length + dayP.length + dayM.length;
+  const preCount = preE.length + preP.length + preM.length;
+
+  document.getElementById('_gl-review-sheet')?.remove();
+  const ov = document.createElement('div');
+  ov.className = 'proj-switcher-overlay';
+  ov.id = '_gl-review-sheet';
+  ov.style.zIndex = '9080';
+  ov.onclick = e => { if (e.target === ov) ov.remove(); };
+  ov.innerHTML = `<div class="proj-switcher-sheet" style="max-height:88vh">
+    <div class="proj-switcher-header">
+      <span class="proj-switcher-title">Submit ${_glEsc(_glSubFmtDate(date))}</span>
+      <button class="proj-switcher-close" id="_gl-rev-close">✕</button>
+    </div>
+    <div class="proj-row-meta" style="margin:-8px 0 12px">to ${_glEsc(projName)} — everything checked below becomes visible to project members. Your personal section is never included.</div>
+    <div style="display:flex;align-items:center;gap:10px;padding:8px 2px;border-bottom:1px solid rgba(255,255,255,.12)">
+      <span style="width:17px;text-align:center;color:var(--s3);flex-shrink:0">✓</span>
+      <span style="flex:1;font-size:12px;font-weight:700">📋 Daily log snapshot</span>
+      <span style="font-size:10.5px;color:var(--muted2)">always included</span>
+    </div>
+    ${dayCount ? `<div class="gl-inv-label" style="margin-top:12px">This day's items (${dayCount})</div>
+      ${dayE.map(e => entryRow(e, true)).join('')}${dayP.map(p => photoRow(p, true)).join('')}${dayM.map(m => markerRow(m, true)).join('')}`
+    : '<div class="proj-row-meta" style="margin-top:12px">No unpublished drawings, photos or markers for this day.</div>'}
+    ${preCount ? `<div style="margin-top:12px;border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:8px 10px">
+      <div style="display:flex;align-items:center;gap:10px;cursor:pointer;user-select:none">
+        <input type="checkbox" id="_gl-rev-preall" style="width:17px;height:17px;accent-color:var(--amber,#C9A84C);flex-shrink:0">
+        <span id="_gl-rev-pretoggle" style="flex:1;font-size:12px">Earlier unpublished items (${preCount}) <span style="color:var(--muted2)">— from other days; check to publish too</span></span>
+        <span id="_gl-rev-prechev" style="color:var(--muted2)">▸</span>
+      </div>
+      <div id="_gl-rev-prelist" style="display:none;margin-top:6px">
+        ${preE.map(e => entryRow(e, false)).join('')}${preP.map(p => photoRow(p, false)).join('')}${preM.map(m => markerRow(m, false)).join('')}
+      </div>
+    </div>` : ''}
+    <div class="modal-btns" style="margin-top:16px">
+      <button class="modal-cancel" id="_gl-rev-cancel">Cancel</button>
+      <button class="modal-confirm" id="_gl-rev-submit" style="background:var(--s3);border-color:var(--s3)">Submit day</button>
+    </div>
+    <div class="proj-row-meta" style="margin-top:10px">Unchecked items stay private — they'll be offered again next submit, or share them any time from the map. You can keep editing after submitting; reviewers see a resubmit only when you post one.</div>
+  </div>`;
+  document.body.appendChild(ov);
+  ov.querySelector('#_gl-rev-close').onclick = () => ov.remove();
+  ov.querySelector('#_gl-rev-cancel').onclick = () => ov.remove();
+  const preAll = ov.querySelector('#_gl-rev-preall');
+  const preToggle = ov.querySelector('#_gl-rev-pretoggle');
+  if (preToggle) {
+    const flip = () => {
+      const list = ov.querySelector('#_gl-rev-prelist');
+      const open = list.style.display === 'none';
+      list.style.display = open ? '' : 'none';
+      ov.querySelector('#_gl-rev-prechev').textContent = open ? '▾' : '▸';
+    };
+    preToggle.onclick = flip;
+    ov.querySelector('#_gl-rev-prechev').onclick = flip;
+    preAll.onchange = () => {
+      ov.querySelectorAll('#_gl-rev-prelist input[type=checkbox]').forEach(cb => { cb.checked = preAll.checked; });
+    };
+  }
+  ov.querySelector('#_gl-rev-submit').onclick = () => _glReviewSubmit(ov, payload, date, pid, markersById);
+}
+
+// Publish everything checked, then post the close-day snapshot.
+async function _glReviewSubmit(ov, payload, date, pid, markersById) {
+  const btn = ov.querySelector('#_gl-rev-submit');
+  btn.disabled = true; btn.textContent = 'Submitting…';
+  const picks = { entry: [], photo: [], marker: [] };
+  ov.querySelectorAll('input[type=checkbox][data-type]').forEach(cb => {
+    if (cb.checked && picks[cb.dataset.type]) picks[cb.dataset.type].push(cb.dataset.id);
+  });
+  let published = 0;
+  try {
+    if (picks.entry.length && typeof trSetPublished === 'function')
+      published += await trSetPublished(picks.entry, true, pid);
+    if (picks.photo.length && typeof phSetPublished === 'function')
+      published += await phSetPublished(picks.photo, true, pid);
+    if (picks.marker.length)
+      published += await glSetMarkersPublished(markersById, picks.marker, true, pid);
+  } catch (e) { console.warn('submit-day publish batch:', e.message); }
+  ov.remove();
+  await _glDoSubmitDay(payload, date, published);
+}
+
+// Publish/unpublish field markers: stamp the user's own doc + maintain the
+// project-space mirror copy (capability model — same as photos).
+async function glSetMarkersPublished(markersById, ids, publish, pid) {
+  const d = _sdb();
+  if (!d || !ids.length) return 0;
+  const now = Date.now();
+  const batch = d.batch();
+  let n = 0;
+  ids.forEach(id => {
+    const m = markersById[id];
+    if (!m) return;
+    batch.set(_udb().collection('fieldMarkers').doc(id),
+      { published: !!publish, publishedAt: publish ? now : null }, { merge: true });
+    const mref = d.collection('projects').doc(pid).collection('fieldMarkers').doc(id);
+    if (publish) {
+      batch.set(mref, {
+        emoji: m.emoji || '📍', label: m.label || '', lat: m.lat, lng: m.lng,
+        projectName: m.projectName || '', createdAt: m.createdAt || now,
+        ownerUid: _currentUser.uid, ownerName: _glMyName(),
+        published: true, publishedAt: now
+      });
+    } else {
+      batch.delete(mref);
+    }
+    n++;
+  });
+  if (n) await batch.commit().catch(e => console.warn('glSetMarkersPublished:', e.message));
+  return n;
+}
+
+async function _glDoSubmitDay(payload, date, publishedCount) {
   const d = _sdb();
   if (!d) return;
   const pid = _activeProjectId();
@@ -777,9 +1022,10 @@ async function _glDoSubmitDay(payload, date) {
       projectName: (typeof loadProjectConfig === 'function' ? (loadProjectConfig().projectName || '') : ''),
       payload
     });
-    say(version > 1 ? ('✓ Resubmitted — v' + version + ' posted') : '✓ Day submitted to the project');
-    showCloudBanner('✓ ' + date + ' submitted to the project' + (version > 1 ? ' (v' + version + ')' : '') + '.');
-    console.log('GroundLog submissions: posted', date, 'v' + version);
+    const pubNote = publishedCount ? (' · ' + publishedCount + ' item' + (publishedCount > 1 ? 's' : '') + ' published') : '';
+    say((version > 1 ? ('✓ Resubmitted — v' + version + ' posted') : '✓ Day submitted to the project') + pubNote);
+    showCloudBanner('✓ ' + date + ' submitted to the project' + (version > 1 ? ' (v' + version + ')' : '') + pubNote + '.');
+    console.log('GroundLog submissions: posted', date, 'v' + version, publishedCount ? ('+' + publishedCount + ' published') : '');
   } catch (e) {
     say(e.code === 'permission-denied'
       ? 'Your role on this project is view-only — nothing to submit.'
@@ -956,6 +1202,9 @@ async function glHostMapToken() {
 
 // ── Window exposure ──
 window.GL_ROLES = GL_ROLES;
+window.glMyRoleFor = glMyRoleFor;
+window._glMigrateWorkProductFlip = _glMigrateWorkProductFlip;
+window.glSetMarkersPublished = glSetMarkersPublished;
 window.glEnsureSharedProject = glEnsureSharedProject;
 window.glBackfillSharedProjects = glBackfillSharedProjects;
 window.glCreateInvite = glCreateInvite;

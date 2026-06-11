@@ -140,6 +140,48 @@ describe('field (Boots) — works in the project, own records only', () => {
   });
 });
 
+describe('publish mirrors — photos + field markers (explicit publish, keep your original)', () => {
+  beforeEach(async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      const db = ctx.firestore();
+      await setDoc(doc(db, `projects/${PID}/photos/ph-pub`),
+        { ownerUid: 'tim', published: true, storageUrl: 'https://x/token', date: '2026-06-11' });
+      await setDoc(doc(db, `projects/${PID}/fieldMarkers/fm-pub`),
+        { ownerUid: 'tim', published: true, emoji: '⚠️', lat: 1, lng: 2 });
+      await setDoc(doc(db, `projects/${PID}/fieldMarkers/fm-draft`),
+        { ownerUid: 'tim', published: false, emoji: '🚧', lat: 1, lng: 2 });
+    });
+  });
+  it('reviewer reads published photo mirror (storageUrl capability rides the doc)', () =>
+    assertSucceeds(getDoc(doc(as('forest'), `projects/${PID}/photos/ph-pub`))));
+  it('reviewer lists published mirrors via constrained query', async () => {
+    await assertSucceeds(getDocs(query(
+      collection(as('forest'), `projects/${PID}/photos`), where('published', '==', true))));
+    await assertSucceeds(getDocs(query(
+      collection(as('forest'), `projects/${PID}/fieldMarkers`), where('published', '==', true))));
+  });
+  it('reviewer cannot read an unpublished marker mirror', () =>
+    assertFails(getDoc(doc(as('forest'), `projects/${PID}/fieldMarkers/fm-draft`))));
+  it('reviewer cannot create or delete mirrors', async () => {
+    await assertFails(setDoc(doc(as('forest'), `projects/${PID}/photos/ph-evil`),
+      { ownerUid: 'forest', published: true }));
+    await assertFails(deleteDoc(doc(as('forest'), `projects/${PID}/photos/ph-pub`)));
+  });
+  it('owner publishes (mirror create, self-attributed) and unshares (mirror delete)', async () => {
+    await assertSucceeds(setDoc(doc(as('tim'), `projects/${PID}/photos/ph-new`),
+      { ownerUid: 'tim', published: true, storageUrl: 'https://x/t2' }));
+    await assertSucceeds(deleteDoc(doc(as('tim'), `projects/${PID}/photos/ph-pub`)));
+    await assertSucceeds(deleteDoc(doc(as('tim'), `projects/${PID}/fieldMarkers/fm-pub`)));
+  });
+  it('owner cannot forge a mirror attributed to someone else', () =>
+    assertFails(setDoc(doc(as('tim'), `projects/${PID}/photos/ph-forged`),
+      { ownerUid: 'boots', published: true })));
+  it('field member cannot delete another member\'s mirror', () =>
+    assertFails(deleteDoc(doc(as('boots'), `projects/${PID}/fieldMarkers/fm-pub`))));
+  it('non-member reads no mirror, even published', () =>
+    assertFails(getDoc(doc(as('stranger'), `projects/${PID}/photos/ph-pub`))));
+});
+
 describe('non-member / unauthenticated — nothing', () => {
   it('non-member reads nothing in the project', async () => {
     await assertFails(getDoc(doc(as('stranger'), `projects/${PID}`)));
