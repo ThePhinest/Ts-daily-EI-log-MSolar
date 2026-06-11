@@ -635,8 +635,11 @@ async function loadProject(projectId, projDataOverride) {
 }
 
 // ── Create a brand-new project ──
-async function createProject(name, location, contractor) {
+// opts.preparedBy — overrides the inherited Prepared By (first-run sheet)
+// opts.landOn:'log' — land on a ready daily log instead of Settings (first-run)
+async function createProject(name, location, contractor, opts) {
   if (!name || !name.trim() || !db || !_fbReady) return;
+  opts = opts || {};
   name = name.trim();
   const activeCfg = loadProjectConfig();
   // Random suffix: ids live in the SHARED projects/{pid} namespace now —
@@ -644,7 +647,7 @@ async function createProject(name, location, contractor) {
   const projectId = 'proj_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
   const projData = {
     projectName:     name,
-    preparedBy:      activeCfg.preparedBy  || '',
+    preparedBy:      opts.preparedBy || activeCfg.preparedBy || '',
     org:             activeCfg.org         || '',
     activePhase:     '',
     contractor:      (contractor || '').trim(),
@@ -675,13 +678,19 @@ async function createProject(name, location, contractor) {
     }
     knownProjectsUpsert(projData, projectId);
     await loadProject(projectId, projData);
-    showPage('config');
-    setTimeout(() => {
-      const s = document.getElementById('cfg-proj');
-      if (s) s.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }, 350);
-    showCloudBanner('↳ New project created — fill in your details in Settings.');
-  } catch(e) { console.warn('createProject failed:', e.message); }
+    if (opts.landOn === 'log') {
+      showPage('log');
+      showCloudBanner('✓ ' + name + ' created — you\'re ready to log.');
+    } else {
+      showPage('config');
+      setTimeout(() => {
+        const s = document.getElementById('cfg-proj');
+        if (s) s.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 350);
+      showCloudBanner('↳ New project created — fill in your details in Settings.');
+    }
+    return projectId;
+  } catch(e) { console.warn('createProject failed:', e.message); throw e; }
 }
 
 // ── Project Switcher Modal ──
@@ -775,7 +784,8 @@ function showProjectSwitcher() {
     const loc = (document.getElementById('_pnf-loc')||{}).value || '';
     const con = (document.getElementById('_pnf-con')||{}).value || '';
     ov.remove();
-    await createProject(name, loc, con);
+    try { await createProject(name, loc, con); }
+    catch(e) { showCloudBanner('⚠ Could not create the project: ' + e.message); }
   };
 }
 

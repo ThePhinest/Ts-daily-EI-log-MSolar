@@ -610,6 +610,24 @@ button:disabled,button[disabled]{opacity:.45;cursor:not-allowed}
 .ph-thumb:hover .ph-thumb-del{display:flex}
 .ph-loading{font-family:var(--mono);font-size:11px;color:var(--muted);text-align:center;padding:20px}
 .ph-empty{font-family:var(--mono);font-size:12px;color:var(--muted);text-align:center;padding:40px 20px}
+/* ── Branded empty states (Polish #9) + Academy ── */
+.gl-empty-state{display:flex;flex-direction:column;align-items:center;text-align:center;padding:34px 22px 30px;gap:6px}
+.gl-es-icon{font-size:34px;opacity:.85;margin-bottom:2px}
+.gl-es-title{font-family:var(--cond);font-weight:700;font-size:16px;letter-spacing:.04em;color:var(--text)}
+.gl-es-body{font-family:var(--mono);font-size:11.5px;line-height:1.65;color:var(--muted);max-width:310px}
+.gl-es-actions{display:flex;flex-direction:column;gap:8px;margin-top:14px;width:100%;max-width:260px}
+.gl-es-btn{height:42px;border-radius:9px;font-family:var(--cond);font-weight:600;font-size:12.5px;letter-spacing:.08em;cursor:pointer;background:var(--s2);border:1px solid var(--border2);color:var(--text)}
+.gl-es-btn-primary{background:var(--amber);border-color:var(--amber);color:#0e0e0e;font-weight:700}
+.gl-es-watch{background:rgba(0,107,117,.14);border-color:rgba(0,107,117,.5);color:#3fa7b0}
+.gl-ac-row{display:flex;align-items:center;gap:12px;background:var(--s2);border:1px solid var(--border2);border-radius:10px;padding:12px 14px;margin-bottom:8px;cursor:pointer;transition:border-color .25s,background .25s}
+.gl-ac-row:active{background:var(--s1)}
+.gl-ac-row.gl-ac-flash{border-color:var(--amber);background:rgba(201,160,39,.07)}
+.gl-ac-icon{font-size:20px;flex-shrink:0}
+.gl-ac-info{flex:1;min-width:0}
+.gl-ac-title{font-family:var(--cond);font-weight:700;font-size:13.5px;letter-spacing:.04em;color:var(--text)}
+.gl-ac-blurb{font-family:var(--mono);font-size:10.5px;line-height:1.5;color:var(--muted);margin-top:2px}
+.gl-ac-badge{flex-shrink:0;font-family:var(--mono);font-size:8.5px;letter-spacing:.1em;color:var(--muted);border:1px solid var(--border2);border-radius:5px;padding:3px 7px}
+.gl-ac-badge-live{color:#3fa7b0;border-color:rgba(0,107,117,.5);background:rgba(0,107,117,.12)}
 .ph-load-more{width:100%;margin-top:8px}
 /* Lightbox */
 .ph-lightbox{position:fixed;inset:0;z-index:7000;background:rgba(0,0,0,.92);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px}
@@ -1064,6 +1082,10 @@ body.is-native select { font-size: 16px !important; }
         <span class="more-tile-icon">🤝</span>
         <span class="more-tile-label">Project Space</span>
       </div>
+      <div class="more-tile" onclick="showPage('academy');closeMoreMenu()">
+        <span class="more-tile-icon">🎓</span>
+        <span class="more-tile-label">Academy</span>
+      </div>
       <div class="more-tile" onclick="showPage('config');closeMoreMenu()">
         <span class="more-tile-icon">⚙️</span>
         <span class="more-tile-label">Settings</span>
@@ -1408,7 +1430,29 @@ body.is-native select { font-size: 16px !important; }
           </div>
         </div>
 
-        <!-- Slide 10: Boots to Boardroom -->
+        <!-- Slide 10: GroundLog Academy -->
+        <div class="ob-slide ob-slide-feature">
+          <div class="ob-preview-card"><div class="ob-preview-inner">
+            <div style="display:flex;flex-direction:column;height:100%;background:#1a1a1a">
+              <div style="background:#141414;border-bottom:2px solid #C9A027;padding:9px 14px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0"><div style="display:flex;align-items:center;gap:9px"><span style="font-size:18px">🎓</span><div><div style="display:flex;align-items:baseline;letter-spacing:1.5px"><span style="color:#e8e2d8;font-weight:200;font-size:10px;letter-spacing:3px">GROUND</span><span style="color:#C9A027;font-size:15px;font-weight:600;padding:0 3px 0 2px">|</span><span style="color:#006B75;font-weight:900;font-size:12px;letter-spacing:1px">LOG</span><span style="color:#C9A027;font-family:monospace;font-size:9px">.io</span></div></div></div><div style="color:rgba(255,255,255,.35);font-size:8px;letter-spacing:1.5px">ACADEMY</div></div>
+              <div style="flex:1;overflow:hidden;padding:11px;display:flex;flex-direction:column;gap:7px">
+                <div style="display:flex;align-items:center;gap:9px;background:#232323;border:1px solid rgba(255,255,255,.07);border-radius:9px;padding:9px 11px"><span style="font-size:14px">🗂️</span><div style="flex:1"><div style="color:rgba(240,237,232,.85);font-size:9px;font-weight:700;letter-spacing:.5px">TRACKER CATEGORIES</div><div style="color:rgba(255,255,255,.3);font-size:7.5px;margin-top:1px">Templates, states, setup</div></div><span style="background:rgba(0,107,117,.12);border:1px solid rgba(0,107,117,.4);border-radius:4px;padding:2px 6px;font-family:monospace;font-size:7.5px;color:#3fa7b0">▶ 2 min</span></div>
+                <div style="display:flex;align-items:center;gap:9px;background:#232323;border:1px solid rgba(255,255,255,.07);border-radius:9px;padding:9px 11px"><span style="font-size:14px">📐</span><div style="flex:1"><div style="color:rgba(240,237,232,.85);font-size:9px;font-weight:700;letter-spacing:.5px">PLANS, LAYERS &amp; STATES</div><div style="color:rgba(255,255,255,.3);font-size:7.5px;margin-top:1px">Lime → fertilizer → seed</div></div><span style="background:rgba(0,107,117,.12);border:1px solid rgba(0,107,117,.4);border-radius:4px;padding:2px 6px;font-family:monospace;font-size:7.5px;color:#3fa7b0">▶ 2 min</span></div>
+                <div style="display:flex;align-items:center;gap:9px;background:#232323;border:1px solid rgba(255,255,255,.07);border-radius:9px;padding:9px 11px"><span style="font-size:14px">📸</span><div style="flex:1"><div style="color:rgba(240,237,232,.85);font-size:9px;font-weight:700;letter-spacing:.5px">PHOTO PINS &amp; LINKING</div><div style="color:rgba(255,255,255,.3);font-size:7.5px;margin-top:1px">Photos on the map</div></div><span style="background:rgba(0,107,117,.12);border:1px solid rgba(0,107,117,.4);border-radius:4px;padding:2px 6px;font-family:monospace;font-size:7.5px;color:#3fa7b0">▶ 2 min</span></div>
+                <div style="display:flex;align-items:center;gap:9px;background:#232323;border:1px solid rgba(255,255,255,.07);border-radius:9px;padding:9px 11px"><span style="font-size:14px">📤</span><div style="flex:1"><div style="color:rgba(240,237,232,.85);font-size:9px;font-weight:700;letter-spacing:.5px">EXPORTS</div><div style="color:rgba(255,255,255,.3);font-size:7.5px;margin-top:1px">XLSX, KML, reports</div></div><span style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.12);border-radius:4px;padding:2px 6px;font-family:monospace;font-size:7.5px;color:rgba(255,255,255,.35)">SOON</span></div>
+                <div style="background:#232323;border:1px solid rgba(0,107,117,.35);border-radius:10px;padding:9px 12px;color:rgba(240,237,232,.55);font-size:8.5px;line-height:1.5">🎓 Short walkthroughs, <span style="color:#C9A027">one task each</span> — find them under <span style="color:#3fa7b0">More → Academy</span> whenever you need a refresher.</div>
+              </div>
+              <div style="display:flex;background:#0e0e0e;border-top:1px solid rgba(255,255,255,.07);flex-shrink:0"><div style="flex:1;display:flex;flex-direction:column;align-items:center;padding:7px 0 8px;gap:3px;color:rgba(255,255,255,.3)"><span style="font-size:17px">📋</span><span style="font-size:7.5px;letter-spacing:.5px">DAILY LOG</span></div><div style="flex:1;display:flex;flex-direction:column;align-items:center;padding:7px 0 8px;gap:3px;color:rgba(255,255,255,.3)"><span style="font-size:17px">📅</span><span style="font-size:7.5px;letter-spacing:.5px">CALENDAR</span></div><div style="flex:1;display:flex;flex-direction:column;align-items:center;padding:7px 0 8px;gap:3px;color:rgba(255,255,255,.3)"><span style="font-size:17px">🗺️</span><span style="font-size:7.5px;letter-spacing:.5px">FIELD MAP</span></div><div style="flex:1;display:flex;flex-direction:column;align-items:center;padding:7px 0 8px;gap:3px;color:#C9A027"><span style="font-size:17px">···</span><span style="font-size:7.5px;font-weight:600;letter-spacing:.5px">MORE</span></div></div>
+            </div>
+          </div></div>
+          <div class="ob-slide-text">
+            <div class="ob-eyebrow">FEATURE 09</div>
+            <div class="ob-slide-title">GROUNDLOG ACADEMY</div>
+            <div class="ob-slide-desc">Learn as you go — <span class="ob-hi-amber">short video walkthroughs</span> for every part of the app, a couple of minutes each, <span class="ob-hi-teal">right where you need them</span>.</div>
+          </div>
+        </div>
+
+        <!-- Slide 11: Boots to Boardroom -->
         <div class="ob-slide ob-slide-feature">
           <div class="ob-preview-card"><div class="ob-preview-inner">
             <div style="display:flex;flex-direction:column;height:100%;background:#1a1a1a">
@@ -1940,7 +1984,16 @@ Anticipated rain — AM weather monitoring expected"></textarea>
 <!-- REPORTS PAGE (placeholder) -->
 <div class="page" id="page-reports"><div class="wrap">
   <div class="card"><div class="card-head"><span class="card-num">📄</span><span class="card-title">Reports</span></div>
-  <div class="card-body" style="color:var(--muted);font-family:var(--mono);font-size:12px;">Dynamic spill reports and other regulatory forms — upload your existing forms or describe the fields you want included, and we'll create the report for you.</div></div>
+  <div class="card-body">
+    <div class="gl-empty-state">
+      <div class="gl-es-icon">📄</div>
+      <div class="gl-es-title">Dynamic reports — coming soon</div>
+      <div class="gl-es-body">Spill reports and other regulatory forms — upload your existing forms or describe the fields you want, and GroundLog builds the report page for you. Today's daily report lives on the Daily Log page.</div>
+      <div class="gl-es-actions">
+        <button class="gl-es-btn gl-es-btn-primary" onclick="showPage('log')">📋 Go to Daily Log</button>
+      </div>
+    </div>
+  </div></div>
 </div></div>
 
 <!-- ══════════════════════════════════
@@ -2344,7 +2397,21 @@ Anticipated rain — AM weather monitoring expected"></textarea>
 <!-- DOCS PAGE (placeholder) -->
 <div class="page" id="page-docs"><div class="wrap">
   <div class="card"><div class="card-head"><span class="card-num">📁</span><span class="card-title">Docs</span></div>
-  <div class="card-body" style="color:var(--muted);font-family:var(--mono);font-size:12px;">Project document library and compliance knowledge base. Upload plans, permits, drawings, and specs to share with collaborators and reference in the field — the foundation for AI-assisted compliance review.</div></div>
+  <div class="card-body">
+    <div class="gl-empty-state">
+      <div class="gl-es-icon">📁</div>
+      <div class="gl-es-title">Document library — coming soon</div>
+      <div class="gl-es-body">Upload plans, permits, drawings, and specs to share with collaborators and reference in the field — the foundation for AI-assisted compliance review.</div>
+    </div>
+  </div></div>
+</div></div>
+
+<!-- ══════════════════════════════════
+     GROUNDLOG ACADEMY
+══════════════════════════════════ -->
+<div class="page" id="page-academy"><div class="wrap">
+  <div class="card"><div class="card-head"><span class="card-num">🎓</span><span class="card-title">GroundLog Academy</span></div>
+  <div class="card-body" id="academy-body"></div></div>
 </div></div>
 
 <!-- PHOTOS PAGE -->
@@ -3405,6 +3472,7 @@ function showPage(name){
   if(name==='compliance'){ clInit(); clAutoDetect(); }
   if(name==='photos'){ phResetAndRender(); }
   if(name==='projectSpace'){ if(typeof glRenderProjectSpacePage==='function') glRenderProjectSpacePage(); }
+  if(name==='academy'){ if(typeof glRenderAcademyPage==='function') glRenderAcademyPage(); }
 }
 
 function showPageBack(name){
@@ -3532,6 +3600,7 @@ var PAGE_REGISTRY = [
   { id:'reports',    label:'Reports',     icon:'📄' },
   { id:'docs',       label:'Docs',        icon:'📁' },
   { id:'projectSpace', label:'Project Space', icon:'🤝' },
+  { id:'academy',    label:'Academy',     icon:'🎓' },
   { id:'config',          label:'Settings',      icon:'⚙'  },
   { id:'aiBranding',      label:'AI & Branding', icon:'✦' },
   { id:'accountSettings', label:'Account',        icon:'👤' },

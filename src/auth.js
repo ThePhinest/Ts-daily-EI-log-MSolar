@@ -4,7 +4,7 @@ import * as Sentry from '@sentry/capacitor'
 
 // ── Module-level state (onboarding carousel) ──
 let _obSlideIndex = 0;
-let _obTotalSlides = 10;
+let _obTotalSlides = 11;
 
 // ═══════════════════════════════════════════
 // ONBOARDING
@@ -17,6 +17,9 @@ async function obCheck() {
       const doc = await udb.collection('profile').doc('onboarding').get();
       if (doc.exists && doc.data().complete) {
         initFirebaseLoad();
+        // Account finished onboarding but may never have made a project
+        // (pre-first-run-sheet signups) — the sheet self-skips otherwise.
+        if (typeof glMaybeFirstRunSetup === 'function') glMaybeFirstRunSetup();
         return;
       }
     }
@@ -101,6 +104,9 @@ async function obComplete() {
     }
   } catch(e) {}
   initFirebaseLoad();
+  // Fresh account, carousel just finished — guide them into their first
+  // project instead of dropping them on an unusable empty daily log.
+  if (typeof glMaybeFirstRunSetup === 'function') glMaybeFirstRunSetup();
 }
 
 function _obInitSwipe() {
@@ -744,14 +750,99 @@ function acctDeleteAccount() {
   if (!user) return;
   _confirmModal(
     'Permanently delete your GroundLog account and all data? This cannot be undone.',
-    function() {
-      user.delete()
-        .catch(function(e) {
-          _confirmModal(e.message || 'Could not delete account. You may need to sign out and sign back in first.', null, 'Delete Failed', 'Close');
-        });
-    },
+    function() { _acctDoDelete(user); },
     'Delete Account', 'Delete'
   );
+}
+
+function _acctDoDelete(user) {
+  user.delete().catch(function(e) {
+    if (e && e.code === 'auth/requires-recent-login') return _acctReauthThenDelete(user);
+    _confirmModal(e.message || 'Could not delete account.', null, 'Delete Failed', 'Close');
+  });
+}
+
+// Firebase requires a recent sign-in before destructive account ops. Instead
+// of dead-ending with "sign out and sign back in first" (the 6/11 purge-test
+// friction find), re-authenticate in place with whichever provider the
+// account actually has, then retry the delete.
+async function _acctReauthThenDelete(user) {
+  const providers = (user.providerData || []).map(function(p) { return p.providerId; });
+  try {
+    if (providers.includes('password')) return _acctReauthPasswordSheet(user);
+    if (providers.includes('google.com')) {
+      if (window.Capacitor?.isNativePlatform?.()) {
+        const { FirebaseAuthentication } = await import('@capacitor-firebase/authentication');
+        const result = await FirebaseAuthentication.signInWithGoogle();
+        if (!result || !result.credential || !result.credential.idToken) return;
+        const cred = firebase.auth.GoogleAuthProvider.credential(
+          result.credential.idToken, result.credential.accessToken);
+        await user.reauthenticateWithCredential(cred);
+      } else {
+        await user.reauthenticateWithPopup(new firebase.auth.GoogleAuthProvider());
+      }
+      return _acctDoDelete(user);
+    }
+    if (providers.includes('apple.com')) {
+      if (window.Capacitor?.isNativePlatform?.()) {
+        const { FirebaseAuthentication } = await import('@capacitor-firebase/authentication');
+        // Same nonce rule as sign-in: the plugin manages its own nonce —
+        // always use result.credential.nonce, never generate one app-side.
+        const result = await FirebaseAuthentication.signInWithApple();
+        if (!result || !result.credential || !result.credential.idToken) return;
+        const provider = new firebase.auth.OAuthProvider('apple.com');
+        const cred = provider.credential({ idToken: result.credential.idToken, rawNonce: result.credential.nonce });
+        await user.reauthenticateWithCredential(cred);
+      } else {
+        await user.reauthenticateWithPopup(new firebase.auth.OAuthProvider('apple.com'));
+      }
+      return _acctDoDelete(user);
+    }
+    _confirmModal('No supported sign-in method found to re-authenticate with.', null, 'Delete Failed', 'Close');
+  } catch (e) {
+    if (e && (e.code === 'auth/popup-closed-by-user' || e.code === 'auth/cancelled-popup-request')) return;
+    _confirmModal((e && e.message) || 'Re-authentication failed.', null, 'Delete Failed', 'Close');
+  }
+}
+
+function _acctReauthPasswordSheet(user) {
+  document.getElementById('_gl-reauth-modal')?.remove();
+  const ov = document.createElement('div');
+  ov.className = 'modal-overlay';
+  ov.id = '_gl-reauth-modal';
+  ov.style.zIndex = '9100';
+  ov.onclick = function(e) { if (e.target === ov) ov.remove(); };
+  ov.innerHTML = `<div class="modal-box" style="max-width:340px">
+    <div class="modal-title">Confirm it's you</div>
+    <div class="modal-msg" style="margin-bottom:10px">For your security, deleting an account needs a fresh sign-in. Enter your password to continue.</div>
+    <input id="_gl-reauth-pw" type="password" autocomplete="current-password" placeholder="Password" style="width:100%;box-sizing:border-box;background:var(--s2);border:1px solid var(--border2);border-radius:6px;color:var(--text);font-size:16px;padding:10px;margin-bottom:6px">
+    <div id="_gl-reauth-err" style="color:#c0392b;font-family:var(--mono);font-size:11px;min-height:14px;margin-bottom:8px"></div>
+    <div class="modal-btns">
+      <button class="modal-cancel" id="_gl-reauth-cancel">Cancel</button>
+      <button class="modal-confirm" id="_gl-reauth-go" style="background:#c0392b;border-color:#c0392b;color:#fff">Confirm &amp; Delete</button>
+    </div>
+  </div>`;
+  document.body.appendChild(ov);
+  const pw = ov.querySelector('#_gl-reauth-pw');
+  const go = ov.querySelector('#_gl-reauth-go');
+  setTimeout(function() { pw.focus(); }, 60);
+  ov.querySelector('#_gl-reauth-cancel').onclick = function() { ov.remove(); };
+  go.onclick = function() {
+    if (!pw.value) { pw.style.borderColor = '#c0392b'; return; }
+    go.disabled = true;
+    go.textContent = 'Checking…';
+    const cred = firebase.auth.EmailAuthProvider.credential(user.email, pw.value);
+    user.reauthenticateWithCredential(cred)
+      .then(function() { ov.remove(); _acctDoDelete(user); })
+      .catch(function(e) {
+        go.disabled = false;
+        go.textContent = 'Confirm & Delete';
+        ov.querySelector('#_gl-reauth-err').textContent =
+          (e.code === 'auth/wrong-password' || e.code === 'auth/invalid-credential' || e.code === 'auth/invalid-login-credentials')
+            ? 'Incorrect password.' : (e.message || 'Re-authentication failed.');
+      });
+  };
+  pw.addEventListener('keydown', function(e) { if (e.key === 'Enter') go.click(); });
 }
 
 // ── Window exposure ──

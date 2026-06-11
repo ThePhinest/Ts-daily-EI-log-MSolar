@@ -98,11 +98,14 @@ function clRender(){
   if(!list) return;
 
   if(entries.length===0){
-    list.innerHTML = '<div class="cl-empty">'+(
-      _clEntries.length===0
-        ? 'No compliance entries yet.<br>Tap <strong>+ Add Entry</strong> to log an observation.'
-        : 'No entries match the current filters.'
-    )+'</div>';
+    list.innerHTML = _clEntries.length===0
+      ? glEmptyState({
+          icon:'⚠️', title:'No compliance entries yet',
+          body:'Observations, BMP issues, and regulatory flags get logged here — and auto-detected from your daily log narrative when you write one.',
+          actions:[{ label:'+ Add Entry', onclick:'clShowForm()', primary:true }],
+          academy:'tracker-log', academyLabel:'Tracking &amp; compliance'
+        })
+      : '<div class="cl-empty">No entries match the current filters.</div>';
     return;
   }
 

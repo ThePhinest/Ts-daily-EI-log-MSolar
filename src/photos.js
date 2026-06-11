@@ -446,11 +446,14 @@ function phRender(){
   if(!lib) return;
 
   if(photos.length===0){
-    lib.innerHTML = '<div class="ph-empty">'+(
-      window._phPhotos.length===0
-        ? 'No photos yet.<br>Tap <strong>+ Upload Photos</strong> or drag photos here.'
-        : 'No photos match the current filters.'
-    )+'</div>';
+    lib.innerHTML = window._phPhotos.length===0
+      ? glEmptyState({
+          icon:'📸', title:'No photos yet',
+          body:'Field photos live here — GPS-tagged, captioned, and pinned to the map. Upload from your camera roll or capture straight from a map drawing.',
+          actions:[{ label:'+ Upload Photos', onclick:"document.getElementById('ph-file-input').click()", primary:true }],
+          academy:'map-photos', academyLabel:'Photos &amp; the map'
+        })
+      : '<div class="ph-empty">No photos match the current filters.</div>';
     document.getElementById('ph-load-more').style.display = 'none';
     _phRenderShared();
     _phRenderTrash();
