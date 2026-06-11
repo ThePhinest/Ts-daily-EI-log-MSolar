@@ -2,14 +2,16 @@
 // GROUNDLOG ACADEMY — short video walkthroughs
 // ═══════════════════════════════════════════
 // Hub page for in-app tutorials: short (60–120s) narrated clips, one task
-// each, streamed from Firebase Storage with a native <video> element — no
-// YouTube/third-party embeds (privacy posture: no outside trackers inside
-// the app). Empty states deep-link here via glAcademyGo(topicId).
+// each, played with a native <video> element — no YouTube/third-party embeds
+// (privacy posture: no outside trackers inside the app). Empty states
+// deep-link here via glAcademyGo(topicId).
 //
-// Adding a video = upload the MP4 to Storage at academy/{id}.mp4, paste its
-// download URL into the topic's `url` below, ship. Topics with no URL render
-// as COMING SOON (the hub is the index of what will exist, like the
-// onboarding carousel is the index of what does).
+// Hosting (decided 2026-06-11): the groundlog.io site repo (GitHub Pages) —
+// free bandwidth vs Storage egress, CDN range-requests so seeking works.
+// Adding a video = drop the MP4 in the site repo at /academy/{id}.mp4, set
+// the topic's url to https://groundlog.io/academy/{id}.mp4, ship. Topics
+// with no URL render as COMING SOON. Record against a DEMO project only —
+// never real project data.
 
 const GL_ACADEMY_TOPICS = [
   { id: 'getting-started', icon: '📋', title: 'Getting started',              min: 2, url: '',
@@ -35,7 +37,7 @@ function glRenderAcademyPage() {
   if (!host) return;
   host.innerHTML = `
     <div style="font-family:var(--mono);font-size:11.5px;line-height:1.6;color:var(--muted);margin-bottom:14px">
-      Short video walkthroughs — one task each, a couple of minutes apiece. Watch the one you need, when you need it.
+      Short video walkthroughs — one task, a couple of minutes each. Watch the one you need, when you need it.
     </div>
     ${GL_ACADEMY_TOPICS.map(t => `
       <div class="gl-ac-row" id="ac-row-${t.id}" onclick="glAcademyOpen('${t.id}')">
