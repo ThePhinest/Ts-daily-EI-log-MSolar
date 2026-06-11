@@ -925,7 +925,8 @@ async function _glShowSubmitReview(payload, date, pid) {
         ${preE.map(e => entryRow(e, false)).join('')}${preP.map(p => photoRow(p, false)).join('')}${preM.map(m => markerRow(m, false)).join('')}
       </div>
     </div>` : ''}
-    <div class="modal-btns" style="margin-top:16px">
+    <div style="margin-top:14px;padding:9px 12px;border:1px solid rgba(255,255,255,.12);border-radius:8px;font-family:var(--mono);font-size:10.5px;line-height:1.55;color:var(--text)">✍ By submitting, I certify this record is accurate and complete to the best of my knowledge.<div style="color:var(--muted2);margin-top:3px">Recorded as ${_glEsc(_glMyName())} · attested by your account, date and version trail.</div></div>
+    <div class="modal-btns" style="margin-top:14px">
       <button class="modal-cancel" id="_gl-rev-cancel">Cancel</button>
       <button class="modal-confirm" id="_gl-rev-submit" style="background:var(--s3);border-color:var(--s3)">Submit day</button>
     </div>
