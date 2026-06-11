@@ -365,16 +365,40 @@ function renderAllChips(){
 // ── Nav picker slot state (module-scoped) ──
 let _navPickerSlot=0;
 
+// ── Per-project, role-aware nav (submission-sharing-model §Role-aware UX):
+//    slots are stored per project context — the tab bar swaps with the project.
+//    Roles set DEFAULTS only (feedback_role_view_sovereignty): Glasses lands on
+//    Project Space instead of an empty Daily Log, but any slot stays
+//    user-customizable and the customization is remembered per project.
+function _navSlotsKey(){
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'';
+  return 'pei_nav_slots::'+(pid||'default');
+}
+
+function _navRoleDefaults(){
+  try{
+    const pid=(typeof _activeProjectId==='function')?_activeProjectId():'';
+    if(pid&&pid!=='default'&&typeof glMyRoleFor==='function'&&glMyRoleFor(pid)==='reviewer')
+      return ['projectSpace','map','photos'];
+  }catch{}
+  return null;
+}
+
 function navLoadSlots(){
   try{
-    const s=localStorage.getItem('pei_nav_slots');
+    const s=localStorage.getItem(_navSlotsKey());
     if(s){ const p=JSON.parse(s); if(Array.isArray(p)&&p.length===3)return p; }
+    const roleDefaults=_navRoleDefaults();
+    if(roleDefaults)return roleDefaults;
+    // Pre-per-project customization carries over for own/lead projects.
+    const legacy=localStorage.getItem('pei_nav_slots');
+    if(legacy){ const p=JSON.parse(legacy); if(Array.isArray(p)&&p.length===3)return p; }
   }catch{}
   return _NAV_DEFAULTS.slice();
 }
 
 function navSaveSlots(){
-  try{ localStorage.setItem('pei_nav_slots',JSON.stringify(_navSlots)); }catch{}
+  try{ localStorage.setItem(_navSlotsKey(),JSON.stringify(_navSlots)); }catch{}
 }
 
 function renderNav(){

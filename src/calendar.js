@@ -360,6 +360,7 @@ function calRenderDayViewGrid(){
   const body=document.getElementById('cal-dv-grid-body');
   if(!body) return;
   const all=dlGetAll();
+  _calRefreshOpenDays();
   const today=localToday();
   const firstDay=new Date(_calYear,_calMonth,1).getDay();
   const daysInMonth=new Date(_calYear,_calMonth+1,0).getDate();
@@ -405,10 +406,22 @@ function calRenderDayViewGrid(){
   body.innerHTML=cells;
 }
 
+// Open (unsubmitted) days — computed once per grid render, read per cell.
+// Marks the submit-discipline gaps on the calendar (submission-sharing-model
+// §Next-day flow: "calendar marks open days").
+let _calOpenDays=new Set();
+function _calRefreshOpenDays(){
+  try{
+    const pid=(typeof _activeProjectId==='function')?_activeProjectId():'';
+    _calOpenDays=(typeof glUnsubmittedDates==='function')?new Set(glUnsubmittedDates(pid)):new Set();
+  }catch{ _calOpenDays=new Set(); }
+}
+
 function calGetDotIndicators(record){
   const dots=[];
   if(record._edited) dots.push('<span class="cal-dot" title="Edited">⚠️</span>');
   else dots.push('<span class="cal-dot" style="color:var(--green)" title="Log saved">●</span>');
+  if(_calOpenDays.has(record._archivedDate)) dots.push('<span class="cal-dot" style="color:var(--amber)" title="Not yet submitted to project">⏳</span>');
   try{
     const cl=JSON.parse(localStorage.getItem('cl_entries')||'[]');
     if(cl.some(e=>e.date===record._archivedDate)) dots.push('<span class="cal-dot" title="Compliance">❗</span>');
@@ -439,6 +452,7 @@ function calRenderGrid(){
   const all=_projectFilterActive
     ? Object.fromEntries(Object.entries(_allLogs).filter(([,v])=> !v.projectId || v.projectId===_activeProjectId()))
     : _allLogs;
+  _calRefreshOpenDays();
   const today=localToday();
   const firstDay=new Date(_calYear,_calMonth,1).getDay();
   const daysInMonth=new Date(_calYear,_calMonth+1,0).getDate();

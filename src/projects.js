@@ -610,6 +610,11 @@ async function loadProject(projectId, projDataOverride) {
     // Map-share button visibility follows the active project's lead status.
     if (typeof _glInitMapShareBtn === 'function') _glInitMapShareBtn();
 
+    // Nav is per-project + role-aware (Glasses defaults to Project Space) —
+    // the tab bar swaps with the project context. Log-page affordances follow.
+    if (typeof renderNav === 'function') renderNav();
+    if (typeof glUpdateReviewerLogState === 'function') glUpdateReviewerLogState();
+
     // Load this project's session
     const sessionDoc = await _udb().collection('sessions').doc(projectId).get();
     document.getElementById('crewContainer').innerHTML = '';

@@ -683,6 +683,10 @@ function checkNewDay(){
   document.getElementById('nd-overlay').style.display='flex';
   // Store the previous date for use in reset handler
   document.getElementById('nd-overlay').dataset.prevDate=savedDate;
+  // Submit discipline (submission-sharing-model §Next-day flow): if the previous
+  // day was never submitted to a project where submissions are in use, the modal
+  // grows a "Review & Submit first" path. Async — the block appears when known.
+  if(typeof window._ndMaybeOfferSubmit==='function') window._ndMaybeOfferSubmit(savedDate);
 }
 
 async function newDayStartFresh(){

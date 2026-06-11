@@ -59,7 +59,7 @@ body:has(.more-overlay.open) #scroll-root,body:has(#cl-form-overlay.open) #scrol
    scrollbar (and the scrolled content) stops at the nav instead of running
    behind it; the old 80px padding existed to clear the overlaying nav and
    shrinks to simple breathing room. Map page is position:fixed — unaffected. */
-#scroll-root{flex:1 1 0;min-height:0;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;padding-bottom:24px;margin-bottom:calc(95px + env(safe-area-inset-bottom,0px))}
+#scroll-root{flex:1 1 0;min-height:0;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;padding-bottom:24px;margin-bottom:95px}
 .app-wordmark{display:inline-flex;align-items:center;justify-content:center;white-space:nowrap;line-height:1}
 .app-wm-ground{font-family:'Oswald','Barlow Condensed',sans-serif;font-weight:300;font-size:19px;letter-spacing:4px;text-transform:uppercase;color:var(--text)}
 .app-wm-bar{display:inline-block;width:2px;height:20px;background:var(--amber);margin:0 8px;flex-shrink:0}
@@ -905,6 +905,17 @@ body.is-native select { font-size: 16px !important; }
         <div style="font-family:var(--mono);font-size:9px;color:var(--muted2);letter-spacing:.08em;text-transform:uppercase;margin-bottom:5px">📝 Note for Today</div>
         <div id="nd-day-note-text"></div>
       </div>
+      <!-- Next-day submit prompt (submission-sharing-model §Next-day flow) — shown
+           only when the previous day is unsubmitted on a project using submissions.
+           Reassure, don't alarm: submitting stays optional, nothing is blocked. -->
+      <div id="nd-submit-block" style="display:none;background:rgba(201,168,76,0.08);border:1px solid rgba(201,168,76,0.35);border-radius:6px;padding:10px 12px;margin-bottom:14px;font-family:var(--body);font-size:13px;color:var(--text);line-height:1.5">
+        <div style="font-family:var(--mono);font-size:9px;color:var(--amber);letter-spacing:.08em;text-transform:uppercase;margin-bottom:5px">📤 Not Submitted Yet</div>
+        <div id="nd-submit-msg" style="margin-bottom:9px"></div>
+        <button class="nd-btn nd-btn-primary" onclick="newDaySubmitFirst()" style="margin:0">
+          <span class="nd-btn-icon">📤</span> <span id="nd-submit-btn-label">Review &amp; Submit</span>
+        </button>
+        <div style="font-family:var(--mono);font-size:10px;color:var(--muted2);margin-top:6px">Opens the review sheet for that day — start today right after. Or skip: you can submit any time from the log or Calendar.</div>
+      </div>
       <div class="nd-btns">
         <button class="nd-btn nd-btn-primary" onclick="newDayStartFresh()">
           <span class="nd-btn-icon">🌅</span> Start Fresh — New Day
@@ -1477,6 +1488,13 @@ body.is-native select { font-size: 16px !important; }
 <div id="scroll-root">
 <div class="page active" id="page-log"><div class="wrap">
 
+  <!-- Role-aware empty state (Glasses): the page stays fully open — this is a
+       pointer, not a lock (feedback_role_view_sovereignty). -->
+  <div id="log-reviewer-note" style="display:none;background:rgba(201,168,76,0.08);border:1px solid rgba(201,168,76,0.35);border-radius:8px;padding:11px 14px;margin-bottom:12px;font-family:var(--body);font-size:13px;color:var(--text);line-height:1.5">
+    👓 You're not logging days in this project — teammates' submitted logs live in
+    <b style="color:var(--amber);cursor:pointer;text-decoration:underline" onclick="showPage('projectSpace')">Project Space →</b>
+  </div>
+
   <!-- COLLAPSE ALL / EXPAND ALL -->
   <div style="display:flex;gap:8px;margin-bottom:12px;justify-content:flex-end">
     <button class="btn btn-outline" style="font-size:10px;padding:5px 12px" onclick="collapseAllSections()">Collapse All</button>
@@ -1719,6 +1737,8 @@ Anticipated rain — AM weather monitoring expected"></textarea>
            snapshot to the shared project. Personal section never included. -->
       <button class="btn btn-export" id="btn-submit-day" onclick="glSubmitDay()" style="font-size:13px;padding:12px 18px;letter-spacing:.08em;color:var(--s3);border-color:var(--s3)">📤 Submit Day to Project</button>
       <div id="submit-day-status" style="font-family:var(--mono);font-size:11px;text-align:center;min-height:16px;margin-top:6px;opacity:0;transition:opacity .3s"></div>
+      <!-- Open-days badge — passive submit-discipline pointer, never a blocker -->
+      <div id="submit-open-days" style="display:none;font-family:var(--mono);font-size:11px;color:var(--amber);text-align:center;margin-top:4px"></div>
       <div class="export-hint">Shares a snapshot of this day with everyone on the project — your personal section is never included. Edits after submitting stay yours until you resubmit.</div>
       <button class="btn btn-outline" onclick="glShowProjectSpace()" style="font-size:11px;padding:7px 14px;width:100%;justify-content:center;margin-top:6px">📁 Project Space — submitted logs</button>
       <div class="divider-export"></div>
@@ -3375,6 +3395,7 @@ function showPage(name){
     const moreBtn=document.getElementById('tab-more');
     if(moreBtn)moreBtn.classList.add('active');
   }
+  if(name==='log'){ if(typeof glUpdateReviewerLogState==='function') glUpdateReviewerLogState(); }
   if(name==='config'){ renderConfig(); tsLoadConfigFields(); renderNavConfig(); mapLoadSettingsFields(); if(typeof glRenderMembersCard==='function') glRenderMembersCard(); if(typeof _glInitMapShareBtn==='function') _glInitMapShareBtn(); if(typeof _glInitMapHostBtn==='function') _glInitMapHostBtn(); }
   if(name==='aiBranding'){ if(typeof aiBrandingInit==='function') aiBrandingInit(); }
   if(name==='accountSettings'){ acctInitPage(); }

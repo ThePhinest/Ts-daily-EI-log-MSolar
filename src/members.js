@@ -900,7 +900,7 @@ async function _glShowSubmitReview(payload, date, pid) {
   ov.className = 'proj-switcher-overlay';
   ov.id = '_gl-review-sheet';
   ov.style.zIndex = '9080';
-  ov.onclick = e => { if (e.target === ov) ov.remove(); };
+  ov.onclick = e => { if (e.target === ov) { window._glAfterSubmitStartToday = false; ov.remove(); } };
   ov.innerHTML = `<div class="proj-switcher-sheet" style="max-height:88vh">
     <div class="proj-switcher-header">
       <span class="proj-switcher-title">Submit ${_glEsc(_glSubFmtDate(date))}</span>
@@ -933,8 +933,11 @@ async function _glShowSubmitReview(payload, date, pid) {
     <div class="proj-row-meta" style="margin-top:10px;white-space:normal;overflow:visible;text-overflow:unset">Unchecked items stay private — they'll be offered again next submit, or share them any time from the map. You can keep editing after submitting; reviewers see a resubmit only when you post one.</div>
   </div>`;
   document.body.appendChild(ov);
-  ov.querySelector('#_gl-rev-close').onclick = () => ov.remove();
-  ov.querySelector('#_gl-rev-cancel').onclick = () => ov.remove();
+  // Bailing out of the sheet also cancels any pending "then start today" chain
+  // from the next-day prompt — nothing was submitted, so nothing advances.
+  const bail = () => { window._glAfterSubmitStartToday = false; ov.remove(); };
+  ov.querySelector('#_gl-rev-close').onclick = bail;
+  ov.querySelector('#_gl-rev-cancel').onclick = bail;
   const preAll = ov.querySelector('#_gl-rev-preall');
   const preToggle = ov.querySelector('#_gl-rev-pretoggle');
   if (preToggle) {
@@ -1029,6 +1032,15 @@ async function _glDoSubmitDay(payload, date, publishedCount) {
     say((version > 1 ? ('✓ Resubmitted — v' + version + ' posted') : '✓ Day submitted to the project') + pubNote);
     showCloudBanner('✓ ' + date + ' submitted to the project' + (version > 1 ? ' (v' + version + ')' : '') + pubNote + '.');
     console.log('GroundLog submissions: posted', date, 'v' + version, publishedCount ? ('+' + publishedCount + ' published') : '');
+    _glMarkSubmitted(pid, date, version);
+    glUpdateSubmitBadge();
+    // Next-day prompt chain: yesterday is submitted — offer to start today.
+    if (window._glAfterSubmitStartToday) {
+      window._glAfterSubmitStartToday = false;
+      if (typeof _confirmModal === 'function' && typeof newDayStartFresh === 'function')
+        _confirmModal('Day submitted ✓ — start today’s log now?',
+          function () { newDayStartFresh(); }, '🌅 New Day', 'Start Today');
+    }
   } catch (e) {
     say(e.code === 'permission-denied'
       ? 'Your role on this project is view-only — nothing to submit.'
@@ -1044,6 +1056,145 @@ function _glSubFmtDate(ds) {
     return new Date(y, m - 1, dd).toLocaleDateString(undefined,
       { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
   } catch (e) { return ds || ''; }
+}
+
+// ═══════════════════════════════════════════
+// SUBMIT DISCIPLINE — next-day prompt + open-day tracking
+// ═══════════════════════════════════════════
+// (submission-sharing-model §Next-day flow.) A local cache of MY submitted
+// dates per project makes the prompt and badges instant + offline-tolerant;
+// the submissions collection stays the source of truth (cache refreshes via
+// one members-readable query). Self-calibrating: a project where I've never
+// submitted never nags, and reviewers (view-only) are never asked.
+
+function _glMySubsKey(pid) { return 'gl_my_subs_' + pid; }
+
+function glMySubmittedDates(pid) {
+  try { return JSON.parse(localStorage.getItem(_glMySubsKey(pid)) || '{}'); } catch (e) { return {}; }
+}
+
+function _glMarkSubmitted(pid, date, version) {
+  try {
+    const m = glMySubmittedDates(pid);
+    m[date] = version || 1;
+    localStorage.setItem(_glMySubsKey(pid), JSON.stringify(m));
+  } catch (e) { /* cache only */ }
+}
+
+async function glRefreshMySubmittedDates(pid) {
+  const d = _sdb();
+  if (!d || !pid || pid === 'default') return glMySubmittedDates(pid);
+  try {
+    const snap = await d.collection('projects').doc(pid).collection('submissions')
+      .where('submittedBy', '==', _currentUser.uid).get();
+    // Withdrawn = no active snapshot → the day counts as unsubmitted again.
+    const live = {}, withdrawn = {};
+    snap.forEach(s => {
+      const v = s.data();
+      if (!v.date) return;
+      const tgt = v.status === 'withdrawn' ? withdrawn : live;
+      if (!tgt[v.date] || (v.version || 1) > tgt[v.date]) tgt[v.date] = v.version || 1;
+    });
+    Object.keys(withdrawn).forEach(dt => { if (live[dt] && withdrawn[dt] >= live[dt]) delete live[dt]; });
+    localStorage.setItem(_glMySubsKey(pid), JSON.stringify(live));
+    return live;
+  } catch (e) { return glMySubmittedDates(pid); }
+}
+
+function _glDayHasContent(rec) {
+  if (!rec) return false;
+  if ((rec.crew || []).length) return true;
+  const f = rec.fields || {};
+  return Object.entries(f).some(([k, v]) =>
+    k !== 'reportDate' && !k.startsWith('p-') && typeof v === 'string' && v.trim());
+}
+
+// Past days with log content that have no active submission. Floored at the
+// first date ever submitted on this project — days from before the user
+// started using submissions aren't debt, they're history.
+function glUnsubmittedDates(pid) {
+  if (!pid || pid === 'default') return [];
+  if (glMyRoleFor(pid) === 'reviewer') return [];
+  const subs = glMySubmittedDates(pid);
+  const subDates = Object.keys(subs);
+  if (!subDates.length) return [];
+  const floor = subDates.sort()[0];
+  const today = (typeof localToday === 'function') ? localToday() : new Date().toLocaleDateString('en-CA');
+  const all = (typeof dlGetAll === 'function') ? dlGetAll() : {};
+  const open = {};
+  Object.entries(all).forEach(([dt, rec]) => {
+    if (dt >= floor && dt < today && !subs[dt] && (!rec.projectId || rec.projectId === pid) && _glDayHasContent(rec)) open[dt] = 1;
+  });
+  // The live form's day may not be archived yet.
+  try {
+    const cur = document.getElementById('reportDate')?.value || '';
+    if (cur && cur >= floor && cur < today && !subs[cur]) open[cur] = 1;
+  } catch (e) {}
+  return Object.keys(open).sort();
+}
+
+// ── Log-page badge: how many past days are still unsubmitted. Passive,
+//    reassure-don't-alarm — a pointer, not a blocker. Renders instantly from
+//    the local cache; a throttled background refresh keeps it honest when a
+//    day was submitted from another device.
+let _glSubsRefreshTs = 0;
+function _glRenderSubmitBadge() {
+  const el = document.getElementById('submit-open-days');
+  if (!el) return;
+  const open = glUnsubmittedDates(_activeProjectId());
+  if (!open.length) { el.style.display = 'none'; el.innerHTML = ''; return; }
+  const last = open[open.length - 1];
+  el.style.display = 'block';
+  el.innerHTML = '⏳ ' + (open.length === 1
+    ? _glSubFmtDate(last) + ' hasn’t been submitted yet'
+    : open.length + ' past days haven’t been submitted yet') +
+    ' — <span onclick="showPage(\'calendar\')" style="text-decoration:underline;cursor:pointer">see Calendar</span>';
+}
+function glUpdateSubmitBadge() {
+  _glRenderSubmitBadge();
+  const pid = _activeProjectId();
+  if (pid && pid !== 'default' && Object.keys(glMySubmittedDates(pid)).length &&
+      Date.now() - _glSubsRefreshTs > 300000) {
+    _glSubsRefreshTs = Date.now();
+    glRefreshMySubmittedDates(pid).then(() => _glRenderSubmitBadge()).catch(() => {});
+  }
+}
+
+// ── New Day modal hook: offer "review & submit yesterday first" when the
+//    previous day is unsubmitted on a project where submissions are in use.
+async function _ndMaybeOfferSubmit(prevDate) {
+  const block = document.getElementById('nd-submit-block');
+  if (!block) return;
+  block.style.display = 'none';
+  const pid = _activeProjectId();
+  if (!pid || pid === 'default' || !prevDate) return;
+  if (glMyRoleFor(pid) === 'reviewer') return;
+  let subs = glMySubmittedDates(pid);
+  if (!Object.keys(subs).length) subs = await glRefreshMySubmittedDates(pid);
+  else glRefreshMySubmittedDates(pid).then(m => {       // a submit from another device counts
+    if (m[prevDate]) block.style.display = 'none';
+  }).catch(() => {});
+  if (!Object.keys(subs).length) return;                 // submissions not in use here — don't nag
+  if (subs[prevDate]) return;                            // already submitted
+  const projName = (typeof loadProjectConfig === 'function' ? loadProjectConfig().projectName : '') || 'the project';
+  const open = glUnsubmittedDates(pid);
+  const msg = document.getElementById('nd-submit-msg');
+  if (msg) msg.innerHTML = '<b>' + _glEsc(_glSubFmtDate(prevDate)) + '</b> hasn’t been submitted to <b style="color:var(--amber,#C9A84C)">' + _glEsc(projName) + '</b> yet.' +
+    (open.length > 1 ? ' <span style="color:var(--muted2)">(' + open.length + ' open days total — they’re marked on the Calendar.)</span>' : '');
+  const btnLabel = document.getElementById('nd-submit-btn-label');
+  if (btnLabel) btnLabel.textContent = 'Review & Submit ' + ((typeof dlFmtDisplay === 'function') ? dlFmtDisplay(prevDate) : prevDate);
+  block.style.display = 'block';
+}
+
+// The prompt's Review path: the form still holds the previous day, so the
+// regular submit review sheet targets exactly that day. No suppression is set —
+// if the user bails out of the sheet, the New Day modal comes back on the next
+// foreground check and nothing was lost.
+function newDaySubmitFirst() {
+  const ov = document.getElementById('nd-overlay');
+  if (ov) ov.style.display = 'none';
+  window._glAfterSubmitStartToday = true;
+  glSubmitDay();
 }
 
 // ── Member identity chip — stable per-person color (uid hash) + initial.
@@ -1199,6 +1350,12 @@ function glWithdrawSubmission(id) {
       const pid = _activeProjectId();
       await d.collection('projects').doc(pid).collection('submissions').doc(id)
         .update({ status: 'withdrawn', statusChangedAt: Date.now() });
+      // A withdrawn day has no active snapshot — it counts as unsubmitted again.
+      try {
+        const m = glMySubmittedDates(pid);
+        if (s.date && m[s.date]) { delete m[s.date]; localStorage.setItem(_glMySubsKey(pid), JSON.stringify(m)); }
+      } catch (e2) {}
+      glUpdateSubmitBadge();
       document.getElementById('_gl-sub-detail')?.remove();
       glShowProjectSpace();
     } catch (e) {
@@ -1248,7 +1405,38 @@ async function glHostMapToken() {
 
 // ── Window exposure ──
 window.GL_ROLES = GL_ROLES;
+// ── Role-aware Daily Log state ([[feedback_role_view_sovereignty]]: the page
+//    stays open and usable — this is a defaults/affordance pass, never a lock).
+//    Glasses: gentle pointer to Project Space + no Submit button (a view-only
+//    role has nothing to submit). Lead/Boots: open-days badge.
+function glUpdateReviewerLogState() {
+  const pid = (typeof _activeProjectId === 'function') ? _activeProjectId() : '';
+  const isReviewer = !!pid && pid !== 'default' && glMyRoleFor(pid) === 'reviewer';
+  const note = document.getElementById('log-reviewer-note');
+  if (note) note.style.display = isReviewer ? 'block' : 'none';
+  const btn = document.getElementById('btn-submit-day');
+  if (btn) btn.style.display = isReviewer ? 'none' : '';
+  if (isReviewer) {
+    const b = document.getElementById('submit-open-days');
+    if (b) b.style.display = 'none';
+  } else {
+    glUpdateSubmitBadge();
+  }
+}
+
 window.glMyRoleFor = glMyRoleFor;
+window.glMySubmittedDates = glMySubmittedDates;
+window.glRefreshMySubmittedDates = glRefreshMySubmittedDates;
+window.glUnsubmittedDates = glUnsubmittedDates;
+window.glUpdateSubmitBadge = glUpdateSubmitBadge;
+window.glUpdateReviewerLogState = glUpdateReviewerLogState;
+window._ndMaybeOfferSubmit = _ndMaybeOfferSubmit;
+window.newDaySubmitFirst = newDaySubmitFirst;
+
+// Boot: apply role-aware log-page state for the boot project context (the
+// banner/buttons read localStorage synchronously; the badge fills in as the
+// submitted-dates cache refreshes on use).
+try { glUpdateReviewerLogState(); } catch (e) { /* DOM not ready in tests */ }
 window._glMigrateWorkProductFlip = _glMigrateWorkProductFlip;
 window.glSetMarkersPublished = glSetMarkersPublished;
 window.glMemberChip = glMemberChip;
