@@ -356,7 +356,8 @@ async function phSetPublished(ids, publish, projectId){
   return touched.length;
 }
 
-// ── Other members' published photos for the active project (map pins etc.) ──
+// ── Other members' published photos for the active project (map pins +
+// the "Shared by project members" section on the Photos page) ──
 async function phLoadShared(projectId){
   window._phShared = [];
   if(!db || !_fbReady || !_currentUser) return;
@@ -371,6 +372,38 @@ async function phLoadShared(projectId){
       if(p.ownerUid !== mine) window._phShared.push(p);
     });
   }catch(e){ /* not a member of a shared project — nothing to show */ }
+  _phRenderShared();
+}
+
+// "Shared by project members" — published photos from teammates, grouped by
+// date below the own library. Read-only (lightbox opens, no caption edit).
+function _phRenderShared(){
+  const box = document.getElementById('ph-shared');
+  if(!box) return;
+  const shared = (window._phShared||[]).slice()
+    .sort((a,b)=> b.date > a.date ? 1 : b.date < a.date ? -1 : (b.uploadedAt||0)-(a.uploadedAt||0));
+  if(!shared.length){ box.innerHTML=''; return; }
+  const grouped = {};
+  shared.forEach(p=>{ if(!grouped[p.date]) grouped[p.date]=[]; grouped[p.date].push(p); });
+  const idsLiteral = '['+shared.map(p=>`'${p.id}'`).join(',')+']';
+  box.innerHTML =
+    '<div class="ph-day-label" style="margin-top:22px;display:flex;align-items:center;gap:10px">'+
+      '<span>👥 Shared by project members <span class="ph-day-count">'+shared.length+' photo'+(shared.length>1?'s':'')+'</span></span>'+
+      '<button class="btn btn-outline" style="font-size:10px;padding:4px 10px;margin-left:auto" onclick="glShowProjectSpace()">📁 Project Space</button>'+
+    '</div>'+
+    Object.keys(grouped).sort((a,b)=>b>a?1:-1).map(date => `
+      <div class="ph-day-group">
+        <div class="ph-day-label">${phDayLabel(date)} <span class="ph-day-count">${grouped[date].length} photo${grouped[date].length>1?'s':''}</span></div>
+        <div class="ph-grid">
+          ${grouped[date].map(p=>`
+            <div class="ph-thumb" onclick="phOpenLightbox('${p.id}',${idsLiteral})">
+              <img src="${p.thumb}" alt="${(p.caption||'').replace(/"/g,'&quot;')}" loading="lazy">
+              <div class="ph-thumb-caption">${p.caption||''}</div>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    `).join('');
 }
 
 // ── Current filtered + sorted photo set (shared by library render + lightbox nav) ──

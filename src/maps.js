@@ -3841,19 +3841,25 @@ function _showTrackerEntryPopup(lngLat,props){
     ${photoStrip}
     ${entry?.parentId?`<div style="font-size:10px;color:#a0b8c8;margin-top:4px;border-top:1px solid rgba(255,255,255,.08);padding-top:4px">📍 Linked to planned area</div>`:''}
     ${sharedByNote}
-    ${entry?`<div style="margin-top:8px">
-      <button onclick="mapActivatePlannedEntry('${props.id}')" style="${_TRP_BTN}padding:11px 4px;font-size:12px;background:rgba(201,168,76,0.22);border:1px solid var(--amber,#C9A84C);color:var(--amber,#C9A84C);font-weight:700" title="${entry?.entryType==='planned'?'Draw overlays on this plan':'Stack the next state on this layer'}">📍 Activate</button>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px">
-        <button onclick="mapToggleDateLabel('${props.id}')" style="${_TRP_BTN}background:${labelOn?'rgba(201,168,76,0.2)':'var(--s2,#1a2a38)'};border:1px solid ${labelOn?'var(--amber,#C9A84C)':'var(--border,#334)'};color:${labelOn?'var(--amber,#C9A84C)':'var(--muted,#888)'}">🔖${labelOn?' On':' Label'}</button>
-        <button onclick="mapShowCategoryLegend('${props.categoryId}')" style="${_TRP_BTN}background:var(--s2,#1a2a38);border:1px solid var(--border,#334);color:var(--muted,#888)" title="Show this category's color key on the map (for screenshots)">🏷️ Legend</button>
-        <button onclick="mapOpenCategoryFromPopup('${props.categoryId}')" style="${_TRP_BTN}background:var(--s2,#1a2a38);border:1px solid var(--border,#334);color:var(--muted,#888)" title="Category settings">⚙ Category</button>
-        <button onclick="mapCaptureForEntry('${props.id}')" style="${_TRP_BTN}background:var(--s2,#1a2a38);border:1px solid var(--border,#334);color:var(--muted,#888)" title="Capture map view as photo">📷 Capture</button>
-        ${shareBtn}
+    <div style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,.12)">
+      <div onclick="mapTogglePopupActions(this)" style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:11px;color:#dce8f4;user-select:none">
+        <span>⚡ Actions</span>
+        <span class="_trp-chev" style="margin-left:auto;display:inline-block;transition:transform .15s">▸</span>
       </div>
-    </div>`:''}
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px">
-      <button onclick="mapEditTrackerEntry('${props.id}')" style="${_TRP_BTN}background:var(--amber,#D97706);border:none;color:#111;font-weight:700">✏️ Edit</button>
-      <button onclick="mapDeleteTrackerEntryFromPanel('${props.id}')" style="${_TRP_BTN}background:var(--s2);border:1px solid var(--border);color:var(--muted)">✕ Remove</button>
+      <div class="_trp-actions" style="display:none;margin-top:8px">
+        ${entry?`<button onclick="mapActivatePlannedEntry('${props.id}')" style="${_TRP_BTN}padding:11px 4px;font-size:12px;background:rgba(201,168,76,0.22);border:1px solid var(--amber,#C9A84C);color:var(--amber,#C9A84C);font-weight:700" title="${entry?.entryType==='planned'?'Draw overlays on this plan':'Stack the next state on this layer'}">📍 Activate</button>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px">
+          <button onclick="mapToggleDateLabel('${props.id}')" style="${_TRP_BTN}background:${labelOn?'rgba(201,168,76,0.2)':'var(--s2,#1a2a38)'};border:1px solid ${labelOn?'var(--amber,#C9A84C)':'var(--border,#334)'};color:${labelOn?'var(--amber,#C9A84C)':'var(--muted,#888)'}">🔖${labelOn?' On':' Label'}</button>
+          <button onclick="mapShowCategoryLegend('${props.categoryId}')" style="${_TRP_BTN}background:var(--s2,#1a2a38);border:1px solid var(--border,#334);color:var(--muted,#888)" title="Show this category's color key on the map (for screenshots)">🏷️ Legend</button>
+          <button onclick="mapOpenCategoryFromPopup('${props.categoryId}')" style="${_TRP_BTN}background:var(--s2,#1a2a38);border:1px solid var(--border,#334);color:var(--muted,#888)" title="Category settings">⚙ Category</button>
+          <button onclick="mapCaptureForEntry('${props.id}')" style="${_TRP_BTN}background:var(--s2,#1a2a38);border:1px solid var(--border,#334);color:var(--muted,#888)" title="Capture map view as photo">📷 Capture</button>
+          ${shareBtn}
+        </div>`:''}
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px">
+          <button onclick="mapEditTrackerEntry('${props.id}')" style="${_TRP_BTN}background:var(--amber,#D97706);border:none;color:#111;font-weight:700">✏️ Edit</button>
+          <button onclick="mapDeleteTrackerEntryFromPanel('${props.id}')" style="${_TRP_BTN}background:var(--s2);border:1px solid var(--border);color:var(--muted)">✕ Remove</button>
+        </div>
+      </div>
     </div>
   </div>`;
   _trackerPopup=new mapboxgl.Popup({offset:14,maxWidth:'250px',closeButton:true,closeOnClick:false,className:'gl-tracker-popup'})
@@ -3878,6 +3884,19 @@ async function mapShareTrackerEntry(id){
   }
 }
 window.mapShareTrackerEntry=mapShareTrackerEntry;
+
+// Toggle the collapsible Actions block inside a tracker entry popup.
+// Collapsed by default — the popup was getting tall enough to run offscreen.
+function mapTogglePopupActions(hdr){
+  const wrap=hdr.parentElement;
+  const block=wrap&&wrap.querySelector('._trp-actions');
+  const chev=hdr.querySelector('._trp-chev');
+  if(!block) return;
+  const open=block.style.display!=='none';
+  block.style.display=open?'none':'block';
+  if(chev) chev.style.transform=open?'':'rotate(90deg)';
+}
+window.mapTogglePopupActions=mapTogglePopupActions;
 
 // Toggle the collapsible photo strip inside a tracker entry popup.
 function mapTogglePopupPhotos(hdr){

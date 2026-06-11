@@ -876,11 +876,13 @@ async function _glShowSubmitReview(payload, date, pid) {
   } catch (e) { /* markers are optional in the sheet */ }
 
   const mDate = m => new Date(m.createdAt || 0).toLocaleDateString('en-CA');
+  // Row text = main text color, date = amber — keeps the fields visually
+  // separated instead of one teal wall (Tim, 6/11).
   const row = (type, id, label, sub, checked) =>
     `<label style="display:flex;align-items:center;gap:10px;padding:7px 2px;border-bottom:1px solid rgba(255,255,255,.07);cursor:pointer">
       <input type="checkbox" data-type="${type}" data-id="${_glEsc(id)}"${checked ? ' checked' : ''} style="width:17px;height:17px;accent-color:var(--amber,#C9A84C);flex-shrink:0">
-      <span style="flex:1;min-width:0;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${label}</span>
-      ${sub ? `<span style="font-size:10.5px;color:var(--muted2);flex-shrink:0">${sub}</span>` : ''}
+      <span style="flex:1;min-width:0;font-size:12px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${label}</span>
+      ${sub ? `<span style="font-size:10.5px;color:var(--amber,#C9A84C);flex-shrink:0">${sub}</span>` : ''}
     </label>`;
   const entryRow = (e, c) => row('entry', e.id,
     '✏️ ' + _glEsc(e.categoryName || 'Drawing') + (e.entryType === 'planned' ? ' · plan' : ''), _glEsc(e.date || ''), c);
@@ -904,19 +906,19 @@ async function _glShowSubmitReview(payload, date, pid) {
       <span class="proj-switcher-title">Submit ${_glEsc(_glSubFmtDate(date))}</span>
       <button class="proj-switcher-close" id="_gl-rev-close">✕</button>
     </div>
-    <div class="proj-row-meta" style="margin:-8px 0 12px">to ${_glEsc(projName)} — everything checked below becomes visible to project members. Your personal section is never included.</div>
+    <div class="proj-row-meta" style="margin:-8px 0 12px;white-space:normal;overflow:visible;text-overflow:unset">to <b style="color:var(--amber,#C9A84C)">${_glEsc(projName)}</b> — everything checked below becomes visible to project members. <span style="color:var(--text)">Your personal section is never included.</span></div>
     <div style="display:flex;align-items:center;gap:10px;padding:8px 2px;border-bottom:1px solid rgba(255,255,255,.12)">
       <span style="width:17px;text-align:center;color:var(--s3);flex-shrink:0">✓</span>
-      <span style="flex:1;font-size:12px;font-weight:700">📋 Daily log snapshot</span>
+      <span style="flex:1;font-size:12px;font-weight:700;color:var(--text)">📋 Daily log snapshot</span>
       <span style="font-size:10.5px;color:var(--muted2)">always included</span>
     </div>
-    ${dayCount ? `<div class="gl-inv-label" style="margin-top:12px">This day's items (${dayCount})</div>
+    ${dayCount ? `<div class="gl-inv-label" style="margin-top:12px;color:var(--amber,#C9A84C)">This day's items (${dayCount})</div>
       ${dayE.map(e => entryRow(e, true)).join('')}${dayP.map(p => photoRow(p, true)).join('')}${dayM.map(m => markerRow(m, true)).join('')}`
-    : '<div class="proj-row-meta" style="margin-top:12px">No unpublished drawings, photos or markers for this day.</div>'}
+    : '<div class="proj-row-meta" style="margin-top:12px;white-space:normal;overflow:visible;text-overflow:unset">No unpublished drawings, photos or markers for this day.</div>'}
     ${preCount ? `<div style="margin-top:12px;border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:8px 10px">
       <div style="display:flex;align-items:center;gap:10px;cursor:pointer;user-select:none">
         <input type="checkbox" id="_gl-rev-preall" style="width:17px;height:17px;accent-color:var(--amber,#C9A84C);flex-shrink:0">
-        <span id="_gl-rev-pretoggle" style="flex:1;font-size:12px">Earlier unpublished items (${preCount}) <span style="color:var(--muted2)">— from other days; check to publish too</span></span>
+        <span id="_gl-rev-pretoggle" style="flex:1;font-size:12px;color:var(--text)">Earlier unpublished items <b style="color:var(--amber,#C9A84C)">(${preCount})</b> <span style="color:var(--muted2)">— from other days; check to publish too</span></span>
         <span id="_gl-rev-prechev" style="color:var(--muted2)">▸</span>
       </div>
       <div id="_gl-rev-prelist" style="display:none;margin-top:6px">
@@ -927,7 +929,7 @@ async function _glShowSubmitReview(payload, date, pid) {
       <button class="modal-cancel" id="_gl-rev-cancel">Cancel</button>
       <button class="modal-confirm" id="_gl-rev-submit" style="background:var(--s3);border-color:var(--s3)">Submit day</button>
     </div>
-    <div class="proj-row-meta" style="margin-top:10px">Unchecked items stay private — they'll be offered again next submit, or share them any time from the map. You can keep editing after submitting; reviewers see a resubmit only when you post one.</div>
+    <div class="proj-row-meta" style="margin-top:10px;white-space:normal;overflow:visible;text-overflow:unset">Unchecked items stay private — they'll be offered again next submit, or share them any time from the map. You can keep editing after submitting; reviewers see a resubmit only when you post one.</div>
   </div>`;
   document.body.appendChild(ov);
   ov.querySelector('#_gl-rev-close').onclick = () => ov.remove();

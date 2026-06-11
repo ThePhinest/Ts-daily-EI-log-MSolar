@@ -1830,9 +1830,12 @@ Anticipated rain — AM weather monitoring expected"></textarea>
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
     <div>
       <div style="font-family:var(--cond);font-weight:800;font-size:18px;letter-spacing:.08em;text-transform:uppercase;color:var(--amber)">Log History</div>
-      <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:2px">Tap a day to view or load</div>
+      <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:2px">Tap a day to view or load — logs submitted by teammates live in Project Space</div>
     </div>
-    <div id="cal-count" style="font-family:var(--mono);font-size:11px;color:var(--muted)"></div>
+    <div style="display:flex;align-items:center;gap:8px">
+      <button class="btn btn-outline" style="font-size:10px;padding:5px 10px;white-space:nowrap" onclick="glShowProjectSpace()">📁 Project Space</button>
+      <div id="cal-count" style="font-family:var(--mono);font-size:11px;color:var(--muted)"></div>
+    </div>
   </div>
 
   <!-- View toggle (hidden when in day view) -->
@@ -2371,6 +2374,9 @@ Anticipated rain — AM weather monitoring expected"></textarea>
 
   <!-- Load more -->
   <button class="btn btn-outline ph-load-more" id="ph-load-more" style="display:none" onclick="phLoadMore()">Load older photos</button>
+
+  <!-- Shared by project members (published photos from the project mirror) -->
+  <div id="ph-shared"></div>
 
   <!-- Recently Deleted (soft-delete trash, 30-day restore) -->
   <div id="ph-trash"></div>
