@@ -55,7 +55,11 @@ body:has(.more-overlay.open) #scroll-root,body:has(#cl-form-overlay.open) #scrol
    scrolling, so WKWebView's native pan has no document overscroll to rubber-band (iOS nav-drift fix).
    #scroll-root must NEVER get transform/filter/contain — fixed descendants (FABs, sheets, popovers)
    must keep the viewport as their containing block. ── */
-#scroll-root{flex:1 1 0;min-height:0;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;padding-bottom:80px}
+/* margin-bottom ends the scroll container at the TOP of the bottom nav, so the
+   scrollbar (and the scrolled content) stops at the nav instead of running
+   behind it; the old 80px padding existed to clear the overlaying nav and
+   shrinks to simple breathing room. Map page is position:fixed — unaffected. */
+#scroll-root{flex:1 1 0;min-height:0;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;padding-bottom:24px;margin-bottom:calc(95px + env(safe-area-inset-bottom,0px))}
 .app-wordmark{display:inline-flex;align-items:center;justify-content:center;white-space:nowrap;line-height:1}
 .app-wm-ground{font-family:'Oswald','Barlow Condensed',sans-serif;font-weight:300;font-size:19px;letter-spacing:4px;text-transform:uppercase;color:var(--text)}
 .app-wm-bar{display:inline-block;width:2px;height:20px;background:var(--amber);margin:0 8px;flex-shrink:0}
@@ -2338,6 +2342,7 @@ Anticipated rain — AM weather monitoring expected"></textarea>
       </div>
     </div>
     <button class="btn btn-amber" onclick="document.getElementById('ph-file-input').click()">+ Upload Photos</button>
+    <button class="btn" id="ph-shared-btn" style="background:transparent;border:1.5px solid var(--s3);color:var(--s3);font-weight:700" onclick="phJumpToShared()" title="Photos shared by project members">👥 <span id="ph-shared-count">0</span></button>
     <button class="btn" id="ph-trash-btn" style="display:none;background:transparent;border:1.5px solid #e25555;color:#e25555;font-weight:700" onclick="phJumpToTrash()">🗑 <span id="ph-trash-count">0</span></button>
     <input type="file" id="ph-file-input" accept="image/*" multiple style="display:none" onchange="phHandleFiles(this.files)">
   </div>

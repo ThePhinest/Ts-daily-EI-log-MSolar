@@ -375,23 +375,30 @@ async function phLoadShared(projectId){
   _phRenderShared();
 }
 
-// "Shared by project members" — published photos from teammates, grouped by
-// date below the own library. Read-only (lightbox opens, no caption edit).
+// "Shared by project members" — published photos from teammates. Mirrors the
+// Recently Deleted pattern (Tim, 6/11): ALWAYS-present collapsible section
+// (so everyone knows it exists, even before anything is shared) + an
+// always-visible 👥 count button at the top that jumps to it — never buried
+// under a long own-photo library. Read-only (lightbox opens, no caption edit).
+let _phSharedOpen = false;
+function _phToggleShared(){ _phSharedOpen = !_phSharedOpen; _phRenderShared(); }
+function phJumpToShared(){
+  if(!_phSharedOpen){ _phSharedOpen = true; _phRenderShared(); }
+  document.getElementById('ph-shared')?.scrollIntoView({ behavior:'smooth', block:'start' });
+}
 function _phRenderShared(){
   const box = document.getElementById('ph-shared');
   if(!box) return;
   const shared = (window._phShared||[]).slice()
     .sort((a,b)=> b.date > a.date ? 1 : b.date < a.date ? -1 : (b.uploadedAt||0)-(a.uploadedAt||0));
-  if(!shared.length){ box.innerHTML=''; return; }
+  const cnt = document.getElementById('ph-shared-count');
+  if(cnt) cnt.textContent = shared.length;
   const grouped = {};
   shared.forEach(p=>{ if(!grouped[p.date]) grouped[p.date]=[]; grouped[p.date].push(p); });
   const idsLiteral = '['+shared.map(p=>`'${p.id}'`).join(',')+']';
-  box.innerHTML =
-    '<div class="ph-day-label" style="margin-top:22px;display:flex;align-items:center;gap:10px">'+
-      '<span>👥 Shared by project members <span class="ph-day-count">'+shared.length+' photo'+(shared.length>1?'s':'')+'</span></span>'+
-      '<button class="btn btn-outline" style="font-size:10px;padding:4px 10px;margin-left:auto" onclick="glShowProjectSpace()">📁 Project Space</button>'+
-    '</div>'+
-    Object.keys(grouped).sort((a,b)=>b>a?1:-1).map(date => `
+  const body = !shared.length
+    ? '<div class="ph-empty" style="padding:16px 20px">No teammate photos yet — photos shared by project members appear here the moment they publish them.</div>'
+    : Object.keys(grouped).sort((a,b)=>b>a?1:-1).map(date => `
       <div class="ph-day-group">
         <div class="ph-day-label">${phDayLabel(date)} <span class="ph-day-count">${grouped[date].length} photo${grouped[date].length>1?'s':''}</span></div>
         <div class="ph-grid">
@@ -404,6 +411,13 @@ function _phRenderShared(){
         </div>
       </div>
     `).join('');
+  box.innerHTML =
+    '<div class="ph-day-label" style="margin-top:18px;display:flex;align-items:center;gap:10px;cursor:pointer;user-select:none" onclick="_phToggleShared()">'+
+      '<span style="color:var(--s3)">'+(_phSharedOpen?'▾':'▸')+' 👥 Shared by project members ('+shared.length+')</span>'+
+      '<span class="ph-day-count">published by teammates</span>'+
+      '<button class="btn btn-outline" style="font-size:10px;padding:4px 10px;margin-left:auto" onclick="event.stopPropagation();glShowProjectSpace()">📁 Project Space</button>'+
+    '</div>'+
+    (_phSharedOpen ? body : '');
 }
 
 // ── Current filtered + sorted photo set (shared by library render + lightbox nav) ──
@@ -438,6 +452,7 @@ function phRender(){
         : 'No photos match the current filters.'
     )+'</div>';
     document.getElementById('ph-load-more').style.display = 'none';
+    _phRenderShared();
     _phRenderTrash();
     return;
   }
@@ -466,6 +481,7 @@ function phRender(){
   `).join('');
 
   document.getElementById('ph-load-more').style.display = hasMore ? 'block' : 'none';
+  _phRenderShared();
   _phRenderTrash();
 }
 
@@ -824,4 +840,6 @@ window.phConfirmDelete = phConfirmDelete;
 window.phUndoDelete = phUndoDelete;
 window._phToggleTrash = _phToggleTrash;
 window.phJumpToTrash = phJumpToTrash;
+window._phToggleShared = _phToggleShared;
+window.phJumpToShared = phJumpToShared;
 window.phBearingLabel = phBearingLabel;
