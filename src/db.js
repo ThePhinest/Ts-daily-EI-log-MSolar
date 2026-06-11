@@ -393,8 +393,7 @@ async function initFirebaseLoad() {
       checkNewDay();
       loadChecklistCloud();
       loadFlagsCloud();
-      _trackerStartupLoad();
-      _glSharedBoot();
+      _glSharedBoot(); // runs _trackerStartupLoad after membership backfill
       return;
     }
 
@@ -459,8 +458,7 @@ async function initFirebaseLoad() {
     loadFlagsCloud();
   }
   window._fbReady = true; // allow cloudSave from this point forward
-  _trackerStartupLoad();
-  _glSharedBoot();
+  _glSharedBoot(); // runs _trackerStartupLoad after membership backfill
 }
 
 // ── User namespace helper — all post-migration paths use this ──
@@ -500,6 +498,15 @@ function _projDataUser(pid) {
 async function _glSharedBoot() {
   try {
     if (typeof glBackfillSharedProjects === 'function') await glBackfillSharedProjects();
+  } catch(e) { console.warn('shared-projects backfill:', e.message); }
+  // Tracker loads read the shared root projects/{pid} — on a brand-new account
+  // they must WAIT for backfill to mint the membership doc, or the rules deny
+  // them (first-boot race: tcLoadForProject/trLoadFromFirestore permission
+  // warnings on fresh-account signup, found 2026-06-11). Sits outside the
+  // try blocks so a backfill failure never blocks the tracker on existing
+  // accounts (their membership already exists).
+  _trackerStartupLoad();
+  try {
     if (typeof glRepairSharedStubs === 'function') glRepairSharedStubs();
     if (typeof _glMigrateWorkProductFlip === 'function') {
       const copied = await _glMigrateWorkProductFlip();
