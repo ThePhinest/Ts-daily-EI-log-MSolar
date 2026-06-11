@@ -1,8 +1,12 @@
 const { onSchedule } = require('firebase-functions/v2/scheduler');
 const { onDocumentCreated } = require('firebase-functions/v2/firestore');
 const { defineSecret } = require('firebase-functions/params');
+// v1 namespace solely for the auth.onDelete trigger — v2 has no auth-delete
+// event (its identity triggers are blocking-only). Supported to mix.
+const functionsV1 = require('firebase-functions/v1');
 const { initializeApp } = require('firebase-admin/app');
 const { getFirestore } = require('firebase-admin/firestore');
+const { getStorage } = require('firebase-admin/storage');
 
 initializeApp();
 
@@ -74,6 +78,100 @@ exports.errorDigest = onSchedule(
     });
   }
 );
+
+// ═══════════════════════════════════════════
+// ACCOUNT DELETION — full data purge (Apple 5.1.1(v) + privacy policy §5)
+// ═══════════════════════════════════════════
+// The in-app Delete Account button calls Firebase Auth user.delete(); this
+// trigger then makes the privacy policy's sentence true — "Deletion removes
+// your account and all associated data from our systems":
+//   1. shared-project side: membership doc, published mirrors (photos /
+//      fieldMarkers / trackerEntries / trackerCategories stamped ownerUid),
+//      submissions; if the project is left with zero members it is an
+//      unreachable shell (rules gate on membership) and is deleted whole
+//   2. invites minted by the user
+//   3. the entire users/{uid} tree (recursiveDelete — logs, photos metadata,
+//      markers, KML metadata, sessions, settings, memberships, _debug, the
+//      frozen pre-flip project mirrors, everything)
+//   4. Storage prefixes photos/{uid}/ and kml/{uid}/
+// Every step is uid-scoped and individually try/caught — a failure in one
+// step never blocks the rest, and the summary log shows what ran.
+
+async function _purgeQueryDocs(db, query, label, out) {
+  try {
+    const snap = await query.get();
+    if (snap.empty) return;
+    let batch = db.batch(), n = 0;
+    for (const doc of snap.docs) {
+      batch.delete(doc.ref);
+      if (++n % 450 === 0) { await batch.commit(); batch = db.batch(); }
+    }
+    await batch.commit();
+    out.push(`${label}:${snap.size}`);
+  } catch (e) {
+    out.push(`${label}:FAILED(${e.message})`);
+  }
+}
+
+exports.purgeDeletedUser = functionsV1.auth.user().onDelete(async (user) => {
+  const uid = user.uid;
+  const db = getFirestore();
+  const done = [];
+
+  // 1. Shared-project cleanup — read memberships BEFORE the user tree dies.
+  let pids = [];
+  try {
+    const mems = await db.collection('users').doc(uid).collection('memberships').get();
+    pids = mems.docs.map((d) => d.id);
+  } catch (e) {
+    done.push(`memberships-read:FAILED(${e.message})`);
+  }
+  for (const pid of pids) {
+    const proj = db.collection('projects').doc(pid);
+    await _purgeQueryDocs(db, proj.collection('photos').where('ownerUid', '==', uid), `${pid}/photos`, done);
+    await _purgeQueryDocs(db, proj.collection('fieldMarkers').where('ownerUid', '==', uid), `${pid}/markers`, done);
+    await _purgeQueryDocs(db, proj.collection('trackerEntries').where('ownerUid', '==', uid), `${pid}/entries`, done);
+    await _purgeQueryDocs(db, proj.collection('trackerCategories').where('ownerUid', '==', uid), `${pid}/categories`, done);
+    await _purgeQueryDocs(db, proj.collection('submissions').where('submittedBy', '==', uid), `${pid}/submissions`, done);
+    try {
+      await proj.collection('members').doc(uid).delete();
+      const remaining = await proj.collection('members').limit(1).get();
+      if (remaining.empty) {
+        // Nobody can reach a member-less project (rules gate on membership) —
+        // delete the shell so no orphaned config/reference data lingers.
+        await db.recursiveDelete(proj);
+        done.push(`${pid}:orphan-shell-deleted`);
+      } else {
+        done.push(`${pid}:member-doc-deleted`);
+      }
+    } catch (e) {
+      done.push(`${pid}/members:FAILED(${e.message})`);
+    }
+  }
+
+  // 2. Invites the user minted (a dead lead's tokens must not admit anyone).
+  await _purgeQueryDocs(db, db.collection('invites').where('createdBy', '==', uid), 'invites', done);
+
+  // 3. The whole personal tree.
+  try {
+    await db.recursiveDelete(db.collection('users').doc(uid));
+    done.push('users-tree:deleted');
+  } catch (e) {
+    done.push(`users-tree:FAILED(${e.message})`);
+  }
+
+  // 4. Storage files.
+  for (const prefix of [`photos/${uid}/`, `kml/${uid}/`]) {
+    try {
+      await getStorage().bucket().deleteFiles({ prefix });
+      done.push(`storage ${prefix}:deleted`);
+    } catch (e) {
+      done.push(`storage ${prefix}:FAILED(${e.message})`);
+    }
+  }
+
+  console.log(`purgeDeletedUser ${uid}: ${done.join(' | ')}`);
+});
 
 // Instant alert — fires on any new _debug doc with severity:'critical'.
 exports.criticalErrorAlert = onDocumentCreated(
