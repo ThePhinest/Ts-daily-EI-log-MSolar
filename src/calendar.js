@@ -78,6 +78,18 @@ async function calLoadCloud(){
   }catch{}
 }
 
+// Teammates' submitted days for this date, chips for a calendar cell.
+// Same person = same color (uid-hashed in glMemberChip); max 3 + overflow.
+function _calSubs(date){
+  return (window._glSubsByDate||{})[date]||[];
+}
+function _calSubChips(subs){
+  if(!subs.length||typeof window.glMemberChip!=='function') return '';
+  const chips=subs.slice(0,3).map(s=>glMemberChip(s.submittedBy,s.submittedByName,12)).join('');
+  const more=subs.length>3?'<span class="cal-dot" style="color:var(--muted2)">+'+(subs.length-3)+'</span>':'';
+  return chips+more;
+}
+
 async function calRender(){
   await calLoadCloud();
   await _glMigrateDailyLogsPhaseD();
@@ -85,6 +97,10 @@ async function calRender(){
   await _fixOrphanLogProjectIds();
   _fixTimesheetEntryProjects();
   await dnLoadCloud();
+  // Teammates' submitted days (shared projects) — render alongside own logs.
+  if(typeof glLoadCalendarSubmissions==='function'){
+    try{ await glLoadCalendarSubmissions(); }catch(e){}
+  }
   document.getElementById('cal-day-view').style.display='none';
   document.getElementById('cal-view-toggle').style.display='flex';
   const now=new Date();
@@ -94,16 +110,38 @@ async function calRender(){
 
 function calOpenDay(date){
   const rec=dlGet(date);
-  if(!rec) return;
+  const _daySubs=_calSubs(date);
+  if(!rec&&!_daySubs.length) return;
   document.getElementById('cal-grid-view').style.display='none';
   document.getElementById('cal-list-view').style.display='none';
   document.getElementById('cal-view-toggle').style.display='none';
   document.getElementById('cal-day-view').style.display='block';
 
+  // Teammates' submissions for this day — one row per person (latest version),
+  // person chip + name, opens the read-only submission view.
+  let subsSection='';
+  if(_daySubs.length){
+    const rows=_daySubs.map(s=>`
+      <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);cursor:pointer" onclick="glShowSubmission('${s._id}')">
+        ${typeof window.glMemberChip==='function'?glMemberChip(s.submittedBy,s.submittedByName,20):''}
+        <span style="font-family:var(--mono);font-size:12px;color:var(--text);flex:1">${(s.submittedByName||'Project member')}</span>
+        ${(s.version||1)>1?`<span class="gl-role-chip">v${s.version}</span>`:''}
+        <span style="font-family:var(--mono);font-size:10px;color:var(--muted2)">${new Date(s.submittedAt||0).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'})}</span>
+        <span style="color:var(--muted2)">›</span>
+      </div>`).join('');
+    subsSection=`<div class="cal-day-section" style="flex-direction:column;align-items:flex-start">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;width:100%">
+        <div class="cal-day-icon">👥</div>
+        <div class="cal-day-label">Submitted by teammates — ${_daySubs.length}</div>
+      </div>
+      <div style="width:100%;padding-left:32px">${rows}</div>
+    </div>`;
+  }
+
   const title=document.getElementById('cal-day-title');
   if(title){
-    const indicators=calGetDotIndicators(rec);
-    const projectName=(rec.fields&&rec.fields.projectName||'').trim();
+    const indicators=rec?calGetDotIndicators(rec):'👥';
+    const projectName=((rec&&rec.fields&&rec.fields.projectName)||'').trim();
     const projectPill=projectName
       ? '<span style="display:inline-block;margin-left:10px;padding:2px 8px;background:rgba(201,160,39,.12);border:1px solid rgba(201,160,39,.4);border-radius:10px;font-family:var(--mono);font-size:9px;color:var(--amber);letter-spacing:.04em;text-transform:none;vertical-align:middle">'+projectName+'</span>'
       : '';
@@ -111,6 +149,18 @@ function calOpenDay(date){
   }
   const content=document.getElementById('cal-day-content');
   if(!content) return;
+
+  // No own log for this day — teammates' submissions only (the reviewer view,
+  // or a day a teammate worked and you didn't).
+  if(!rec){
+    content.innerHTML=`
+      <div class="cal-day-card">
+        ${subsSection}
+        <div style="font-family:var(--mono);font-size:11px;color:var(--muted2);padding:10px 16px">You have no log of your own for this day — tap a teammate above to read their submitted log.</div>
+      </div>`;
+    calRenderDayViewGrid();
+    return;
+  }
 
   const f=rec.fields||{};
   let tin='—', tout='—', hours='—', miles='—';
@@ -257,6 +307,7 @@ function calOpenDay(date){
       ${trackerSection}
       ${photoSection}
       ${editSection}
+      ${subsSection}
     </div>
     <button class="btn btn-amber" style="width:100%;margin-top:8px;padding:13px;font-size:13px" onclick="dlLoadFromCalendar('${date}')">
       📂 Load This Log into Form
@@ -322,12 +373,19 @@ function calRenderDayViewGrid(){
     const dateStr=`${_calYear}-${mm}-${dd}`;
     const rec=all[dateStr]||null;
     const isToday=dateStr===today;
+    const subChips=_calSubChips(_calSubs(dateStr));
     if(rec&&_calHasContent(rec)){
       // Today's cell routes to the live editable log (data-safe return), not the read-only day view.
       const _click=isToday?'dlGoToToday()':`calOpenDay('${dateStr}')`;
       cells+=`<div class="cal-cell has-log${isToday?' today':''}" onclick="${_click}">
         <div class="cal-cell-num">${d}</div>
-        <div class="cal-cell-dots">${calGetDotIndicators(rec)}</div>
+        <div class="cal-cell-dots">${calGetDotIndicators(rec)}${subChips}</div>
+      </div>`;
+    } else if(subChips){
+      // No own log, but teammates submitted this day — open their summaries.
+      cells+=`<div class="cal-cell has-log${isToday?' today':''}" onclick="calOpenDay('${dateStr}')" title="Submitted by teammates">
+        <div class="cal-cell-num">${d}</div>
+        <div class="cal-cell-dots">${subChips}</div>
       </div>`;
     } else {
       const isPast=dateStr<=today;
@@ -394,12 +452,19 @@ function calRenderGrid(){
     const dateStr=`${_calYear}-${mm}-${dd}`;
     const rec=all[dateStr]||null;
     const isToday=dateStr===today;
+    const subChips=_calSubChips(_calSubs(dateStr));
     if(rec&&_calHasContent(rec)){
       // Today's cell routes to the live editable log (data-safe return), not the read-only day view.
       const _click=isToday?'dlGoToToday()':`calOpenDay('${dateStr}')`;
       cells+=`<div class="cal-cell has-log${isToday?' today':''}" onclick="${_click}">
         <div class="cal-cell-num">${d}</div>
-        <div class="cal-cell-dots">${calGetDotIndicators(rec)}</div>
+        <div class="cal-cell-dots">${calGetDotIndicators(rec)}${subChips}</div>
+      </div>`;
+    } else if(subChips){
+      // No own log, but teammates submitted this day — open their summaries.
+      cells+=`<div class="cal-cell has-log${isToday?' today':''}" onclick="calOpenDay('${dateStr}')" title="Submitted by teammates">
+        <div class="cal-cell-num">${d}</div>
+        <div class="cal-cell-dots">${subChips}</div>
       </div>`;
     } else {
       const isPast=dateStr<=today;
@@ -424,8 +489,11 @@ function calRenderList(){
   const all=_projectFilterActive
     ? Object.fromEntries(Object.entries(_allLogsL).filter(([,v])=> !v.projectId || v.projectId===_activeProjectId()))
     : _allLogsL;
-  // E2.5: filter out "empty new day" records that have no actual user content
-  const dates=Object.keys(all).filter(d=>_calHasContent(all[d])).sort((a,b)=>b.localeCompare(a));
+  // E2.5: filter out "empty new day" records that have no actual user content.
+  // Teammates' submitted days (no own log) merge into the same list.
+  const ownDates=Object.keys(all).filter(d=>_calHasContent(all[d]));
+  const subDates=Object.keys(window._glSubsByDate||{});
+  const dates=[...new Set([...ownDates,...subDates])].sort((a,b)=>b.localeCompare(a));
   const list=document.getElementById('cal-list');
   const empty=document.getElementById('cal-empty');
   const count=document.getElementById('cal-count');
@@ -438,14 +506,24 @@ function calRenderList(){
   if(empty)empty.style.display='none';
   if(count)count.textContent=dates.length+' day'+(dates.length===1?'':'s');
   list.innerHTML=dates.map(date=>{
-    const rec=all[date];
+    const rec=ownDates.includes(date)?all[date]:null;
+    const subs=_calSubs(date);
+    const chips=_calSubChips(subs);
+    if(!rec){
+      const names=subs.map(s=>s.submittedByName||'Member').join(', ');
+      return `<div class="cal-row" onclick="calOpenDay('${date}')">
+        <div class="cal-row-date">${dlFmtDisplay(date)}</div>
+        <div class="cal-row-summary">Submitted by ${names}</div>
+        <div class="cal-row-indicators">${chips}</div>
+      </div>`;
+    }
     const rf=rec.fields||{};
     const summary=(rf.inspSummary||rf.inspectionSummary||'').trim().replace(/\r?\n.*/,'').split(/[.!?]/)[0].trim();
     const displaySummary=summary.length>60?summary.substring(0,60)+'…':summary||'No summary';
     return `<div class="cal-row" onclick="calOpenDay('${date}')">
       <div class="cal-row-date">${dlFmtDisplay(date)}</div>
       <div class="cal-row-summary">${displaySummary}</div>
-      <div class="cal-row-indicators">${calGetIndicators(rec)}</div>
+      <div class="cal-row-indicators">${calGetIndicators(rec)}${chips}</div>
     </div>`;
   }).join('');
 }

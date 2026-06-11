@@ -1045,6 +1045,49 @@ function _glSubFmtDate(ds) {
   } catch (e) { return ds || ''; }
 }
 
+// ── Member identity chip — stable per-person color (uid hash) + initial.
+// The calendar (and future member-attributed surfaces) use this to tell
+// people apart at a glance: same person = same color everywhere.
+const GL_CHIP_COLORS = ['#4FD1C5', '#E8B84B', '#9B59B6', '#E67E22', '#4A90E2', '#27AE60', '#E74C3C', '#D4A5E8'];
+function glMemberChip(uid, name, size) {
+  let h = 0;
+  const u = uid || '';
+  for (let i = 0; i < u.length; i++) h = (h * 31 + u.charCodeAt(i)) >>> 0;
+  const c = GL_CHIP_COLORS[h % GL_CHIP_COLORS.length];
+  const initial = ((name || '?').trim().charAt(0) || '?').toUpperCase();
+  const s = size || 14;
+  return `<span title="${_glEsc(name || '')}" style="display:inline-flex;align-items:center;justify-content:center;width:${s}px;height:${s}px;border-radius:50%;background:${c};color:#0e0e0e;font-family:var(--mono);font-size:${Math.round(s * 0.62)}px;font-weight:700;line-height:1;flex-shrink:0">${initial}</span>`;
+}
+
+// ── Teammates' submissions for the calendar — { 'YYYY-MM-DD': [sub, …] }.
+// Latest version per (date, person); withdrawn hidden; OWN submissions
+// excluded (your days already render from your own logs). Also feeds
+// _glPSpaceCache so glShowSubmission works straight from the calendar.
+async function glLoadCalendarSubmissions() {
+  window._glSubsByDate = {};
+  const d = _sdb();
+  if (!d) return;
+  const pid = _activeProjectId();
+  if (!pid || pid === 'default') return;
+  try {
+    const snap = await d.collection('projects').doc(pid).collection('submissions').get();
+    const latest = new Map();
+    window._glPSpaceCache = window._glPSpaceCache || {};
+    snap.forEach(s => {
+      const v = Object.assign({ _id: s.id }, s.data());
+      window._glPSpaceCache[s.id] = v;
+      if (v.submittedBy === _currentUser.uid) return;
+      const k = v.date + '|' + v.submittedBy;
+      const cur = latest.get(k);
+      if (!cur || (v.version || 1) > (cur.version || 1)) latest.set(k, v);
+    });
+    latest.forEach(v => {
+      if (v.status === 'withdrawn') return;
+      (window._glSubsByDate[v.date] = window._glSubsByDate[v.date] || []).push(v);
+    });
+  } catch (e) { /* not a member of a shared project */ }
+}
+
 // Project Space — its own page (page-projectSpace); this renders the
 // submissions feed into it. Members-readable by rules.
 function glShowProjectSpace() {
@@ -1207,6 +1250,8 @@ window.GL_ROLES = GL_ROLES;
 window.glMyRoleFor = glMyRoleFor;
 window._glMigrateWorkProductFlip = _glMigrateWorkProductFlip;
 window.glSetMarkersPublished = glSetMarkersPublished;
+window.glMemberChip = glMemberChip;
+window.glLoadCalendarSubmissions = glLoadCalendarSubmissions;
 window.glEnsureSharedProject = glEnsureSharedProject;
 window.glBackfillSharedProjects = glBackfillSharedProjects;
 window.glCreateInvite = glCreateInvite;
