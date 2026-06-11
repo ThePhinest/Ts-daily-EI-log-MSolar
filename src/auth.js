@@ -132,9 +132,12 @@ if (window.navigator.standalone === true && !window.Capacitor?.isNativePlatform?
 }
 // Show Sign in with Apple only on native Capacitor — web path requires
 // a Service ID registered with Apple (future work if web Apple sign-in needed).
+// The hide lives in the .si-btn-apple CSS rule, so the reveal must set an
+// explicit inline display — '' would fall back to the class's display:none
+// (the bug that kept the button invisible on device until 2026-06-11).
 if (window.Capacitor?.isNativePlatform?.()) {
   document.querySelectorAll('.si-btn-apple').forEach(function(el) {
-    el.style.display = '';
+    el.style.display = 'inline-block';
   });
 }
 
