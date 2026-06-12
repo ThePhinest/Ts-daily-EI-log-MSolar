@@ -228,6 +228,16 @@ async function _glMigrateToProjects() {
       }
     } catch(e) {}
 
+    // Genuinely fresh account: no saved config and no known projects anywhere.
+    // Creating the legacy defaults shell here gave every new signup a phantom
+    // unnamed "New Project" (and raced/suppressed the first-run sheet). There
+    // is nothing to migrate — leave the account project-less; the first-run
+    // sheet owns project creation now.
+    if (!cfgDoc.exists && known.length === 0) {
+      console.log('GroundLog: fresh account — no legacy data, skipping project migration');
+      return;
+    }
+
     // Ensure active project is in the list
     if (!known.some(p => p.projectName === activeCfg.projectName)) known.push(activeCfg);
     console.log('GroundLog: migrating', known.length, 'projects:', known.map(p => p.projectName).join(', '));

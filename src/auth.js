@@ -429,9 +429,45 @@ function glRunStorageMigration() {
 
 function glSignOut() {
   if (!auth) return;
-  _confirmModal('Sign out of GroundLog on this device?', function() {
-    auth.signOut();
+  _confirmModal('Sign out of GroundLog on this device? Local caches on this device are cleared — your data stays saved in your account.', function() {
+    auth.signOut().then(function() {
+      try { _glClearDeviceStorage(); } catch (e) {}
+      location.reload();
+    });
   }, 'Sign Out', 'Sign Out');
+}
+
+// ── Device uid fence ──
+// localStorage is per-ORIGIN, not per-account: every local cache (project
+// config, known projects, daily-log autosave, calendar archives, KML layer
+// list, photo metadata incl. Storage capability URLs) survives sign-out, so
+// a different account signing in on the same device inherited ALL of it
+// (found 2026-06-11: iOS throwaway "Justin Spect" wearing Tim's real data —
+// Moraine config, today's daily log, calendar, KML, photos). Cloud rules
+// held throughout; this fences the device copy. On a uid mismatch we clear
+// storage AND reload so in-memory state can't leak either. First sign-in on
+// a device (no stamp) just stamps — existing single-user devices keep their
+// offline caches.
+// A pending invite token survives the purge — it belongs to whoever signs
+// in NEXT (the shared-device invite-accept flow), not to the prior account.
+function _glClearDeviceStorage() {
+  const invite = localStorage.getItem('gl_pending_invite');
+  localStorage.clear();
+  if (invite) localStorage.setItem('gl_pending_invite', invite);
+}
+
+function _glUidFence(uid) {
+  try {
+    const prev = localStorage.getItem('gl_device_uid');
+    if (prev && prev !== uid) {
+      _glClearDeviceStorage();
+      localStorage.setItem('gl_device_uid', uid);
+      location.reload();
+      return true; // reloading — caller should stop boot work
+    }
+    localStorage.setItem('gl_device_uid', uid);
+  } catch (e) {}
+  return false;
 }
 
 function _siAuthError(code) {
@@ -463,6 +499,9 @@ function _initAuth() {
     document.getElementById('page-auth-loading').style.display = 'none';
     if (user) {
       window._currentUser = user;
+      // Different account than this device last ran → storage cleared +
+      // reload; skip boot, the clean boot after reload takes it from here.
+      if (_glUidFence(user.uid)) return;
       // Tag Sentry events with the opaque UID only (no email/name) so we
       // can correlate per-user issues without leaking PII to Sentry.
       Sentry.setUser({ id: user.uid });
