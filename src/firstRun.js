@@ -56,7 +56,7 @@ function _frShowSheet() {
     <label style="display:block;font-family:var(--mono);font-size:10px;letter-spacing:.12em;color:var(--muted);margin-bottom:4px">PROJECT NAME</label>
     <input id="_fr-proj-name" autocomplete="off" placeholder="e.g. Maple Ridge Solar" style="width:100%;box-sizing:border-box;background:var(--s2);border:1px solid var(--border2);border-radius:6px;color:var(--text);font-size:16px;padding:10px;margin-bottom:12px">
     <label style="display:block;font-family:var(--mono);font-size:10px;letter-spacing:.12em;color:var(--muted);margin-bottom:4px">YOUR NAME <span style="text-transform:none;letter-spacing:0;color:var(--muted)">— shows as &ldquo;Prepared By&rdquo; on reports</span></label>
-    <input id="_fr-my-name" autocomplete="name" value="${_frEsc(myName)}" placeholder="e.g. Sam Rivera" style="width:100%;box-sizing:border-box;background:var(--s2);border:1px solid var(--border2);border-radius:6px;color:var(--text);font-size:16px;padding:10px">
+    <input id="_fr-my-name" autocomplete="name" value="${_frEsc(myName)}" placeholder="e.g. Justin Spect" style="width:100%;box-sizing:border-box;background:var(--s2);border:1px solid var(--border2);border-radius:6px;color:var(--text);font-size:16px;padding:10px">
     <div class="modal-btns" style="margin-top:16px">
       <button class="modal-confirm" id="_fr-create" style="background:var(--amber);border-color:var(--amber);color:#0e0e0e;flex:1">CREATE PROJECT →</button>
     </div>
