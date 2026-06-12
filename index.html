@@ -790,7 +790,10 @@ button:disabled,button[disabled]{opacity:.45;cursor:not-allowed}
 #ob-overlay{position:fixed;inset:0;z-index:9500;background:#1a1a1a;display:none;flex-direction:column;align-items:center;justify-content:center}
 #ob-overlay.ob-active{display:flex}
 /* ToS phase */
-#ob-tos{width:100%;max-width:420px;height:100%;padding:40px 24px 32px;display:flex;flex-direction:column}
+/* The overlay is fixed inset:0 — with viewport-fit=cover that includes the
+   iOS status bar / Dynamic Island zone, so both phases need the top safe-area
+   inset added to their padding (carousel top ran under the island, 6/11). */
+#ob-tos{width:100%;max-width:420px;height:100%;padding:calc(env(safe-area-inset-top,0px) + 18px) 24px calc(env(safe-area-inset-bottom,0px) + 22px);display:flex;flex-direction:column}
 .ob-wm{margin-bottom:20px;text-align:center}
 .ob-section-label{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted2);margin-bottom:6px}
 .ob-heading{font-family:'Oswald',sans-serif;font-weight:700;font-size:20px;letter-spacing:.04em;text-transform:uppercase;color:var(--amber);margin-bottom:14px}
@@ -805,7 +808,7 @@ button:disabled,button[disabled]{opacity:.45;cursor:not-allowed}
 .ob-agree-btn{width:100%;font-family:var(--cond);font-weight:700;font-size:13px;letter-spacing:.08em;text-transform:uppercase;background:var(--s3);border:1px solid var(--s3);color:#fff;padding:13px;border-radius:7px;cursor:pointer;transition:opacity .2s}
 .ob-agree-btn:disabled{opacity:.35;cursor:not-allowed}
 /* Carousel phase */
-#ob-carousel{width:100%;max-width:430px;height:100%;padding:18px 0 20px;display:none;flex-direction:column;align-items:center}
+#ob-carousel{width:100%;max-width:430px;height:100%;padding:calc(env(safe-area-inset-top,0px) + 14px) 0 calc(env(safe-area-inset-bottom,0px) + 16px);display:none;flex-direction:column;align-items:center}
 .ob-slides-track{flex:1;width:100%;overflow:hidden}
 .ob-slides{display:flex;height:100%;transition:transform .45s cubic-bezier(.25,.46,.45,.94);will-change:transform}
 .ob-slide{min-width:100%;display:flex;flex-direction:column;align-items:center;overflow:hidden}
@@ -823,7 +826,10 @@ button:disabled,button[disabled]{opacity:.45;cursor:not-allowed}
 .ob-welcome-body{color:rgba(240,237,232,.62);font-size:15px;line-height:1.7;text-align:center}
 /* Feature slides */
 .ob-slide-feature{padding-top:14px}
-.ob-preview-card{width:320px;height:420px;overflow:hidden;border-radius:18px;border:1px solid rgba(255,255,255,.1);box-shadow:0 24px 64px rgba(0,0,0,.65),0 2px 16px rgba(0,0,0,.5);flex-shrink:0}
+/* flex-shrink:1 + min-height: on viewports too short for the full stack the
+   phone mock crops at its bottom instead of pushing the dots/nav off-screen
+   (or the card top under the status bar). */
+.ob-preview-card{width:320px;height:420px;overflow:hidden;border-radius:18px;border:1px solid rgba(255,255,255,.1);box-shadow:0 24px 64px rgba(0,0,0,.65),0 2px 16px rgba(0,0,0,.5);flex-shrink:1;min-height:180px}
 .ob-preview-inner{width:390px;height:512px;transform-origin:top left;transform:scale(0.8205)}
 .ob-slide-text{padding:12px 28px 14px;text-align:center}
 .ob-eyebrow{color:rgba(255,255,255,.38);font-size:11px;letter-spacing:2.5px;margin-bottom:7px;font-weight:600;font-family:var(--mono)}
