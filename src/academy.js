@@ -14,7 +14,7 @@
 // never real project data.
 
 const GL_ACADEMY_TOPICS = [
-  { id: 'getting-started', icon: '📋', title: 'Getting started',              min: 2, url: '',
+  { id: 'getting-started', icon: '📋', title: 'Getting started',              min: 2, url: 'https://groundlog.io/academy/getting-started.mp4',
     blurb: 'Create your project and file your first daily log.' },
   { id: 'map-categories',  icon: '🗂️', title: 'Tracker categories & templates', min: 2, url: '',
     blurb: 'Set up categories from templates — seeding, ground disturbance, linear BMPs.' },
