@@ -168,7 +168,10 @@ function _buildAndCopyJSON(){
     generalComms:document.getElementById('genComms').value.trim(),
     lookahead,
   };
-  const out=`EI FIELD LOG — MORAINE SOLAR ENERGY CENTER\nBuild today's report.\n\n\`\`\`json\n${JSON.stringify(data,null,2)}\n\`\`\``;
+  // Header carries the ACTIVE project's name — was hardcoded to Moraine
+  // (caught in the 2026-06-11 pre-tester contamination audit).
+  const _projName=((typeof loadProjectConfig==='function'?loadProjectConfig().projectName:'')||'PROJECT').toUpperCase();
+  const out=`EI FIELD LOG — ${_projName}\nBuild today's report.\n\n\`\`\`json\n${JSON.stringify(data,null,2)}\n\`\`\``;
   const fn=()=>{const s=document.getElementById('copyStatus');s.classList.add('show');setTimeout(()=>s.classList.remove('show'),3500)};
   if(navigator.clipboard){navigator.clipboard.writeText(out).then(fn).catch(()=>fbCopy(out,fn))}else{fbCopy(out,fn)}
 }

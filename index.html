@@ -2738,6 +2738,17 @@ Anticipated rain — AM weather monitoring expected"></textarea>
         <button id="cfg-hosted-key-btn" class="btn btn-outline" style="font-size:11px;padding:7px 14px;display:none" onclick="rptSaveHostedKey()">Share key with invited users</button>
         <div class="config-hint" style="margin-top:4px">Makes Formalize Log &amp; Generate Report available to users without their own API key.</div>
       </div>
+      <div style="margin-top:14px;border-top:1px solid var(--border);padding-top:12px">
+        <div class="field"><label>Report Logo — this project</label></div>
+        <p class="config-hint">Shown at the top of generated reports for this project (client or firm logo). No logo = clean text header.</p>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <img id="cfg-report-logo-preview" alt="" style="display:none;height:34px;background:#fff;border-radius:4px;padding:2px">
+          <button class="btn btn-outline" style="font-size:11px;padding:7px 14px" onclick="document.getElementById('cfg-report-logo-input').click()">Upload Logo</button>
+          <button class="btn btn-outline" id="cfg-report-logo-clear" style="font-size:11px;padding:7px 14px;display:none" onclick="rptClearReportLogo()">Remove</button>
+          <span id="cfg-report-logo-status" style="font-family:var(--mono);font-size:11px;color:var(--green);opacity:0;transition:opacity .4s"></span>
+        </div>
+        <input type="file" id="cfg-report-logo-input" accept="image/*" style="display:none" onchange="rptSaveReportLogo(this.files);this.value=''">
+      </div>
     </div>
   </div>
 
@@ -3469,7 +3480,7 @@ function showPage(name){
     if(moreBtn)moreBtn.classList.add('active');
   }
   if(name==='log'){ if(typeof glUpdateReviewerLogState==='function') glUpdateReviewerLogState(); }
-  if(name==='config'){ renderConfig(); tsLoadConfigFields(); renderNavConfig(); mapLoadSettingsFields(); if(typeof glRenderMembersCard==='function') glRenderMembersCard(); if(typeof _glInitMapShareBtn==='function') _glInitMapShareBtn(); if(typeof _glInitMapHostBtn==='function') _glInitMapHostBtn(); }
+  if(name==='config'){ renderConfig(); tsLoadConfigFields(); renderNavConfig(); mapLoadSettingsFields(); if(typeof glRenderMembersCard==='function') glRenderMembersCard(); if(typeof _glInitMapShareBtn==='function') _glInitMapShareBtn(); if(typeof _glInitMapHostBtn==='function') _glInitMapHostBtn(); if(typeof rptLoadReportLogoUI==='function') rptLoadReportLogoUI(); }
   if(name==='aiBranding'){ if(typeof aiBrandingInit==='function') aiBrandingInit(); }
   if(name==='accountSettings'){ acctInitPage(); }
   if(name==='map'){ mapInit(); setTimeout(()=>{ mapResize(); },200); }

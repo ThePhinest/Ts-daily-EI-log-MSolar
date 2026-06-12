@@ -3,8 +3,11 @@
 // REPORT GENERATION
 // ═══════════════════════════════════════════
 
-// ── Stantec logo (JPEG, base64) ──
-const _RPT_LOGO_B64 = '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';
+// Report logo lives in PROJECT DATA (settings/{pid}.reportLogoB64), never in
+// code: the Stantec logo that was hardcoded here landed on EVERY account's
+// reports (caught 2026-06-11 pre-tester audit; original extracted to OneDrive
+// Branding\stantec-report-logo.jpg - re-upload it to Moraine via Settings ->
+// Report Generation -> Report Logo). No logo = clean text-only title block.
 
 function _b64ToArrayBuffer(b64){
   const bin=atob(b64);
@@ -324,12 +327,26 @@ async function rptBuildDocx(logData,polished,photos){
       new TableCell({borders:{top:noBdr,left:noBdr,bottom:bdr,right:bdr},shading:{fill:LT_BLUE,type:ShadingType.CLEAR},width:{size:40,type:WidthType.PERCENTAGE},margins:{top:40,bottom:80,left:120,right:120},children:[new Paragraph({children:[]})]}),
     ]})
   ]});
-  // Logo + subtitle block
-  const logoImg=new ImageRun({data:_b64ToArrayBuffer(_RPT_LOGO_B64),transformation:{width:200,height:50}});
-  const titleBlock=[
-    new Paragraph({alignment:AlignmentType.CENTER,children:[logoImg],spacing:{before:160,after:60}}),
-    new Paragraph({alignment:AlignmentType.CENTER,children:[new TextRun({text:'Daily Environmental Compliance Report',font:'Arial',size:22,color:MID_BLUE})],spacing:{before:0,after:160}})
-  ];
+  // Logo + subtitle block — logo is per-project data (see header comment).
+  let _logo=null;
+  try{
+    const _pid=_activeProjectId();
+    if(_pid&&_pid!=='active'&&typeof db!=='undefined'&&db&&_fbReady){
+      const _pd=await _udb().collection('settings').doc(_pid).get();
+      if(_pd.exists&&_pd.data().reportLogoB64){
+        _logo={
+          b64:String(_pd.data().reportLogoB64).replace(/^data:image\/\w+;base64,/,''),
+          w:_pd.data().reportLogoW||200,
+          h:_pd.data().reportLogoH||50
+        };
+      }
+    }
+  }catch(e){ /* no logo is a valid state — never block report generation */ }
+  const titleBlock=[];
+  if(_logo){
+    titleBlock.push(new Paragraph({alignment:AlignmentType.CENTER,children:[new ImageRun({data:_b64ToArrayBuffer(_logo.b64),transformation:{width:_logo.w,height:_logo.h}})],spacing:{before:160,after:60}}));
+  }
+  titleBlock.push(new Paragraph({alignment:AlignmentType.CENTER,children:[new TextRun({text:'Daily Environmental Compliance Report',font:'Arial',size:22,color:MID_BLUE})],spacing:{before:_logo?0:160,after:160}}));
   // Info table
   const infoTable=new Table({rows:[
     infoRow('Report Date:',longDate),
@@ -841,7 +858,81 @@ async function _doGenerate(){
 }
 
 // ── Window exposures — called from HTML onclick attributes ──
+// ── Per-project report logo (Settings → Report Generation) ──
+function _rptLogoStatus(msg,isErr){
+  const el=document.getElementById('cfg-report-logo-status');
+  if(!el) return;
+  el.textContent=msg;
+  el.style.color=isErr?'#c0392b':'var(--green)';
+  el.style.opacity='1';
+  setTimeout(()=>{el.style.opacity='0';},3000);
+}
+
+async function rptLoadReportLogoUI(){
+  const img=document.getElementById('cfg-report-logo-preview');
+  const clearBtn=document.getElementById('cfg-report-logo-clear');
+  if(!img||!clearBtn) return;
+  img.style.display='none'; clearBtn.style.display='none';
+  try{
+    const pid=_activeProjectId();
+    if(!pid||pid==='default'||typeof db==='undefined'||!db||!_fbReady) return;
+    const d=await _udb().collection('settings').doc(pid).get();
+    if(d.exists&&d.data().reportLogoB64){
+      img.src=d.data().reportLogoB64;
+      img.style.display='';
+      clearBtn.style.display='';
+    }
+  }catch(e){}
+}
+
+function rptSaveReportLogo(files){
+  const f=files&&files[0];
+  if(!f) return;
+  const pid=_activeProjectId();
+  if(!pid||pid==='default'){_rptLogoStatus('Create a project first.',true);return;}
+  const img=new Image();
+  const url=URL.createObjectURL(f);
+  img.onload=async function(){
+    URL.revokeObjectURL(url);
+    // Normalize: downscale to ≤600px wide, JPEG on white (DOCX page is white;
+    // also caps the base64 well under the 1 MiB Firestore doc limit).
+    const scale=Math.min(1,600/img.naturalWidth);
+    const c=document.createElement('canvas');
+    c.width=Math.max(1,Math.round(img.naturalWidth*scale));
+    c.height=Math.max(1,Math.round(img.naturalHeight*scale));
+    const ctx=c.getContext('2d');
+    ctx.fillStyle='#fff'; ctx.fillRect(0,0,c.width,c.height);
+    ctx.drawImage(img,0,0,c.width,c.height);
+    const dataUrl=c.toDataURL('image/jpeg',0.85);
+    if(dataUrl.length>250000){_rptLogoStatus('Image too large — try a simpler logo.',true);return;}
+    // Display dims in the DOCX: height 50, keep ratio, cap width 260.
+    let h=50,w=Math.round(50*c.width/c.height);
+    if(w>260){w=260;h=Math.round(260*c.height/c.width);}
+    try{
+      await _udb().collection('settings').doc(pid).set({reportLogoB64:dataUrl,reportLogoW:w,reportLogoH:h,_ts:Date.now()},{merge:true});
+      rptLoadReportLogoUI();
+      _rptLogoStatus('✓ Logo saved');
+    }catch(e){_rptLogoStatus('Save failed: '+(e.message||'error'),true);}
+  };
+  img.onerror=function(){URL.revokeObjectURL(url);_rptLogoStatus('Could not read that image.',true);};
+  img.src=url;
+}
+
+async function rptClearReportLogo(){
+  const pid=_activeProjectId();
+  if(!pid||pid==='default') return;
+  try{
+    const del=window.firebase.firestore.FieldValue.delete();
+    await _udb().collection('settings').doc(pid).set({reportLogoB64:del,reportLogoW:del,reportLogoH:del,_ts:Date.now()},{merge:true});
+    rptLoadReportLogoUI();
+    _rptLogoStatus('✓ Logo removed');
+  }catch(e){_rptLogoStatus('Remove failed: '+(e.message||'error'),true);}
+}
+
 window.generateReport = generateReport;
+window.rptSaveReportLogo = rptSaveReportLogo;
+window.rptClearReportLogo = rptClearReportLogo;
+window.rptLoadReportLogoUI = rptLoadReportLogoUI;
 window.polishLog = polishLog;
 window.saveApiKey = saveApiKey;
 window.toggleApiKeyVisibility = toggleApiKeyVisibility;
