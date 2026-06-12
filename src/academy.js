@@ -16,8 +16,8 @@
 const GL_ACADEMY_TOPICS = [
   { id: 'getting-started', icon: '📋', title: 'Getting started',              min: 2, url: 'https://groundlog.io/academy/getting-started.mp4',
     blurb: 'Create your project and file your first daily log.' },
-  { id: 'map-categories',  icon: '🗂️', title: 'Tracker categories & templates', min: 2, url: '',
-    blurb: 'Set up categories from templates — seeding, ground disturbance, linear BMPs.' },
+  { id: 'map-categories',  icon: '🗂️', title: 'Tracker categories & templates', min: 2, url: 'https://groundlog.io/academy/map-categories.mp4',
+    blurb: 'Categories from templates, states & colors, stacking layers on a plan, the tracker log.' },
   { id: 'map-plans-layers', icon: '📐', title: 'Plans, layers & states',      min: 2, url: '',
     blurb: 'Draw a plan, stack state layers on top (lime → fertilizer → seed), watch progress fill in.' },
   { id: 'map-drawing',     icon: '✏️', title: 'Drawing & snapping',           min: 2, url: '',
