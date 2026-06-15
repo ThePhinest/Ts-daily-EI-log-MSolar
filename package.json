@@ -31,7 +31,7 @@
     "@capacitor/splash-screen": "^8.0.1",
     "@capacitor/status-bar": "^8.0.2",
     "@mapbox/mapbox-gl-draw": "^1.5.1",
-    "@sentry/browser": "10.43.0",
+    "@sentry/browser": "10.57.0",
     "@sentry/capacitor": "^4.0.0",
     "@tmcw/togeojson": "^7.1.2",
     "docx": "^8.5.0",
