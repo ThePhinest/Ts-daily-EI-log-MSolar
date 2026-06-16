@@ -304,9 +304,9 @@ function tsRenderCurrentWeek(){
     // tsFieldEdit reads this attribute, not the live active project.
     rows+=`<tr class="${isToday?'ts-row-today':''}" data-date="${ds}" data-projectid="${activePid}">
       <td class="ts-td-date">${tsDisplayDate(d)}</td>
-      <td><input type="number" class="ts-input" value="${hours}" min="0" max="24" step="0.5" style="width:42px" onchange="tsFieldEdit('${ds}','hours',this.value,'_manualHours',this)"></td>
-      <td><input type="number" class="ts-input" value="${perDiem}" min="0" step="1" style="width:50px" onchange="tsFieldEdit('${ds}','perDiem',this.value,'_manualPerDiem',this)"></td>
-      <td><input type="number" class="ts-input" value="${miles}" min="0" step="1" style="width:46px" onchange="tsFieldEdit('${ds}','miles',this.value,'_manualMiles',this)"></td>
+      <td><input type="number" class="ts-input" value="${hours}" min="0" max="24" step="0.5" style="width:100%" onchange="tsFieldEdit('${ds}','hours',this.value,'_manualHours',this)"></td>
+      <td><input type="number" class="ts-input" value="${perDiem}" min="0" step="1" style="width:100%" onchange="tsFieldEdit('${ds}','perDiem',this.value,'_manualPerDiem',this)"></td>
+      <td><input type="number" class="ts-input" value="${miles}" min="0" step="1" style="width:100%" onchange="tsFieldEdit('${ds}','miles',this.value,'_manualMiles',this)"></td>
       <td class="ts-td-calc">$${mileage}</td>
       <td><input type="text" class="ts-input" value="${activity}" style="width:100%;min-width:90px" onchange="tsFieldEdit('${ds}','activitySummary',this.value,'_manualActivity',this)" placeholder="Activity…"></td>
     </tr>`;

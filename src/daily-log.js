@@ -789,6 +789,13 @@ async function dlGoToToday(){
     async function(){
       // File the current day's work before switching away.
       if(currentDate) await dlArchive(currentDate);
+      // Pull dailyLogs from the cloud first — on a device that hasn't opened
+      // the Calendar this session, today's archived record may not be in the
+      // local cache yet, so dlGet(today) would miss it and _resetFormCore()
+      // would land on a blank today form (the data is safe in the cloud, but
+      // an empty form looks alarming). calLoadCloud only fills missing local
+      // entries, so it never clobbers in-progress local work.
+      if(typeof calLoadCloud==='function'){ try{ await calLoadCloud(); }catch{} }
       const rec=dlGet(today);
       document.getElementById('crewContainer').innerHTML='';
       window.crewIds=[]; window.crewSeq=0;

@@ -92,6 +92,21 @@ function _frShowSheet() {
     let waited = 0;
     while (!window._fbReady && waited < 6000) { await new Promise(r => setTimeout(r, 200)); waited += 200; }
     try {
+      // The name they typed is their name — seed the account display name
+      // from it when the account has none yet. Provider sign-ins (Apple often
+      // returns null) and first-run-only accounts had a blank Settings →
+      // Account display name because nothing ever called updateProfile.
+      // preparedBy is per-project and may diverge later, so only fill an
+      // EMPTY account name. Done before createProject so the project's member
+      // doc gets the real name via _glMyName() instead of the email-prefix.
+      const u = window._currentUser;
+      if (preparedBy && u && !u.displayName) {
+        try {
+          await u.updateProfile({ displayName: preparedBy });
+          if (db && _udb()) await _udb().collection('profile').doc('info')
+            .set({ displayName: preparedBy }, { merge: true });
+        } catch (e) { /* non-fatal — creating the project is the priority */ }
+      }
       // createProject returns the new id — an early no-op return (Firebase
       // still not ready) must NOT close the sheet as if it succeeded.
       const pid = await createProject(name, '', '', { preparedBy: preparedBy, landOn: 'log' });

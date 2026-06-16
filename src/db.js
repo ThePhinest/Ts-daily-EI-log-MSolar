@@ -139,23 +139,31 @@ window.addEventListener('offline', function() {
 });
 
 // ── Visibility change — re-sync when device wakes or user returns to tab ──
+// Also re-runs new-day detection on WEB foreground: native is covered by the
+// Capacitor appStateChange listener (main.js), but a PWA tab left open across a
+// weekend never re-checked the day, so the "start new day" prompt was missed on
+// Monday (Discord 6/15). checkNewDay() self-suppresses (pei_newday_suppress), so
+// it's safe to call on every return-to-foreground; it runs AFTER the session
+// re-sync so a day already advanced on another device is respected.
 document.addEventListener('visibilitychange', function() {
   if (document.visibilityState !== 'visible') return;
-  if (!db || !_fbReady) return;
+  if (!db || !_fbReady) { if (typeof checkNewDay === 'function') checkNewDay(); return; }
   _udb().collection('sessions').doc(_activeProjectId()).get().then(function(doc) {
-    if (!doc.exists) return;
-    const cloudState = doc.data();
-    const cloudTs = cloudState._ts || 0;
-    let localTs = 0;
-    try { localTs = JSON.parse(localStorage.getItem('msf_autosave') || '{}')._ts || 0; } catch {}
-    if (cloudTs > localTs) {
-      document.getElementById('crewContainer').innerHTML = '';
-      window.crewIds = []; window.crewSeq = 0;
-      restoreFormState(cloudState);
-      try { localStorage.setItem('msf_autosave', JSON.stringify(cloudState)); } catch {}
-      showCloudBanner('☁ Synced — picked up changes from another device.');
+    if (doc.exists) {
+      const cloudState = doc.data();
+      const cloudTs = cloudState._ts || 0;
+      let localTs = 0;
+      try { localTs = JSON.parse(localStorage.getItem('msf_autosave') || '{}')._ts || 0; } catch {}
+      if (cloudTs > localTs) {
+        document.getElementById('crewContainer').innerHTML = '';
+        window.crewIds = []; window.crewSeq = 0;
+        restoreFormState(cloudState);
+        try { localStorage.setItem('msf_autosave', JSON.stringify(cloudState)); } catch {}
+        showCloudBanner('☁ Synced — picked up changes from another device.');
+      }
     }
-  }).catch(function() {});
+    if (typeof checkNewDay === 'function') checkNewDay();
+  }).catch(function() { if (typeof checkNewDay === 'function') checkNewDay(); });
 });
 
 // ── Cloud save (called with debounce from autoSave) ──
@@ -515,6 +523,9 @@ async function _glSharedBoot() {
     if (typeof glCheckPendingInvite === 'function') setTimeout(glCheckPendingInvite, 600);
     if (typeof _glInitMapShareBtn === 'function') _glInitMapShareBtn();
     if (typeof _glInitMapHostBtn === 'function') _glInitMapHostBtn();
+    // Restore the per-project nav layout from the user's cloud profile — the
+    // device-uid purge wiped its localStorage on the last account switch.
+    if (typeof _glHydrateNavSlotsFromCloud === 'function') _glHydrateNavSlotsFromCloud();
   } catch(e) { console.warn('shared-projects boot:', e.message); }
 }
 

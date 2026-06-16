@@ -399,6 +399,42 @@ function navLoadSlots(){
 
 function navSaveSlots(){
   try{ localStorage.setItem(_navSlotsKey(),JSON.stringify(_navSlots)); }catch{}
+  _glSaveNavSlotsCloud();
+}
+
+// Per-uid cloud persistence for the nav layout. localStorage alone is wiped by
+// the device-uid fence on every account switch/sign-out (auth.js _glUidFence),
+// so the custom tab bar reset to defaults when you came back. Mirror the active
+// project's slots into the user's own settings/nav doc (keyed by pid) — survives
+// the purge AND syncs across devices. Fire-and-forget; user-initiated + rare.
+function _glSaveNavSlotsCloud(){
+  try{
+    if(!window._fbReady || !window._currentUser || typeof _udb!=='function' || !_udb()) return;
+    const pid=(typeof _activeProjectId==='function')?(_activeProjectId()||'default'):'default';
+    _udb().collection('settings').doc('nav')
+      .set({ slots: { [pid]: _navSlots.slice() } }, { merge: true })
+      .catch(()=>{});
+  }catch{}
+}
+
+// Pull cloud-saved nav layouts back into localStorage on boot (called from
+// _glSharedBoot) so the per-project bars survive the storage purge / a fresh
+// device, then re-render the active bar. merge:true deep-merges the slots map,
+// so writing one pid never clobbers another's saved layout.
+async function _glHydrateNavSlotsFromCloud(){
+  try{
+    if(!window._fbReady || !window._currentUser || typeof _udb!=='function' || !_udb()) return;
+    const snap=await _udb().collection('settings').doc('nav').get();
+    if(!snap.exists) return;
+    const slots=(snap.data()||{}).slots||{};
+    Object.keys(slots).forEach(pid=>{
+      const arr=slots[pid];
+      if(Array.isArray(arr)&&arr.length===3){
+        try{ localStorage.setItem('pei_nav_slots::'+pid, JSON.stringify(arr)); }catch{}
+      }
+    });
+    if(typeof renderNav==='function') renderNav();
+  }catch{}
 }
 
 function renderNav(){
@@ -777,6 +813,7 @@ window.appendField = appendField;
 window.renderAllChips = renderAllChips;
 window.navLoadSlots = navLoadSlots;
 window.navSaveSlots = navSaveSlots;
+window._glHydrateNavSlotsFromCloud = _glHydrateNavSlotsFromCloud;
 window.renderNav = renderNav;
 window.navAddLongPress = navAddLongPress;
 window.showNavPicker = showNavPicker;

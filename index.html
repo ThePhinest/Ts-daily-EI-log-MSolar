@@ -44,7 +44,7 @@
 }
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 /* ── Native-feel pass (Batch 1, 2026-06-04) — global iOS polish ── */
-html,body{overscroll-behavior:none}                                  /* kill page rubber-band bounce */
+html,body{overscroll-behavior:none;touch-action:manipulation}        /* kill page rubber-band bounce + accidental double-tap-to-zoom that trapped the whole app chrome (#5); pinch-zoom still allowed (Mapbox/drag-handle set their own touch-action) */
 *{-webkit-tap-highlight-color:transparent}                           /* no grey tap flash */
 button{-webkit-appearance:none;appearance:none}                      /* custom buttons never fall back to native chrome */
 button,[role="button"],.nav-item,.more-row,.more-tile,.map-cat-pill,.proj-row,.map-fab-btn{-webkit-touch-callout:none} /* no long-press magnifier on chrome */
@@ -351,6 +351,8 @@ body.theme-light{
 label{font-family:var(--mono);font-size:var(--fs-sm);letter-spacing:.07em;text-transform:uppercase;color:var(--muted2)}
 .card-personal label{color:var(--personal-accent)}
 input[type=text],input[type=date],input[type=number],input[type=time],select,textarea{background:var(--bg);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--body);font-size:17px;padding:8px 11px;width:100%;box-sizing:border-box;transition:border-color .15s;-webkit-appearance:none}
+/* Empty-state / placeholder text = a description, not entered content — muted gray + italic so it's instantly distinct (#12). Only shows while the field is empty, so real values are never italicized. opacity:1 cancels Firefox's default fade. */
+input::placeholder,textarea::placeholder{color:var(--muted);font-style:italic;opacity:1}
 input[type=time],select{min-height:44px;box-sizing:border-box}
 input:focus,select:focus,textarea:focus{outline:none;border-color:var(--amber)}
 input[readonly]{color:var(--muted2);cursor:default}
@@ -437,6 +439,7 @@ button:disabled,button[disabled]{opacity:.45;cursor:not-allowed}
 .dl-status{font-family:var(--mono);font-size:11px;color:var(--personal-accent2);text-align:center;min-height:18px;margin-top:8px;opacity:0;transition:opacity .3s}.dl-status.show{opacity:1}
 .export-hint{font-family:var(--mono);font-size:10.5px;color:var(--muted);text-align:center;margin-top:5px;line-height:1.5}
 .divider-export{height:1px;background:var(--border);margin:14px 0}
+.export-group-label{font-family:var(--mono);font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:var(--muted);margin:0}
 
 /* CONFIG PAGE */
 .config-section{background:var(--s1);border:1px solid var(--border);border-radius:var(--r);margin-bottom:16px;overflow:hidden}
@@ -768,10 +771,13 @@ button:disabled,button[disabled]{opacity:.45;cursor:not-allowed}
 .ts-toggle.active{background:var(--s3);border-color:#005a64;color:var(--amber2)}
 .ts-tbl{width:100%;border-collapse:collapse;font-size:13px;table-layout:fixed}
 .ts-tbl th{color:var(--muted);font-size:11px;letter-spacing:.08em;text-transform:uppercase;padding:4px 6px;border-bottom:1px solid var(--border);text-align:left;font-weight:700}
-.ts-tbl td{padding:6px 6px;border-bottom:1px solid var(--s1);color:var(--text);vertical-align:middle;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ts-tbl td{padding:6px 4px;border-bottom:1px solid var(--s1);color:var(--text);vertical-align:middle;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ts-row-today td{background:rgba(0,76,84,0.15)}
 .ts-row-totals td{border-top:1px solid var(--border);border-bottom:none;color:var(--muted2);font-weight:700;font-size:12px;padding-top:8px}
-.ts-input{background:var(--s2);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:var(--body);font-size:13px;padding:3px 5px;width:100%}
+.ts-input{background:var(--s2);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:var(--body);font-size:13px;padding:3px 5px;width:100%;box-sizing:border-box}
+/* Kill native number spin-buttons — in the fixed-width timesheet columns they ate the value text on desktop Edge (#4). */
+.ts-input[type=number]{-moz-appearance:textfield;appearance:textfield}
+.ts-input::-webkit-outer-spin-button,.ts-input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
 .ts-td-date{color:var(--muted2);white-space:nowrap;font-size:12px;width:68px}
 .ts-td-calc{color:var(--muted2);font-family:var(--mono);font-size:12px}
 .ts-stat-card{background:var(--s2);border-radius:6px;padding:12px}
@@ -1783,24 +1789,33 @@ Anticipated rain — AM weather monitoring expected"></textarea>
   <div class="export-panel">
     <div class="export-title">Export &amp; Save</div>
     <div class="action-row">
-      <!-- Close-day submission (submission-sharing-model): immutable versioned
-           snapshot to the shared project. Personal section never included. -->
+
+      <!-- ── REPORT: the daily deliverable ── -->
+      <div class="export-group-label">Report</div>
+      <button class="btn btn-export" id="btn-generate-report" onclick="generateReport()" style="font-size:15px;padding:15px 20px;letter-spacing:.1em;color:var(--amber)">✦ Generate Report</button>
+      <div id="rpt-status" style="font-family:var(--mono);font-size:11px;color:var(--green);text-align:center;min-height:18px;margin-top:6px;opacity:0;transition:opacity .3s"></div>
+      <button class="btn btn-outline" id="btn-formalize-log" onclick="polishLog()" style="font-size:12px;padding:9px 16px;width:100%;justify-content:center;color:var(--amber)">✦ Formalize Log</button>
+      <div class="export-hint">Generate downloads a complete .docx in one tap. Formalize just AI-rewrites your fields in place — no file. Personal section never included.</div>
+
+      <div class="divider-export"></div>
+
+      <!-- ── SHARE: collaboration with the project (submission-sharing-model):
+           immutable versioned snapshot. Personal section never included. ── -->
+      <div class="export-group-label">Share with project</div>
       <button class="btn btn-export" id="btn-submit-day" onclick="glSubmitDay()" style="font-size:13px;padding:12px 18px;letter-spacing:.08em;color:var(--s3);border-color:var(--s3)">📤 Submit Day to Project</button>
       <div id="submit-day-status" style="font-family:var(--mono);font-size:11px;text-align:center;min-height:16px;margin-top:6px;opacity:0;transition:opacity .3s"></div>
       <!-- Open-days badge — passive submit-discipline pointer, never a blocker -->
       <div id="submit-open-days" style="display:none;font-family:var(--mono);font-size:11px;color:var(--amber);text-align:center;margin-top:4px"></div>
-      <div class="export-hint">Shares a snapshot of this day with everyone on the project — your personal section is never included. Edits after submitting stay yours until you resubmit.</div>
-      <button class="btn btn-outline" onclick="glShowProjectSpace()" style="font-size:11px;padding:7px 14px;width:100%;justify-content:center;margin-top:6px">📁 Project Space — submitted logs</button>
+      <button class="btn btn-outline" onclick="glShowProjectSpace()" style="font-size:11px;padding:7px 14px;width:100%;justify-content:center">📁 Project Space — submitted logs</button>
+      <div class="export-hint">Shares a snapshot with everyone on the project — your personal section is never included. Edits after submitting stay yours until you resubmit.</div>
+
       <div class="divider-export"></div>
-      <button class="btn btn-outline" id="btn-formalize-log" onclick="polishLog()" style="font-size:12px;padding:10px 16px;width:100%;justify-content:center;margin-bottom:4px;color:var(--amber)">✦ Formalize Log</button>
-      <div class="export-hint" style="margin-bottom:12px">AI rewrites selected fields in professional language — in place, no report generated.</div>
-      <button class="btn btn-export" id="btn-generate-report" onclick="generateReport()" style="font-size:15px;padding:15px 20px;letter-spacing:.1em;color:var(--amber)">✦ Generate Report</button>
-      <div id="rpt-status" style="font-family:var(--mono);font-size:11px;color:var(--green);text-align:center;min-height:18px;margin-top:6px;opacity:0;transition:opacity .3s"></div>
-      <div class="export-hint">AI polishes your log and downloads a complete .docx report in one tap.</div>
-      <div class="divider-export"></div>
+
+      <!-- ── ADVANCED: raw escape hatch ── -->
+      <div class="export-group-label">Advanced</div>
       <button class="btn btn-outline" onclick="copyJSON()" style="font-size:11px;padding:7px 14px;width:100%;justify-content:center">⬆ Copy Raw JSON Log</button>
       <div class="copy-status" id="copyStatus">✓ Copied — paste into Claude to generate report.</div>
-      <div class="export-hint">Exports report-relevant data only. Personal section never included.</div>
+      <div class="export-hint">Report-relevant data only. Personal section never included.</div>
     </div>
   </div>
 
