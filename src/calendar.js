@@ -42,7 +42,7 @@ function calGetIndicators(record){
     if(hasComp) indicators.push('<span title="Compliance entries">❗</span>');
   }catch{}
   try{
-    const ph=JSON.parse(localStorage.getItem('ph_photos')||'[]');
+    const ph=window._phPhotos||[];  // Tier-1 cache (IDB-backed); photos no longer in localStorage
     const hasPh=ph.some(p=>(p.date||'').startsWith(record._archivedDate));
     if(hasPh) indicators.push('<span title="Photos">📸</span>');
   }catch{}
@@ -245,7 +245,7 @@ function calOpenDay(date){
 
   let photoSection='';
   try{
-    const ph=JSON.parse(localStorage.getItem('ph_photos')||'[]');
+    const ph=window._phPhotos||[];  // Tier-1 cache (IDB-backed); photos no longer in localStorage
     const dayPhotos=ph.filter(p=>(p.date||'').startsWith(date));
     if(dayPhotos.length>0){
       const thumbs=dayPhotos.slice(0,6).map(p=>
@@ -432,7 +432,7 @@ function calGetDotIndicators(record){
     if(trEntries.length) dots.push('<span class="cal-dot" title="Tracker entries">❗</span>');
   }catch{}
   try{
-    const ph=JSON.parse(localStorage.getItem('ph_photos')||'[]');
+    const ph=window._phPhotos||[];  // Tier-1 cache (IDB-backed); photos no longer in localStorage
     if(ph.some(p=>(p.date||'').startsWith(record._archivedDate))) dots.push('<span class="cal-dot" title="Photos">📸</span>');
   }catch{}
   const tin=record.p_timeIn||''; const tout=record.p_timeOut||'';

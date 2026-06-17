@@ -431,8 +431,8 @@ function glSignOut() {
   if (!auth) return;
   _confirmModal('Sign out of GroundLog on this device? Local caches on this device are cleared — your data stays saved in your account.', function() {
     auth.signOut().then(function() {
-      try { _glClearDeviceStorage(); } catch (e) {}
-      location.reload();
+      var _p; try { _p = _glClearDeviceStorage(); } catch (e) { _p = Promise.resolve(); }
+      Promise.resolve(_p).catch(function(){}).then(function(){ location.reload(); });
     });
   }, 'Sign Out', 'Sign Out');
 }
@@ -450,19 +450,27 @@ function glSignOut() {
 // offline caches.
 // A pending invite token survives the purge — it belongs to whoever signs
 // in NEXT (the shared-device invite-accept flow), not to the prior account.
+// Returns a promise that resolves once BOTH localStorage and the IndexedDB
+// cache are purged. Photos (and Stage 2+ daily logs/tracker/etc.) now live in
+// IndexedDB, so the fence must clear it too — otherwise the cross-account leak
+// this closes reopens. localStorage.clear() is synchronous (so the gl_device_uid
+// stamp set afterward survives); the IDB clear is async and callers await it
+// before reloading.
 function _glClearDeviceStorage() {
   const invite = localStorage.getItem('gl_pending_invite');
   localStorage.clear();
   if (invite) localStorage.setItem('gl_pending_invite', invite);
+  try { return window.idbClearAll ? window.idbClearAll() : Promise.resolve(); }
+  catch (e) { return Promise.resolve(); }
 }
 
 function _glUidFence(uid) {
   try {
     const prev = localStorage.getItem('gl_device_uid');
     if (prev && prev !== uid) {
-      _glClearDeviceStorage();
+      var _p; try { _p = _glClearDeviceStorage(); } catch (e) { _p = Promise.resolve(); }
       localStorage.setItem('gl_device_uid', uid);
-      location.reload();
+      Promise.resolve(_p).catch(function(){}).then(function(){ location.reload(); });
       return true; // reloading — caller should stop boot work
     }
     localStorage.setItem('gl_device_uid', uid);

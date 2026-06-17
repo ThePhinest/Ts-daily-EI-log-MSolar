@@ -207,22 +207,38 @@ function _phPartition(list){
   window._phTrash = trash;
 }
 
+// Tier-1 device cache — photos live in IndexedDB (record-per-key `ph:<id>`),
+// not localStorage. Live + trash are one keyspace; partition is by deletedAt.
+// (Storage architecture locked 2026-06-17 — see KB storage-architecture.md.)
+const PH_IDB_PREFIX = 'ph:';
 function phSaveLocal(){
-  try{ localStorage.setItem('ph_photos', JSON.stringify(window._phPhotos)); }catch{}
-  try{ localStorage.setItem('ph_trash', JSON.stringify(window._phTrash||[])); }catch{}
+  const all = (window._phPhotos||[]).concat(window._phTrash||[]).filter(p => p && p.id);
+  const want = new Set(all.map(p => PH_IDB_PREFIX + p.id));
+  // Remove records no longer present (hard delete / trash sweep).
+  const stale = (window.idbKeysWithPrefix ? window.idbKeysWithPrefix(PH_IDB_PREFIX) : []).filter(k => !want.has(k));
+  if(window.idbSetMany) window.idbSetMany(all.map(p => [PH_IDB_PREFIX + p.id, p]));
+  if(stale.length && window.idbDelMany) window.idbDelMany(stale);
 }
 
 function phLoadLocal(){
+  _phPartition(window.idbGetPrefix ? window.idbGetPrefix(PH_IDB_PREFIX) : []);
+}
+
+// One-time migration: move the legacy localStorage blobs (ph_photos/ph_trash)
+// into record-per-key IDB, then drop them from localStorage (frees ~4.6 MB —
+// the root cause of the 6/17 calendar regression). Idempotent: the absence of
+// the localStorage keys is the done-signal. Must run AFTER `await idbReady`.
+async function phMigrateLocalToIdb(){
+  let raw, rawT;
+  try{ raw = localStorage.getItem('ph_photos'); rawT = localStorage.getItem('ph_trash'); }catch{ return; }
+  if(raw == null && rawT == null) return; // already migrated / nothing to move
   let list = [];
-  try{
-    const raw = localStorage.getItem('ph_photos');
-    if(raw) list = JSON.parse(raw);
-  }catch{ list = []; }
-  try{
-    const rawT = localStorage.getItem('ph_trash');
-    if(rawT) list = list.concat(JSON.parse(rawT));
-  }catch{}
-  _phPartition(list);
+  if(raw){ try{ list = JSON.parse(raw) || []; }catch{} }
+  if(rawT){ try{ list = list.concat(JSON.parse(rawT) || []); }catch{} }
+  const pairs = list.filter(p => p && p.id).map(p => [PH_IDB_PREFIX + p.id, p]);
+  if(pairs.length && window.idbSetMany) window.idbSetMany(pairs);
+  try{ localStorage.removeItem('ph_photos'); localStorage.removeItem('ph_trash'); }catch{}
+  if(pairs.length) console.log('phMigrate: moved', pairs.length, 'photos localStorage → IndexedDB');
 }
 
 async function phSaveCloud(){
@@ -775,6 +791,10 @@ async function _glMigratePhaseD() {
 
 // ── Init ──
 async function phInit(){
+  // Wait for the IDB cache to hydrate, then migrate any legacy localStorage
+  // photo blobs into it — before the first synchronous read.
+  if(window.idbReady){ try{ await window.idbReady; }catch(e){} }
+  await phMigrateLocalToIdb();
   phLoadLocal();
   phRender();
   const fromCloud = await phLoadCloud();
