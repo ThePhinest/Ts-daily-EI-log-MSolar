@@ -13,9 +13,18 @@
 // Foundation for E1.1 Option C (multi-project state isolation rework,
 // locked 2026-05-13). See groundlog/wiki/backlog.md § E1.1.
 //
+// Storage tier (Stage 2c, 2026-06-17): the entry/week/backup blobs this file
+// reads and writes (msf_ts_entries, msf_ts_entries_v2, msf_ts_weeks,
+// msf_ts_entries_premigrate_v2_backup) live in the Tier-1 IDB cache, NOT
+// localStorage — accessed via window.idbGet/idbSet/idbDel (JSON string
+// verbatim). The migration FLAGS (msf_ts_migrated_v2[_at]) stay in
+// localStorage (Tier 2 tiny prefs). This runs from the tail of
+// tsLoadFromFirestore(), after the boot gate has migrated these keys into the
+// IDB mirror, so idbGet is populated. See KB storage-architecture.md.
+//
 // Safety:
 //   • Idempotent: re-running re-sweeps but never overwrites existing v2 keys
-//   • Backup once: msf_ts_entries → msf_ts_entries_premigrate_v2_backup
+//   • Backup once: msf_ts_entries → msf_ts_entries_premigrate_v2_backup (IDB)
 //     (untouched; 30-day rollback window)
 //   • Additive on archived weeks (stamps projectId; no re-key)
 //   • Read paths in src/timesheet.js stay compatible during 30-day overlap
@@ -83,15 +92,15 @@ function _tsMigSeedPerProjectConfigs(){
 function _tsMigStampArchivedWeeks(resolutionMap, activePid){
   let stamped = 0;
   try {
-    const weeks = JSON.parse(localStorage.getItem('msf_ts_weeks') || '[]');
+    const weeks = JSON.parse((window.idbGet && window.idbGet('msf_ts_weeks')) || '[]');
     weeks.forEach(w => {
       if (!w.projectId){
         w.projectId = (w.projectName && resolutionMap[w.projectName]) || activePid;
         stamped++;
       }
     });
-    if (stamped > 0){
-      localStorage.setItem('msf_ts_weeks', JSON.stringify(weeks));
+    if (stamped > 0 && window.idbSet){
+      window.idbSet('msf_ts_weeks', JSON.stringify(weeks));
     }
   } catch {}
   return stamped;
@@ -120,22 +129,23 @@ function _tsMigMirrorToFirestore(v2Entries){
 // console diagnostics.
 async function runTimesheetMigrationV2(){
   try {
-    // Read current old-shape state
+    // Read current old-shape state (Tier-1 IDB cache)
     let oldEntries = {};
-    try { oldEntries = JSON.parse(localStorage.getItem('msf_ts_entries') || '{}'); } catch {}
+    try { oldEntries = JSON.parse((window.idbGet && window.idbGet('msf_ts_entries')) || '{}'); } catch {}
     const oldCount = Object.keys(oldEntries).length;
 
     // Read existing v2 state (may be partial from a prior run)
     let v2Entries = {};
-    try { v2Entries = JSON.parse(localStorage.getItem(TS_V2_KEY) || '{}'); } catch {}
+    try { v2Entries = JSON.parse((window.idbGet && window.idbGet(TS_V2_KEY)) || '{}'); } catch {}
     const v2PreCount = Object.keys(v2Entries).length;
 
-    // First-run housekeeping (only fires once, regardless of entry count)
+    // First-run housekeeping (only fires once, regardless of entry count).
+    // The flag stays in localStorage (Tier 2 tiny pref).
     const firstRun = localStorage.getItem(TS_MIGRATION_FLAG_KEY) !== '1';
 
-    // Backup once on first run if we have entries to migrate
-    if (firstRun && oldCount > 0 && localStorage.getItem(TS_BACKUP_KEY) === null){
-      localStorage.setItem(TS_BACKUP_KEY, JSON.stringify(oldEntries));
+    // Backup once on first run if we have entries to migrate (into IDB)
+    if (firstRun && oldCount > 0 && (!window.idbGet || window.idbGet(TS_BACKUP_KEY) == null)){
+      if (window.idbSet) window.idbSet(TS_BACKUP_KEY, JSON.stringify(oldEntries));
     }
 
     const resolutionMap = _tsMigBuildResolutionMap();
@@ -166,8 +176,8 @@ async function runTimesheetMigrationV2(){
       };
     });
 
-    // Commit v2 store
-    localStorage.setItem(TS_V2_KEY, JSON.stringify(v2Entries));
+    // Commit v2 store (Tier-1 IDB cache)
+    if (window.idbSet) window.idbSet(TS_V2_KEY, JSON.stringify(v2Entries));
 
     // First-run only — stamp archived weeks + seed per-project configs
     let archivedStamped = 0, configsSeeded = 0;
@@ -190,7 +200,7 @@ async function runTimesheetMigrationV2(){
       console.info('Orphans assigned to active project (' + activePid + '):', orphansAssigned);
       console.info('Archived weeks stamped with projectId:', archivedStamped);
       console.info('Per-project ts configs seeded from global:', configsSeeded);
-      console.info('Backup at localStorage.' + TS_BACKUP_KEY + ' (30-day rollback window)');
+      console.info('Backup at IDB cache key ' + TS_BACKUP_KEY + ' (30-day rollback window)');
       console.info('ProjectId resolution map:', resolutionMap);
       console.info('Per-entry resolution log:', resolutionLog);
       console.groupEnd();
@@ -219,13 +229,15 @@ async function runTimesheetMigrationV2(){
 // Console usage:  await tsMigrationRollbackV2()
 async function tsMigrationRollbackV2(){
   try {
-    const backup = localStorage.getItem(TS_BACKUP_KEY);
+    // Backup + entry stores live in the Tier-1 IDB cache (JSON string verbatim);
+    // migration flags stay in localStorage.
+    const backup = window.idbGet && window.idbGet(TS_BACKUP_KEY);
     if (!backup){
       console.warn('[ts-migration-v2] no backup found at ' + TS_BACKUP_KEY);
       return { ok: false, reason: 'no-backup' };
     }
-    localStorage.setItem('msf_ts_entries', backup);
-    localStorage.removeItem(TS_V2_KEY);
+    if (window.idbSet) window.idbSet('msf_ts_entries', backup);
+    if (window.idbDel) window.idbDel(TS_V2_KEY);
     localStorage.removeItem(TS_MIGRATION_FLAG_KEY);
     localStorage.removeItem(TS_MIGRATION_FLAG_KEY + '_at');
     console.info('[ts-migration-v2] rolled back to pre-migration localStorage state');

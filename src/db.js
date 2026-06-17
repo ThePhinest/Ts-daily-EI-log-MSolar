@@ -322,6 +322,16 @@ async function initFirebaseLoad() {
   // Per-project tracker + KML caches (dynamic msf_proj_<pid>_* keys). Suffix-matched
   // so timesheet's msf_proj_<pid>_ts_config is left in localStorage (own session).
   if (window.idbMigrateBySuffix) { window.idbMigrateBySuffix(['_tracker_entries', '_kml_layers']); }
+  // Timesheet (Stage 2c): the growing entry/week/backup blobs → IDB. Tiny
+  // per-project _ts_config / global config / flags / snooze stay in localStorage
+  // (Tier 2 bounded prefs). MUST precede tsLoadFromFirestore → runTimesheetMigrationV2
+  // below — both read these keys via idbGet, so the mirror must be populated first.
+  if (window.idbMigrateKey) {
+    window.idbMigrateKey('msf_ts_entries_v2');
+    window.idbMigrateKey('msf_ts_entries');
+    window.idbMigrateKey('msf_ts_weeks');
+    window.idbMigrateKey('msf_ts_entries_premigrate_v2_backup');
+  }
 
   // If this is an archived file being re-opened, push its state to cloud and exit
   if (typeof SAVED_DATA !== 'undefined' && SAVED_DATA !== null) {

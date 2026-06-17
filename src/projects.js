@@ -173,7 +173,7 @@ function saveProjectConfig() {
     const entries=tsGetAllEntries();
     let eChanged=false;
     const taggedDs=[];Object.keys(entries).forEach(ds=>{if(!entries[ds].projectName){entries[ds].projectName=oldCfg.projectName;eChanged=true;taggedDs.push(ds);}});
-    if(eChanged){localStorage.setItem('msf_ts_entries',JSON.stringify(entries));if(typeof db!=='undefined'&&db&&_fbReady){taggedDs.forEach(ds=>_udb().collection('timesheetEntries').doc(ds).set(entries[ds]).catch(()=>{}));}}
+    if(eChanged){_tsWriteEntries(entries);if(typeof db!=='undefined'&&db&&_fbReady){taggedDs.forEach(ds=>_udb().collection('timesheetEntries').doc(ds).set(entries[ds]).catch(()=>{}));}}
 
     // Tag all untagged archived weeks with the old project name
     const allWeeks=tsGetAllArchivedWeeks();
@@ -431,7 +431,7 @@ function _fixTimesheetEntryProjects() {
     }
   });
   if (changed) {
-    localStorage.setItem('msf_ts_entries', JSON.stringify(entries));
+    _tsWriteEntries(entries);
     if (typeof db !== 'undefined' && db && _fbReady) {
       Object.entries(entries).forEach(([date, e]) => {
         try { _udb().collection('timesheetEntries').doc(date).set(e).catch(() => {}); } catch(err) {}

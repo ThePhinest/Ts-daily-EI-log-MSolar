@@ -38,12 +38,23 @@ function tsGetWeekBounds(date){const cfg=tsLoadConfig();const d=new Date(date);d
 function tsWeekDates(start){const dates=[];for(let i=0;i<7;i++){const d=new Date(start);d.setDate(start.getDate()+i);dates.push(d);}return dates;}
 function tsDisplayDate(d){const days=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];return days[d.getDay()]+' '+(d.getMonth()+1)+'/'+d.getDate();}
 function tsWeekLabel(s,e){const mo=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];return mo[s.getMonth()]+' '+s.getDate()+' – '+mo[e.getMonth()]+' '+e.getDate()+', '+e.getFullYear();}
-// ── Legacy old-shape readers (kept for 30-day dual-write overlap) ──
+// ── Storage tier (Stage 2c, 2026-06-17): timesheet bulk data lives in the
+// Tier-1 IDB cache, NOT localStorage. The three growing blobs —
+// `msf_ts_entries` (legacy old shape), `msf_ts_entries_v2` (compound-key
+// store), `msf_ts_weeks` (archive) — are stored as their JSON string verbatim
+// (same key, same parse-on-read copy semantics) and migrated out of
+// localStorage on boot in initFirebaseLoad, BEFORE tsLoadFromFirestore →
+// runTimesheetMigrationV2 runs (both read via idbGet). Tiny per-project
+// `msf_proj_<pid>_ts_config` + global `msf_ts_config` + flags/snooze stay in
+// localStorage (Tier 2 bounded prefs). See KB storage-architecture.md.
+
+// ── Legacy old-shape store (kept for 30-day dual-write overlap) ──
 // `msf_ts_entries` is the flat single-date-keyed store from before E1.1
 // Option C. Stage 3 dual-writes to BOTH old shape AND v2. Stage 2 reads
 // from v2 only. Old shape readers stay here so cross-device sync from
 // iPhone TestFlight builds (which still write old shape) doesn't break.
-function tsGetAllEntries(){try{return JSON.parse(localStorage.getItem('msf_ts_entries')||'{}');}catch{return{};}}
+function tsGetAllEntries(){try{return JSON.parse((window.idbGet&&window.idbGet('msf_ts_entries'))||'{}');}catch{return{};}}
+function _tsWriteEntries(obj){try{if(window.idbSet)window.idbSet('msf_ts_entries',JSON.stringify(obj));}catch{}}
 
 // ── v2 compound-key store (E1.1 Option C — Stages 2+3) ──
 // Shape: { `${projectId}_${YYYY-MM-DD}`: { projectId, date, projectName, hours, miles, ... } }
@@ -51,8 +62,9 @@ function tsGetAllEntries(){try{return JSON.parse(localStorage.getItem('msf_ts_en
 // in Stage 3. Same-day multi-project is natural — N entries per date, one
 // per active project that logged work that day.
 function _tsEntriesV2(){
-  try { return JSON.parse(localStorage.getItem('msf_ts_entries_v2')||'{}'); } catch { return {}; }
+  try { return JSON.parse((window.idbGet&&window.idbGet('msf_ts_entries_v2'))||'{}'); } catch { return {}; }
 }
+function _tsWriteEntriesV2(obj){ try{ if(window.idbSet) window.idbSet('msf_ts_entries_v2', JSON.stringify(obj)); }catch{} }
 function _tsKey(projectId, date){
   const pid = projectId || ((typeof _activeProjectId === 'function') ? _activeProjectId() : 'default');
   return pid + '_' + date;
@@ -126,14 +138,13 @@ function tsSaveEntry(date, data, projectId){
   const key = _tsKey(pid, date);
 
   // ── v2 (primary) ──
-  let v2 = {};
-  try { v2 = JSON.parse(localStorage.getItem('msf_ts_entries_v2') || '{}'); } catch {}
+  let v2 = _tsEntriesV2();
   const existingV2 = v2[key] || { projectId: pid, date, projectName: pname };
   if (!existingV2.projectId) existingV2.projectId = pid;
   if (!existingV2.date)      existingV2.date = date;
   if (!existingV2.projectName && pname) existingV2.projectName = pname;
   v2[key] = Object.assign(existingV2, data);
-  try { localStorage.setItem('msf_ts_entries_v2', JSON.stringify(v2)); } catch {}
+  _tsWriteEntriesV2(v2);
 
   // ── Legacy old shape (dual-write for 30-day overlap) ──
   // Old shape can only hold one entry per date — if Tim works two projects
@@ -145,7 +156,7 @@ function tsSaveEntry(date, data, projectId){
     if (!old[date]) old[date] = { projectName: pname };
     else if (!old[date].projectName) old[date].projectName = pname;
     Object.assign(old[date], data);
-    localStorage.setItem('msf_ts_entries', JSON.stringify(old));
+    _tsWriteEntries(old);
   } catch {}
 
   // ── Firestore mirror (both collections during overlap) ──
@@ -159,10 +170,10 @@ function tsSaveEntry(date, data, projectId){
     }
   } catch {}
 }
-function tsGetAllArchivedWeeks(){try{return JSON.parse(localStorage.getItem('msf_ts_weeks')||'[]');}catch{return[];}}
+function tsGetAllArchivedWeeks(){try{return JSON.parse((window.idbGet&&window.idbGet('msf_ts_weeks'))||'[]');}catch{return[];}}
 function tsGetArchivedWeeks(){const pn=(JSON.parse(localStorage.getItem('msf_projectconfig')||'{}').projectName)||'';return tsGetAllArchivedWeeks().filter(w=>!w.projectName||w.projectName===pn);}
 function tsSaveArchivedWeeks(w){
-  localStorage.setItem('msf_ts_weeks',JSON.stringify(w));
+  if(window.idbSet) window.idbSet('msf_ts_weeks',JSON.stringify(w));
   if(typeof db!=='undefined'&&db&&_fbReady){
     _udb().collection('timesheetMeta').doc('archivedWeeks').set({weeks:w,_ts:Date.now()}).catch(()=>{});
   }
@@ -196,7 +207,7 @@ async function tsLoadFromFirestore(){
       const remoteWeeks=data.weeks||[];
       const remoteTs=data._ts||0;
       let localTs=0;
-      try{const lw=JSON.parse(localStorage.getItem('msf_ts_weeks')||'[]');localTs=lw._ts||0;}catch{}
+      try{const lw=JSON.parse((window.idbGet&&window.idbGet('msf_ts_weeks'))||'[]');localTs=lw._ts||0;}catch{}
       const localWeeks=tsGetAllArchivedWeeks();
       const merged=Object.values(
         [...localWeeks,...remoteWeeks].reduce((acc,w)=>{
@@ -205,7 +216,7 @@ async function tsLoadFromFirestore(){
           return acc;
         },{})
       ).sort((a,b)=>a.weekStart>b.weekStart?1:-1);
-      localStorage.setItem('msf_ts_weeks',JSON.stringify(merged));
+      if(window.idbSet) window.idbSet('msf_ts_weeks',JSON.stringify(merged));
       _udb().collection('timesheetMeta').doc('archivedWeeks').set({weeks:merged,_ts:Date.now()}).catch(()=>{});
     }
     const cfgDoc=await _udb().collection('timesheetMeta').doc('config').get();
@@ -228,7 +239,7 @@ async function tsLoadFromFirestore(){
         const ds=doc.id;
         const rd=doc.data();if(!local[ds]){local[ds]=rd;changed=true;}else if(!local[ds].projectName&&rd.projectName){local[ds].projectName=rd.projectName;changed=true;}
       });
-      if(changed) localStorage.setItem('msf_ts_entries',JSON.stringify(local));
+      if(changed) _tsWriteEntries(local);
     }
   }catch(e){console.warn('Phinest EI: tsLoadFromFirestore failed —',e.message);}
   // Run v2 migration after cloud-merge so any cross-device entries pulled
@@ -514,21 +525,21 @@ function _tsDoArchive(start,end){
   tsSaveArchivedWeeks(allWeeks);
   // Clear v2 entries for THIS project + this week's dates (other projects untouched).
   try {
-    const v2 = JSON.parse(localStorage.getItem('msf_ts_entries_v2') || '{}');
+    const v2 = _tsEntriesV2();
     dates.forEach(d => { delete v2[_tsKey(activePid, tsFormatDate(d))]; });
-    localStorage.setItem('msf_ts_entries_v2', JSON.stringify(v2));
+    _tsWriteEntriesV2(v2);
   } catch {}
   // Legacy old shape: only safe to clear dates that no longer have ANY v2
   // entry across any project (otherwise we'd lose the dual-write mirror).
   try {
-    const v2After = JSON.parse(localStorage.getItem('msf_ts_entries_v2') || '{}');
+    const v2After = _tsEntriesV2();
     const entries=tsGetAllEntries();
     dates.forEach(d => {
       const ds = tsFormatDate(d);
       const stillHasV2 = Object.keys(v2After).some(k => k.endsWith('_' + ds));
       if (!stillHasV2) delete entries[ds];
     });
-    localStorage.setItem('msf_ts_entries',JSON.stringify(entries));
+    _tsWriteEntries(entries);
   } catch {}
   localStorage.removeItem('msf_ts_snooze');
   if(db&&_fbReady){
@@ -705,6 +716,8 @@ window.tsLoadConfig = tsLoadConfig;
 window.tsFormatDate = tsFormatDate;
 window.tsParseDate = tsParseDate;
 window.tsGetAllEntries = tsGetAllEntries;
+window._tsWriteEntries = _tsWriteEntries;
+window._tsWriteEntriesV2 = _tsWriteEntriesV2;
 window.tsGetEntry = tsGetEntry;
 window.tsSaveEntry = tsSaveEntry;
 window.tsGetAllArchivedWeeks = tsGetAllArchivedWeeks;
