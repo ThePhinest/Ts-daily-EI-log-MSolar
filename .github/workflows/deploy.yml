@@ -35,7 +35,7 @@ jobs:
         run: npm run build
       # v4 drops the internal upload-artifact@v4 (Node 20) dependency — GitHub
       # forces Node 24 on runners June 16, 2026.
-      - uses: actions/upload-pages-artifact@v4
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: dist
 
