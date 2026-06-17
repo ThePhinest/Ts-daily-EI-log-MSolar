@@ -312,6 +312,14 @@ function _trackerStartupLoad(){
 async function initFirebaseLoad() {
   if (!db) { setSyncStatus('offline');  return; }
 
+  // Tier-1 cache gate: hydrate IndexedDB and migrate the daily-log / compliance
+  // archive blobs out of localStorage BEFORE any downstream read (session
+  // restore, checkNewDay, clInit). dlGetAll()/clLoadLocal() now read the IDB
+  // cache synchronously, so the mirror must be populated first. (Storage
+  // architecture Stage 2 — see KB storage-architecture.md.)
+  if (window.idbReady) { try { await window.idbReady; } catch (e) {} }
+  if (window.idbMigrateKey) { window.idbMigrateKey('pei_daily_logs'); window.idbMigrateKey('cl_entries'); }
+
   // If this is an archived file being re-opened, push its state to cloud and exit
   if (typeof SAVED_DATA !== 'undefined' && SAVED_DATA !== null) {
     cloudSave();

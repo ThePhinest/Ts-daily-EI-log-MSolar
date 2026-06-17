@@ -558,8 +558,12 @@ function _wmoToDesc(code){
 // ═══════════════════════════════════════════
 
 // ── Storage helpers ──
+// Daily-log archive history lives in the Tier-1 IDB cache (key `pei_daily_logs`,
+// stored as the JSON string verbatim so parse-on-read copy semantics are
+// unchanged). Migrated out of localStorage on boot in initFirebaseLoad. The live
+// session draft (`msf_autosave`) stays in localStorage — small, bounded to one day.
 function dlGetAll(){
-  try{ return JSON.parse(localStorage.getItem('pei_daily_logs')||'{}'); }catch{ return {}; }
+  try{ return JSON.parse((window.idbGet && window.idbGet('pei_daily_logs')) || '{}'); }catch{ return {}; }
 }
 function dlGet(date){
   return dlGetAll()[date]||null;
@@ -568,7 +572,7 @@ function dlSaveLocal(date, record){
   try{
     const all=dlGetAll();
     all[date]=record;
-    localStorage.setItem('pei_daily_logs',JSON.stringify(all));
+    if(window.idbSet) window.idbSet('pei_daily_logs', JSON.stringify(all));
   }catch{}
 }
 

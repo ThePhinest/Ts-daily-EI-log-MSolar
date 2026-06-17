@@ -37,7 +37,7 @@ function calGetIndicators(record){
   if(record._edited) indicators.push('<span title="Edited after archive">⚠️</span>');
   else indicators.push('<span style="color:var(--green)" title="Log saved">●</span>');
   try{
-    const cl=JSON.parse(localStorage.getItem('cl_entries')||'[]');
+    const cl=JSON.parse((window.idbGet&&window.idbGet('cl_entries'))||'[]');  // Tier-1 IDB cache
     const hasComp=cl.some(e=>e.date===record._archivedDate);
     if(hasComp) indicators.push('<span title="Compliance entries">❗</span>');
   }catch{}
@@ -74,7 +74,7 @@ async function calLoadCloud(){
     if(snap.empty) return;
     const all=dlGetAll();
     snap.forEach(doc=>{ if(!all[doc.id]) all[doc.id]=doc.data(); });
-    localStorage.setItem('pei_daily_logs',JSON.stringify(all));
+    if(window.idbSet) window.idbSet('pei_daily_logs',JSON.stringify(all));  // Tier-1 IDB cache
   }catch{}
 }
 
@@ -197,7 +197,7 @@ function calOpenDay(date){
 
   let compSection='';
   try{
-    const cl=JSON.parse(localStorage.getItem('cl_entries')||'[]');
+    const cl=JSON.parse((window.idbGet&&window.idbGet('cl_entries'))||'[]');  // Tier-1 IDB cache
     const entries=cl.filter(e=>e.date===date);
     if(entries.length>0){
       const levelLabel={1:'L1 — Observation',2:'L2 — Corrective Action',3:'L3 — Non-Compliance',4:'L4 — Stop Work'};
@@ -423,7 +423,7 @@ function calGetDotIndicators(record){
   else dots.push('<span class="cal-dot" style="color:var(--green)" title="Log saved">●</span>');
   if(_calOpenDays.has(record._archivedDate)) dots.push('<span class="cal-dot" style="color:var(--amber)" title="Not yet submitted to project">⏳</span>');
   try{
-    const cl=JSON.parse(localStorage.getItem('cl_entries')||'[]');
+    const cl=JSON.parse((window.idbGet&&window.idbGet('cl_entries'))||'[]');  // Tier-1 IDB cache
     if(cl.some(e=>e.date===record._archivedDate)) dots.push('<span class="cal-dot" title="Compliance">❗</span>');
   }catch{}
   try{

@@ -741,7 +741,7 @@ async function _doGenerate(){
     const reportDate=logData.reportDate;
     // Get compliance entries for this report date
     let compEntries=[];
-    try{const all=JSON.parse(localStorage.getItem('cl_entries')||'[]');compEntries=all.filter(e=>e.sourceReport===reportDate||e.date===reportDate);}catch(e){}
+    try{const all=JSON.parse((window.idbGet&&window.idbGet('cl_entries'))||'[]');compEntries=all.filter(e=>e.sourceReport===reportDate||e.date===reportDate);}catch(e){}
     const photos=_phPhotos.filter(p=>p.date===reportDate);
     const skipPolish=(window._rptSkipPolish===true);
 

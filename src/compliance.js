@@ -27,14 +27,15 @@ function clFmtDate(d){
   return `${parseInt(p[1])}/${parseInt(p[2])}/${p[0].slice(2)}`;
 }
 
-// ── Persistence: localStorage ──
+// ── Persistence: Tier-1 IDB cache (key `cl_entries`, JSON string verbatim) ──
+// Migrated out of localStorage on boot in initFirebaseLoad.
 function clSaveLocal(){
-  try{ localStorage.setItem('cl_entries', JSON.stringify(_clEntries)); }catch{}
+  try{ if(window.idbSet) window.idbSet('cl_entries', JSON.stringify(_clEntries)); }catch{}
 }
 
 function clLoadLocal(){
   try{
-    const raw = localStorage.getItem('cl_entries');
+    const raw = window.idbGet && window.idbGet('cl_entries');
     if(raw){ _clEntries = JSON.parse(raw); }
   }catch{ _clEntries = []; }
 }

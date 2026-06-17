@@ -94,3 +94,19 @@ window.idbClearAll = function () {
   _mem.clear();
   return idbKvClear();
 };
+
+// One-time migration: move a single JSON-blob localStorage key into the IDB
+// cache under the SAME key, storing the value verbatim (as the JSON string), then
+// drop it from localStorage. Callers that JSON.parse the value keep working
+// unchanged — only the storage medium moves (localStorage → IDB). Idempotent:
+// the absence of the localStorage key is the done-signal. Returns true if moved.
+// Must run AFTER `await window.idbReady`. (Stage 2 datasets: pei_daily_logs,
+// cl_entries, and—later—tracker/KML blobs.)
+window.idbMigrateKey = function (key) {
+  let raw;
+  try { raw = localStorage.getItem(key); } catch (e) { return false; }
+  if (raw == null) return false;
+  window.idbSet(key, raw);
+  try { localStorage.removeItem(key); } catch (e) {}
+  return true;
+};
