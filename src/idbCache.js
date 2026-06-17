@@ -110,3 +110,18 @@ window.idbMigrateKey = function (key) {
   try { localStorage.removeItem(key); } catch (e) {}
   return true;
 };
+
+// Migrate every localStorage key ENDING in one of `suffixes` (for the
+// per-project dynamic keys `msf_proj_<pid>_tracker_entries` / `_kml_layers`,
+// where the pid varies and a user may have several projects). Suffix-matched,
+// NOT prefix — deliberately excludes `msf_proj_<pid>_ts_config` (timesheet,
+// migrated in its own session). Returns count moved.
+window.idbMigrateBySuffix = function (suffixes) {
+  let keys = [];
+  try { keys = Object.keys(localStorage); } catch (e) { return 0; }
+  let n = 0;
+  keys.forEach(function (k) {
+    if (suffixes.some(function (s) { return k.length >= s.length && k.slice(-s.length) === s; }) && window.idbMigrateKey(k)) n++;
+  });
+  return n;
+};

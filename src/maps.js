@@ -871,7 +871,7 @@ function kmlSaveLayers(){
     visible: l.visible, storagePath: l.storagePath || '',
     downloadUrl: l.downloadUrl || ''
   }));
-  try { localStorage.setItem(_kmlStorageKey(), JSON.stringify(data)); } catch {}
+  try { if(window.idbSet) window.idbSet(_kmlStorageKey(), JSON.stringify(data)); } catch {}  // Tier-1 IDB cache (Firestore fallback)
   if(db && _fbReady){
     // Personal copy (per-layer visibility = view state) — user subtree, never shared.
     _projDataUser(pid).collection('kml').doc('layers')
@@ -1089,7 +1089,7 @@ async function kmlLoadLayers(){
       }
     } catch(e){ /* not a member of a shared project — own copy stands */ }
   }
-  if(!data){ try { const raw = localStorage.getItem(_kmlStorageKey()); if(raw) data = JSON.parse(raw); } catch {} }
+  if(!data){ try { const raw = window.idbGet && window.idbGet(_kmlStorageKey()); if(raw) data = JSON.parse(raw); } catch {} }
   if(!data || !data.length) return;
 
   // Group by storagePath — fetch each KML file once, render visible layers only

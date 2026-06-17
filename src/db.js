@@ -319,6 +319,9 @@ async function initFirebaseLoad() {
   // architecture Stage 2 — see KB storage-architecture.md.)
   if (window.idbReady) { try { await window.idbReady; } catch (e) {} }
   if (window.idbMigrateKey) { window.idbMigrateKey('pei_daily_logs'); window.idbMigrateKey('cl_entries'); }
+  // Per-project tracker + KML caches (dynamic msf_proj_<pid>_* keys). Suffix-matched
+  // so timesheet's msf_proj_<pid>_ts_config is left in localStorage (own session).
+  if (window.idbMigrateBySuffix) { window.idbMigrateBySuffix(['_tracker_entries', '_kml_layers']); }
 
   // If this is an archived file being re-opened, push its state to cloud and exit
   if (typeof SAVED_DATA !== 'undefined' && SAVED_DATA !== null) {

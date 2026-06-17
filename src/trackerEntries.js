@@ -94,9 +94,11 @@ function _trStorageKey(projectId){
   return 'msf_proj_' + pid + '_tracker_entries';
 }
 
+// Tracker entries live in the Tier-1 IDB cache (per-project key, JSON string
+// verbatim). Migrated out of localStorage on boot in initFirebaseLoad.
 function _trLoadRaw(projectId){
   try {
-    const raw = localStorage.getItem(_trStorageKey(projectId));
+    const raw = window.idbGet && window.idbGet(_trStorageKey(projectId));
     if(!raw) return { entries: [] };
     const parsed = JSON.parse(raw);
     return (parsed && Array.isArray(parsed.entries)) ? parsed : { entries: [] };
@@ -105,8 +107,8 @@ function _trLoadRaw(projectId){
 
 function _trSaveRaw(projectId, data){
   try {
-    localStorage.setItem(_trStorageKey(projectId), JSON.stringify({ entries: data.entries, _ts: Date.now() }));
-  } catch(e){ console.warn('trSave localStorage:', e.message); }
+    if(window.idbSet) window.idbSet(_trStorageKey(projectId), JSON.stringify({ entries: data.entries, _ts: Date.now() }));
+  } catch(e){ console.warn('trSave idb:', e.message); }
 }
 
 function trGenId(){
