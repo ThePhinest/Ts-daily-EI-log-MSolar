@@ -2164,7 +2164,7 @@ function mapShowCategoryDetails(catId){
       <div class="modal-title" style="margin:0;flex:1;font-size:15px">${cat.name}</div>
       <button id="_cd-x" style="background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;width:34px;height:34px">✕</button>
     </div>
-    <div style="flex:1;overflow-y:auto;padding:14px 16px;display:flex;flex-direction:column;gap:14px">
+    <div style="flex:1;min-height:0;overflow-y:auto;padding:14px 16px;display:flex;flex-direction:column;gap:14px">
       <div>
         <label style="${_LABEL_STYLE}">States <span style="text-transform:none;color:var(--muted)">— ✏️ editable; ‘plan’ marks the faint baseline</span></label>
         <div id="_cd-states-list"></div>
