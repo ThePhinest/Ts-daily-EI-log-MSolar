@@ -2096,16 +2096,6 @@ function _cdToggleCap(){
   const box=document.getElementById('_cd-cap-row');
   if(box) box.style.display=(mode==='running-balance'||mode==='running-total')?'block':'none';
 }
-function _cdToggleAdvanced(hdr){
-  const wrap=hdr.parentElement;
-  const body=wrap&&wrap.querySelector('._cd-adv-body');
-  const chev=hdr.querySelector('._cd-adv-chev');
-  if(!body) return;
-  const open=body.style.display!=='none';
-  body.style.display=open?'none':'flex';
-  if(chev) chev.style.transform=open?'none':'rotate(90deg)';
-}
-window._cdToggleAdvanced=_cdToggleAdvanced;
 
 let _cdIsLinear=false;
 let _cdCatColor=null;
@@ -2148,10 +2138,6 @@ function mapShowCategoryDetails(catId){
     .map(([v,l])=>`<option value="${v}"${v===overMode?' selected':''}>${l}</option>`).join('');
   const capUnitOpts=(isLinear?['ft','yd','m','mi']:['ac','sqft','sqyd','sqm','ha'])
     .map(u=>`<option value="${u}"${u===capUnit?' selected':''}>${u}</option>`).join('');
-  // Advanced opens by default (discoverability — it was being missed when collapsed)
-  // but stays collapsible so the editor isn't overwhelming once you know it.
-  const advOpen=true;
-
   const ov=document.createElement('div');
   ov.className='modal-overlay';
   ov.id='_cat-details-ov';
@@ -2170,31 +2156,26 @@ function mapShowCategoryDetails(catId){
         <div id="_cd-states-list"></div>
         <button onclick="_cdAddState()" style="${_cdMiniBtn('width:100%;justify-content:center;padding:8px;color:var(--text)')}">+ Add state</button>
       </div>
-      <div style="border:1px solid var(--border);border-radius:8px;overflow:hidden">
-        <div onclick="_cdToggleAdvanced(this)" style="display:flex;align-items:center;gap:8px;padding:11px 12px;background:var(--s2);cursor:pointer;font-family:var(--mono);font-size:12px;color:var(--text);user-select:none">
-          <span style="flex:1">⚙ Advanced — progress &amp; display</span>
-          <span class="_cd-adv-chev" style="display:inline-block;transition:transform .15s;transform:${advOpen?'rotate(90deg)':'none'}">▸</span>
+      <div style="border-top:1px solid var(--border);padding-top:14px;display:flex;flex-direction:column;gap:12px">
+        <div style="font-family:var(--mono);font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em">⚙ Progress &amp; display</div>
+        <div>
+          ${_cdField('How progress is counted',`<select id="_cd-progmode" onchange="_cdToggleCap()" style="${_INPUT_STYLE}">${progModeOpts}</select>`)}
+          <div style="${_HINT_STYLE}">Most categories: <b>“Each state vs. the plan area.”</b> Use <b>Running balance</b> for SWPPP disturbance.</div>
         </div>
-        <div class="_cd-adv-body" style="display:${advOpen?'flex':'none'};flex-direction:column;gap:12px;padding:12px">
-          <label style="display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:12px;color:var(--text);cursor:pointer">
-            <input type="checkbox" id="_cd-statepat" ${statePat?'checked':''}> Distinguish states by pattern (not just color)
-          </label>
-          <div>
-            ${_cdField('How progress is counted',`<select id="_cd-progmode" onchange="_cdToggleCap()" style="${_INPUT_STYLE}">${progModeOpts}</select>`)}
-            <div style="${_HINT_STYLE}">Most categories: <b>“Each state vs. the plan area.”</b> Use <b>Running balance</b> for SWPPP disturbance (disturbed − stabilized vs. a limit).</div>
-          </div>
-          <div>
-            ${_cdField('Overall % is based on',`<select id="_cd-overmode" style="${_INPUT_STYLE}">${overModeOpts}</select>`)}
-            <div style="${_HINT_STYLE}">Usually <b>“The final state’s progress.”</b></div>
-          </div>
-          <div id="_cd-cap-row" style="display:${(progMode==='running-balance'||progMode==='running-total')?'block':'none'}">
-            <label style="${_LABEL_STYLE}">Disturbance limit (warn above)</label>
-            <div style="display:grid;grid-template-columns:1fr 90px;gap:8px">
-              <input type="number" id="_cd-cap" value="${capVal}" step="0.1" min="0" placeholder="e.g. 5" style="${_INPUT_STYLE}">
-              <select id="_cd-capunit" style="${_INPUT_STYLE}">${capUnitOpts}</select>
-            </div>
+        <div>
+          ${_cdField('Overall % is based on',`<select id="_cd-overmode" style="${_INPUT_STYLE}">${overModeOpts}</select>`)}
+          <div style="${_HINT_STYLE}">Usually <b>“The final state’s progress.”</b></div>
+        </div>
+        <div id="_cd-cap-row" style="display:${(progMode==='running-balance'||progMode==='running-total')?'block':'none'}">
+          <label style="${_LABEL_STYLE}">Disturbance limit (warn above)</label>
+          <div style="display:grid;grid-template-columns:1fr 90px;gap:8px">
+            <input type="number" id="_cd-cap" value="${capVal}" step="0.1" min="0" placeholder="e.g. 5" style="${_INPUT_STYLE}">
+            <select id="_cd-capunit" style="${_INPUT_STYLE}">${capUnitOpts}</select>
           </div>
         </div>
+        <label style="display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:12px;color:var(--text);cursor:pointer">
+          <input type="checkbox" id="_cd-statepat" ${statePat?'checked':''}> Distinguish states by pattern (not just color)
+        </label>
       </div>
       <label style="display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:12px;color:var(--text);cursor:pointer">
         <input type="checkbox" id="_cd-trackmat" ${trackMat?'checked':''} onchange="_cdToggleMaterial(this.checked)"> Track material / rate (lbs per acre, etc.)
