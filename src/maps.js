@@ -3624,6 +3624,28 @@ function _showCaptureCaptionModal(entryId,photoId,prefill){
   input.addEventListener('keydown',e=>{ if(e.key==='Enter') ov.querySelector('#_capcap-ok').click(); });
 }
 
+// Rough bounding-box "size" of a geometry, used to rank overlapping drawings on tap
+// (smallest wins). Points = 0, lines biased tiny so a thin line over a polygon wins.
+// Handles Firestore JSON-string geometry. Returns Infinity on anything unusable.
+function _geomPickArea(g){
+  try{
+    if(typeof g==='string') g=JSON.parse(g);
+    if(!g||!g.type) return Infinity;
+    const t=g.type;
+    if(t==='Point') return 0;
+    let coords=[];
+    if(t==='LineString') coords=g.coordinates;
+    else if(t==='Polygon') coords=g.coordinates&&g.coordinates[0];
+    else if(t==='MultiLineString') coords=g.coordinates&&g.coordinates[0];
+    else if(t==='MultiPolygon') coords=g.coordinates&&g.coordinates[0]&&g.coordinates[0][0];
+    if(!coords||!coords.length) return Infinity;
+    let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
+    for(const c of coords){ if(c[0]<minX)minX=c[0]; if(c[0]>maxX)maxX=c[0]; if(c[1]<minY)minY=c[1]; if(c[1]>maxY)maxY=c[1]; }
+    const area=(maxX-minX)*(maxY-minY);
+    return (t==='LineString'||t==='MultiLineString')?area*0.001:area;
+  }catch(e){ return Infinity; }
+}
+
 function mapRenderTrackerLayers(){
   if(!_mapInstance||!_mapInstance.isStyleLoaded()) return;
   // Keep an open legend in sync if a state color/label changed.
@@ -3655,14 +3677,31 @@ function mapRenderTrackerLayers(){
         clickTarget.closest('[data-marker-id]') ||
         clickTarget.closest('.mapboxgl-marker')
       )) return;
-      const bbox=[[e.point.x-22,e.point.y-22],[e.point.x+22,e.point.y+22]];
       const style=_mapInstance.getStyle();
       if(!style||!style.layers) return;
       const lids=style.layers.map(l=>l.id).filter(id=>/^tracker-.+-(fill|line|circle)$/.test(id));
       if(!lids.length) return;
-      const features=_mapInstance.queryRenderedFeatures(bbox,{layers:lids});
-      if(!features.length) return;
-      _showTrackerEntryPopup(e.lngLat,features[0].properties);
+      // Stacked drawings: query the EXACT point first (what's truly under the finger);
+      // only widen to a 22px finger radius if nothing's directly hit. Then, when more
+      // than one drawing overlaps, pick the smallest-area (most specific) one so a small
+      // drawing on top of a large plan wins instead of mapbox's render-order first hit.
+      let cands=_mapInstance.queryRenderedFeatures(e.point,{layers:lids});
+      if(!cands.length){
+        const bbox=[[e.point.x-22,e.point.y-22],[e.point.x+22,e.point.y+22]];
+        cands=_mapInstance.queryRenderedFeatures(bbox,{layers:lids});
+      }
+      if(!cands.length) return;
+      let best=cands[0];
+      if(cands.length>1){
+        const _pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+        const areaOf=fp=>{
+          const ent=(fp&&fp.properties&&typeof trGetEntry==='function')?trGetEntry(fp.properties.id,_pid):null;
+          return _geomPickArea((ent&&ent.geometry)||fp.geometry);
+        };
+        let bestA=areaOf(best);
+        for(let i=1;i<cands.length;i++){ const a=areaOf(cands[i]); if(a<bestA){ bestA=a; best=cands[i]; } }
+      }
+      _showTrackerEntryPopup(e.lngLat,best.properties);
     });
   }
 
@@ -3768,6 +3807,11 @@ function mapRenderTrackerLayers(){
     });
   }
   mapRefreshDateLabels();
+  // Safety net (#14 "label persists after hiding"): the layer swaps + pattern-image
+  // loads above can transiently flip isStyleLoaded() to false, making the refresh
+  // above self-abort and leave a hidden drawing's label on the map. If the style
+  // isn't fully settled, re-run the filter once the map goes idle.
+  if(_mapInstance&&!_mapInstance.isStyleLoaded()) _mapInstance.once('idle',mapRefreshDateLabels);
 }
 
 // Shared popup-button base style — fixed-width grid cells so nothing sticks off the popup.
@@ -3824,11 +3868,37 @@ function _showTrackerEntryPopup(lngLat,props){
   // Category identity = the multicolor state-ramp chip (same as the tracker log),
   // not a single dot. Falls back to the entry's state color for no-category drawings.
   const _dotFallback=(props.stateColor&&/^#[0-9A-Fa-f]{6}$/.test(props.stateColor))?props.stateColor:color;
+  // Which STATE this drawing is in — shown in the always-visible info list.
+  const _cat=(typeof tcGetCategory==='function')?tcGetCategory(props.categoryId,pid):null;
+  const _state=(entry&&typeof tcEntryState==='function')?tcEntryState(entry,_cat||props.categoryId,pid):null;
+  const _stateColor=(props.stateColor&&/^#[0-9A-Fa-f]{6}$/.test(props.stateColor))?props.stateColor
+    :((_state&&/^#[0-9A-Fa-f]{6}$/.test(_state.color))?_state.color:_dotFallback);
+  const stateLine=_state?`<div style="color:#dce8f4;display:flex;align-items:center;gap:6px"><span style="width:9px;height:9px;border-radius:50%;background:${_stateColor};flex-shrink:0"></span>${_state.label}${_state.isPlanned?' (plan)':''}</div>`:'';
+  // Collapsible "Details" — drawing-specific fields beyond the always-visible list
+  // (materials, rates, amounts, type). Only built when there's something to show.
+  const _f=entry?.fields||{};
+  const _hasV=v=>v!=null&&v!==''&&!(typeof v==='number'&&isNaN(v));
+  const _detailRows=[];
+  if(_hasV(entry?.seedMix)) _detailRows.push(['Mix / Product',entry.seedMix]);
+  if(_hasV(_f.appliedRate)) _detailRows.push(['Applied rate',_f.appliedRate]);
+  if(_hasV(_f.requiredAmount)) _detailRows.push(['Required',_f.requiredAmount+(_f.requiredUnit?(' '+_f.requiredUnit):'')]);
+  if(_hasV(_f.actualAmount)) _detailRows.push(['Actual',_f.actualAmount+(_f.actualUnit?(' '+_f.actualUnit):'')]);
+  if(entry) _detailRows.push(['Type',entry.entryType==='planned'?'Planned':'Installed']);
+  const detailsBlock=_detailRows.length?`<div style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,.12)">
+    <div onclick="mapTogglePopupDetails(this)" style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:11px;color:#dce8f4;user-select:none">
+      <span>ℹ️ Details</span>
+      <span class="_trp-chev" style="margin-left:auto;display:inline-block;transition:transform .15s">▸</span>
+    </div>
+    <div class="_trp-details" style="display:none;margin-top:8px">
+      ${_detailRows.map(([k,v])=>`<div style="display:flex;justify-content:space-between;gap:10px;font-size:11px;padding:2px 0"><span style="color:#9fb2c4">${k}</span><span style="color:#dce8f4;text-align:right">${v}</span></div>`).join('')}
+    </div>
+  </div>`:'';
   const html=`<div style="font-family:var(--mono);font-size:12px;min-width:180px;color:#e8e8e8;max-height:calc(100vh - var(--app-bar-h) - 96px);overflow-y:auto;overflow-x:hidden">
     <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
       ${(props.categoryId&&typeof tcRampChip==='function')?tcRampChip(props.categoryId,pid,12):`<div style="width:10px;height:10px;border-radius:50%;background:${_dotFallback};flex-shrink:0"></div>`}
       <strong style="color:#fff">${label}</strong>
     </div>
+    ${stateLine}
     ${props.date?`<div style="color:#dce8f4">📅 ${props.date}</div>`:''}
     ${measText?`<div style="color:#dce8f4">📐 ${measText}</div>`:''}
     ${props.location?`<div style="color:#dce8f4">📍 ${props.location}</div>`:''}
@@ -3838,6 +3908,7 @@ function _showTrackerEntryPopup(lngLat,props){
     ${props.contractor?`<div style="color:#dce8f4">👷 ${props.contractor}</div>`:''}
     ${props.notes?`<div style="margin-top:6px;color:#c8d8e8;border-top:1px solid rgba(255,255,255,.1);padding-top:6px">${props.notes}</div>`:''}
     ${badgeRow}
+    ${detailsBlock}
     ${photoStrip}
     ${entry?.parentId?`<div style="font-size:10px;color:#a0b8c8;margin-top:4px;border-top:1px solid rgba(255,255,255,.08);padding-top:4px">📍 Linked to planned area</div>`:''}
     ${sharedByNote}
@@ -3909,6 +3980,18 @@ function mapTogglePopupPhotos(hdr){
   if(chev) chev.style.transform=open?'':'rotate(90deg)';
 }
 window.mapTogglePopupPhotos=mapTogglePopupPhotos;
+
+// Toggle the collapsible Details block inside a tracker entry popup.
+function mapTogglePopupDetails(hdr){
+  const wrap=hdr.parentElement;
+  const block=wrap&&wrap.querySelector('._trp-details');
+  const chev=hdr.querySelector('._trp-chev');
+  if(!block) return;
+  const open=block.style.display!=='none';
+  block.style.display=open?'none':'block';
+  if(chev) chev.style.transform=open?'':'rotate(90deg)';
+}
+window.mapTogglePopupDetails=mapTogglePopupDetails;
 
 function mapEditTrackerEntry(entryId){
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
