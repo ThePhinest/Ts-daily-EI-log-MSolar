@@ -1991,8 +1991,11 @@ async function mapTrackerConfirmDelete(catId){
 }
 
 // ── Category details modal ────────────────
-const _INPUT_STYLE='width:100%;box-sizing:border-box;background:var(--s1);border:1px solid var(--border);border-radius:6px;padding:7px 9px;color:var(--text);font-family:var(--mono);font-size:12px';
-const _LABEL_STYLE='font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:4px';
+const _INPUT_STYLE='width:100%;box-sizing:border-box;background:var(--s1);border:1px solid var(--border);border-radius:6px;padding:9px 10px;color:var(--text);font-family:var(--mono);font-size:13px';
+const _LABEL_STYLE='font-family:var(--mono);font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:5px';
+// Plain-language hint under a control (used by the schema editor to demystify the
+// progress/overall settings — #1).
+const _HINT_STYLE='font-family:var(--mono);font-size:10px;color:var(--muted2);line-height:1.4;margin-top:4px';
 function _cdField(label,inner){return `<div><label style="${_LABEL_STYLE}">${label}</label>${inner}</div>`;}
 
 // Working copy of the category's states while the details modal is open.
@@ -2011,7 +2014,7 @@ function _cdStyleOptions(isLinear, sel){
 function _cdMiniBtn(extra){
   // Font stack includes system-symbol fallbacks so ↑/↓/✓/✕ glyphs always render
   // (the mono webfont lacks some of these on iOS → they showed as blank ovals).
-  return `background:var(--s2);border:1px solid var(--border);color:var(--muted);border-radius:4px;font-family:var(--mono),-apple-system,'Segoe UI Symbol',sans-serif;font-size:11px;padding:5px 7px;cursor:pointer;flex-shrink:0;${extra||''}`;
+  return `background:var(--s2);border:1px solid var(--border);color:var(--muted);border-radius:5px;font-family:var(--mono),-apple-system,'Segoe UI Symbol',sans-serif;font-size:13px;padding:8px 10px;min-height:34px;cursor:pointer;flex-shrink:0;${extra||''}`;
 }
 
 const _CD_AMEND_TYPES=['None','Seeding','Lime','Fertilizer','Mulch','Other'];
@@ -2039,7 +2042,7 @@ function _cdRenderStates(isLinear){
       </div>`:'';
     return `<div style="border:1px solid var(--border);border-radius:7px;padding:6px;margin-bottom:6px;background:var(--s1)">
       <div style="display:flex;align-items:center;gap:6px;margin-bottom:5px">
-        <input type="color" value="${col}" oninput="_cdSetStateColor(${i},this.value)" title="State color" style="width:30px;height:30px;border:none;background:none;padding:0;flex-shrink:0;cursor:pointer">
+        <input type="color" value="${col}" oninput="_cdSetStateColor(${i},this.value)" title="State color" style="width:36px;height:36px;border:none;background:none;padding:0;flex-shrink:0;cursor:pointer">
         <input type="text" value="${(s.label||'').replace(/"/g,'&quot;')}" oninput="_cdSetStateLabel(${i},this.value)" placeholder="State name (e.g. Disturbed)" maxlength="24" style="flex:1;min-width:0;${_INPUT_STYLE}">
         <button onclick="_cdDelState(${i})" ${_cdStates.length<=1?'disabled':''} title="Delete state" style="${_cdMiniBtn('color:#e74c3c'+(_cdStates.length<=1?';opacity:.3':''))}">✕</button>
       </div>
@@ -2093,6 +2096,16 @@ function _cdToggleCap(){
   const box=document.getElementById('_cd-cap-row');
   if(box) box.style.display=(mode==='running-balance'||mode==='running-total')?'block':'none';
 }
+function _cdToggleAdvanced(hdr){
+  const wrap=hdr.parentElement;
+  const body=wrap&&wrap.querySelector('._cd-adv-body');
+  const chev=hdr.querySelector('._cd-adv-chev');
+  if(!body) return;
+  const open=body.style.display!=='none';
+  body.style.display=open?'none':'flex';
+  if(chev) chev.style.transform=open?'none':'rotate(90deg)';
+}
+window._cdToggleAdvanced=_cdToggleAdvanced;
 
 let _cdIsLinear=false;
 let _cdCatColor=null;
@@ -2129,12 +2142,15 @@ function mapShowCategoryDetails(catId){
     materialFields=`<div style="font-family:var(--mono);font-size:11px;color:var(--muted);line-height:1.5">Set the amendment + rate on each state above — each state can be its own material (Lime, Fertilizer, Seed…).</div>`;
   }
 
-  const progModeOpts=[['per-state-vs-plan','Per-state vs plan'],['running-balance','Running balance (e.g. disturbed − stabilized)'],['running-total','Running total (cumulative — never subtracts)'],['simple-count','Simple count']]
+  const progModeOpts=[['per-state-vs-plan','Each state vs. the plan area'],['running-balance','Running balance (adds − subtracts)'],['running-total','Running total (only adds up)'],['simple-count','Just count entries']]
     .map(([v,l])=>`<option value="${v}"${v===progMode?' selected':''}>${l}</option>`).join('');
-  const overModeOpts=[['terminal','Final state %'],['average','Average of states'],['weighted','Weighted']]
+  const overModeOpts=[['terminal','The final state’s progress'],['average','Average of all states'],['weighted','Weighted by area']]
     .map(([v,l])=>`<option value="${v}"${v===overMode?' selected':''}>${l}</option>`).join('');
   const capUnitOpts=(isLinear?['ft','yd','m','mi']:['ac','sqft','sqyd','sqm','ha'])
     .map(u=>`<option value="${u}"${u===capUnit?' selected':''}>${u}</option>`).join('');
+  // Open Advanced by default when the limit matters (SWPPP running-balance/total) so
+  // the disturbance limit isn't hidden; otherwise it stays tucked away.
+  const advOpen=(progMode==='running-balance'||progMode==='running-total');
 
   const ov=document.createElement('div');
   ov.className='modal-overlay';
@@ -2154,21 +2170,33 @@ function mapShowCategoryDetails(catId){
         <div id="_cd-states-list"></div>
         <button onclick="_cdAddState()" style="${_cdMiniBtn('width:100%;justify-content:center;padding:8px;color:var(--text)')}">+ Add state</button>
       </div>
-      <label style="display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:11px;color:var(--text);cursor:pointer">
-        <input type="checkbox" id="_cd-statepat" ${statePat?'checked':''}> Distinguish states by pattern (not just color)
-      </label>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-        ${_cdField('Progress mode',`<select id="_cd-progmode" onchange="_cdToggleCap()" style="${_INPUT_STYLE}">${progModeOpts}</select>`)}
-        ${_cdField('Overall %',`<select id="_cd-overmode" style="${_INPUT_STYLE}">${overModeOpts}</select>`)}
-      </div>
-      <div id="_cd-cap-row" style="display:${(progMode==='running-balance'||progMode==='running-total')?'block':'none'}">
-        <label style="${_LABEL_STYLE}">Disturbance limit (warn above)</label>
-        <div style="display:grid;grid-template-columns:1fr 90px;gap:8px">
-          <input type="number" id="_cd-cap" value="${capVal}" step="0.1" min="0" placeholder="e.g. 5" style="${_INPUT_STYLE}">
-          <select id="_cd-capunit" style="${_INPUT_STYLE}">${capUnitOpts}</select>
+      <div style="border:1px solid var(--border);border-radius:8px;overflow:hidden">
+        <div onclick="_cdToggleAdvanced(this)" style="display:flex;align-items:center;gap:8px;padding:11px 12px;background:var(--s2);cursor:pointer;font-family:var(--mono);font-size:12px;color:var(--text);user-select:none">
+          <span style="flex:1">⚙ Advanced — progress &amp; display</span>
+          <span class="_cd-adv-chev" style="display:inline-block;transition:transform .15s;transform:${advOpen?'rotate(90deg)':'none'}">▸</span>
+        </div>
+        <div class="_cd-adv-body" style="display:${advOpen?'flex':'none'};flex-direction:column;gap:12px;padding:12px">
+          <label style="display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:12px;color:var(--text);cursor:pointer">
+            <input type="checkbox" id="_cd-statepat" ${statePat?'checked':''}> Distinguish states by pattern (not just color)
+          </label>
+          <div>
+            ${_cdField('How progress is counted',`<select id="_cd-progmode" onchange="_cdToggleCap()" style="${_INPUT_STYLE}">${progModeOpts}</select>`)}
+            <div style="${_HINT_STYLE}">Most categories: <b>“Each state vs. the plan area.”</b> Use <b>Running balance</b> for SWPPP disturbance (disturbed − stabilized vs. a limit).</div>
+          </div>
+          <div>
+            ${_cdField('Overall % is based on',`<select id="_cd-overmode" style="${_INPUT_STYLE}">${overModeOpts}</select>`)}
+            <div style="${_HINT_STYLE}">Usually <b>“The final state’s progress.”</b></div>
+          </div>
+          <div id="_cd-cap-row" style="display:${(progMode==='running-balance'||progMode==='running-total')?'block':'none'}">
+            <label style="${_LABEL_STYLE}">Disturbance limit (warn above)</label>
+            <div style="display:grid;grid-template-columns:1fr 90px;gap:8px">
+              <input type="number" id="_cd-cap" value="${capVal}" step="0.1" min="0" placeholder="e.g. 5" style="${_INPUT_STYLE}">
+              <select id="_cd-capunit" style="${_INPUT_STYLE}">${capUnitOpts}</select>
+            </div>
+          </div>
         </div>
       </div>
-      <label style="display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:11px;color:var(--text);cursor:pointer">
+      <label style="display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:12px;color:var(--text);cursor:pointer">
         <input type="checkbox" id="_cd-trackmat" ${trackMat?'checked':''} onchange="_cdToggleMaterial(this.checked)"> Track material / rate (lbs per acre, etc.)
       </label>
       <div id="_cd-material-fields" style="display:${trackMat?'flex':'none'};flex-direction:column;gap:12px">${materialFields}</div>
@@ -4038,13 +4066,18 @@ function _showTrackerEntryPopup(lngLat,props){
   // Collapsible "Details" — drawing-specific fields beyond the always-visible list
   // (materials, rates, amounts, type). Only built when there's something to show.
   const _f=entry?.fields||{};
+  const _isPlanned=entry?.entryType==='planned';
   const _hasV=v=>v!=null&&v!==''&&!(typeof v==='number'&&isNaN(v));
   const _detailRows=[];
-  if(_hasV(entry?.seedMix)) _detailRows.push(['Mix / Product',entry.seedMix]);
-  if(_hasV(_f.appliedRate)) _detailRows.push(['Applied rate',_f.appliedRate]);
-  if(_hasV(_f.requiredAmount)) _detailRows.push(['Required',_f.requiredAmount+(_f.requiredUnit?(' '+_f.requiredUnit):'')]);
-  if(_hasV(_f.actualAmount)) _detailRows.push(['Actual',_f.actualAmount+(_f.actualUnit?(' '+_f.actualUnit):'')]);
-  if(entry) _detailRows.push(['Type',entry.entryType==='planned'?'Planned':'Installed']);
+  // Per-application fields (material, rate, amounts) belong to the LAYERS drawn on a
+  // plan, not the plan itself — so a planned drawing's popup omits them (#5.1).
+  if(!_isPlanned){
+    if(_hasV(entry?.seedMix)) _detailRows.push(['Mix / Product',entry.seedMix]);
+    if(_hasV(_f.appliedRate)) _detailRows.push(['Applied rate',_f.appliedRate]);
+    if(_hasV(_f.requiredAmount)) _detailRows.push(['Required',_f.requiredAmount+(_f.requiredUnit?(' '+_f.requiredUnit):'')]);
+    if(_hasV(_f.actualAmount)) _detailRows.push(['Actual',_f.actualAmount+(_f.actualUnit?(' '+_f.actualUnit):'')]);
+  }
+  if(entry) _detailRows.push(['Type',_isPlanned?'Planned':'Installed']);
   const detailsBlock=_detailRows.length?`<div style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,.12)">
     <div onclick="mapTogglePopupDetails(this)" style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:11px;color:#dce8f4;user-select:none">
       <span>ℹ️ Details</span>
@@ -4064,8 +4097,8 @@ function _showTrackerEntryPopup(lngLat,props){
     ${measText?`<div style="color:#dce8f4">📐 ${measText}</div>`:''}
     ${props.location?`<div style="color:#dce8f4">📍 ${props.location}</div>`:''}
     ${props.status?`<div style="color:#dce8f4">🔧 ${props.status}</div>`:''}
-    ${(props.phase&&props.phase!=='N/A')?`<div style="color:#dce8f4">🌱 ${props.phase}</div>`:''}
-    ${(props.method&&props.method!=='N/A')?`<div style="color:#dce8f4">⚙️ ${props.method}</div>`:''}
+    ${(props.phase&&props.phase!=='N/A'&&!_isPlanned)?`<div style="color:#dce8f4">🌱 ${props.phase}</div>`:''}
+    ${(props.method&&props.method!=='N/A'&&!_isPlanned)?`<div style="color:#dce8f4">⚙️ ${props.method}</div>`:''}
     ${props.contractor?`<div style="color:#dce8f4">👷 ${props.contractor}</div>`:''}
     ${props.notes?`<div style="margin-top:6px;color:#c8d8e8;border-top:1px solid rgba(255,255,255,.1);padding-top:6px">${props.notes}</div>`:''}
     ${badgeRow}
