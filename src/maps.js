@@ -1891,7 +1891,7 @@ function _renderTrackerSheet(){
     const hasDetails=c.measurementType==='linear'
       ?(c.specification||c.supplier)
       :(c.productName||c.targetRate||(c.amendmentType&&c.amendmentType!=='None'));
-    const typeBadge=`<span style="font-family:var(--mono);font-size:9px;color:var(--muted);padding:2px 5px;border:1px solid var(--border);border-radius:3px;white-space:nowrap">${c.measurementType==='linear'?'LN':'AC'}</span>`;
+    const typeBadge=`<span style="font-family:var(--mono);font-size:11px;color:var(--muted);padding:3px 6px;border:1px solid var(--border);border-radius:3px;white-space:nowrap">${c.measurementType==='linear'?'LN':'AC'}</span>`;
     return `<div class="map-tc-row">
       ${(typeof tcRampChip==='function')?tcRampChip(c,pid,12):`<div class="map-tc-dot" style="background:${c.color||'#888'}"></div>`}
       <span class="map-tc-name">${c.name}</span>
@@ -2148,9 +2148,9 @@ function mapShowCategoryDetails(catId){
     .map(([v,l])=>`<option value="${v}"${v===overMode?' selected':''}>${l}</option>`).join('');
   const capUnitOpts=(isLinear?['ft','yd','m','mi']:['ac','sqft','sqyd','sqm','ha'])
     .map(u=>`<option value="${u}"${u===capUnit?' selected':''}>${u}</option>`).join('');
-  // Open Advanced by default when the limit matters (SWPPP running-balance/total) so
-  // the disturbance limit isn't hidden; otherwise it stays tucked away.
-  const advOpen=(progMode==='running-balance'||progMode==='running-total');
+  // Advanced opens by default (discoverability — it was being missed when collapsed)
+  // but stays collapsible so the editor isn't overwhelming once you know it.
+  const advOpen=true;
 
   const ov=document.createElement('div');
   ov.className='modal-overlay';
@@ -2646,10 +2646,9 @@ function mapShowTrackerModal(feat,category){
   _pendingPhotoTypes={};
   _pendingPhotoCaptions={};
   mapRefreshEntryPhotoStrip();
-  // Seed calculator — area categories that track material only
+  // Seed calculator — area categories that track material only (toggled below via
+  // _setEntryFieldVisibility, which also handles planned/linear/phase visibility).
   const trackMat=(typeof tcTrackMaterial==='function')?tcTrackMaterial(catDetails,pid):true;
-  const calcSection=document.getElementById('map-tr-calc-section');
-  if(calcSection) calcSection.style.display=(measType==='linear'||!trackMat)?'none':'';
   const rateEl=document.getElementById('map-tr-rate');
   const calcEl=document.getElementById('map-tr-calc-result');
   if(rateEl) rateEl.value=catDetails?.targetRate||'';
@@ -2686,12 +2685,9 @@ function mapShowTrackerModal(feat,category){
       if(hasStates) mapTrStateChanged();
     }
   }
-  const areaFields=document.getElementById('map-tr-area-fields');
-  const linearFields=document.getElementById('map-tr-linear-fields');
   // Phase/method only show when this category actually defines them (drops seeding implication).
   const hasDesc=(dd.phases&&dd.phases.length)||(dd.methods&&dd.methods.length);
-  if(areaFields) areaFields.style.display=(measType==='linear'||!hasDesc)?'none':'';
-  if(linearFields) linearFields.style.display=measType==='linear'?'':'none';
+  _setEntryFieldVisibility(isPlanned, measType, hasDesc, trackMat, category, pid);
   const phaseEl=document.getElementById('map-tr-phase');
   const methodEl=document.getElementById('map-tr-method');
   const conEl=document.getElementById('map-tr-contractor');
@@ -2748,6 +2744,28 @@ function mapTrStateChanged(){
   if(typeof mapTrackerCalc==='function') mapTrackerCalc();
 }
 window.mapTrStateChanged=mapTrStateChanged;
+
+// A category "uses a multi-state model" once it has ≥2 non-planned states
+// (Limed → Fertilized → Seeded…). For those the State picker already says what the
+// layer is, so the legacy Application Phase dropdown is a duplicate (#5.2).
+function _catMultiState(category, pid){
+  const states=(typeof tcGetStates==='function')?tcGetStates(category,pid):[];
+  return states.filter(s=>!s.isPlanned).length>=2;
+}
+// Shared show/hide for the entry modal's conditional field groups (add + edit).
+// Planned areas carry no per-application data — phase/method + the seed/material
+// calc belong to the LAYERS drawn on the plan, not the plan itself (#5.1).
+function _setEntryFieldVisibility(isPlanned, measType, hasDesc, trackMat, category, pid){
+  const isLinear=measType==='linear';
+  const areaFields=document.getElementById('map-tr-area-fields');
+  const linearFields=document.getElementById('map-tr-linear-fields');
+  const calcSection=document.getElementById('map-tr-calc-section');
+  const phaseWrap=document.getElementById('map-tr-phase-wrap');
+  if(phaseWrap) phaseWrap.style.display=_catMultiState(category,pid)?'none':'';
+  if(areaFields) areaFields.style.display=(isPlanned||isLinear||!hasDesc)?'none':'';
+  if(linearFields) linearFields.style.display=isLinear?'':'none';
+  if(calcSection) calcSection.style.display=(isPlanned||isLinear||!trackMat)?'none':'';
+}
 
 function mapCloseTrackerModal(){
   document.getElementById('map-tracker-modal').classList.remove('open');
@@ -4230,11 +4248,7 @@ function mapEditTrackerEntry(entryId){
   const editCat=(typeof tcGetCategory==='function')?tcGetCategory(_drawCategory,editPid):null;
   const editMeasType=editCat?.measurementType||entry.measurementType||'area';
   const editDefUnit=editCat?.defaultUnit||(editMeasType==='linear'?'ft':'ac');
-  const editAreaFields=document.getElementById('map-tr-area-fields');
-  const editLinearFields=document.getElementById('map-tr-linear-fields');
   const editHasDesc=(dd.phases&&dd.phases.length)||(dd.methods&&dd.methods.length);
-  if(editAreaFields) editAreaFields.style.display=(editMeasType==='linear'||!editHasDesc)?'none':'';
-  if(editLinearFields) editLinearFields.style.display=editMeasType==='linear'?'':'none';
   const entryUnit=entry.measurementUnit||(entry.acres!=null?'ac':'ft');
   const entryValue=entry.measurementValue!==undefined?entry.measurementValue:entry.acres;
   const measInput=document.getElementById('map-tr-acres');
@@ -4247,8 +4261,7 @@ function mapEditTrackerEntry(entryId){
   }
   if(measInput){ measInput.value=entryValue||''; measInput.dataset.unit=entryUnit; }
   const editTrackMat=(typeof tcTrackMaterial==='function')?tcTrackMaterial(editCat,editPid):true;
-  const calcSection=document.getElementById('map-tr-calc-section');
-  if(calcSection) calcSection.style.display=(editMeasType==='linear'||!editTrackMat)?'none':'';
+  _setEntryFieldVisibility(_drawEntryType==='planned', editMeasType, editHasDesc, editTrackMat, _drawCategory, editPid);
   const rateEl=document.getElementById('map-tr-rate');
   if(rateEl) rateEl.value=entry.fields?.appliedRate||'';
   const calcEl=document.getElementById('map-tr-calc-result');
