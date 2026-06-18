@@ -2171,6 +2171,7 @@ Anticipated rain — AM weather monitoring expected"></textarea>
       <div class="map-fab-row"><span class="map-fab-lbl">Draw</span><button class="map-fab-btn" id="map-fab-draw-btn" onclick="mapFabDraw()" title="Draw tracker entry">✏️</button></div>
       <div class="map-fab-row"><span class="map-fab-lbl">Measure</span><button class="map-fab-btn" id="map-fab-measure-btn" onclick="mapFabMeasure()" title="Measure area / distance">📏</button></div>
       <div class="map-fab-row"><span class="map-fab-lbl">Tracker</span><button class="map-fab-btn" id="map-fab-tracker-btn" onclick="mapShowTrackerSheet()" title="Manage tracker categories">☰</button></div>
+      <div class="map-fab-row"><span class="map-fab-lbl">Capture</span><button class="map-fab-btn" id="map-fab-capture-btn" onclick="mapCaptureMapView()" title="Capture the map view as a photo">📷</button></div>
     </div>
 
     <!-- Draw mode indicator bar -->
@@ -3516,6 +3517,13 @@ function showPage(name){
   if(name==='photos'){ phResetAndRender(); }
   if(name==='projectSpace'){ if(typeof glRenderProjectSpacePage==='function') glRenderProjectSpacePage(); }
   if(name==='academy'){ if(typeof glRenderAcademyPage==='function') glRenderAcademyPage(); }
+  // Leaving the map clears any active highlight (its chip is fixed-position and the
+  // pulse animation should stop when you're not looking at the map).
+  if(name!=='map' && typeof mapClearHighlight==='function') mapClearHighlight();
+  // Always land at the top of a freshly-opened page — #scroll-root keeps its scroll
+  // position across page swaps, so without this Photos (and others) could open
+  // mid-page or at the bottom.
+  const _sr=document.getElementById('scroll-root'); if(_sr) _sr.scrollTop=0;
 }
 
 function showPageBack(name){

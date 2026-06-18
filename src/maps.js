@@ -1387,6 +1387,7 @@ function mapUpdateKmlLayerList(){
         <div style="width:10px;height:10px;border-radius:50%;background:${cat.color||'#888'};flex-shrink:0;"></div>
         <span style="font-family:var(--mono);font-size:11px;color:var(--text);font-weight:600;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${cat.name}</span>
         <span style="font-family:var(--mono);font-size:9px;color:var(--muted);">${catEntries.length}</span>
+        <button onclick="event.stopPropagation();mapHighlightCategory('${cat.id}')" title="Highlight this category on the map" style="background:none;border:none;color:var(--amber);cursor:pointer;font-size:12px;padding:0 2px;line-height:1">✨</button>
         <button onclick="event.stopPropagation();mapMoveCatLayerOrder('${cat.id}','up')" title="Bring forward" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px;padding:0 2px;line-height:1">↑</button>
         <button onclick="event.stopPropagation();mapMoveCatLayerOrder('${cat.id}','down')" title="Send back" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px;padding:0 2px;line-height:1">↓</button>`;
       const kids=document.createElement('div');
@@ -3531,11 +3532,22 @@ function mapCaptureForEntry(entryId){
   if(typeof trGetEntry==='function' && !trGetEntry(entryId,pid)){ console.warn('mapCaptureForEntry: entry not found',entryId); return; }
   _captureEntryId=entryId;
   if(_trackerPopup){_trackerPopup.remove();_trackerPopup=null;}
-  _showCaptureBar();
+  _showCaptureBar(()=>_doCaptureForEntry(_captureEntryId));
 }
 window.mapCaptureForEntry=mapCaptureForEntry;
 
-function _showCaptureBar(){
+// Standalone map-view capture (not tied to a drawing) — same frame-then-capture
+// flow, saves straight to the Photos page (e.g. an end-of-day site map). Triggered
+// from the bottom-right FAB palette.
+function mapCaptureMapView(){
+  if(!_mapInstance) return;
+  if(typeof mapCloseFab==='function') mapCloseFab();
+  if(_trackerPopup){_trackerPopup.remove();_trackerPopup=null;}
+  _showCaptureBar(()=>_doCaptureMapView());
+}
+window.mapCaptureMapView=mapCaptureMapView;
+
+function _showCaptureBar(onGo){
   _hideCaptureBar();
   const bar=document.createElement('div');
   bar.id='_gl-capture-bar';
@@ -3548,7 +3560,7 @@ function _showCaptureBar(){
     </div>`;
   document.body.appendChild(bar);
   document.getElementById('_gl-cap-cancel').onclick=_hideCaptureBar;
-  document.getElementById('_gl-cap-go').onclick=()=>{ _hideCaptureBar(); _doCaptureForEntry(_captureEntryId); };
+  document.getElementById('_gl-cap-go').onclick=()=>{ _hideCaptureBar(); (typeof onGo==='function'?onGo:()=>_doCaptureForEntry(_captureEntryId))(); };
 }
 function _hideCaptureBar(){ const b=document.getElementById('_gl-capture-bar'); if(b) b.remove(); }
 function _showCaptureToast(msg){ _hideCaptureToast(); const t=document.createElement('div'); t.id='_gl-capture-toast'; t.style.cssText='position:fixed;left:50%;transform:translateX(-50%);bottom:calc(96px + env(safe-area-inset-bottom));z-index:9600;background:rgba(15,31,46,0.96);border:1px solid var(--border2,#445);border-radius:10px;padding:10px 16px;font-family:var(--mono);font-size:12px;color:#dce8f4;box-shadow:0 4px 18px rgba(0,0,0,.55)'; t.textContent=msg; document.body.appendChild(t); }
@@ -3583,6 +3595,26 @@ async function _doCaptureForEntry(entryId){
   _hideCaptureToast();
   // Popup was closed for framing — go straight to the caption modal.
   _showCaptureCaptionModal(entryId,photoEntry.id,prefill);
+}
+
+// Standalone capture: grab the current map view, brand it, save to Photos. No
+// drawing link, no caption modal (kept simple per the FAB-capture ask).
+async function _doCaptureMapView(){
+  if(!_mapInstance) return;
+  _showCaptureToast('📷 Capturing…');
+  await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
+  const canvas=_mapInstance.getCanvas();
+  const today=new Date().toLocaleDateString('en-CA');
+  const rawBlob=await new Promise(res=>canvas.toBlob(res,'image/png'));
+  if(!rawBlob){ _hideCaptureToast(); console.warn('_doCaptureMapView: canvas returned null'); return; }
+  const branded=await _compositeBrandWordmark(rawBlob);
+  if(typeof phSaveCapturedImage!=='function'){ _hideCaptureToast(); return; }
+  _showCaptureToast('☁️ Saving…');
+  const prefill=`Site map · ${_fmtLabelDate(today)}`;
+  const photoEntry=await phSaveCapturedImage(branded,today,prefill);
+  if(!photoEntry){ _hideCaptureToast(); console.warn('_doCaptureMapView: save failed'); return; }
+  _showCaptureToast('✓ Saved to Photos');
+  setTimeout(_hideCaptureToast,1800);
 }
 
 // Standalone caption modal for capture flow — writes directly to entry.photoCaptions
@@ -3645,6 +3677,105 @@ function _geomPickArea(g){
     return (t==='LineString'||t==='MultiLineString')?area*0.001:area;
   }catch(e){ return Infinity; }
 }
+
+// ── Highlight / spotlight (#9) ───────────────────────────────────────────────
+// Make a selected drawing OR an entire category really STAND OUT (animated glow +
+// bright pulsing outline) — for showing someone something on the map. Not a dim of
+// the others; the selection itself pops. Toggle off by re-selecting the same set
+// or tapping the floating chip.
+let _highlightIds=[], _highlightRAF=null, _highlightT0=0;
+
+function _highlightGeoms(){
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const feats=[];
+  _highlightIds.forEach(id=>{
+    const e=(typeof trGetEntry==='function')?trGetEntry(id,pid):null;
+    if(!e||!e.geometry) return;
+    let g=e.geometry; if(typeof g==='string'){ try{g=JSON.parse(g);}catch(err){ return; } }
+    feats.push({type:'Feature',geometry:g,properties:{}});
+  });
+  return {type:'FeatureCollection',features:feats};
+}
+function _ensureHighlightLayers(){
+  if(!_mapInstance||!_mapInstance.isStyleLoaded()) return;
+  if(_mapInstance.getSource('tracker-highlight')) return;
+  _mapInstance.addSource('tracker-highlight',{type:'geojson',data:{type:'FeatureCollection',features:[]}});
+  _mapInstance.addLayer({id:'tracker-highlight-glow',type:'line',source:'tracker-highlight',
+    filter:['any',['==',['geometry-type'],'Polygon'],['==',['geometry-type'],'LineString']],
+    paint:{'line-color':'#FFE680','line-width':14,'line-opacity':0.35,'line-blur':6}});
+  _mapInstance.addLayer({id:'tracker-highlight-line',type:'line',source:'tracker-highlight',
+    filter:['any',['==',['geometry-type'],'Polygon'],['==',['geometry-type'],'LineString']],
+    paint:{'line-color':'#FFD23F','line-width':3.5}});
+  _mapInstance.addLayer({id:'tracker-highlight-pt',type:'circle',source:'tracker-highlight',
+    filter:['==',['geometry-type'],'Point'],
+    paint:{'circle-color':'rgba(255,210,63,0.25)','circle-radius':16,'circle-stroke-color':'#FFD23F','circle-stroke-width':3}});
+}
+function _raiseHighlightLayers(){
+  ['tracker-highlight-glow','tracker-highlight-line','tracker-highlight-pt'].forEach(l=>{ try{ if(_mapInstance.getLayer(l)) _mapInstance.moveLayer(l); }catch(e){} });
+}
+function _highlightTick(ts){
+  if(!_highlightIds.length){ _highlightRAF=null; return; }
+  if(!_highlightT0) _highlightT0=ts;
+  const t=(ts-_highlightT0)/1000;
+  const pulse=0.5+0.5*Math.sin(t*3.4); // 0..1
+  if(_mapInstance&&_mapInstance.getLayer('tracker-highlight-glow')){
+    try{
+      _mapInstance.setPaintProperty('tracker-highlight-glow','line-width',10+12*pulse);
+      _mapInstance.setPaintProperty('tracker-highlight-glow','line-opacity',0.18+0.42*pulse);
+      _mapInstance.setPaintProperty('tracker-highlight-line','line-width',2.5+2.5*pulse);
+      _mapInstance.setPaintProperty('tracker-highlight-pt','circle-radius',12+8*pulse);
+    }catch(e){}
+  }
+  _highlightRAF=requestAnimationFrame(_highlightTick);
+}
+function _startHighlight(){
+  _ensureHighlightLayers();
+  if(!_mapInstance.getSource('tracker-highlight')) return;
+  _mapInstance.getSource('tracker-highlight').setData(_highlightGeoms());
+  _raiseHighlightLayers();
+  _showHighlightChip();
+  if(!_highlightRAF){ _highlightT0=0; _highlightRAF=requestAnimationFrame(_highlightTick); }
+}
+function mapClearHighlight(){
+  _highlightIds=[];
+  if(_highlightRAF){ cancelAnimationFrame(_highlightRAF); _highlightRAF=null; }
+  if(_mapInstance&&_mapInstance.getSource('tracker-highlight')){
+    try{ _mapInstance.getSource('tracker-highlight').setData({type:'FeatureCollection',features:[]}); }catch(e){}
+  }
+  _hideHighlightChip();
+}
+window.mapClearHighlight=mapClearHighlight;
+function mapHighlightEntry(id){
+  if(!_mapInstance) return;
+  if(_trackerPopup){_trackerPopup.remove();_trackerPopup=null;}
+  if(_highlightIds.length===1&&_highlightIds[0]===id){ mapClearHighlight(); return; } // toggle off
+  _highlightIds=[id];
+  _startHighlight();
+}
+window.mapHighlightEntry=mapHighlightEntry;
+function mapHighlightCategory(catId){
+  if(!_mapInstance) return;
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const ids=(typeof trGetEntriesForProject==='function')
+    ? trGetEntriesForProject(pid).filter(e=>(e.categoryId||e.category)===catId&&!e.deletedFromMap&&!e.archivedFromMap&&e.geometry).map(e=>e.id)
+    : [];
+  if(!ids.length) return;
+  const same=ids.length===_highlightIds.length&&ids.every(i=>_highlightIds.includes(i));
+  if(same){ mapClearHighlight(); return; } // toggle off
+  _highlightIds=ids;
+  _startHighlight();
+}
+window.mapHighlightCategory=mapHighlightCategory;
+function _showHighlightChip(){
+  _hideHighlightChip();
+  const c=document.createElement('button');
+  c.id='_gl-highlight-chip';
+  c.style.cssText='position:fixed;left:50%;transform:translateX(-50%);top:calc(var(--app-bar-h, 64px) + 8px);z-index:9500;background:rgba(201,168,76,0.96);border:none;color:#111;font-family:var(--mono);font-size:11px;font-weight:700;padding:7px 14px;border-radius:20px;cursor:pointer;box-shadow:0 3px 12px rgba(0,0,0,.5)';
+  c.textContent='✨ Highlighting — tap to clear';
+  c.onclick=mapClearHighlight;
+  document.body.appendChild(c);
+}
+function _hideHighlightChip(){ const c=document.getElementById('_gl-highlight-chip'); if(c) c.remove(); }
 
 function mapRenderTrackerLayers(){
   if(!_mapInstance||!_mapInstance.isStyleLoaded()) return;
@@ -3812,6 +3943,8 @@ function mapRenderTrackerLayers(){
   // above self-abort and leave a hidden drawing's label on the map. If the style
   // isn't fully settled, re-run the filter once the map goes idle.
   if(_mapInstance&&!_mapInstance.isStyleLoaded()) _mapInstance.once('idle',mapRefreshDateLabels);
+  // Keep an active highlight on top of the freshly re-added category layers.
+  if(_highlightIds.length) _startHighlight();
 }
 
 // Shared popup-button base style — fixed-width grid cells so nothing sticks off the popup.
@@ -3921,6 +4054,7 @@ function _showTrackerEntryPopup(lngLat,props){
         ${entry?`<button onclick="mapActivatePlannedEntry('${props.id}')" style="${_TRP_BTN}padding:11px 4px;font-size:12px;background:rgba(201,168,76,0.22);border:1px solid var(--amber,#C9A84C);color:var(--amber,#C9A84C);font-weight:700" title="${entry?.entryType==='planned'?'Draw overlays on this plan':'Stack the next state on this layer'}">📍 Activate</button>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px">
           <button onclick="mapToggleDateLabel('${props.id}')" style="${_TRP_BTN}background:${labelOn?'rgba(201,168,76,0.2)':'var(--s2,#1a2a38)'};border:1px solid ${labelOn?'var(--amber,#C9A84C)':'var(--border,#334)'};color:${labelOn?'var(--amber,#C9A84C)':'var(--muted,#888)'}">🔖${labelOn?' On':' Label'}</button>
+          <button onclick="mapHighlightEntry('${props.id}')" style="${_TRP_BTN}background:var(--s2,#1a2a38);border:1px solid var(--border,#334);color:var(--muted,#888)" title="Make this drawing stand out on the map">✨ Highlight</button>
           <button onclick="mapShowCategoryLegend('${props.categoryId}')" style="${_TRP_BTN}background:var(--s2,#1a2a38);border:1px solid var(--border,#334);color:var(--muted,#888)" title="Show this category's color key on the map (for screenshots)">🏷️ Legend</button>
           <button onclick="mapOpenCategoryFromPopup('${props.categoryId}')" style="${_TRP_BTN}background:var(--s2,#1a2a38);border:1px solid var(--border,#334);color:var(--muted,#888)" title="Category settings">⚙ Category</button>
           <button onclick="mapCaptureForEntry('${props.id}')" style="${_TRP_BTN}background:var(--s2,#1a2a38);border:1px solid var(--border,#334);color:var(--muted,#888)" title="Capture map view as photo">📷 Capture</button>
