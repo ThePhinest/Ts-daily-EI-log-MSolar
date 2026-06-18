@@ -3486,6 +3486,34 @@ async function _compositeBrandWordmark(blob){
     ctx.drawImage(bmp,0,0);
     bmp.close();
     try{ if(document.fonts&&document.fonts.ready) await document.fonts.ready; }catch{}
+    // Photo pins + field markers are DOM (mapboxgl.Marker) overlays — they aren't on
+    // the GL canvas, so a raw canvas grab misses them. Composite each visible marker
+    // onto the image at its projected position (anchor 'bottom' = tip at the point),
+    // so an end-of-day map capture actually shows where photos were taken.
+    try{
+      if(_mapInstance){
+        const cont=_mapInstance.getContainer();
+        const sx=cont&&cont.clientWidth?c.width/cont.clientWidth:1;
+        const sy=cont&&cont.clientHeight?c.height/cont.clientHeight:1;
+        const markers=[].concat(_mapPhotoMarkers||[],_mapFieldMarkers||[]);
+        markers.forEach(m=>{
+          if(!m||typeof m.getLngLat!=='function') return;
+          const el=typeof m.getElement==='function'?m.getElement():null;
+          if(el&&el.style.display==='none') return;
+          const pt=_mapInstance.project(m.getLngLat());
+          const x=pt.x*sx, y=pt.y*sy;
+          const glyph=(el&&el.textContent&&el.textContent.trim())||'📍';
+          const fsCSS=el?(parseFloat(getComputedStyle(el).fontSize)||26):26;
+          ctx.save();
+          ctx.font=`${Math.round(fsCSS*sy)}px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif`;
+          ctx.textAlign='center';
+          ctx.textBaseline='bottom';
+          ctx.shadowColor='rgba(0,0,0,0.6)'; ctx.shadowBlur=4*sy; ctx.shadowOffsetY=2*sy;
+          ctx.fillText(glyph,x,y);
+          ctx.restore();
+        });
+      }
+    }catch(e){ console.warn('marker composite failed:',e.message); }
     const PAD=Math.max(16,Math.round(c.width*0.012));
     const PILL_H=Math.max(28,Math.round(c.height*0.035));
     const FONT_PX=Math.round(PILL_H*0.50);
