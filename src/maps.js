@@ -37,6 +37,9 @@ let _mapCurrentStyle=localStorage.getItem('gl_map_style')||'satellite-streets-v1
 let _drawInstance=null, _drawMode=null, _drawCategory=null;
 let _drawEntryType='installed'; // 'planned' | 'installed'
 let _activePlannedEntryId=null;
+// When set ({label,type}), the next drawn overlay is flagged a temporary/maintenance
+// item (open lifecycle). Drawn on top of an existing drawing via the snap/anchor flow.
+let _pendingTemporary=null;
 let _fabOpen=false, _viewFabOpen=false, _gpsFollowActive=false, _gpsFollowWatch=null;
 // GPS location/direction mode cycle: 0=off, 1=locate, 2=direction(cone,north-up), 3=heading(cone+map spins)
 let _gpsMode=0, _compassActive=false, _compassHandler=null, _curHeading=0, _lastSpinTs=0, _origCompassHTML=null, _followPaused=false;
@@ -2499,6 +2502,7 @@ function mapDeactivateDrawMode(){
   _drawCategory=null;
   _drawEntryType='installed';
   _activePlannedEntryId=null;
+  _pendingTemporary=null;
   _pendingDrawFeature=null;
   if(prevMode==='draw'&&_drawInstance){
     // Switch to a non-snap mode FIRST so the active snap mode's onStop runs and
@@ -2912,9 +2916,29 @@ function mapSaveTrackerEntry(){
       return ds?ds.id:null;
     })(),
   };
-  // Editing an existing entry — preserve id so trSaveEntry updates in place
-  if(_editingEntryId){ entry.id=_editingEntryId; entry.deletedFromMap=false; entry.archivedFromMap=false; }
+  // Editing an existing entry — preserve id + the temporary lifecycle fields that
+  // aren't on the form, so a re-save (which rebuilds the entry from form inputs)
+  // doesn't strip them.
+  if(_editingEntryId){
+    entry.id=_editingEntryId; entry.deletedFromMap=false;
+    const _prev=(typeof trGetEntry==='function')?trGetEntry(_editingEntryId,pid):null;
+    if(_prev&&_prev.temporary){
+      entry.temporary=true; entry.tempStatus=_prev.tempStatus||'open';
+      entry.tempLabel=_prev.tempLabel; entry.tempType=_prev.tempType;
+      entry.resolvedAt=_prev.resolvedAt||null; entry.resolvedBy=_prev.resolvedBy||null;
+      entry.archivedFromMap=_prev.tempStatus==='resolved'; // keep resolved ones filed
+    } else {
+      entry.archivedFromMap=false;
+    }
+  }
   _editingEntryId=null;
+  // A newly drawn temporary/maintenance overlay (armed via mapDrawTemporary).
+  if(_pendingTemporary && !entry.id){
+    entry.temporary=true; entry.tempStatus='open';
+    entry.tempType=_pendingTemporary.type||'maintenance';
+    if(_pendingTemporary.label) entry.tempLabel=String(_pendingTemporary.label).slice(0,60);
+    _pendingTemporary=null;
+  }
   _pendingPhotoIds=[];
   const saved=(typeof trSaveEntry==='function')?trSaveEntry(entry,pid):null;
   if(saved) _showUndoToast(saved,pid);
@@ -4076,7 +4100,7 @@ function _showTrackerEntryPopup(lngLat,props){
   const tempStatusLine=_isTemp?`<div style="color:#C9A84C;display:flex;align-items:center;gap:6px;margin-top:2px">⏱ <b>${(entry.tempLabel||'Temporary').replace(/</g,'&lt;')}</b><span style="opacity:.7">· ${entry.tempType==='note'?'note':'maintenance'}</span></div>`:'';
   const tempBtn=_mineEntry?(_isTemp
     ?`<button onclick="mapResolveTemporary('${props.id}')" style="${_TRP_BTN}background:rgba(39,174,96,0.18);border:1px solid #27AE60;color:#27AE60" title="Mark resolved — leaves the live map but stays in the record">✓ Resolve</button>`
-    :`<button onclick="mapMarkTemporary('${props.id}')" style="${_TRP_BTN}background:var(--s2,#1a2a38);border:1px solid var(--border,#334);color:var(--muted,#888)" title="Flag as a temporary / maintenance item — shows until resolved, never counts toward totals">⏱ Temporary</button>`):'';
+    :`<button onclick="mapDrawTemporary('${props.id}')" style="${_TRP_BTN}background:var(--s2,#1a2a38);border:1px solid var(--border,#334);color:var(--muted,#888)" title="Draw a temporary / maintenance area on this drawing (damaged section) — shows until resolved, never counts toward totals">⏱ Temporary</button>`):'';
   // Category identity = the multicolor state-ramp chip (same as the tracker log),
   // not a single dot. Falls back to the entry's state color for no-category drawings.
   const _dotFallback=(props.stateColor&&/^#[0-9A-Fa-f]{6}$/.test(props.stateColor))?props.stateColor:color;
@@ -4177,10 +4201,12 @@ async function mapShareTrackerEntry(id){
 window.mapShareTrackerEntry=mapShareTrackerEntry;
 
 // ── Temporary / maintenance item flow ──
-// Flag a drawing as a temporary item (repair, temp stabilization). Shows a small
-// sheet for a free label + type; the drawing then shows on the live map (⚠ amber
-// label) until resolved, never counting toward totals. Foundation of the punchlist.
-function mapMarkTemporary(id){
+// A temporary/maintenance item is DRAWN as an overlay on top of an existing
+// drawing (the damaged section), using the same snap/anchor flow as states/
+// layers — it never flags the whole parent. Pick a label + type, then draw the
+// affected area; it shows on the live map (⚠ amber flag) until resolved, never
+// counts toward totals, and is never deleted. Foundation of the punchlist.
+function mapDrawTemporary(id){
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
   const e=(typeof trGetEntry==='function')?trGetEntry(id,pid):null;
   if(!e) return;
@@ -4190,22 +4216,22 @@ function mapMarkTemporary(id){
   ov.className='modal-overlay'; ov.id='_mt-ov';
   ov.style.cssText='z-index:5200;align-items:flex-end;padding:0';
   ov.innerHTML=`<div style="width:100%;background:var(--bg);border-top:1px solid var(--border);border-radius:16px 16px 0 0;padding:16px 16px env(safe-area-inset-bottom);display:flex;flex-direction:column;gap:12px">
-    <div class="modal-title" style="margin:0;font-size:15px">⏱ Mark temporary</div>
-    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);line-height:1.5">A temporary item (a repair, temp stabilization) shows on the map until you resolve it, doesn't count toward totals, and is never deleted.</div>
+    <div class="modal-title" style="margin:0;font-size:15px">⏱ Temporary / maintenance item</div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);line-height:1.5">Next you'll <b>draw the affected area</b> on top of this drawing (snap/anchor work just like layers). It shows until you resolve it, doesn't count toward totals, and is never deleted.</div>
     <div>
       <label style="${_LABEL_STYLE}">Label</label>
-      <input type="text" id="_mt-label" maxlength="60" value="${(e.tempLabel||'').replace(/"/g,'&quot;')}" placeholder="e.g. damaged silt fence" style="${_INPUT_STYLE}width:100%;box-sizing:border-box">
+      <input type="text" id="_mt-label" maxlength="60" value="" placeholder="e.g. damaged silt fence" style="${_INPUT_STYLE}width:100%;box-sizing:border-box">
     </div>
     <div>
       <label style="${_LABEL_STYLE}">Type</label>
       <select id="_mt-type" style="${_INPUT_STYLE}width:100%;box-sizing:border-box">
-        <option value="maintenance"${e.tempType!=='note'?' selected':''}>Maintenance / needs attention</option>
-        <option value="note"${e.tempType==='note'?' selected':''}>Note</option>
+        <option value="maintenance" selected>Maintenance / needs attention</option>
+        <option value="note">Note</option>
       </select>
     </div>
     <div style="display:flex;gap:8px">
       <button class="modal-cancel" id="_mt-cancel" style="flex:1">Cancel</button>
-      <button class="modal-confirm" id="_mt-save" style="flex:1">Mark temporary</button>
+      <button class="modal-confirm" id="_mt-save" style="flex:1">Draw area →</button>
     </div>
   </div>`;
   document.body.appendChild(ov);
@@ -4215,14 +4241,19 @@ function mapMarkTemporary(id){
   ov.querySelector('#_mt-save').onclick=()=>{
     const label=ov.querySelector('#_mt-label').value.trim();
     const type=ov.querySelector('#_mt-type').value||'maintenance';
-    if(typeof trSetTemporary==='function') trSetTemporary(id,true,{label,type},pid);
     close();
-    if(typeof mapRenderTrackerLayers==='function') mapRenderTrackerLayers();
-    if(typeof clRender==='function') clRender();
-    if(typeof showCloudBanner==='function') showCloudBanner('⏱ Marked temporary — resolve it from the popup when fixed.');
+    // Arm the next drawn overlay as temporary, link it to this drawing, and enter
+    // the normal snap/anchor draw flow on the parent's category (mirrors Activate).
+    _pendingTemporary={label,type};
+    _activePlannedEntryId=id;
+    _drawEntryType='installed';
+    const catId=e.categoryId||e.category;
+    if(!_drawMode) mapActivateDrawMode(catId);
+    else _updateActivePlanIndicator();
+    if(typeof showCloudBanner==='function') showCloudBanner('⏱ Draw the affected area — snap works. Finish to save it as a temporary item.');
   };
 }
-window.mapMarkTemporary=mapMarkTemporary;
+window.mapDrawTemporary=mapDrawTemporary;
 
 function mapResolveTemporary(id){
   if(typeof trResolveTemporary!=='function') return;
