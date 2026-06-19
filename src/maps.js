@@ -2703,6 +2703,14 @@ function mapShowTrackerModal(feat,category){
   if(conEl) conEl.value='';
   if(statusEl) statusEl.value=isPlanned?'Planned':'Installed';
   _populateLinkToPlanDropdown(category);
+  // A temporary/maintenance flag describes a damaged spot, not the drawing's
+  // state/status/phase/material — hide those so the save form is just the flag
+  // (size, location, notes, photo). Set the title so it's clearly a temp item.
+  if(_pendingTemporary){
+    ['map-tr-state-row','map-tr-linear-fields','map-tr-area-fields','map-tr-calc-section']
+      .forEach(id=>{ const el=document.getElementById(id); if(el) el.style.display='none'; });
+    if(titleEl) titleEl.textContent='Temporary item'+(_pendingTemporary.label?(' — '+_pendingTemporary.label):'');
+  }
   document.getElementById('map-tracker-modal').classList.add('open');
 }
 
