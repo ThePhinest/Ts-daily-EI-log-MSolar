@@ -330,8 +330,9 @@ function clRenderTrackerCard(search){
       String(e.acres||'').includes(search)
     );
   }
-  // Split totals: installed vs planned per category
-  const _allProjEntries=(typeof trGetEntriesForProject==='function')?trGetEntriesForProject(pid):[];
+  // Split totals: installed vs planned per category. Temporary/maintenance items
+  // are provisional — excluded from all progress totals (they live on the punchlist).
+  const _allProjEntries=(typeof trGetEntriesForProject==='function')?trGetEntriesForProject(pid).filter(e=>!e.temporary):[];
   const _catMap={};
   _allProjEntries.forEach(e=>{
     const cid=e.categoryId||'__none';
@@ -647,8 +648,9 @@ function _catStateBars(cid, g, pid){
   const states=(typeof tcGetStates==='function')?tcGetStates(cat,pid):[];
   const childStates=states.filter(s=>!s.isPlanned);
   if(!childStates.length) return '';
-  const planned=g.entries.filter(e=>e.entryType==='planned');
-  const installed=g.entries.filter(e=>e.entryType!=='planned');
+  // Temporary/maintenance items are provisional — never counted in progress bars.
+  const planned=g.entries.filter(e=>e.entryType==='planned'&&!e.temporary);
+  const installed=g.entries.filter(e=>e.entryType!=='planned'&&!e.temporary);
   const dcs=(typeof tcDefaultChildState==='function')?tcDefaultChildState(cat,pid):null;
   const measure=(e)=>(typeof trEntryMeasure==='function')?trEntryMeasure(e,defUnit,pid):0;
   const fmt=(v)=>(typeof tcFormatMeasurement==='function')?tcFormatMeasurement(v,defUnit):`${(v||0).toFixed(2)} ${defUnit}`;
@@ -843,7 +845,7 @@ function clShowTrackerLog(){
       });
       res.innerHTML=order.map(cid=>{
         const g=groups[cid];
-        const _installed=g.entries.filter(e=>e.entryType!=='planned');
+        const _installed=g.entries.filter(e=>e.entryType!=='planned'&&!e.temporary);
         // Category total respects the category's measurement type + default unit
         // (linear → ft, area → ac, etc.) — never assume acres. Converts each entry
         // into the category default unit before summing.
@@ -861,7 +863,7 @@ function clShowTrackerLog(){
         const _catObjMeta=(typeof tcGetCategory==='function')?tcGetCategory(cid,pid):null;
         const _isSchemaMeta=!!(_catObjMeta&&Array.isArray(_catObjMeta.states)&&_catObjMeta.states.length);
         const _metaTotal=_isSchemaMeta
-          ?_sumMeas(g.entries.filter(e=>e.entryType==='planned'))
+          ?_sumMeas(g.entries.filter(e=>e.entryType==='planned'&&!e.temporary))
           :_sumMeas(_installed);
         const _metaTotalText=_metaTotal>0?((typeof tcFormatMeasurement==='function')?tcFormatMeasurement(_metaTotal,_metaUnit):`${_metaTotal.toFixed(2)} ${_metaUnit}`):'';
         const gPhotos=_installed.reduce((s,e)=>s+(Array.isArray(e.photoIds)?e.photoIds.length:0),0);

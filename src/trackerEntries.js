@@ -259,7 +259,8 @@ function trDeleteEntry(entryId, projectId){
 // sorted descending by totalValue (in display unit).
 function trGetCumulativeTotals(projectId){
   const pid = projectId || ((typeof _activeProjectId === 'function') ? _activeProjectId() : 'default');
-  const entries = trGetEntriesForProject(pid);
+  // Temporary/maintenance items are provisional — excluded from cumulative totals.
+  const entries = trGetEntriesForProject(pid).filter(e => !e.temporary);
   const map = {};
   entries.forEach(e => {
     const key = e.categoryId || '__none';
@@ -443,9 +444,112 @@ async function trSetPublished(entryIds, publish, projectId){
   return touched.length;
 }
 
+// ═══════════════════════════════════════════
+// TEMPORARY / MAINTENANCE DRAWINGS — open → resolved (2026-06-18)
+// ═══════════════════════════════════════════
+//
+// A temporary drawing is a transient on-site condition (a damaged silt-fence
+// repair, temporary stabilization) shown on the LIVE map until it's resolved,
+// then archived out of the plan view — kept in the record, never deleted. It is
+// excluded from permanent progress totals. This is the foundation of the
+// map-native maintenance punchlist (merges Discord #420 needs-attention + #220
+// assignable): `tempType` drives a future filtered "export all maintenance"
+// deliverable; `tempStatus` drives the open→resolved lifecycle.
+//
+// Entry fields: temporary(bool), tempLabel(string), tempType('maintenance'|'note'),
+// tempStatus('open'|'resolved'), resolvedAt, resolvedBy. Resolving sets
+// archivedFromMap:true (the existing archive path) so it drops off the live map
+// while staying in compliance history; reopening clears it.
+
+function trIsTemporary(entry){ return !!(entry && entry.temporary); }
+function trIsOpenTemporary(entry){
+  return !!(entry && entry.temporary && entry.tempStatus !== 'resolved' && !entry.deletedAt);
+}
+
+// Shared mutate+persist+cloud helper for the temporary lifecycle writes.
+function _trMutateEntry(entryId, projectId, fn){
+  const pid = projectId || ((typeof _activeProjectId === 'function') ? _activeProjectId() : 'default');
+  const data = _trLoadRaw(pid);
+  const idx = data.entries.findIndex(e => e.id === entryId);
+  if(idx < 0) return false;
+  fn(data.entries[idx]);
+  data.entries[idx].updatedAt = Date.now();
+  _trSaveRaw(pid, data);
+  // Foreign entries are someone else's record — never write to the cloud copy.
+  if(!_trForeign(data.entries[idx]) && _trCloudOk(pid)){
+    try {
+      _projData(pid).collection('trackerEntries').doc(entryId)
+        .set(_trToFs(data.entries[idx]))
+        .catch(e => console.warn('trMutateEntry Firestore:', e.message));
+    } catch(e){ /* silent */ }
+  }
+  return true;
+}
+
+// Flag/unflag a drawing as a temporary/maintenance item. on → open lifecycle;
+// opts = {label, type}. off → clears the temporary fields.
+function trSetTemporary(entryId, on, opts, projectId){
+  const pid = projectId || ((typeof _activeProjectId === 'function') ? _activeProjectId() : 'default');
+  if(_trReviewerBlocked(pid)) return false;
+  return _trMutateEntry(entryId, pid, e => {
+    if(on){
+      e.temporary = true;
+      e.tempStatus = 'open';
+      if(opts && opts.type) e.tempType = opts.type;
+      else if(!e.tempType) e.tempType = 'maintenance';
+      if(opts && opts.label != null) e.tempLabel = String(opts.label).slice(0,60);
+      e.resolvedAt = null; e.resolvedBy = null;
+      e.archivedFromMap = false; // open temporaries stay on the live map
+    } else {
+      e.temporary = false;
+      e.tempStatus = null;
+      e.resolvedAt = null; e.resolvedBy = null;
+    }
+  });
+}
+
+// Resolve a temporary item — leaves the live map (archived) but stays in the
+// record ("fixed" / "work resumed here").
+function trResolveTemporary(entryId, projectId){
+  const pid = projectId || ((typeof _activeProjectId === 'function') ? _activeProjectId() : 'default');
+  if(_trReviewerBlocked(pid)) return false;
+  const uid = (typeof _currentUser !== 'undefined' && _currentUser) ? _currentUser.uid : null;
+  return _trMutateEntry(entryId, pid, e => {
+    e.tempStatus = 'resolved';
+    e.resolvedAt = Date.now();
+    e.resolvedBy = uid;
+    e.archivedFromMap = true; // drop off the live plan; kept in compliance history
+  });
+}
+
+// Reopen a resolved temporary item back onto the live map.
+function trReopenTemporary(entryId, projectId){
+  const pid = projectId || ((typeof _activeProjectId === 'function') ? _activeProjectId() : 'default');
+  if(_trReviewerBlocked(pid)) return false;
+  return _trMutateEntry(entryId, pid, e => {
+    e.tempStatus = 'open';
+    e.resolvedAt = null; e.resolvedBy = null;
+    e.archivedFromMap = false;
+  });
+}
+
+// Open temporary/maintenance items — the live punchlist. Compliance-page seam:
+// a future "Punchlist" section reads this (group by category/type). Excludes
+// resolved + soft-deleted.
+function trGetOpenTemporary(projectId){
+  const pid = projectId || ((typeof _activeProjectId === 'function') ? _activeProjectId() : 'default');
+  return trGetEntriesForProject(pid).filter(e => trIsOpenTemporary(e));
+}
+
 // Window exposure — mirrors the pattern in db.js / timesheet.js.
 if(typeof window !== 'undefined'){
   window.trGenId = trGenId;
+  window.trIsTemporary = trIsTemporary;
+  window.trIsOpenTemporary = trIsOpenTemporary;
+  window.trSetTemporary = trSetTemporary;
+  window.trResolveTemporary = trResolveTemporary;
+  window.trReopenTemporary = trReopenTemporary;
+  window.trGetOpenTemporary = trGetOpenTemporary;
   window.trGetEntriesForProject = trGetEntriesForProject;
   window.trMarkDeletedFromMap = trMarkDeletedFromMap;
   window.trArchiveFromMap = trArchiveFromMap;

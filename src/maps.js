@@ -2112,6 +2112,10 @@ function mapShowCategoryDetails(catId){
   // Deep-clone states (synthesizes legacy defaults) so edits don't touch the cache.
   _cdStates=(typeof tcGetStates==='function'?tcGetStates(cat,pid):[]).map(s=>({...s}));
   if(!_cdStates.some(s=>s.isPlanned)&&_cdStates.length) _cdStates[0].isPlanned=true;
+  // The plan (first) state's color IS the category's identity color (locked 2026-06-18) —
+  // seed it from cat.color so the editor shows them unified and editing the plan color
+  // edits the category identity. Kills the legacy gray plan default on existing categories.
+  _cdStates.forEach(s=>{ if(s.isPlanned && /^#[0-9A-Fa-f]{6}$/.test(_cdCatColor)) s.color=_cdCatColor; });
 
   const trackMat=(typeof tcTrackMaterial==='function')?tcTrackMaterial(cat,pid):true;
   const progMode=(typeof tcProgressMode==='function')?tcProgressMode(cat,pid):'per-state-vs-plan';
@@ -2152,7 +2156,7 @@ function mapShowCategoryDetails(catId){
     </div>
     <div style="flex:1;min-height:0;overflow-y:auto;padding:14px 16px;display:flex;flex-direction:column;gap:14px">
       <div>
-        <label style="${_LABEL_STYLE}">States <span style="text-transform:none;color:var(--muted)">— ✏️ editable; ‘plan’ marks the faint baseline</span></label>
+        <label style="${_LABEL_STYLE}">States <span style="text-transform:none;color:var(--muted)">— ✏️ editable; the ‘plan’ state’s color is the category’s identity color</span></label>
         <div id="_cd-states-list"></div>
         <button onclick="_cdAddState()" style="${_cdMiniBtn('width:100%;justify-content:center;padding:8px;color:var(--text)')}">+ Add state</button>
       </div>
@@ -2222,10 +2226,13 @@ async function mapSaveCategoryDetails(catId, ov, isLinear){
   const progressMode=document.getElementById('_cd-progmode')?.value||'per-state-vs-plan';
   const overallMode=document.getElementById('_cd-overmode')?.value||'terminal';
   const statePatterns=!!document.getElementById('_cd-statepat')?.checked;
-  // Category color is no longer a paint channel — each state owns its fill+outline,
-  // and category identity is shown as the derived state-ramp chip. existing.color is
-  // left untouched (legacy categories without states[] still synthesize from it).
-  const patch={ states, trackMaterial, progressMode, overallMode, statePatterns };
+  // Category identity color = the PLAN (first) state's color (locked 2026-06-18): the
+  // plan is the denominator — always ≥ every other state — so it's the most prevalent
+  // color across a job. Each state still owns its own fill+outline; this keeps cat.color
+  // (used for exports, legend, ramp-chip fallback, no-category drawings) in sync.
+  const _planSt=states.find(s=>s.isPlanned)||states[0];
+  const patch={ states, trackMaterial, progressMode, overallMode, statePatterns,
+    color:(_planSt&&/^#[0-9A-Fa-f]{6}$/.test(_planSt.color))?_planSt.color:existing.color };
 
   if(progressMode==='running-balance'||progressMode==='running-total'){
     const cv=parseFloat(document.getElementById('_cd-cap')?.value);
@@ -2357,7 +2364,10 @@ async function mapTrackerSaveAdd(){
   // (name/color/type/unit/styling) override the template defaults.
   const template=_tcAddingTemplate||'seeding';
   const schema=(typeof tcTemplateSchema==='function')?tcTemplateSchema(template,measurementType):{};
-  await tcSaveCategory({...schema,template,name,color:_tcAddingColor||'#E67E22',measurementType,defaultUnit,lineStyle,lineWidth,fillStyle,fillOpacity},pid);
+  // Plan (first) state's color = the category identity color (locked 2026-06-18) — no gray default.
+  const _catColor=_tcAddingColor||'#E67E22';
+  if(Array.isArray(schema.states)){ const _ps=schema.states.find(s=>s.isPlanned)||schema.states[0]; if(_ps) _ps.color=_catColor; }
+  await tcSaveCategory({...schema,template,name,color:_catColor,measurementType,defaultUnit,lineStyle,lineWidth,fillStyle,fillOpacity},pid);
   mapTrackerHideAdd();
   _renderTrackerSheet();
 }
@@ -3362,19 +3372,27 @@ function mapRefreshDateLabels(){
   const entries=(typeof trGetEntriesForProject==='function')?trGetEntriesForProject(pid):[];
   const features=entries
     .filter(e=>{
-      // Label only shows when the drawing itself is on the map: must have the
-      // label flag + geometry, not be deleted/archived/removed-from-map, AND its
-      // category must be visible (hiding a drawing's category hides its label too).
-      if(!e.showDateLabel||!e.geometry||e.deletedAt||e.archivedFromMap||e.deletedFromMap) return false;
+      // Label shows when the drawing is on the map (geometry, not deleted/archived/
+      // removed, category visible) AND either it has the date-label flag OR it's an
+      // open temporary item (which always gets a ⚠ flag so an issue is obvious).
+      if(!e.geometry||e.deletedAt||e.archivedFromMap||e.deletedFromMap) return false;
       const cid=e.categoryId||e.category;
       if(_tcLayerVisible[cid]===false) return false;
+      const isOpenTemp=e.temporary&&e.tempStatus!=='resolved';
+      if(!e.showDateLabel&&!isOpenTemp) return false;
       return true;
     })
     .map(e=>{
       const c=_calcCentroid(e.geometry);
       if(!c) return null;
-      const text=(e.labelText&&e.labelText.trim())?e.labelText.trim():_fmtLabelDate(e.date);
-      const color=(e.labelColor&&/^#[0-9A-Fa-f]{6}$/.test(e.labelColor))?e.labelColor:'#ffffff';
+      const isOpenTemp=e.temporary&&e.tempStatus!=='resolved';
+      // Open temporaries override the date label with an amber ⚠ flag so the
+      // live punchlist reads at a glance; otherwise the normal date/custom label.
+      const text=isOpenTemp
+        ? '⚠ '+((e.tempLabel&&e.tempLabel.trim())||'Temporary')
+        : ((e.labelText&&e.labelText.trim())?e.labelText.trim():_fmtLabelDate(e.date));
+      const color=isOpenTemp ? '#C9A84C'
+        : ((e.labelColor&&/^#[0-9A-Fa-f]{6}$/.test(e.labelColor))?e.labelColor:'#ffffff');
       return {type:'Feature',geometry:{type:'Point',coordinates:c},properties:{label:text,color}};
     })
     .filter(Boolean);
@@ -3918,7 +3936,7 @@ function mapRenderTrackerLayers(){
       return {
         type:'Feature',
         id:e.id,
-        properties:{id:e.id,categoryId:e.categoryId||e.category,categoryName:e.categoryName||e.category,date:e.date,acres:e.acres,measurementValue:e.measurementValue??null,measurementUnit:e.measurementUnit||null,notes:e.notes,location:e.location,phase:e.phase||null,method:e.method||null,status:e.status||null,contractor:e.contractor||null,entryType:e.entryType||'installed',state:e.state||null,stateColor,faint},
+        properties:{id:e.id,categoryId:e.categoryId||e.category,categoryName:e.categoryName||e.category,date:e.date,acres:e.acres,measurementValue:e.measurementValue??null,measurementUnit:e.measurementUnit||null,notes:e.notes,location:e.location,phase:e.phase||null,method:e.method||null,status:e.status||null,contractor:e.contractor||null,entryType:e.entryType||'installed',state:e.state||null,stateColor,faint,temporary:!!(e.temporary&&e.tempStatus!=='resolved')},
         geometry:e.geometry
       };
     })};
@@ -4053,6 +4071,12 @@ function _showTrackerEntryPopup(lngLat,props){
   const _isPub=!!entry?.published;
   const shareBtn=_mineEntry?`<button onclick="mapShareTrackerEntry('${props.id}')" style="${_TRP_BTN}grid-column:1/-1;background:${_isPub?'rgba(79,209,197,0.15)':'var(--s2,#1a2a38)'};border:1px solid ${_isPub?'#4FD1C5':'var(--border,#334)'};color:${_isPub?'#4FD1C5':'var(--muted,#888)'}" title="${_isPub?'Visible to project members — tap to unshare':'Publish this drawing to project members now'}">${_isPub?'🌐 Shared with project ✓':'📤 Share with project'}</button>`:'';
   const sharedByNote=(!_mineEntry&&entry)?`<div style="font-size:10px;color:#4FD1C5;margin-top:4px;border-top:1px solid rgba(255,255,255,.08);padding-top:4px">🌐 Shared by a project member</div>`:'';
+  // Temporary / maintenance item (open-until-resolved). Owner-only controls.
+  const _isTemp=!!(entry&&entry.temporary&&entry.tempStatus!=='resolved');
+  const tempStatusLine=_isTemp?`<div style="color:#C9A84C;display:flex;align-items:center;gap:6px;margin-top:2px">⏱ <b>${(entry.tempLabel||'Temporary').replace(/</g,'&lt;')}</b><span style="opacity:.7">· ${entry.tempType==='note'?'note':'maintenance'}</span></div>`:'';
+  const tempBtn=_mineEntry?(_isTemp
+    ?`<button onclick="mapResolveTemporary('${props.id}')" style="${_TRP_BTN}background:rgba(39,174,96,0.18);border:1px solid #27AE60;color:#27AE60" title="Mark resolved — leaves the live map but stays in the record">✓ Resolve</button>`
+    :`<button onclick="mapMarkTemporary('${props.id}')" style="${_TRP_BTN}background:var(--s2,#1a2a38);border:1px solid var(--border,#334);color:var(--muted,#888)" title="Flag as a temporary / maintenance item — shows until resolved, never counts toward totals">⏱ Temporary</button>`):'';
   // Category identity = the multicolor state-ramp chip (same as the tracker log),
   // not a single dot. Falls back to the entry's state color for no-category drawings.
   const _dotFallback=(props.stateColor&&/^#[0-9A-Fa-f]{6}$/.test(props.stateColor))?props.stateColor:color;
@@ -4092,6 +4116,7 @@ function _showTrackerEntryPopup(lngLat,props){
       <strong style="color:#fff">${label}</strong>
     </div>
     ${stateLine}
+    ${tempStatusLine}
     ${props.date?`<div style="color:#dce8f4">📅 ${props.date}</div>`:''}
     ${measText?`<div style="color:#dce8f4">📐 ${measText}</div>`:''}
     ${props.location?`<div style="color:#dce8f4">📍 ${props.location}</div>`:''}
@@ -4118,6 +4143,7 @@ function _showTrackerEntryPopup(lngLat,props){
           <button onclick="mapShowCategoryLegend('${props.categoryId}')" style="${_TRP_BTN}background:var(--s2,#1a2a38);border:1px solid var(--border,#334);color:var(--muted,#888)" title="Show this category's color key on the map (for screenshots)">🏷️ Legend</button>
           <button onclick="mapOpenCategoryFromPopup('${props.categoryId}')" style="${_TRP_BTN}background:var(--s2,#1a2a38);border:1px solid var(--border,#334);color:var(--muted,#888)" title="Category settings">⚙ Category</button>
           <button onclick="mapCaptureForEntry('${props.id}')" style="${_TRP_BTN}background:var(--s2,#1a2a38);border:1px solid var(--border,#334);color:var(--muted,#888)" title="Capture map view as photo">📷 Capture</button>
+          ${tempBtn}
           ${shareBtn}
         </div>`:''}
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px">
@@ -4149,6 +4175,66 @@ async function mapShareTrackerEntry(id){
   }
 }
 window.mapShareTrackerEntry=mapShareTrackerEntry;
+
+// ── Temporary / maintenance item flow ──
+// Flag a drawing as a temporary item (repair, temp stabilization). Shows a small
+// sheet for a free label + type; the drawing then shows on the live map (⚠ amber
+// label) until resolved, never counting toward totals. Foundation of the punchlist.
+function mapMarkTemporary(id){
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const e=(typeof trGetEntry==='function')?trGetEntry(id,pid):null;
+  if(!e) return;
+  if(_trackerPopup){_trackerPopup.remove();_trackerPopup=null;}
+  document.getElementById('_mt-ov')?.remove();
+  const ov=document.createElement('div');
+  ov.className='modal-overlay'; ov.id='_mt-ov';
+  ov.style.cssText='z-index:5200;align-items:flex-end;padding:0';
+  ov.innerHTML=`<div style="width:100%;background:var(--bg);border-top:1px solid var(--border);border-radius:16px 16px 0 0;padding:16px 16px env(safe-area-inset-bottom);display:flex;flex-direction:column;gap:12px">
+    <div class="modal-title" style="margin:0;font-size:15px">⏱ Mark temporary</div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);line-height:1.5">A temporary item (a repair, temp stabilization) shows on the map until you resolve it, doesn't count toward totals, and is never deleted.</div>
+    <div>
+      <label style="${_LABEL_STYLE}">Label</label>
+      <input type="text" id="_mt-label" maxlength="60" value="${(e.tempLabel||'').replace(/"/g,'&quot;')}" placeholder="e.g. damaged silt fence" style="${_INPUT_STYLE}width:100%;box-sizing:border-box">
+    </div>
+    <div>
+      <label style="${_LABEL_STYLE}">Type</label>
+      <select id="_mt-type" style="${_INPUT_STYLE}width:100%;box-sizing:border-box">
+        <option value="maintenance"${e.tempType!=='note'?' selected':''}>Maintenance / needs attention</option>
+        <option value="note"${e.tempType==='note'?' selected':''}>Note</option>
+      </select>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="modal-cancel" id="_mt-cancel" style="flex:1">Cancel</button>
+      <button class="modal-confirm" id="_mt-save" style="flex:1">Mark temporary</button>
+    </div>
+  </div>`;
+  document.body.appendChild(ov);
+  const close=()=>ov.remove();
+  ov.querySelector('#_mt-cancel').onclick=close;
+  ov.addEventListener('click',ev=>{ if(ev.target===ov) close(); });
+  ov.querySelector('#_mt-save').onclick=()=>{
+    const label=ov.querySelector('#_mt-label').value.trim();
+    const type=ov.querySelector('#_mt-type').value||'maintenance';
+    if(typeof trSetTemporary==='function') trSetTemporary(id,true,{label,type},pid);
+    close();
+    if(typeof mapRenderTrackerLayers==='function') mapRenderTrackerLayers();
+    if(typeof clRender==='function') clRender();
+    if(typeof showCloudBanner==='function') showCloudBanner('⏱ Marked temporary — resolve it from the popup when fixed.');
+  };
+}
+window.mapMarkTemporary=mapMarkTemporary;
+
+function mapResolveTemporary(id){
+  if(typeof trResolveTemporary!=='function') return;
+  _confirmModal('Mark this temporary item resolved? It leaves the live map but is kept in the project record (never deleted).',function(){
+    trResolveTemporary(id);
+    if(_trackerPopup){_trackerPopup.remove();_trackerPopup=null;}
+    if(typeof mapRenderTrackerLayers==='function') mapRenderTrackerLayers();
+    if(typeof clRender==='function') clRender();
+    if(typeof showCloudBanner==='function') showCloudBanner('✓ Resolved — filed in the record.');
+  },'Resolve item','Resolve');
+}
+window.mapResolveTemporary=mapResolveTemporary;
 
 // Toggle the collapsible Actions block inside a tracker entry popup.
 // Collapsed by default — the popup was getting tall enough to run offscreen.
