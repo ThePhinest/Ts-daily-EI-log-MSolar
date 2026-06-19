@@ -4145,7 +4145,7 @@ function _showTrackerEntryPopup(lngLat,props){
       ${_detailRows.map(([k,v])=>`<div style="display:flex;justify-content:space-between;gap:10px;font-size:11px;padding:2px 0"><span style="color:#9fb2c4">${k}</span><span style="color:#dce8f4;text-align:right">${v}</span></div>`).join('')}
     </div>
   </div>`:'';
-  const html=`<div style="font-family:var(--mono);font-size:12px;min-width:180px;color:#e8e8e8;max-height:calc(100vh - var(--app-bar-h) - 96px);overflow-y:auto;overflow-x:hidden">
+  const html=`<div style="font-family:var(--mono);font-size:12px;min-width:180px;color:#e8e8e8;max-height:calc(100dvh - var(--app-bar-h) - 95px - env(safe-area-inset-bottom) - 16px);overflow-y:auto;overflow-x:hidden">
     <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
       ${(props.categoryId&&typeof tcRampChip==='function')?tcRampChip(props.categoryId,pid,12):`<div style="width:10px;height:10px;border-radius:50%;background:${_dotFallback};flex-shrink:0"></div>`}
       <strong style="color:#fff">${label}</strong>
