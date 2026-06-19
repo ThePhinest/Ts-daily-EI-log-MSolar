@@ -2219,7 +2219,7 @@ Anticipated rain — AM weather monitoring expected"></textarea>
       <div id="map-tracker-cat-list"></div>
       <div id="map-tracker-sheet-add">
         <div style="display:flex;align-items:center;gap:8px">
-          <div class="map-tc-add-color" id="map-tc-add-preview" onclick="mapShowColorPicker('add',this)"></div>
+          <input type="color" class="map-tc-add-color" id="map-tc-add-preview" value="#e67e22" oninput="window.mapSetAddColor&&window.mapSetAddColor(this.value)" title="Category color" style="padding:0">
           <input id="map-tc-add-name" class="map-tc-name-input" placeholder="Category name" autocomplete="off" maxlength="32" onkeydown="if(event.key==='Enter')mapTrackerSaveAdd()">
           <button onclick="mapTrackerSaveAdd()" class="map-tc-save-btn">Add</button>
           <button onclick="mapTrackerHideAdd()" class="map-tc-cancel-btn">✕</button>

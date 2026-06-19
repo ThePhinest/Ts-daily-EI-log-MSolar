@@ -1867,7 +1867,7 @@ function _renderTrackerSheet(){
       const fillCtls=editType!=='linear'?`<select id="map-tc-edit-fillstyle" class="map-tc-unit-sel">${fsOpts}</select><select id="map-tc-edit-fillopacity" class="map-tc-unit-sel">${foOpts}</select>`:'';
       return `<div class="map-tc-row editing" style="flex-wrap:wrap;gap:6px">
         <div style="display:flex;align-items:center;gap:8px;width:100%">
-          <div class="map-tc-edit-color" id="map-tc-edit-preview" style="background:${_tcEditingColor||c.color||'#888'}" onclick="mapShowColorPicker('edit',this)"></div>
+          <input type="color" class="map-tc-edit-color" id="map-tc-edit-preview" value="${(_tcEditingColor&&/^#[0-9A-Fa-f]{6}$/.test(_tcEditingColor))?_tcEditingColor:((c.color&&/^#[0-9A-Fa-f]{6}$/.test(c.color))?c.color:'#888888')}" oninput="window.mapSetEditColor&&window.mapSetEditColor(this.value)" title="Category color" style="padding:0">
           <input id="map-tc-edit-name" class="map-tc-name-input" value="${c.name}" placeholder="Name" autocomplete="off" maxlength="32">
           <button onclick="mapTrackerSaveEdit('${c.id}')" class="map-tc-save-btn">Save</button>
           <button onclick="mapTrackerCancelEdit()" class="map-tc-cancel-btn">✕</button>
@@ -1955,7 +1955,11 @@ async function mapTrackerSaveEdit(catId){
   const editedLineWidth=parseInt(document.getElementById('map-tc-edit-linewidth')?.value)||existing.lineWidth||2;
   const editedFillStyle=document.getElementById('map-tc-edit-fillstyle')?.value||existing.fillStyle||'solid';
   const editedFillOpacity=parseFloat(document.getElementById('map-tc-edit-fillopacity')?.value)??existing.fillOpacity??0.35;
-  await tcSaveCategory({...existing,name,color:_tcEditingColor||existing.color,defaultUnit:editedUnit,lineStyle:editedLineStyle,lineWidth:editedLineWidth,fillStyle:editedFillStyle,fillOpacity:editedFillOpacity},pid);
+  const _editColor=_tcEditingColor||existing.color;
+  // Keep the plan (first) state's color = the category identity color (Part 1).
+  const _editStates=(Array.isArray(existing.states)&&existing.states.length)
+    ? existing.states.map(s=>s.isPlanned?{...s,color:_editColor}:s) : existing.states;
+  await tcSaveCategory({...existing,name,color:_editColor,...(_editStates?{states:_editStates}:{}),defaultUnit:editedUnit,lineStyle:editedLineStyle,lineWidth:editedLineWidth,fillStyle:editedFillStyle,fillOpacity:editedFillOpacity},pid);
   _tcEditingCatId=null;
   _tcEditingColor=null;
   _renderTrackerSheet();
@@ -2332,6 +2336,13 @@ function mapTcSetTemplate(template){
   const impliedType = template==='linear-bmp' ? 'linear' : 'area';
   mapTcSetAddType(impliedType);
 }
+// Native color inputs (the OS 3-tab Grid/Spectrum/Sliders picker) drive the
+// add/edit category color — consistent with the per-state color inputs.
+function mapSetAddColor(v){ if(/^#[0-9A-Fa-f]{6}$/.test(v)) _tcAddingColor=v; }
+function mapSetEditColor(v){ if(/^#[0-9A-Fa-f]{6}$/.test(v)) _tcEditingColor=v; }
+window.mapSetAddColor=mapSetAddColor;
+window.mapSetEditColor=mapSetEditColor;
+
 function mapTrackerShowAdd(){
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
   _tcAddingColor=(typeof tcNextColor==='function')?tcNextColor(pid):'#E67E22';
@@ -2343,7 +2354,7 @@ function mapTrackerShowAdd(){
   const add=document.getElementById('map-tracker-sheet-add');
   const preview=document.getElementById('map-tc-add-preview');
   const input=document.getElementById('map-tc-add-name');
-  if(preview) preview.style.background=_tcAddingColor;
+  if(preview) preview.value=(_tcAddingColor&&/^#[0-9A-Fa-f]{6}$/.test(_tcAddingColor))?_tcAddingColor:'#e67e22';
   if(input){ input.value=''; }
   add.classList.add('open');
   if(input) setTimeout(()=>input.focus(),50);
