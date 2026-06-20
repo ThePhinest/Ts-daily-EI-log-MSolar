@@ -245,17 +245,20 @@ function docSearch(q){ _docQuery = q || ''; _docRenderList(); }
 function _docRow(d){
   const pinned = _docOfflineIds.has(d.id);
   const meta = [d.ext ? d.ext.toUpperCase() : '', _docFmtSize(d.size)].filter(Boolean).join(' · ');
+  // Single ⋯ menu keeps rows compact; current state shows as inline tags instead
+  // of always-present buttons (offline/share now live in the menu).
+  const tags = (pinned ? ' · <span class="gl-doc-offline-tag">⬇ offline</span>' : '')
+    + (d.shared ? ' · <span class="gl-doc-shared-tag">🤝 shared</span>' : '')
+    + (d.aiAccessOptIn ? ' · <span class="gl-doc-ai-tag">AI ✓</span>' : '');
   return `
     <div class="gl-doc-row" id="doc-row-${d.id}">
       <span class="gl-doc-icon" onclick="docOpen('${d.id}')">${_docIcon(d)}</span>
       <div class="gl-doc-info" onclick="docOpen('${d.id}')">
         <div class="gl-doc-title">${_docEsc(d.title)}</div>
-        <div class="gl-doc-meta">${_docEsc(meta)}${d.shared?' · <span class="gl-doc-shared-tag">🤝 shared</span>':''}${d.aiAccessOptIn?' · <span class="gl-doc-ai-tag">AI ✓</span>':''}</div>
+        <div class="gl-doc-meta">${_docEsc(meta)}${tags}</div>
       </div>
       <div class="gl-doc-actions">
-        <button class="gl-doc-btn${pinned?' on':''}" title="${pinned?'Saved offline':'Download for offline'}" onclick="docToggleOffline('${d.id}')">${pinned?'✓⬇':'⬇'}</button>
-        <button class="gl-doc-btn${d.shared?' on':''}" title="${d.shared?'Shared with project':'Share with project'}" onclick="docToggleShare('${d.id}')">🤝</button>
-        <button class="gl-doc-btn" title="More" onclick="docMenu('${d.id}')">⋯</button>
+        <button class="gl-doc-btn" title="Actions" onclick="docMenu('${d.id}')">⋯</button>
       </div>
     </div>`;
 }
@@ -449,6 +452,41 @@ async function _docOpenPdf(d){
   document.getElementById('_dv-zin').onclick  = ()=>{ zoom = Math.min(5, zoom*1.3); render(); };
   document.getElementById('_dv-zout').onclick = ()=>{ zoom = Math.max(0.5, zoom/1.3); render(); };
 
+  // Pinch-to-zoom + one-finger pan (iOS/touch). Smooth CSS transform during the
+  // gesture, then a crisp re-render at the final scale; panning uses native scroll
+  // (the scroll container is touch-action:pan-x pan-y so the browser won't also
+  // page-zoom). Two-finger pinch is handled here and preventDefault'd.
+  let _pDist = 0, _pZoom = 1, _pinching = false;
+  const _tDist = t => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+  scroll.addEventListener('touchstart', e=>{
+    if(e.touches.length===2){
+      _pinching = true; _pDist = _tDist(e.touches) || 1; _pZoom = zoom;
+      const r = canvas.getBoundingClientRect();
+      canvas.style.transformOrigin =
+        ((e.touches[0].clientX + e.touches[1].clientX)/2 - r.left) + 'px ' +
+        ((e.touches[0].clientY + e.touches[1].clientY)/2 - r.top) + 'px';
+      e.preventDefault();
+    }
+  }, { passive:false });
+  scroll.addEventListener('touchmove', e=>{
+    if(_pinching && e.touches.length===2){
+      e.preventDefault();
+      let ratio = _tDist(e.touches) / _pDist;
+      ratio = Math.min(Math.max(ratio, 0.5/_pZoom), 5/_pZoom);   // keep final zoom in [0.5, 5]
+      canvas.style.transform = 'scale(' + ratio + ')';
+    }
+  }, { passive:false });
+  const _endPinch = ()=>{
+    if(!_pinching) return;
+    _pinching = false;
+    const m = (canvas.style.transform.match(/scale\(([^)]+)\)/) || [])[1];
+    canvas.style.transform = ''; canvas.style.transformOrigin = '';
+    zoom = Math.min(5, Math.max(0.5, _pZoom * (m ? parseFloat(m) : 1)));
+    render();
+  };
+  scroll.addEventListener('touchend', e=>{ if(_pinching && e.touches.length<2) _endPinch(); }, { passive:false });
+  scroll.addEventListener('touchcancel', _endPinch, { passive:false });
+
   try{
     const pdfjsLib = await _loadPdfjs();
     const src = await _docSource(d);
@@ -580,31 +618,42 @@ function _docSharedRow(d){
       <span class="gl-doc-icon" onclick="docOpen('${d.id}')">${_docIcon(d)}</span>
       <div class="gl-doc-info" onclick="docOpen('${d.id}')">
         <div class="gl-doc-title">${_docEsc(d.title)}</div>
-        <div class="gl-doc-meta">${_docEsc(meta)}</div>
+        <div class="gl-doc-meta">${_docEsc(meta)}${pinned?' · <span class="gl-doc-offline-tag">⬇ offline</span>':''}</div>
       </div>
       <div class="gl-doc-actions">
-        <button class="gl-doc-btn${pinned?' on':''}" title="${pinned?'Saved offline':'Download for offline'}" onclick="docToggleOffline('${d.id}')">${pinned?'✓⬇':'⬇'}</button>
+        <button class="gl-doc-btn" title="Actions" onclick="docMenu('${d.id}')">⋯</button>
       </div>
     </div>`;
 }
 
 // ═══════════════════════════════════════════
-// PER-DOC MENU  (rename / move / AI / delete)
+// PER-DOC MENU  (open / offline / share / rename / move / AI / delete)
 // ═══════════════════════════════════════════
+// One menu for own + teammates' shared docs — keeps rows to a single ⋯ button.
+// Open/Offline/Share live here now (used to be always-present row buttons).
 function docMenu(id){
-  const d = (window._docs||[]).find(x=>x.id===id);
+  let d = (window._docs||[]).find(x=>x.id===id);
+  const own = !!d;
+  if(!d) d = (window._docsShared||[]).find(x=>x.id===id);
   if(!d) return;
+  const pinned = _docOfflineIds.has(id);
+  let items = `
+      <button onclick="_docCloseMenu();docOpen('${id}')">📖 Open</button>
+      <button onclick="_docCloseMenu();docToggleOffline('${id}')">${pinned?'✓ Remove offline copy':'⬇ Download for offline'}</button>`;
+  if(own){
+    items += `
+      <button onclick="_docCloseMenu();docToggleShare('${id}')">${d.shared?'🤝 Stop sharing with project':'🤝 Share with project'}</button>
+      <button onclick="docRename('${id}')">✏️ Rename</button>
+      <button onclick="docMove('${id}')">📂 Move to folder</button>
+      <button onclick="_docToggleAiFromMenu('${id}')">${d.aiAccessOptIn?'🔒 Turn OFF AI access':'🤖 Allow AI access'}</button>
+      <button class="gl-doc-menu-danger" onclick="docDelete('${id}')">🗑 Delete</button>`;
+  }
   const ov = document.createElement('div');
   ov.className = 'modal-overlay';
   ov.id = '_doc-menu';
   ov.innerHTML = `<div class="modal-box" style="max-width:340px">
     <div class="modal-title">${_docIcon(d)} ${_docEsc(d.title)}</div>
-    <div class="gl-doc-menu-list">
-      <button onclick="docRename('${id}')">✏️ Rename</button>
-      <button onclick="docMove('${id}')">📂 Move to folder</button>
-      <button onclick="_docToggleAiFromMenu('${id}')">${d.aiAccessOptIn?'🔒 Turn OFF AI access':'🤖 Allow AI access'}</button>
-      <button class="gl-doc-menu-danger" onclick="docDelete('${id}')">🗑 Delete</button>
-    </div>
+    <div class="gl-doc-menu-list">${items}</div>
     <div class="modal-btns"><button class="modal-cancel" onclick="document.getElementById('_doc-menu').remove()">Close</button></div>
   </div>`;
   document.body.appendChild(ov);
@@ -696,6 +745,7 @@ window.docToggleShare = docToggleShare;
 window.docToggleFolder = docToggleFolder;
 window.docNewFolder = docNewFolder;
 window.docMenu = docMenu;
+window._docCloseMenu = _docCloseMenu;
 window.docRename = docRename;
 window.docMove = docMove;
 window.docDelete = docDelete;
