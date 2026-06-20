@@ -460,8 +460,12 @@ function _glClearDeviceStorage() {
   const invite = localStorage.getItem('gl_pending_invite');
   localStorage.clear();
   if (invite) localStorage.setItem('gl_pending_invite', invite);
-  try { return window.idbClearAll ? window.idbClearAll() : Promise.resolve(); }
-  catch (e) { return Promise.resolve(); }
+  try {
+    const ps = [];
+    if (window.idbClearAll) ps.push(window.idbClearAll());
+    if (window._docsPurgeOffline) ps.push(window._docsPurgeOffline());  // separate docs blob store
+    return Promise.all(ps);
+  } catch (e) { return Promise.resolve(); }
 }
 
 function _glUidFence(uid) {

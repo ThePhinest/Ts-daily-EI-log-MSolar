@@ -633,6 +633,51 @@ button:disabled,button[disabled]{opacity:.45;cursor:not-allowed}
 .gl-ac-blurb{font-family:var(--mono);font-size:10.5px;line-height:1.5;color:var(--muted);margin-top:2px}
 .gl-ac-badge{flex-shrink:0;font-family:var(--mono);font-size:8.5px;letter-spacing:.1em;color:var(--muted);border:1px solid var(--border2);border-radius:5px;padding:3px 7px}
 .gl-ac-badge-live{color:#3fa7b0;border-color:rgba(0,107,117,.5);background:rgba(0,107,117,.12)}
+/* ── Documents library ── */
+.gl-doc-toolbar{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap}
+.gl-doc-upload{flex:1;min-width:170px;font-family:var(--cond);font-weight:700;font-size:14px;letter-spacing:.04em;color:#cfeef0;background:var(--s3);border:1px solid var(--s3);border-radius:9px;padding:11px 14px;cursor:pointer}
+.gl-doc-upload:active{filter:brightness(.85)}
+.gl-doc-newfolder{font-family:var(--cond);font-weight:700;font-size:14px;letter-spacing:.04em;color:var(--muted2);background:transparent;border:1px solid var(--border2);border-radius:9px;padding:11px 14px;cursor:pointer}
+.gl-doc-prog{margin:0 0 12px;background:var(--s1);border:1px solid var(--border2);border-radius:8px;overflow:hidden;position:relative}
+.gl-doc-prog-bar{height:4px;width:0;background:var(--s3);transition:width .25s}
+.gl-doc-prog-txt{font-family:var(--mono);font-size:10.5px;color:var(--muted2);padding:6px 10px}
+.gl-doc-folder{margin-bottom:10px}
+.gl-doc-folder-head{display:flex;align-items:center;gap:8px;padding:9px 6px;cursor:pointer;border-bottom:1px solid var(--border2)}
+.gl-doc-chev{font-size:11px;color:var(--muted);width:12px;flex-shrink:0}
+.gl-doc-folder-name{flex:1;font-family:var(--cond);font-weight:700;font-size:14px;letter-spacing:.04em;color:var(--text);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gl-doc-folder-count{font-family:var(--mono);font-size:10px;color:var(--muted);border:1px solid var(--border2);border-radius:5px;padding:2px 7px;flex-shrink:0}
+.gl-doc-folder-body{padding:8px 0 2px}
+.gl-doc-row{display:flex;align-items:center;gap:11px;background:var(--s2);border:1px solid var(--border2);border-radius:10px;padding:10px 12px;margin-bottom:7px}
+.gl-doc-icon{font-size:22px;flex-shrink:0;cursor:pointer}
+.gl-doc-info{flex:1;min-width:0;cursor:pointer}
+.gl-doc-title{font-family:var(--cond);font-weight:700;font-size:14.5px;letter-spacing:.02em;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gl-doc-meta{font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:2px}
+.gl-doc-shared-tag{color:#3fa7b0}
+.gl-doc-ai-tag{color:var(--amber2)}
+.gl-doc-actions{display:flex;gap:5px;flex-shrink:0}
+.gl-doc-btn{width:38px;height:38px;border-radius:8px;background:var(--s1);border:1px solid var(--border2);color:var(--muted2);font-size:14px;line-height:1;cursor:pointer;-webkit-appearance:none;display:flex;align-items:center;justify-content:center;padding:0}
+.gl-doc-btn:active{filter:brightness(.82)}
+.gl-doc-btn.on{color:#cfeef0;background:var(--s3);border-color:var(--s3)}
+.gl-doc-empty,.gl-doc-empty-line{font-family:var(--mono);font-size:11px;color:var(--muted);padding:10px 6px;text-align:center}
+.gl-doc-shared{margin-top:14px;border-top:1px solid var(--border2);padding-top:6px}
+.gl-doc-menu-list{display:flex;flex-direction:column;gap:7px;margin:6px 0 4px}
+.gl-doc-menu-list button{text-align:left;font-family:var(--body);font-size:14px;color:var(--text);background:var(--s1);border:1px solid var(--border2);border-radius:8px;padding:11px 13px;cursor:pointer}
+.gl-doc-menu-list button:active{filter:brightness(.85)}
+.gl-doc-menu-danger{color:var(--red)!important}
+.gl-doc-prompt-in{width:100%;box-sizing:border-box;font-family:var(--body);font-size:16px;color:var(--text);background:var(--s1);border:1px solid var(--border2);border-radius:8px;padding:10px 12px;margin:8px 0}
+.gl-doc-prompt-in:focus{outline:none;border-color:var(--s3)}
+/* Document viewer (PDF / image) */
+.gl-doc-viewer{z-index:7200}
+.gl-doc-vbox{position:fixed;inset:0;background:#0c0c0c;display:flex;flex-direction:column}
+.gl-doc-vbar{display:flex;align-items:center;gap:8px;padding:max(8px,env(safe-area-inset-top)) 12px 8px;background:#000;border-bottom:1px solid var(--border2);flex-shrink:0}
+.gl-doc-vtitle{flex:1;font-family:var(--cond);font-weight:700;font-size:14px;letter-spacing:.03em;color:var(--text);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gl-doc-vctrl{display:flex;align-items:center;gap:4px;flex-shrink:0}
+.gl-doc-vctrl button{width:34px;height:34px;border-radius:7px;background:var(--s1);border:1px solid var(--border2);color:var(--muted2);font-size:17px;line-height:1;cursor:pointer;-webkit-appearance:none;display:flex;align-items:center;justify-content:center;padding:0}
+.gl-doc-vctrl button:active{filter:brightness(.8)}
+.gl-doc-vpage{font-family:var(--mono);font-size:11px;color:var(--muted2);min-width:54px;text-align:center}
+.gl-doc-vscroll{flex:1;overflow:auto;-webkit-overflow-scrolling:touch;padding:8px;display:block;background:#111}
+.gl-doc-vscroll canvas{display:block;margin:0 auto;background:#fff;box-shadow:0 2px 14px rgba(0,0,0,.6)}
+.gl-doc-vloading{font-family:var(--mono);font-size:12px;color:var(--muted2);text-align:center;padding:30px}
 .ph-load-more{width:100%;margin-top:8px}
 /* Lightbox */
 .ph-lightbox{position:fixed;inset:0;z-index:7000;background:rgba(0,0,0,.92);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px}
@@ -2429,14 +2474,8 @@ Anticipated rain — AM weather monitoring expected"></textarea>
 
 <!-- DOCS PAGE (placeholder) -->
 <div class="page" id="page-docs"><div class="wrap">
-  <div class="card"><div class="card-head"><span class="card-num">📁</span><span class="card-title">Docs</span></div>
-  <div class="card-body">
-    <div class="gl-empty-state">
-      <div class="gl-es-icon">📁</div>
-      <div class="gl-es-title">Document library — coming soon</div>
-      <div class="gl-es-body">Upload plans, permits, drawings, and specs to share with collaborators and reference in the field — the foundation for AI-assisted compliance review.</div>
-    </div>
-  </div></div>
+  <div class="card"><div class="card-head"><span class="card-num">📁</span><span class="card-title">Documents</span></div>
+  <div class="card-body" id="docs-body"></div></div>
 </div></div>
 
 <!-- ══════════════════════════════════
@@ -3517,6 +3556,7 @@ function showPage(name){
   if(name==='photos'){ phResetAndRender(); }
   if(name==='projectSpace'){ if(typeof glRenderProjectSpacePage==='function') glRenderProjectSpacePage(); }
   if(name==='academy'){ if(typeof glRenderAcademyPage==='function') glRenderAcademyPage(); }
+  if(name==='docs'){ if(typeof glRenderDocsPage==='function') glRenderDocsPage(); }
   // Leaving the map clears any active highlight (its chip is fixed-position and the
   // pulse animation should stop when you're not looking at the map).
   if(name!=='map' && typeof mapClearHighlight==='function') mapClearHighlight();

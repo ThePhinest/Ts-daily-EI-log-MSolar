@@ -43,6 +43,7 @@ beforeEach(async () => {
     await setDoc(doc(db, `projects/${PID}/trackerEntries/bootsdraft`),
       { ownerUid: 'boots', published: false, acres: 1.0 });
     await setDoc(doc(db, `projects/${PID}/kmlLayers/lod`), { ownerUid: 'tim', name: 'LOD' });
+    await setDoc(doc(db, `projects/${PID}/docs/plan1`), { ownerUid: 'tim', title: 'PV.C04.20' });
     await setDoc(doc(db, `projects/${PID}/config/main`), { cap: 5 });
     await setDoc(doc(db, `projects/${PID}/submissions/s1`),
       { submittedBy: 'tim', version: 1, status: 'active', date: '2026-06-09' });
@@ -73,8 +74,9 @@ describe('reviewer (Glasses) — sees published, edits nothing', () => {
       where('published', '==', true)))));
   it('cannot list unconstrained work product', () =>
     assertFails(getDocs(collection(as('forest'), `projects/${PID}/trackerEntries`))));
-  it('reads live reference data (KML, config, project meta)', async () => {
+  it('reads live reference data (KML, docs, config, project meta)', async () => {
     await assertSucceeds(getDoc(doc(as('forest'), `projects/${PID}/kmlLayers/lod`)));
+    await assertSucceeds(getDoc(doc(as('forest'), `projects/${PID}/docs/plan1`)));
     await assertSucceeds(getDoc(doc(as('forest'), `projects/${PID}/config/main`)));
     await assertSucceeds(getDoc(doc(as('forest'), `projects/${PID}`)));
   });
@@ -89,6 +91,8 @@ describe('reviewer (Glasses) — sees published, edits nothing', () => {
     await assertFails(setDoc(doc(as('forest'), `projects/${PID}/submissions/s2`),
       { submittedBy: 'forest', version: 1 }));
     await assertFails(updateDoc(doc(as('forest'), `projects/${PID}/config/main`), { cap: 125 }));
+    await assertFails(setDoc(doc(as('forest'), `projects/${PID}/docs/x`),
+      { ownerUid: 'forest', title: 'hax' }));
   });
 });
 
@@ -131,6 +135,9 @@ describe('field (Boots) — works in the project, own records only', () => {
   it('creates self-attributed entries', () =>
     assertSucceeds(setDoc(doc(as('boots'), `projects/${PID}/trackerEntries/b2`),
       { ownerUid: 'boots', published: false })));
+  it('shares a doc to the project (self-attributed)', () =>
+    assertSucceeds(setDoc(doc(as('boots'), `projects/${PID}/docs/bdoc`),
+      { ownerUid: 'boots', title: 'spec' })));
   it('cannot edit someone else\'s record', () =>
     assertFails(updateDoc(doc(as('boots'), `projects/${PID}/trackerEntries/pub1`),
       { acres: 99 })));

@@ -151,6 +151,11 @@ service cloud.firestore {
         allow create: if workCreateOk();
         allow update, delete: if workEditOk();
       }
+      match /docs/{id} {                 // Documents library — plans/permits shared as live reference data
+        allow read: if isMember();
+        allow create: if workCreateOk();
+        allow update, delete: if workEditOk();
+      }
 
       // ── Publish-gated work product ──
       match /trackerEntries/{id} {

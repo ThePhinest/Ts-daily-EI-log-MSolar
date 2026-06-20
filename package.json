@@ -42,6 +42,7 @@
     "jszip": "^3.10.1",
     "mapbox-gl": "^3.23.1",
     "mapbox-gl-draw-snap-mode": "^0.5.0",
+    "pdfjs-dist": "^6.0.227",
     "qrcode": "^1.5.4"
   }
 }
