@@ -453,19 +453,39 @@ async function _docOpenPdf(d){
   document.getElementById('_dv-zin').onclick  = ()=>{ zoom = Math.min(5, zoom*1.3); render(); };
   document.getElementById('_dv-zout').onclick = ()=>{ zoom = Math.max(0.5, zoom/1.3); render(); };
 
+  // Re-render at newZoom while keeping the focal point — captured BEFORE the
+  // gesture as a ratio (rx,ry) of the page that was under the client point
+  // (fx,fy) — stationary on screen. getBoundingClientRect deltas handle the
+  // margin-auto centering + padding without manual math.
+  async function _zoomTo(newZoom, fx, fy, rx, ry){
+    zoom = Math.min(5, Math.max(0.5, newZoom));
+    await render();
+    const nr = canvas.getBoundingClientRect();
+    scroll.scrollLeft += (nr.left + rx * nr.width)  - fx;
+    scroll.scrollTop  += (nr.top  + ry * nr.height) - fy;
+  }
+  const _focusRatio = (cx, cy)=>{
+    const r = canvas.getBoundingClientRect();
+    return {
+      rx: r.width  ? Math.min(1, Math.max(0, (cx - r.left)/r.width))  : 0.5,
+      ry: r.height ? Math.min(1, Math.max(0, (cy - r.top)/r.height)) : 0,
+      ox: cx - r.left, oy: cy - r.top
+    };
+  };
+
   // Pinch-to-zoom + one-finger pan (iOS/touch). Smooth CSS transform during the
-  // gesture, then a crisp re-render at the final scale; panning uses native scroll
-  // (the scroll container is touch-action:pan-x pan-y so the browser won't also
-  // page-zoom). Two-finger pinch is handled here and preventDefault'd.
-  let _pDist = 0, _pZoom = 1, _pinching = false;
+  // gesture, crisp focal-preserving re-render at the end; panning uses native
+  // scroll (touch-action:pan-x pan-y so the browser won't also page-zoom).
+  let _pDist = 0, _pZoom = 1, _pinching = false, _pFx = 0, _pFy = 0, _pRx = 0.5, _pRy = 0;
   const _tDist = t => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
   scroll.addEventListener('touchstart', e=>{
     if(e.touches.length===2){
       _pinching = true; _pDist = _tDist(e.touches) || 1; _pZoom = zoom;
-      const r = canvas.getBoundingClientRect();
-      canvas.style.transformOrigin =
-        ((e.touches[0].clientX + e.touches[1].clientX)/2 - r.left) + 'px ' +
-        ((e.touches[0].clientY + e.touches[1].clientY)/2 - r.top) + 'px';
+      _pFx = (e.touches[0].clientX + e.touches[1].clientX)/2;
+      _pFy = (e.touches[0].clientY + e.touches[1].clientY)/2;
+      const f = _focusRatio(_pFx, _pFy);
+      _pRx = f.rx; _pRy = f.ry;
+      canvas.style.transformOrigin = f.ox + 'px ' + f.oy + 'px';
       e.preventDefault();
     }
   }, { passive:false });
@@ -482,27 +502,30 @@ async function _docOpenPdf(d){
     _pinching = false;
     const m = (canvas.style.transform.match(/scale\(([^)]+)\)/) || [])[1];
     canvas.style.transform = ''; canvas.style.transformOrigin = '';
-    zoom = Math.min(5, Math.max(0.5, _pZoom * (m ? parseFloat(m) : 1)));
-    render();
+    _zoomTo(_pZoom * (m ? parseFloat(m) : 1), _pFx, _pFy, _pRx, _pRy);
   };
   scroll.addEventListener('touchend', e=>{ if(_pinching && e.touches.length<2) _endPinch(); }, { passive:false });
   scroll.addEventListener('touchcancel', _endPinch, { passive:false });
 
   // Desktop (PWA): mouse-wheel zoom (live CSS transform for feedback, crisp
-  // re-render when the wheel settles) + click-drag pan.
-  let _wTimer = null, _wScale = 1;
+  // focal-preserving re-render when the wheel settles) + click-drag pan.
+  let _wTimer = null, _wScale = 1, _wFx = 0, _wFy = 0, _wRx = 0.5, _wRy = 0;
   scroll.addEventListener('wheel', e=>{
     if(!pdf) return;
     e.preventDefault();
+    if(_wScale === 1){                       // start of a wheel burst — capture focus
+      const f = _focusRatio(e.clientX, e.clientY);
+      _wFx = e.clientX; _wFy = e.clientY; _wRx = f.rx; _wRy = f.ry;
+      canvas.style.transformOrigin = f.ox + 'px ' + f.oy + 'px';
+    }
     const factor = e.deltaY < 0 ? 1.12 : 1/1.12;
     _wScale = Math.min(5/zoom, Math.max(0.5/zoom, _wScale * factor));
-    canvas.style.transformOrigin = 'center top';
     canvas.style.transform = 'scale(' + _wScale + ')';
     clearTimeout(_wTimer);
     _wTimer = setTimeout(()=>{
       canvas.style.transform = ''; canvas.style.transformOrigin = '';
-      zoom = Math.min(5, Math.max(0.5, zoom * _wScale)); _wScale = 1;
-      render();
+      const target = zoom * _wScale; _wScale = 1;
+      _zoomTo(target, _wFx, _wFy, _wRx, _wRy);
     }, 150);
   }, { passive:false });
 
