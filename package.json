@@ -17,6 +17,7 @@
     "patch-package": "^8.0.1",
     "vite": "^6.3.4",
     "vite-plugin-pwa": "^1.3.0",
+    "vite-plugin-static-copy": "^4.1.1",
     "vitest": "^4.1.9"
   },
   "dependencies": {

@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite'
 import { VitePWA } from 'vite-plugin-pwa'
 import { sentryVitePlugin } from '@sentry/vite-plugin'
+import { viteStaticCopy } from 'vite-plugin-static-copy'
 
 export default defineConfig({
   base: '/',
@@ -16,6 +17,22 @@ export default defineConfig({
     sourcemap: true,
   },
   plugins: [
+    // PDF.js auxiliary assets (Documents library): copied to dist/pdfjs/ so the
+    // viewer can decode JPEG2000/JBIG2 images (wasm), embedded ICC color (iccs),
+    // CJK text (cmaps), and non-embedded standard fonts. docs.js points
+    // getDocument() at these dirs. Without them pdfjs warns "OpenJPEG failed to
+    // initialize" and embedded raster images render blank.
+    viteStaticCopy({
+      // stripBase:true flattens the matched files into dest (this plugin version
+      // otherwise preserves the full node_modules/... path). The pdfjs asset
+      // dirs are flat, so flattening is exact.
+      targets: [
+        { src: 'node_modules/pdfjs-dist/wasm/*',           dest: 'pdfjs/wasm',           rename: { stripBase: true } },
+        { src: 'node_modules/pdfjs-dist/iccs/*',           dest: 'pdfjs/iccs',           rename: { stripBase: true } },
+        { src: 'node_modules/pdfjs-dist/cmaps/*',          dest: 'pdfjs/cmaps',          rename: { stripBase: true } },
+        { src: 'node_modules/pdfjs-dist/standard_fonts/*', dest: 'pdfjs/standard_fonts', rename: { stripBase: true } },
+      ],
+    }),
     VitePWA({
       registerType: 'prompt',
       injectRegister: null,

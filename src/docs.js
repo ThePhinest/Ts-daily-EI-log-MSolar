@@ -35,6 +35,19 @@ import { get as idbKvGet, set as idbKvSet, del as idbKvDel, keys as idbKvKeys, c
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
+// Auxiliary asset dirs (copied to dist/pdfjs/ by vite-plugin-static-copy).
+// Lets the viewer decode JPEG2000/JBIG2 images (wasm), ICC color (iccs), CJK
+// text (cmaps), and non-embedded standard fonts. base is '/' so '/pdfjs/...'
+// resolves on web (Pages root) and in the Capacitor WebView alike.
+const _PDF_ASSETS = (import.meta.env.BASE_URL || '/') + 'pdfjs/';
+const _PDF_DOC_OPTS = {
+  wasmUrl: _PDF_ASSETS + 'wasm/',
+  iccUrl: _PDF_ASSETS + 'iccs/',
+  cMapUrl: _PDF_ASSETS + 'cmaps/',
+  cMapPacked: true,
+  standardFontDataUrl: _PDF_ASSETS + 'standard_fonts/',
+};
+
 // Separate device store for pinned blobs — kept OUT of the shared idbCache mirror.
 const _docBlobStore = createStore('groundlog-docs', 'blobs');
 
@@ -382,8 +395,8 @@ async function _docOpenPdf(d){
   try{
     const src = await _docSource(d);
     let params;
-    if(src.blob){ params = { data: new Uint8Array(await src.blob.arrayBuffer()) }; }
-    else { params = { url: src.url }; }
+    if(src.blob){ params = { data: new Uint8Array(await src.blob.arrayBuffer()), ..._PDF_DOC_OPTS }; }
+    else { params = { url: src.url, ..._PDF_DOC_OPTS }; }
     pdf = await pdfjsLib.getDocument(params).promise;
     const ld = document.getElementById('_dv-loading'); if(ld) ld.remove();
     await render();
