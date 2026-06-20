@@ -1,0 +1,28 @@
+rules_version = '2';
+
+// GroundLog Firebase Storage rules.
+//
+// Per-user file isolation: each owner reads/writes only their own {uid}/ prefix.
+// Shared files (photos, KML, documents) reach other project members via the
+// persisted download-URL token saved in Firestore — the token IS the capability,
+// so no cross-user Storage read rule is needed (same trust model across all three).
+//
+// Brought into the repo 2026-06-20 (was console-only) so Storage rules are
+// version-controlled like firestore.rules. Reconciled from the live console
+// ruleset; only the docs/ block is new.
+//
+// Deploy: firebase deploy --only storage  — reconcile against the live console first.
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /photos/{uid}/{allPaths=**} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+    match /kml/{uid}/{allPaths=**} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+    match /docs/{uid}/{allPaths=**} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+  }
+}
