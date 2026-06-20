@@ -100,8 +100,7 @@ async function _docRefreshOfflineSet(){
 // ═══════════════════════════════════════════
 // Instant render from the offline metadata cache, then refresh from Firestore.
 async function glRenderDocsPage(){
-  const host = document.getElementById('docs-body');
-  if(!host) return;
+  if(!document.getElementById('docs-root')) return;
   const pid = _docPid();
 
   // 1. Instant paint from cache (offline-capable list).
