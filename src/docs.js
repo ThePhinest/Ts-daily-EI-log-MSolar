@@ -29,11 +29,21 @@
 // Un-pinned docs stream from Storage on demand. This is what keeps Procore's
 // "cache everything and choke" failure mode off our table.
 
-import * as pdfjsLib from 'pdfjs-dist'
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import { get as idbKvGet, set as idbKvSet, del as idbKvDel, keys as idbKvKeys, clear as idbKvClear, createStore } from 'idb-keyval'
 
-pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
+// pdfjs is heavy (~1.2 MB). Lazy-load it only when a PDF is actually opened so it
+// stays OUT of the main bundle — keeps us well under the Workbox precache cap and
+// speeds first paint on every page that isn't the viewer. Vite emits it as its own
+// chunk (still precached as a separate sub-cap file, so offline viewing works).
+let _pdfjs = null;
+async function _loadPdfjs(){
+  if(!_pdfjs){
+    _pdfjs = await import('pdfjs-dist');
+    _pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
+  }
+  return _pdfjs;
+}
 
 // Auxiliary asset dirs (copied to dist/pdfjs/ by vite-plugin-static-copy).
 // Lets the viewer decode JPEG2000/JBIG2 images (wasm), ICC color (iccs), CJK
@@ -440,6 +450,7 @@ async function _docOpenPdf(d){
   document.getElementById('_dv-zout').onclick = ()=>{ zoom = Math.max(0.5, zoom/1.3); render(); };
 
   try{
+    const pdfjsLib = await _loadPdfjs();
     const src = await _docSource(d);
     let params;
     if(src.blob){ params = { data: new Uint8Array(await src.blob.arrayBuffer()), ..._PDF_DOC_OPTS }; }
