@@ -57,6 +57,7 @@ let _docFolderOpen = {};                          // folder -> expanded bool
 let _docSharedOpen = false;
 let _docOfflineIds = new Set();                   // ids with a pinned blob present
 let _docFilterFolder = null;                      // upload target / current folder context
+let _docQuery = '';                               // library search text
 
 const _DOC_OFFICE_EXT = ['doc','docx','xls','xlsx','ppt','pptx','csv','txt','rtf'];
 const _DOC_IMG_EXT    = ['jpg','jpeg','png','gif','webp','heic','heif','bmp'];
@@ -135,36 +136,75 @@ function _docFolders(){
   return arr;
 }
 
+// Full render: a distinct UPLOAD & ORGANIZE zone up top, a brand divider, then a
+// searchable LIBRARY below (folders + teammates' shared docs). Keeping upload and
+// browsing visually separate is the request — a library has to stay navigable.
+// Search re-renders ONLY #doc-list (see _docRenderList) so the input keeps focus.
 function _docRenderLibrary(){
   const host = document.getElementById('docs-body');
   if(!host) return;
+  const nDocs = (window._docs||[]).length;
+  const nFolders = _docFolders().filter(f => (window._docs||[]).some(d => (d.folder||'Unfiled')===f)).length;
+
+  host.innerHTML = `
+    <div class="gl-doc-uploadzone">
+      <div class="gl-doc-stats">
+        <div class="gl-doc-stat"><span class="gl-doc-stat-num">${nDocs}</span><span class="gl-doc-stat-lbl">Documents</span></div>
+        <div class="gl-doc-stat"><span class="gl-doc-stat-num">${nFolders}</span><span class="gl-doc-stat-lbl">${nFolders===1?'Folder':'Folders'}</span></div>
+      </div>
+      <div class="gl-doc-drop" id="doc-drop"
+        ondragover="event.preventDefault();this.classList.add('drag')"
+        ondragleave="this.classList.remove('drag')"
+        ondrop="event.preventDefault();this.classList.remove('drag');docHandleFiles(event.dataTransfer.files)"
+        onclick="docPickFiles()">
+        <div class="gl-doc-drop-icon">📄</div>
+        <div class="gl-doc-drop-txt">Tap to upload or drop documents here</div>
+        <div class="gl-doc-drop-sub">PDFs, images, plans &amp; specs</div>
+      </div>
+      <div class="gl-doc-uploadrow"><button class="gl-doc-newfolder" onclick="docNewFolder()">＋ New folder</button></div>
+      <input type="file" id="doc-file-input" multiple accept=".pdf,image/*,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.csv,.txt,.rtf" style="display:none" onchange="docHandleFiles(this.files)">
+      <div id="doc-upload-prog" class="gl-doc-prog" style="display:none"><div id="doc-upload-prog-bar" class="gl-doc-prog-bar"></div><div id="doc-upload-prog-txt" class="gl-doc-prog-txt"></div></div>
+    </div>
+    <div class="gl-doc-divider"></div>
+    <div class="gl-doc-libhead">
+      <span class="gl-doc-libtitle">📚 Library</span>
+      <input id="doc-search" class="gl-doc-search" type="text" placeholder="Search documents…" value="${_docEsc(_docQuery)}" oninput="docSearch(this.value)" autocomplete="off">
+    </div>
+    <div id="doc-list"></div>`;
+  _docRenderList();
+}
+
+// Renders ONLY the library list into #doc-list — leaves the upload zone + search
+// input untouched so typing in search never loses focus.
+function _docRenderList(){
+  const box = document.getElementById('doc-list');
+  if(!box) return;
+  const q = (_docQuery||'').trim().toLowerCase();
   const docs = (window._docs||[]).slice().sort((a,b)=> (b.createdAt||0)-(a.createdAt||0));
 
-  const toolbar = `
-    <div class="gl-doc-toolbar">
-      <button class="gl-doc-upload" onclick="docPickFiles()">⬆ Upload documents</button>
-      <button class="gl-doc-newfolder" onclick="docNewFolder()">＋ Folder</button>
-    </div>
-    <input type="file" id="doc-file-input" multiple accept=".pdf,image/*,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.csv,.txt,.rtf" style="display:none" onchange="docHandleFiles(this.files)">
-    <div id="doc-upload-prog" class="gl-doc-prog" style="display:none"><div id="doc-upload-prog-bar" class="gl-doc-prog-bar"></div><div id="doc-upload-prog-txt" class="gl-doc-prog-txt"></div></div>`;
-
-  if(!docs.length){
-    const empty = (typeof glEmptyState==='function'
-      ? glEmptyState({ icon:'📁', title:'Your document library',
-          body:'Upload plans, permits, drawings, and specs — read them right here in the app, pin them for offline field use, and share project plans with your team. No more "open in Books."' })
-      : '<div class="gl-doc-empty">No documents yet — upload your first plan set.</div>');
-    // Still surface teammates' shared docs even when you have none of your own.
-    host.innerHTML = toolbar + empty + ((window._docsShared||[]).length ? _docRenderSharedSection() : '');
+  // Search: flat result list across every folder.
+  if(q){
+    const hits = docs.filter(d => (d.title||'').toLowerCase().includes(q) || (d.folder||'').toLowerCase().includes(q));
+    box.innerHTML = `<div class="gl-doc-results">${hits.length} result${hits.length===1?'':'s'} for “${_docEsc(_docQuery.trim())}”</div>`
+      + (hits.length ? hits.map(_docRow).join('') : '<div class="gl-doc-empty-line">No documents match your search.</div>');
     return;
   }
 
-  // Group by folder.
+  if(!docs.length){
+    box.innerHTML = (typeof glEmptyState==='function'
+      ? glEmptyState({ icon:'📁', title:'Your document library',
+          body:'Upload plans, permits, drawings, and specs — read them right here in the app, pin them for offline field use, and share project plans with your team. No more "open in Books."' })
+      : '<div class="gl-doc-empty">No documents yet — upload your first plan set.</div>')
+      + ((window._docsShared||[]).length ? _docRenderSharedSection() : '');
+    return;
+  }
+
   const folders = _docFolders();
   const byFolder = {};
   folders.forEach(f => byFolder[f] = []);
   docs.forEach(d => { const f = d.folder || 'Unfiled'; (byFolder[f] = byFolder[f] || []).push(d); });
 
-  let html = toolbar;
+  let html = '';
   folders.forEach(f => {
     const items = byFolder[f] || [];
     if(!items.length) return;
@@ -179,11 +219,11 @@ function _docRenderLibrary(){
         ${open ? `<div class="gl-doc-folder-body">${items.map(_docRow).join('')}</div>` : ''}
       </div>`;
   });
-
-  // Shared-with-the-project section (always present so it's discoverable).
-  html += _docRenderSharedSection();
-  host.innerHTML = html;
+  html += _docRenderSharedSection();   // teammates' shared docs — discoverable below
+  box.innerHTML = html;
 }
+
+function docSearch(q){ _docQuery = q || ''; _docRenderList(); }
 
 function _docRow(d){
   const pinned = _docOfflineIds.has(d.id);
@@ -206,7 +246,7 @@ function _docRow(d){
 // ═══════════════════════════════════════════
 // FOLDERS
 // ═══════════════════════════════════════════
-function docToggleFolder(f){ _docFolderOpen[f] = (_docFolderOpen[f] === false); _docRenderLibrary(); }
+function docToggleFolder(f){ _docFolderOpen[f] = (_docFolderOpen[f] === false); _docRenderList(); }
 
 function docNewFolder(){
   _docPrompt('New folder', '', 'Create', (name)=>{
@@ -518,7 +558,7 @@ function _docRenderSharedSection(){
       }</div>` : ''}
     </div>`;
 }
-function docToggleSharedSection(){ _docSharedOpen = !_docSharedOpen; _docRenderLibrary(); }
+function docToggleSharedSection(){ _docSharedOpen = !_docSharedOpen; _docRenderList(); }
 function _docSharedRow(d){
   const pinned = _docOfflineIds.has(d.id);
   const meta = [d.ext ? d.ext.toUpperCase() : '', _docFmtSize(d.size)].filter(Boolean).join(' · ');
@@ -634,6 +674,7 @@ window._docsPurgeOffline = function(){
 
 // ── Window exposure (inline onclick handlers) ──
 window.glRenderDocsPage = glRenderDocsPage;
+window.docSearch = docSearch;
 window.docPickFiles = docPickFiles;
 window.docHandleFiles = docHandleFiles;
 window.docOpen = docOpen;

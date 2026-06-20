@@ -634,6 +634,24 @@ button:disabled,button[disabled]{opacity:.45;cursor:not-allowed}
 .gl-ac-badge{flex-shrink:0;font-family:var(--mono);font-size:8.5px;letter-spacing:.1em;color:var(--muted);border:1px solid var(--border2);border-radius:5px;padding:3px 7px}
 .gl-ac-badge-live{color:#3fa7b0;border-color:rgba(0,107,117,.5);background:rgba(0,107,117,.12)}
 /* ── Documents library ── */
+/* Upload & organize zone (top) */
+.gl-doc-stats{display:flex;gap:10px;margin-bottom:12px}
+.gl-doc-stat{flex:1;background:var(--s2);border:1px solid var(--border2);border-radius:10px;padding:9px 12px;text-align:center}
+.gl-doc-stat-num{display:block;font-family:var(--cond);font-weight:800;font-size:22px;color:var(--text);line-height:1}
+.gl-doc-stat-lbl{display:block;font-family:var(--mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-top:5px}
+.gl-doc-drop{border:2px dashed var(--border2);border-radius:var(--r);padding:22px 18px;text-align:center;cursor:pointer;transition:all .2s;background:var(--s1)}
+.gl-doc-drop:hover,.gl-doc-drop.drag{border-color:var(--s3);background:var(--s2)}
+.gl-doc-drop-icon{font-size:26px;margin-bottom:6px}
+.gl-doc-drop-txt{font-family:var(--cond);font-weight:700;font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted2)}
+.gl-doc-drop-sub{font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:4px}
+.gl-doc-uploadrow{display:flex;gap:8px;margin-top:10px}
+.gl-doc-uploadrow .gl-doc-newfolder{flex:1}
+.gl-doc-divider{height:1px;background:linear-gradient(90deg,var(--border2),transparent);margin:18px 0 12px}
+.gl-doc-libhead{display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap}
+.gl-doc-libtitle{font-family:var(--cond);font-weight:800;font-size:16px;letter-spacing:.05em;color:var(--text)}
+.gl-doc-search{flex:1;min-width:150px;font-family:var(--body);font-size:16px;color:var(--text);background:var(--s1);border:1px solid var(--border2);border-radius:8px;padding:8px 12px}
+.gl-doc-search:focus{outline:none;border-color:var(--s3)}
+.gl-doc-results{font-family:var(--mono);font-size:10.5px;color:var(--muted);margin-bottom:8px}
 .gl-doc-toolbar{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap}
 .gl-doc-upload{flex:1;min-width:170px;font-family:var(--cond);font-weight:700;font-size:14px;letter-spacing:.04em;color:#cfeef0;background:var(--s3);border:1px solid var(--s3);border-radius:9px;padding:11px 14px;cursor:pointer}
 .gl-doc-upload:active{filter:brightness(.85)}
