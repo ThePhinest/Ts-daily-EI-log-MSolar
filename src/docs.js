@@ -136,46 +136,59 @@ function _docFolders(){
   return arr;
 }
 
-// Full render: a distinct UPLOAD & ORGANIZE zone up top, a brand divider, then a
-// searchable LIBRARY below (folders + teammates' shared docs). Keeping upload and
-// browsing visually separate is the request — a library has to stay navigable.
-// Search re-renders ONLY #doc-list (see _docRenderList) so the input keeps focus.
+// Full render: THREE distinct cards (Tim's call) for the strongest separation —
+//   1. 📁 Documents — upload & organize (stats, drop-zone, new folder)
+//   2. 📚 Library   — searchable folders of your own docs
+//   3. 👥 Shared by teammates — incoming shared docs, its own section
+// Search re-renders ONLY #doc-list (see _docRenderList) so the input keeps focus;
+// the shared card refreshes on its own via _docRenderSharedBody.
 function _docRenderLibrary(){
-  const host = document.getElementById('docs-body');
-  if(!host) return;
+  const root = document.getElementById('docs-root');
+  if(!root) return;
   const nDocs = (window._docs||[]).length;
   const nFolders = _docFolders().filter(f => (window._docs||[]).some(d => (d.folder||'Unfiled')===f)).length;
 
-  host.innerHTML = `
-    <div class="gl-doc-uploadzone">
-      <div class="gl-doc-stats">
-        <div class="gl-doc-stat"><span class="gl-doc-stat-num">${nDocs}</span><span class="gl-doc-stat-lbl">Documents</span></div>
-        <div class="gl-doc-stat"><span class="gl-doc-stat-num">${nFolders}</span><span class="gl-doc-stat-lbl">${nFolders===1?'Folder':'Folders'}</span></div>
+  root.innerHTML = `
+    <div class="card gl-doc-card">
+      <div class="card-head gl-doc-head"><span class="card-num">📁</span><span class="card-title">Documents</span></div>
+      <div class="card-body">
+        <div class="gl-doc-stats">
+          <div class="gl-doc-stat"><span class="gl-doc-stat-num">${nDocs}</span><span class="gl-doc-stat-lbl">Documents</span></div>
+          <div class="gl-doc-stat"><span class="gl-doc-stat-num">${nFolders}</span><span class="gl-doc-stat-lbl">${nFolders===1?'Folder':'Folders'}</span></div>
+        </div>
+        <div class="gl-doc-drop" id="doc-drop"
+          ondragover="event.preventDefault();this.classList.add('drag')"
+          ondragleave="this.classList.remove('drag')"
+          ondrop="event.preventDefault();this.classList.remove('drag');docHandleFiles(event.dataTransfer.files)"
+          onclick="docPickFiles()">
+          <div class="gl-doc-drop-icon">📄</div>
+          <div class="gl-doc-drop-txt">Tap to upload or drop documents here</div>
+          <div class="gl-doc-drop-sub">PDFs, images, plans &amp; specs</div>
+        </div>
+        <div class="gl-doc-uploadrow"><button class="gl-doc-newfolder" onclick="docNewFolder()">＋ New folder</button></div>
+        <input type="file" id="doc-file-input" multiple accept=".pdf,image/*,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.csv,.txt,.rtf" style="display:none" onchange="docHandleFiles(this.files)">
+        <div id="doc-upload-prog" class="gl-doc-prog" style="display:none"><div id="doc-upload-prog-bar" class="gl-doc-prog-bar"></div><div id="doc-upload-prog-txt" class="gl-doc-prog-txt"></div></div>
       </div>
-      <div class="gl-doc-drop" id="doc-drop"
-        ondragover="event.preventDefault();this.classList.add('drag')"
-        ondragleave="this.classList.remove('drag')"
-        ondrop="event.preventDefault();this.classList.remove('drag');docHandleFiles(event.dataTransfer.files)"
-        onclick="docPickFiles()">
-        <div class="gl-doc-drop-icon">📄</div>
-        <div class="gl-doc-drop-txt">Tap to upload or drop documents here</div>
-        <div class="gl-doc-drop-sub">PDFs, images, plans &amp; specs</div>
+    </div>
+
+    <div class="card gl-doc-card">
+      <div class="card-head gl-doc-head"><span class="card-num">📚</span><span class="card-title">Library</span></div>
+      <div class="card-body">
+        <input id="doc-search" class="gl-doc-search" type="text" placeholder="Search documents…" value="${_docEsc(_docQuery)}" oninput="docSearch(this.value)" autocomplete="off">
+        <div id="doc-list"></div>
       </div>
-      <div class="gl-doc-uploadrow"><button class="gl-doc-newfolder" onclick="docNewFolder()">＋ New folder</button></div>
-      <input type="file" id="doc-file-input" multiple accept=".pdf,image/*,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.csv,.txt,.rtf" style="display:none" onchange="docHandleFiles(this.files)">
-      <div id="doc-upload-prog" class="gl-doc-prog" style="display:none"><div id="doc-upload-prog-bar" class="gl-doc-prog-bar"></div><div id="doc-upload-prog-txt" class="gl-doc-prog-txt"></div></div>
     </div>
-    <div class="gl-doc-divider"></div>
-    <div class="gl-doc-libhead">
-      <span class="gl-doc-libtitle">📚 Library</span>
-      <input id="doc-search" class="gl-doc-search" type="text" placeholder="Search documents…" value="${_docEsc(_docQuery)}" oninput="docSearch(this.value)" autocomplete="off">
-    </div>
-    <div id="doc-list"></div>`;
+
+    <div class="card gl-doc-card">
+      <div class="card-head gl-doc-head"><span class="card-num">👥</span><span class="card-title">Shared by teammates</span><span class="card-badge" id="doc-shared-count">0</span></div>
+      <div class="card-body" id="doc-shared-body"></div>
+    </div>`;
   _docRenderList();
+  _docRenderSharedBody();
 }
 
-// Renders ONLY the library list into #doc-list — leaves the upload zone + search
-// input untouched so typing in search never loses focus.
+// Renders ONLY the Library folder list into #doc-list — leaves the upload card,
+// search input, and shared card untouched (search never loses focus).
 function _docRenderList(){
   const box = document.getElementById('doc-list');
   if(!box) return;
@@ -191,11 +204,7 @@ function _docRenderList(){
   }
 
   if(!docs.length){
-    box.innerHTML = (typeof glEmptyState==='function'
-      ? glEmptyState({ icon:'📁', title:'Your document library',
-          body:'Upload plans, permits, drawings, and specs — read them right here in the app, pin them for offline field use, and share project plans with your team. No more "open in Books."' })
-      : '<div class="gl-doc-empty">No documents yet — upload your first plan set.</div>')
-      + ((window._docsShared||[]).length ? _docRenderSharedSection() : '');
+    box.innerHTML = '<div class="gl-doc-empty-line">No documents yet — upload your first plan set above.</div>';
     return;
   }
 
@@ -219,7 +228,6 @@ function _docRenderList(){
         ${open ? `<div class="gl-doc-folder-body">${items.map(_docRow).join('')}</div>` : ''}
       </div>`;
   });
-  html += _docRenderSharedSection();   // teammates' shared docs — discoverable below
   box.innerHTML = html;
 }
 
@@ -540,25 +548,20 @@ async function _docLoadShared(pid){
     const mine = window._currentUser.uid;
     snap.forEach(s => { const m = s.data(); if(m.ownerUid !== mine) window._docsShared.push(m); });
   }catch(e){ /* not a member / nothing shared */ }
-  _docRenderLibrary();
+  _docRenderSharedBody();
 }
 
-function _docRenderSharedSection(){
+// Fills the Shared-by-teammates CARD body (its own section, card #3).
+function _docRenderSharedBody(){
+  const box = document.getElementById('doc-shared-body');
+  if(!box) return;
   const shared = (window._docsShared||[]);
-  return `
-    <div class="gl-doc-folder gl-doc-shared">
-      <div class="gl-doc-folder-head" onclick="docToggleSharedSection()">
-        <span class="gl-doc-chev">${_docSharedOpen?'▾':'▸'}</span>
-        <span class="gl-doc-folder-name">👥 Shared by teammates</span>
-        <span class="gl-doc-folder-count">${shared.length}</span>
-      </div>
-      ${_docSharedOpen ? `<div class="gl-doc-folder-body">${
-        shared.length ? shared.map(_docSharedRow).join('')
-        : '<div class="gl-doc-empty-line">Plans your teammates share to this project show up here. Your own shared docs stay in your folders above with a 🤝 tag.</div>'
-      }</div>` : ''}
-    </div>`;
+  const cnt = document.getElementById('doc-shared-count');
+  if(cnt) cnt.textContent = shared.length;
+  box.innerHTML = shared.length
+    ? shared.map(_docSharedRow).join('')
+    : '<div class="gl-doc-empty-line">Plans your teammates share to this project show up here. Your own shared docs stay in your folders above with a 🤝 tag.</div>';
 }
-function docToggleSharedSection(){ _docSharedOpen = !_docSharedOpen; _docRenderList(); }
 function _docSharedRow(d){
   const pinned = _docOfflineIds.has(d.id);
   const meta = [d.ext ? d.ext.toUpperCase() : '', _docFmtSize(d.size)].filter(Boolean).join(' · ');
@@ -681,7 +684,6 @@ window.docOpen = docOpen;
 window.docToggleOffline = docToggleOffline;
 window.docToggleShare = docToggleShare;
 window.docToggleFolder = docToggleFolder;
-window.docToggleSharedSection = docToggleSharedSection;
 window.docNewFolder = docNewFolder;
 window.docMenu = docMenu;
 window.docRename = docRename;

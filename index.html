@@ -646,10 +646,8 @@ button:disabled,button[disabled]{opacity:.45;cursor:not-allowed}
 .gl-doc-drop-sub{font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:4px}
 .gl-doc-uploadrow{display:flex;gap:8px;margin-top:10px}
 .gl-doc-uploadrow .gl-doc-newfolder{flex:1}
-.gl-doc-divider{height:1px;background:linear-gradient(90deg,var(--border2),transparent);margin:18px 0 12px}
-.gl-doc-libhead{display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap}
-.gl-doc-libtitle{font-family:var(--cond);font-weight:800;font-size:16px;letter-spacing:.05em;color:var(--text)}
-.gl-doc-search{flex:1;min-width:150px;font-family:var(--body);font-size:16px;color:var(--text);background:var(--s1);border:1px solid var(--border2);border-radius:8px;padding:8px 12px}
+.gl-doc-head{cursor:default}
+.gl-doc-search{width:100%;box-sizing:border-box;font-family:var(--body);font-size:16px;color:var(--text);background:var(--s1);border:1px solid var(--border2);border-radius:8px;padding:9px 12px;margin-bottom:12px}
 .gl-doc-search:focus{outline:none;border-color:var(--s3)}
 .gl-doc-results{font-family:var(--mono);font-size:10.5px;color:var(--muted);margin-bottom:8px}
 .gl-doc-toolbar{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap}
@@ -2491,10 +2489,7 @@ Anticipated rain — AM weather monitoring expected"></textarea>
 </div>
 
 <!-- DOCS PAGE (placeholder) -->
-<div class="page" id="page-docs"><div class="wrap">
-  <div class="card"><div class="card-head"><span class="card-num">📁</span><span class="card-title">Documents</span></div>
-  <div class="card-body" id="docs-body"></div></div>
-</div></div>
+<div class="page" id="page-docs"><div class="wrap" id="docs-root"></div></div>
 
 <!-- ══════════════════════════════════
      GROUNDLOG ACADEMY
