@@ -426,7 +426,8 @@ async function _docOpenPdf(d){
   const pageLbl = document.getElementById('_dv-page');
   let pdf=null, page=1, zoom=1, rendering=false;
 
-  function cleanup(){ try{ if(pdf) pdf.destroy(); }catch(e){} ov.remove(); }
+  const _cleanupFns = [];
+  function cleanup(){ _cleanupFns.forEach(fn=>{ try{ fn(); }catch(e){} }); try{ if(pdf) pdf.destroy(); }catch(e){} ov.remove(); }
   document.getElementById('_dv-close').onclick = cleanup;
   ov.addEventListener('click', e=>{ if(e.target===ov) cleanup(); });
 
@@ -486,6 +487,36 @@ async function _docOpenPdf(d){
   };
   scroll.addEventListener('touchend', e=>{ if(_pinching && e.touches.length<2) _endPinch(); }, { passive:false });
   scroll.addEventListener('touchcancel', _endPinch, { passive:false });
+
+  // Desktop (PWA): mouse-wheel zoom (live CSS transform for feedback, crisp
+  // re-render when the wheel settles) + click-drag pan.
+  let _wTimer = null, _wScale = 1;
+  scroll.addEventListener('wheel', e=>{
+    if(!pdf) return;
+    e.preventDefault();
+    const factor = e.deltaY < 0 ? 1.12 : 1/1.12;
+    _wScale = Math.min(5/zoom, Math.max(0.5/zoom, _wScale * factor));
+    canvas.style.transformOrigin = 'center top';
+    canvas.style.transform = 'scale(' + _wScale + ')';
+    clearTimeout(_wTimer);
+    _wTimer = setTimeout(()=>{
+      canvas.style.transform = ''; canvas.style.transformOrigin = '';
+      zoom = Math.min(5, Math.max(0.5, zoom * _wScale)); _wScale = 1;
+      render();
+    }, 150);
+  }, { passive:false });
+
+  let _drag = false, _dx = 0, _dy = 0, _dsl = 0, _dst = 0;
+  scroll.addEventListener('mousedown', e=>{
+    _drag = true; _dx = e.clientX; _dy = e.clientY; _dsl = scroll.scrollLeft; _dst = scroll.scrollTop;
+    scroll.style.cursor = 'grabbing'; e.preventDefault();
+  });
+  const _onMove = e=>{ if(!_drag) return; scroll.scrollLeft = _dsl - (e.clientX - _dx); scroll.scrollTop = _dst - (e.clientY - _dy); };
+  const _onUp   = ()=>{ if(_drag){ _drag = false; scroll.style.cursor = 'grab'; } };
+  window.addEventListener('mousemove', _onMove);
+  window.addEventListener('mouseup', _onUp);
+  _cleanupFns.push(()=>window.removeEventListener('mousemove', _onMove));
+  _cleanupFns.push(()=>window.removeEventListener('mouseup', _onUp));
 
   try{
     const pdfjsLib = await _loadPdfjs();
