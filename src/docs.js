@@ -180,7 +180,7 @@ function _docRow(d){
       <span class="gl-doc-icon" onclick="docOpen('${d.id}')">${_docIcon(d)}</span>
       <div class="gl-doc-info" onclick="docOpen('${d.id}')">
         <div class="gl-doc-title">${_docEsc(d.title)}</div>
-        <div class="gl-doc-meta">${_docEsc(meta)}${d.shared?' · <span class="gl-doc-shared-tag">shared</span>':''}${d.aiAccessOptIn?' · <span class="gl-doc-ai-tag">AI ✓</span>':''}</div>
+        <div class="gl-doc-meta">${_docEsc(meta)}${d.shared?' · <span class="gl-doc-shared-tag">🤝 shared</span>':''}${d.aiAccessOptIn?' · <span class="gl-doc-ai-tag">AI ✓</span>':''}</div>
       </div>
       <div class="gl-doc-actions">
         <button class="gl-doc-btn${pinned?' on':''}" title="${pinned?'Saved offline':'Download for offline'}" onclick="docToggleOffline('${d.id}')">${pinned?'✓⬇':'⬇'}</button>
@@ -496,12 +496,12 @@ function _docRenderSharedSection(){
     <div class="gl-doc-folder gl-doc-shared">
       <div class="gl-doc-folder-head" onclick="docToggleSharedSection()">
         <span class="gl-doc-chev">${_docSharedOpen?'▾':'▸'}</span>
-        <span class="gl-doc-folder-name">👥 Shared with the project</span>
+        <span class="gl-doc-folder-name">👥 Shared by teammates</span>
         <span class="gl-doc-folder-count">${shared.length}</span>
       </div>
       ${_docSharedOpen ? `<div class="gl-doc-folder-body">${
         shared.length ? shared.map(_docSharedRow).join('')
-        : '<div class="gl-doc-empty-line">No documents shared by teammates yet.</div>'
+        : '<div class="gl-doc-empty-line">Plans your teammates share to this project show up here. Your own shared docs stay in your folders above with a 🤝 tag.</div>'
       }</div>` : ''}
     </div>`;
 }
