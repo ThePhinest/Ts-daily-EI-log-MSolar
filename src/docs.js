@@ -743,6 +743,21 @@ async function _docOpenPdf(d){
   scroll.addEventListener('touchend', e=>{ if(_pinching && e.touches.length<2) _endPinch(); }, { passive:false });
   scroll.addEventListener('touchcancel', _endPinch, { passive:false });
 
+  // Desktop click-drag panning (grab the page to move it — essential once zoomed
+  // wider/taller than the viewport; native wheel still scrolls vertically).
+  let _drag = false, _dx = 0, _dy = 0, _dsl = 0, _dst = 0;
+  scroll.addEventListener('mousedown', e=>{
+    if(e.button !== 0) return;
+    _drag = true; _dx = e.clientX; _dy = e.clientY; _dsl = scroll.scrollLeft; _dst = scroll.scrollTop;
+    scroll.classList.add('grabbing'); e.preventDefault();
+  });
+  const _onMove = e=>{ if(!_drag) return; scroll.scrollLeft = _dsl - (e.clientX - _dx); scroll.scrollTop = _dst - (e.clientY - _dy); };
+  const _onUp = ()=>{ if(_drag){ _drag = false; scroll.classList.remove('grabbing'); } };
+  window.addEventListener('mousemove', _onMove);
+  window.addEventListener('mouseup', _onUp);
+  _cleanupFns.push(()=> window.removeEventListener('mousemove', _onMove));
+  _cleanupFns.push(()=> window.removeEventListener('mouseup', _onUp));
+
   // Re-fit on rotation / resize.
   const _onResize = ()=>{ if(!_alive) return; const st = scroll.scrollTop; let a=0,fr=0; for(let i=0;i<pages.length;i++){ if(pages[i].top<=st){a=i;fr=(st-pages[i].top)/(pages[i].h||1);} else break; } layout(); if(pages[a]) scroll.scrollTop = pages[a].top + fr*pages[a].h; updateVisible(); };
   window.addEventListener('resize', _onResize);
