@@ -92,12 +92,28 @@ function _docTypeFor(ext){
   if(_DOC_IMG_EXT.indexOf(ext)>=0) return 'img';
   return 'office';
 }
+// Professional file-type badge (inline SVG — a document glyph with a folded
+// corner and a colored type label), instead of emoji. Scales crisply, on-brand,
+// no asset files. Used in rows, modal titles, and the viewer title bar.
+function _docBadgeFor(d){
+  if(d.type==='pdf') return { c:'#E5484D', t:'PDF' };
+  if(d.type==='img') return { c:'#2A9BA6', t:(d.ext||'IMG').toUpperCase().slice(0,4) };
+  if(['xls','xlsx'].indexOf(d.ext)>=0) return { c:'#1E9E5A', t:'XLS' };
+  if(d.ext==='csv') return { c:'#1E9E5A', t:'CSV' };
+  if(['doc','docx','rtf','txt'].indexOf(d.ext)>=0) return { c:'#2F6BD8', t:(d.ext||'DOC').toUpperCase().slice(0,4) };
+  if(['ppt','pptx'].indexOf(d.ext)>=0) return { c:'#E07820', t:'PPT' };
+  return { c:'#7A7F8A', t:(d.ext||'FILE').toUpperCase().slice(0,4) };
+}
 function _docIcon(d){
-  if(d.type==='pdf') return '📕';
-  if(d.type==='img') return '🖼️';
-  if(['xls','xlsx','csv'].indexOf(d.ext)>=0) return '📊';
-  if(['ppt','pptx'].indexOf(d.ext)>=0) return '📈';
-  return '📄';
+  const b = _docBadgeFor(d);
+  const lbl = _docEsc(b.t);
+  const fs = lbl.length >= 4 ? 5 : 6.5;
+  return `<svg class="gl-doc-fileicon" viewBox="0 0 28 32" width="23" height="26" aria-hidden="true">`
+    + `<path d="M5 2h12l6 6v20a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Z" fill="#fcfcfc" stroke="#c9cdd6" stroke-width="1.3"/>`
+    + `<path d="M17 2v6h6" fill="none" stroke="#c9cdd6" stroke-width="1.3" stroke-linejoin="round"/>`
+    + `<rect x="2.5" y="16.5" width="17" height="9.5" rx="2" fill="${b.c}"/>`
+    + `<text x="11" y="23.6" font-size="${fs}" font-weight="700" letter-spacing="0.2" text-anchor="middle" fill="#fff" font-family="Arial,Helvetica,sans-serif">${lbl}</text>`
+    + `</svg>`;
 }
 function _docFmtSize(n){
   if(!n) return '';
@@ -637,36 +653,52 @@ async function _docOpenPdf(d){
 
   function releaseCanvas(m){
     if(m.task){ try{ m.task.cancel(); }catch(e){} m.task = null; }
-    m.rendering = false; m.rendered = false;
+    m.rendering = false; m.rendered = false; m.renderedZoom = undefined;
     if(m.wrap) m.wrap.classList.remove('rendered');
     if(m.canvas){ m.canvas.width = 0; m.canvas.height = 0; }
   }
 
   async function renderPage(m){
-    if(!pdf || !_alive || m.rendering || m.rendered) return;
+    if(!pdf || !_alive || m.rendering) return;
+    if(m.rendered && m.renderedZoom === zoom) return;   // already crisp at this zoom
     m.rendering = true;
+    const renderZoom = zoom;
     try{
       const pg = await pdf.getPage(m.index+1);
-      if(!_alive) return;
+      if(!_alive){ m.rendering = false; return; }
       // Correct the placeholder if this page's real size differs from the estimate.
       const base = pg.getViewport({ scale:1 });
       if(Math.abs(base.width - m.baseW) > 1 || Math.abs(base.height - m.baseH) > 1){
         m.baseW = base.width; m.baseH = base.height; layout();
       }
-      const cssScale = cssScaleFor(m);
+      const cssScale = (containerW() / m.baseW) * renderZoom;
       let renderScale = cssScale * DPR;
       const px = (m.baseW*renderScale) * (m.baseH*renderScale);
       if(px > _MAX_CANVAS_PX) renderScale *= Math.sqrt(_MAX_CANVAS_PX/px);
       const vp = pg.getViewport({ scale: renderScale });
-      const c = m.canvas;
-      c.width = Math.floor(vp.width); c.height = Math.floor(vp.height);
-      const task = pg.render({ canvasContext: c.getContext('2d'), viewport: vp });
+      // Render into a FRESH canvas so the currently-displayed one stays visible
+      // (CSS-scaled to the new wrapper size = instant zoom) until the crisp render
+      // is ready, then swap. This kills the white flash on zoom — we never blank a
+      // page that's already showing something.
+      const nc = document.createElement('canvas');
+      nc.width = Math.floor(vp.width); nc.height = Math.floor(vp.height);
+      const task = pg.render({ canvasContext: nc.getContext('2d'), viewport: vp });
       m.task = task;
       await task.promise;
-      m.task = null; m.rendered = true;
+      m.task = null;
+      if(!_alive) return;
+      if(m.canvas && m.canvas.parentNode === m.wrap) m.wrap.replaceChild(nc, m.canvas);
+      else m.wrap.insertBefore(nc, m.wrap.firstChild);
+      m.canvas = nc;
+      m.rendered = true; m.renderedZoom = renderZoom;
       if(m.wrap) m.wrap.classList.add('rendered');
     }catch(e){ if(!(e && e.name==='RenderingCancelledException')) console.warn('pdf page render:', e && e.message); }
     m.rendering = false;
+    // Zoom changed while rendering? Re-render to the latest if still near the viewport.
+    if(_alive && m.renderedZoom !== zoom){
+      const st = scroll.scrollTop, vh = scroll.clientHeight;
+      if(m.top + m.h > st - RENDER_MARGIN && m.top < st + vh + RENDER_MARGIN) renderPage(m);
+    }
   }
 
   const RENDER_MARGIN = 1400;  // pre-render this far above/below the viewport
@@ -703,10 +735,9 @@ async function _docOpenPdf(d){
     let anchor = 0, frac = 0;
     for(let i=0;i<pages.length;i++){ if(pages[i].top <= st){ anchor = i; frac = (st - pages[i].top) / (pages[i].h||1); } else break; }
     zoom = nz;
-    pages.forEach(releaseCanvas);
-    layout();
+    layout();   // resize wrappers — existing canvases CSS-scale instantly (soft), no white flash
     scroll.scrollTop = pages[anchor].top + frac * pages[anchor].h;
-    updateVisible();
+    updateVisible();  // re-render visible pages crisply at the new zoom (renderedZoom mismatch)
   }
   document.getElementById('_dv-zin').onclick  = ()=> setZoom(zoom*1.25);
   document.getElementById('_dv-zout').onclick = ()=> setZoom(zoom/1.25);
