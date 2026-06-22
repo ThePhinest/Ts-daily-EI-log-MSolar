@@ -1,41 +1,52 @@
 // ═══════════════════════════════════════════
-// DOCUMENTS LIBRARY  (Stage 1 — the pain-killer MVP)
+// DOCUMENTS LIBRARY  (Stage 1 MVP + foundation hardening)
 // ═══════════════════════════════════════════
 // Design-of-record: KB documents-library-plan.md (locked 2026-06-20).
 //
 // What this is: upload plans / permits / drawings / specs once, read them IN-APP
-// (no more share→Books→rename dance), organize in folders, pin for offline field
-// reading, and share project plans with collaborators. Built on the same trust
-// model as photos/KML — file in Firebase Storage, metadata in Firestore, the
-// persisted downloadURL is the share capability.
+// (no more share→Books→rename dance), organize in real folders (incl. subfolders),
+// pin for offline field reading, and share project plans with collaborators. Built
+// on the same trust model as photos/KML — file in Firebase Storage, metadata in
+// Firestore, the persisted downloadURL is the share capability.
 //
-// CCUSF: this is the foundation of a Procore-grade document library, but ours
-// ties documents to the live map (Stage 4, fields reserved below) and travels
-// with the user across firms. Links use BRAND teal, never Procore blue.
+// CCUSF: this is the foundation of a Procore-grade document library, but ours ties
+// documents to the live map (Stage 4, fields reserved below) and travels with the
+// user across firms. Links use BRAND teal, never Procore blue.
 //
 // ── Data model (record shape carries all 4 stages — no migration later) ──
-//   users/{uid}/docs/{docId}        own copy (private by default)
-//   projects/{pid}/docs/{docId}     mirror copy when shared (live reference data)
-//   { id, ownerUid, projectId, title, type:'pdf'|'img'|'office', ext,
-//     storagePath, downloadUrl, folder, size, createdAt, updatedAt,
-//     aiAccessOptIn:false, offline(local-only), shared,
-//     // RESERVED (Stages 2-4, not written in Stage 1):
-//     sheetNumber, sheetTitle, revision, supersedesId, links[], geo{} }
+//   users/{uid}/docs/{docId}            own copy (private by default)
+//   users/{uid}/docFolders/{folderId}   own folder tree (private organization)
+//   projects/{pid}/docs/{docId}         mirror copy when shared (live reference data)
+//   doc:    { id, ownerUid, projectId, title, type:'pdf'|'img'|'office', ext,
+//             storagePath, downloadUrl, folderId, folder(name), size,
+//             createdAt, updatedAt, aiAccessOptIn:false, offline(local-only), shared,
+//             // RESERVED (Stages 2-4): sheetNumber, sheetTitle, revision,
+//             // supersedesId, links[], geo{} }
+//   folder: { id, ownerUid, projectId, name, parentId|null, createdAt, updatedAt }
+//
+// Folders are an OWNER-PRIVATE organization layer over your own docs. Shared docs
+// appear flat in the "Shared by teammates" card — folder structure does not cross
+// the share boundary (the owner's tree is theirs).
 //
 // ── Offline (the deliberate per-doc pin) ──
-// Pinned file BLOBS live in their OWN idb-keyval store (groundlog-docs/blobs),
-// NOT the shared idbCache — idbCache hydrates its whole store into memory on
-// every boot, and a pinned 50 MB plan set must never load into RAM at launch.
-// Un-pinned docs stream from Storage on demand. This is what keeps Procore's
-// "cache everything and choke" failure mode off our table.
+// Pinned file BLOBS live in their OWN idb-keyval store (groundlog-docs/blobs), NOT
+// the shared idbCache — idbCache hydrates its whole store into memory on every
+// boot, and a pinned 50 MB plan set must never load into RAM at launch. Un-pinned
+// docs stream from Storage on demand.
+//
+// ── Viewer (#18 fix) ──
+// The PDF viewer is VIRTUALIZED continuous-scroll with a hard CAP on canvas pixel
+// area. The old single-canvas viewer sized the canvas base×fit×zoom×dpr with no
+// limit; a large sheet at high zoom hit ~300M px ≈ 1 GB and the iOS WKWebView ran
+// out of memory and RELOADED ("the app just re-opened" symptom). Now: only pages
+// near the viewport hold a canvas, each capped to _MAX_CANVAS_PX, dpr clamped, and
+// off-screen canvases are released. Memory stays bounded no matter the doc size.
 
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import { get as idbKvGet, set as idbKvSet, del as idbKvDel, keys as idbKvKeys, clear as idbKvClear, createStore } from 'idb-keyval'
 
 // pdfjs is heavy (~1.2 MB). Lazy-load it only when a PDF is actually opened so it
-// stays OUT of the main bundle — keeps us well under the Workbox precache cap and
-// speeds first paint on every page that isn't the viewer. Vite emits it as its own
-// chunk (still precached as a separate sub-cap file, so offline viewing works).
+// stays OUT of the main bundle.
 let _pdfjs = null;
 async function _loadPdfjs(){
   if(!_pdfjs){
@@ -46,9 +57,6 @@ async function _loadPdfjs(){
 }
 
 // Auxiliary asset dirs (copied to dist/pdfjs/ by vite-plugin-static-copy).
-// Lets the viewer decode JPEG2000/JBIG2 images (wasm), ICC color (iccs), CJK
-// text (cmaps), and non-embedded standard fonts. base is '/' so '/pdfjs/...'
-// resolves on web (Pages root) and in the Capacitor WebView alike.
 const _PDF_ASSETS = (import.meta.env.BASE_URL || '/') + 'pdfjs/';
 const _PDF_DOC_OPTS = {
   wasmUrl: _PDF_ASSETS + 'wasm/',
@@ -63,12 +71,13 @@ const _docBlobStore = createStore('groundlog-docs', 'blobs');
 
 window._docs = window._docs || [];              // own docs metadata (active project)
 window._docsShared = window._docsShared || [];  // teammates' shared docs (active project)
-let _docFolderOpen = {};                          // folder -> expanded bool
-let _docSharedOpen = false;
+window._docFoldersList = window._docFoldersList || []; // own folder records (active project)
+let _docFolderOpen = {};                          // folderId -> expanded bool ('__unfiled__' for unfiled)
 let _docOfflineIds = new Set();                   // ids with a pinned blob present
-let _docFilterFolder = null;                      // upload target / current folder context
+let _docUploadFolderId = null;                    // folderId target for the next upload (null = Unfiled)
 let _docQuery = '';                               // library search text
 
+const _DOC_CARDS_KEY = 'pei_doc_cards';           // collapsed top-level cards (#16)
 const _DOC_OFFICE_EXT = ['doc','docx','xls','xlsx','ppt','pptx','csv','txt','rtf'];
 const _DOC_IMG_EXT    = ['jpg','jpeg','png','gif','webp','heic','heif','bmp'];
 
@@ -97,6 +106,29 @@ function _docFmtSize(n){
   return (n/1048576).toFixed(1)+' MB';
 }
 
+function _docCacheDocs(){ try{ window.idbSet && window.idbSet('gl_docs::'+_docPid(), JSON.stringify(window._docs)); }catch(e){} }
+function _docCacheFolders(){ try{ window.idbSet && window.idbSet('gl_docfolders::'+_docPid(), JSON.stringify(window._docFoldersList)); }catch(e){} }
+
+// ── Collapsed top-level cards (#16) ──
+function _docGetCards(){ try{ return JSON.parse(localStorage.getItem(_DOC_CARDS_KEY)||'[]'); }catch(e){ return []; } }
+function _docSaveCards(arr){ try{ localStorage.setItem(_DOC_CARDS_KEY, JSON.stringify(arr)); }catch(e){} }
+function docToggleCard(key){
+  const el = document.getElementById('doc-card-'+key);
+  const collapsed = _docGetCards();
+  const i = collapsed.indexOf(key);
+  if(el && el.classList.contains('collapsed')){ el.classList.remove('collapsed'); if(i>-1) collapsed.splice(i,1); }
+  else { if(el) el.classList.add('collapsed'); if(i<0) collapsed.push(key); }
+  _docSaveCards(collapsed);
+}
+
+// ── Folder helpers ──
+function _docFolderById(id){ return (window._docFoldersList||[]).find(f=>f.id===id) || null; }
+function _docChildFolders(parentId){
+  return (window._docFoldersList||[]).filter(f => (f.parentId||null)===(parentId||null))
+    .sort((a,b)=> String(a.name).localeCompare(String(b.name)));
+}
+function _docFolderName(id){ const f=_docFolderById(id); return f ? f.name : 'Unfiled'; }
+
 // ── Boot helper: which ids have a pinned blob on this device ──
 async function _docRefreshOfflineSet(){
   try{
@@ -108,58 +140,82 @@ async function _docRefreshOfflineSet(){
 // ═══════════════════════════════════════════
 // LOAD + RENDER
 // ═══════════════════════════════════════════
-// Instant render from the offline metadata cache, then refresh from Firestore.
 async function glRenderDocsPage(){
   if(!document.getElementById('docs-root')) return;
   const pid = _docPid();
 
-  // 1. Instant paint from cache (offline-capable list).
+  // 1. Instant paint from cache (offline-capable).
   try{
     if(window.idbReady) await window.idbReady;
-    const cached = (typeof window.idbGet==='function') ? window.idbGet('gl_docs::'+pid) : null;
-    if(cached){ window._docs = JSON.parse(cached) || []; }
+    const cd = (typeof window.idbGet==='function') ? window.idbGet('gl_docs::'+pid) : null;
+    if(cd){ window._docs = JSON.parse(cd) || []; }
+    const cf = (typeof window.idbGet==='function') ? window.idbGet('gl_docfolders::'+pid) : null;
+    if(cf){ window._docFoldersList = JSON.parse(cf) || []; }
   }catch(e){ /* cache miss is fine */ }
   await _docRefreshOfflineSet();
   _docRenderLibrary();
 
-  // 2. Refresh own docs from cloud.
+  // 2. Refresh from cloud.
   if(_docReady() && pid && pid !== 'default'){
     try{
+      const fsnap = await _udb().collection('docFolders').where('projectId','==',pid).get();
+      const flist = []; fsnap.forEach(f => flist.push(f.data()));
+      window._docFoldersList = flist;
+      _docCacheFolders();
+    }catch(e){ console.warn('docFolders load:', e && e.message); }
+    try{
       const snap = await _udb().collection('docs').where('projectId','==',pid).get();
-      const list = [];
-      snap.forEach(d => list.push(d.data()));
+      const list = []; snap.forEach(d => list.push(d.data()));
       window._docs = list;
-      try{ window.idbSet && window.idbSet('gl_docs::'+pid, JSON.stringify(list)); }catch(e){}
+      await _docMigrateFolders();   // old folder-name string → folderId (one-time, idempotent)
+      _docCacheDocs();
       _docRenderLibrary();
-    }catch(e){ console.warn('docLoad:', e.message); }
+    }catch(e){ console.warn('docLoad:', e && e.message); }
     _docLoadShared(pid);
   }
 }
 
-function _docFolders(){
-  const set = new Set();
-  (window._docs||[]).forEach(d => set.add(d.folder || 'Unfiled'));
-  // Stable order: Unfiled last, others alphabetical.
-  const arr = Array.from(set).filter(f => f !== 'Unfiled').sort((a,b)=>a.localeCompare(b));
-  if(set.has('Unfiled') || !arr.length) arr.push('Unfiled');
-  return arr;
+// One-time migration: Stage-1 docs stored a folder NAME string and no folderId.
+// Promote each named folder to a real folder record and set the doc's folderId.
+// Idempotent — once folderId is set + persisted, later loads skip the doc.
+async function _docMigrateFolders(){
+  const pid = _docPid();
+  let changed = false;
+  for(const d of (window._docs||[])){
+    if(d.folderId === undefined){   // never migrated; null = already normalized to Unfiled
+      const nm = (d.folder||'').trim();
+      if(nm && nm.toLowerCase() !== 'unfiled'){
+        let f = (window._docFoldersList||[]).find(x => (x.parentId==null) && x.name===nm);
+        if(!f) f = await _docCreateFolder(nm, null);
+        d.folderId = f.id;
+      } else {
+        d.folderId = null;
+      }
+      d.updatedAt = Date.now();
+      changed = true;
+      try{ await _udb().collection('docs').doc(d.id).set({ folderId: d.folderId, updatedAt: d.updatedAt }, { merge:true }); }catch(e){}
+    }
+  }
+  if(changed) _docCacheDocs();
 }
 
-// Full render: THREE distinct cards (Tim's call) for the strongest separation —
+// Full render: THREE collapsible cards.
 //   1. 📁 Documents — upload & organize (stats, drop-zone, new folder)
-//   2. 📚 Library   — searchable folders of your own docs
-//   3. 👥 Shared by teammates — incoming shared docs, its own section
-// Search re-renders ONLY #doc-list (see _docRenderList) so the input keeps focus;
-// the shared card refreshes on its own via _docRenderSharedBody.
+//   2. 📚 Library   — searchable nested folder tree of your own docs
+//   3. 👥 Shared by teammates — incoming shared docs (flat)
 function _docRenderLibrary(){
   const root = document.getElementById('docs-root');
   if(!root) return;
   const nDocs = (window._docs||[]).length;
-  const nFolders = _docFolders().filter(f => (window._docs||[]).some(d => (d.folder||'Unfiled')===f)).length;
+  const nFolders = (window._docFoldersList||[]).length;
+  const cc = _docGetCards();
+  const isC = k => cc.includes(k) ? ' collapsed' : '';
 
   root.innerHTML = `
-    <div class="card gl-doc-card">
-      <div class="card-head gl-doc-head"><span class="card-num">📁</span><span class="card-title">Documents</span></div>
+    <div class="card gl-doc-card${isC('documents')}" id="doc-card-documents">
+      <div class="card-head gl-doc-head" onclick="docToggleCard('documents')">
+        <span class="card-num">📁</span><span class="card-title">Documents</span><span class="card-chevron">▾</span>
+      </div>
       <div class="card-body">
         <div class="gl-doc-stats">
           <div class="gl-doc-stat"><span class="gl-doc-stat-num">${nDocs}</span><span class="gl-doc-stat-lbl">Documents</span></div>
@@ -168,8 +224,8 @@ function _docRenderLibrary(){
         <div class="gl-doc-drop" id="doc-drop"
           ondragover="event.preventDefault();this.classList.add('drag')"
           ondragleave="this.classList.remove('drag')"
-          ondrop="event.preventDefault();this.classList.remove('drag');docHandleFiles(event.dataTransfer.files)"
-          onclick="docPickFiles()">
+          ondrop="event.preventDefault();this.classList.remove('drag');docDropRoot(event.dataTransfer.files)"
+          onclick="docPickRoot()">
           <div class="gl-doc-drop-icon">📄</div>
           <div class="gl-doc-drop-txt">Tap to upload or drop documents here</div>
           <div class="gl-doc-drop-sub">PDFs, images, plans &amp; specs</div>
@@ -180,64 +236,93 @@ function _docRenderLibrary(){
       </div>
     </div>
 
-    <div class="card gl-doc-card">
-      <div class="card-head gl-doc-head"><span class="card-num">📚</span><span class="card-title">Library</span></div>
+    <div class="card gl-doc-card${isC('library')}" id="doc-card-library">
+      <div class="card-head gl-doc-head" onclick="docToggleCard('library')">
+        <span class="card-num">📚</span><span class="card-title">Library</span><span class="card-chevron">▾</span>
+      </div>
       <div class="card-body">
         <input id="doc-search" class="gl-doc-search" type="text" placeholder="Search documents…" value="${_docEsc(_docQuery)}" oninput="docSearch(this.value)" autocomplete="off">
         <div id="doc-list"></div>
       </div>
     </div>
 
-    <div class="card gl-doc-card">
-      <div class="card-head gl-doc-head"><span class="card-num">👥</span><span class="card-title">Shared by teammates</span><span class="card-badge" id="doc-shared-count">0</span></div>
+    <div class="card gl-doc-card${isC('shared')}" id="doc-card-shared">
+      <div class="card-head gl-doc-head" onclick="docToggleCard('shared')">
+        <span class="card-num">👥</span><span class="card-title">Shared by teammates</span><span class="card-badge" id="doc-shared-count">0</span><span class="card-chevron">▾</span>
+      </div>
       <div class="card-body" id="doc-shared-body"></div>
     </div>`;
   _docRenderList();
   _docRenderSharedBody();
 }
 
-// Renders ONLY the Library folder list into #doc-list — leaves the upload card,
-// search input, and shared card untouched (search never loses focus).
+// Renders ONLY the Library tree into #doc-list — leaves the search input + cards
+// untouched so search never loses focus.
 function _docRenderList(){
   const box = document.getElementById('doc-list');
   if(!box) return;
   const q = (_docQuery||'').trim().toLowerCase();
-  const docs = (window._docs||[]).slice().sort((a,b)=> (b.createdAt||0)-(a.createdAt||0));
+  const allDocs = (window._docs||[]).slice().sort((a,b)=> (b.createdAt||0)-(a.createdAt||0));
 
   // Search: flat result list across every folder.
   if(q){
-    const hits = docs.filter(d => (d.title||'').toLowerCase().includes(q) || (d.folder||'').toLowerCase().includes(q));
+    const hits = allDocs.filter(d => (d.title||'').toLowerCase().includes(q) || _docFolderName(d.folderId).toLowerCase().includes(q));
     box.innerHTML = `<div class="gl-doc-results">${hits.length} result${hits.length===1?'':'s'} for “${_docEsc(_docQuery.trim())}”</div>`
       + (hits.length ? hits.map(_docRow).join('') : '<div class="gl-doc-empty-line">No documents match your search.</div>');
     return;
   }
 
-  if(!docs.length){
-    box.innerHTML = '<div class="gl-doc-empty-line">No documents yet — upload your first plan set above.</div>';
+  if(!allDocs.length && !(window._docFoldersList||[]).length){
+    box.innerHTML = '<div class="gl-doc-empty-line">No documents yet — upload your first plan set above, or make a folder.</div>';
     return;
   }
 
-  const folders = _docFolders();
-  const byFolder = {};
-  folders.forEach(f => byFolder[f] = []);
-  docs.forEach(d => { const f = d.folder || 'Unfiled'; (byFolder[f] = byFolder[f] || []).push(d); });
-
   let html = '';
-  folders.forEach(f => {
-    const items = byFolder[f] || [];
-    if(!items.length) return;
-    const open = _docFolderOpen[f] !== false; // default expanded
+  _docChildFolders(null).forEach(f => html += _docFolderHtml(f, 0));
+
+  // Unfiled docs (no folderId) get their own pseudo-folder at the bottom.
+  const unfiled = allDocs.filter(d => !d.folderId);
+  if(unfiled.length){
+    const open = _docFolderOpen['__unfiled__'] !== false;
     html += `
       <div class="gl-doc-folder">
-        <div class="gl-doc-folder-head" onclick="docToggleFolder('${_docEsc(f).replace(/'/g,"\\'")}')">
+        <div class="gl-doc-folder-head" style="padding-left:6px" onclick="docToggleFolder('__unfiled__')">
           <span class="gl-doc-chev">${open?'▾':'▸'}</span>
-          <span class="gl-doc-folder-name">📂 ${_docEsc(f)}</span>
-          <span class="gl-doc-folder-count">${items.length}</span>
+          <span class="gl-doc-folder-name">🗂 Unfiled</span>
+          <span class="gl-doc-folder-count">${unfiled.length}</span>
         </div>
-        ${open ? `<div class="gl-doc-folder-body">${items.map(_docRow).join('')}</div>` : ''}
+        ${open ? `<div class="gl-doc-folder-body">${unfiled.map(_docRow).join('')}</div>` : ''}
       </div>`;
-  });
-  box.innerHTML = html;
+  }
+
+  box.innerHTML = html || '<div class="gl-doc-empty-line">No documents yet — upload your first plan set above.</div>';
+}
+
+// Recursive folder node: child folders first, then its docs. Indented by depth.
+function _docFolderHtml(f, depth){
+  const open = _docFolderOpen[f.id] !== false; // default expanded
+  const kids = _docChildFolders(f.id);
+  const docs = (window._docs||[]).filter(d => d.folderId===f.id).sort((a,b)=> (b.createdAt||0)-(a.createdAt||0));
+  const count = kids.length + docs.length;
+  const pad = 6 + depth*16;
+  let inner = '';
+  if(open){
+    inner = `<div class="gl-doc-folder-body">`
+      + kids.map(k => _docFolderHtml(k, depth+1)).join('')
+      + docs.map(_docRow).join('')
+      + (count===0 ? `<div class="gl-doc-empty-line" style="text-align:left;padding-left:${pad+18}px">Empty — upload here (⋯) or move documents in.</div>` : '')
+      + `</div>`;
+  }
+  return `
+    <div class="gl-doc-folder">
+      <div class="gl-doc-folder-head" style="padding-left:${pad}px" onclick="docToggleFolder('${f.id}')">
+        <span class="gl-doc-chev">${open?'▾':'▸'}</span>
+        <span class="gl-doc-folder-name">📂 ${_docEsc(f.name)}</span>
+        <span class="gl-doc-folder-count">${count}</span>
+        <button class="gl-doc-folder-menu" title="Folder actions" onclick="event.stopPropagation();docFolderMenu('${f.id}')">⋯</button>
+      </div>
+      ${inner}
+    </div>`;
 }
 
 function docSearch(q){ _docQuery = q || ''; _docRenderList(); }
@@ -245,8 +330,6 @@ function docSearch(q){ _docQuery = q || ''; _docRenderList(); }
 function _docRow(d){
   const pinned = _docOfflineIds.has(d.id);
   const meta = [d.ext ? d.ext.toUpperCase() : '', _docFmtSize(d.size)].filter(Boolean).join(' · ');
-  // Single ⋯ menu keeps rows compact; current state shows as inline tags instead
-  // of always-present buttons (offline/share now live in the menu).
   const tags = (pinned ? ' · <span class="gl-doc-offline-tag">⬇ offline</span>' : '')
     + (d.shared ? ' · <span class="gl-doc-shared-tag">🤝 shared</span>' : '')
     + (d.aiAccessOptIn ? ' · <span class="gl-doc-ai-tag">AI ✓</span>' : '');
@@ -268,30 +351,125 @@ function _docRow(d){
 // ═══════════════════════════════════════════
 function docToggleFolder(f){ _docFolderOpen[f] = (_docFolderOpen[f] === false); _docRenderList(); }
 
-function docNewFolder(){
-  _docPrompt('New folder', '', 'Create', (name)=>{
+async function _docCreateFolder(name, parentId){
+  const pid = _docPid();
+  const id = _docGenId();
+  const rec = { id, ownerUid: window._currentUser.uid, projectId: pid, name: String(name).trim(),
+    parentId: parentId || null, createdAt: Date.now(), updatedAt: Date.now() };
+  window._docFoldersList.push(rec);
+  try{ await _udb().collection('docFolders').doc(id).set(rec); }catch(e){ console.warn('createFolder:', e && e.message); }
+  _docCacheFolders();
+  return rec;
+}
+
+// Create an EMPTY top-level folder — no forced upload (the old behaviour that made
+// "create folder" feel broken). The folder persists immediately and is ready to
+// upload into or move docs into.
+function docNewFolder(parentId){
+  if(!_docReady() || !_docPid() || _docPid()==='default'){
+    if(typeof showCloudBanner==='function') showCloudBanner('⚠ Open or create a real project first — folders live under a project.');
+    return;
+  }
+  _docPrompt(parentId? 'New subfolder' : 'New folder', '', 'Create', async (name)=>{
     name = (name||'').trim();
     if(!name) return;
-    _docFilterFolder = name;
-    // A folder only "exists" once it has a doc; jump straight into upload for it.
-    docPickFiles();
+    await _docCreateFolder(name, parentId||null);
+    if(parentId) _docFolderOpen[parentId] = true; // reveal the new child
+    if(window.glHaptic && window.glHaptic.light) window.glHaptic.light();
+    _docRenderLibrary();
   });
 }
+
+function docFolderMenu(id){
+  const f = _docFolderById(id); if(!f) return;
+  const ov = document.createElement('div');
+  ov.className = 'modal-overlay';
+  ov.id = '_doc-fmenu';
+  ov.innerHTML = `<div class="modal-box" style="max-width:340px">
+    <div class="modal-title">📂 ${_docEsc(f.name)}</div>
+    <div class="gl-doc-menu-list">
+      <button onclick="_docFolderCloseMenu();docUploadToFolder('${id}')">⬆ Upload into this folder</button>
+      <button onclick="_docFolderCloseMenu();docNewFolder('${id}')">📁 New subfolder</button>
+      <button onclick="_docFolderCloseMenu();docRenameFolder('${id}')">✏️ Rename folder</button>
+      <button class="gl-doc-menu-danger" onclick="_docFolderCloseMenu();docDeleteFolder('${id}')">🗑 Delete folder</button>
+    </div>
+    <div class="modal-btns"><button class="modal-cancel" onclick="_docFolderCloseMenu()">Close</button></div>
+  </div>`;
+  document.body.appendChild(ov);
+  ov.addEventListener('click', e=>{ if(e.target===ov) ov.remove(); });
+}
+function _docFolderCloseMenu(){ const m=document.getElementById('_doc-fmenu'); if(m) m.remove(); }
+
+function docUploadToFolder(id){ _docUploadFolderId = id || null; docPickFiles(); }
+
+function docRenameFolder(id){
+  const f = _docFolderById(id); if(!f) return;
+  _docPrompt('Rename folder', f.name, 'Save', async (val)=>{
+    val = (val||'').trim(); if(!val) return;
+    f.name = val; f.updatedAt = Date.now();
+    try{ await _udb().collection('docFolders').doc(id).set({ name: val, updatedAt: f.updatedAt }, { merge:true }); }catch(e){}
+    // Keep shared mirrors' folder-name string in sync for any shared docs in here.
+    const pid = _docPid();
+    for(const d of (window._docs||[]).filter(x=>x.folderId===id && x.shared)){
+      d.folder = val;
+      try{ await db.collection('projects').doc(pid).collection('docs').doc(d.id).set({ folder: val, updatedAt: Date.now() }, { merge:true }); }catch(e){}
+    }
+    _docCacheFolders(); _docCacheDocs();
+    _docRenderLibrary();
+  });
+}
+
+// Delete a folder WITHOUT losing anything: child folders + docs are reparented to
+// this folder's parent (or Unfiled if it was top-level), then the record is removed.
+function docDeleteFolder(id){
+  const f = _docFolderById(id); if(!f) return;
+  const parentId = f.parentId || null;
+  const doDelete = async ()=>{
+    const pid = _docPid();
+    // reparent child folders
+    for(const c of (window._docFoldersList||[]).filter(x=>(x.parentId||null)===id)){
+      c.parentId = parentId; c.updatedAt = Date.now();
+      try{ await _udb().collection('docFolders').doc(c.id).set({ parentId: parentId, updatedAt: c.updatedAt }, { merge:true }); }catch(e){}
+    }
+    // move docs up to the parent
+    const newName = parentId ? _docFolderName(parentId) : 'Unfiled';
+    for(const d of (window._docs||[]).filter(x=>x.folderId===id)){
+      d.folderId = parentId; d.folder = newName; d.updatedAt = Date.now();
+      try{ await _udb().collection('docs').doc(d.id).set({ folderId: parentId, folder: newName, updatedAt: d.updatedAt }, { merge:true }); }catch(e){}
+      if(d.shared){ try{ await db.collection('projects').doc(pid).collection('docs').doc(d.id).set({ folder: newName, updatedAt: d.updatedAt }, { merge:true }); }catch(e){} }
+    }
+    window._docFoldersList = (window._docFoldersList||[]).filter(x=>x.id!==id);
+    try{ await _udb().collection('docFolders').doc(id).delete(); }catch(e){}
+    _docCacheFolders(); _docCacheDocs();
+    if(typeof showCloudBanner==='function') showCloudBanner('🗑 Folder deleted — its documents moved to '+(parentId?('“'+newName+'”'):'Unfiled')+'.');
+    _docRenderLibrary();
+  };
+  const msg = 'Delete the folder "'+_docEsc(f.name)+'"? Its documents and any subfolders are kept — they move up to '+(parentId?('“'+_docEsc(newNameOf(parentId))+'”'):'Unfiled')+'. Nothing is deleted.';
+  if(typeof _confirmModal==='function') _confirmModal(msg, doDelete, '🗑 Delete folder', 'Delete');
+  else if(confirm('Delete this folder? Documents are kept and moved up.')) doDelete();
+}
+function newNameOf(pid){ return pid ? _docFolderName(pid) : 'Unfiled'; }
 
 // ═══════════════════════════════════════════
 // UPLOAD
 // ═══════════════════════════════════════════
 function docPickFiles(){ const el = document.getElementById('doc-file-input'); if(el) el.click(); }
+// Root uploader (the drop zone) always targets the current top level, never a
+// stale folder left over from a cancelled "upload into folder" dialog.
+function docPickRoot(){ _docUploadFolderId = null; docPickFiles(); }
+function docDropRoot(files){ _docUploadFolderId = null; docHandleFiles(files); }
 
 async function docHandleFiles(fileList){
   const files = Array.from(fileList || []);
+  // capture + clear the folder target immediately (a stray later pick shouldn't inherit it)
+  const targetFolderId = _docUploadFolderId; _docUploadFolderId = null;
   if(!files.length) return;
   if(!_docReady()){ if(typeof showCloudBanner==='function') showCloudBanner('⚠ Sign in and pick a project before uploading documents.'); return; }
   const pid = _docPid();
   if(!pid || pid === 'default'){ if(typeof showCloudBanner==='function') showCloudBanner('⚠ Open or create a real project first — documents are filed under a project.'); return; }
 
-  const folder = (_docFilterFolder && _docFilterFolder.trim()) || 'Unfiled';
-  _docFilterFolder = null;
+  const folderId = targetFolderId && _docFolderById(targetFolderId) ? targetFolderId : null;
+  const folderName = folderId ? _docFolderName(folderId) : 'Unfiled';
 
   const prog = document.getElementById('doc-upload-prog');
   const bar = document.getElementById('doc-upload-prog-bar');
@@ -315,7 +493,7 @@ async function docHandleFiles(fileList){
         id, ownerUid: window._currentUser.uid, projectId: pid,
         title: file.name.replace(/\.[a-z0-9]+$/i,''),
         type: _docTypeFor(ext), ext,
-        storagePath, downloadUrl, folder,
+        storagePath, downloadUrl, folderId, folder: folderName,
         size: file.size || 0,
         aiAccessOptIn: false, shared: false,
         createdAt: now, updatedAt: now
@@ -334,7 +512,8 @@ async function docHandleFiles(fileList){
   setTimeout(()=>{ if(prog) prog.style.display='none'; if(bar) bar.style.width='0%'; }, 2200);
   const fi = document.getElementById('doc-file-input'); if(fi) fi.value='';
 
-  try{ window.idbSet && window.idbSet('gl_docs::'+pid, JSON.stringify(window._docs)); }catch(e){}
+  if(folderId) _docFolderOpen[folderId] = true;
+  _docCacheDocs();
   if(window.glHaptic) window.glHaptic.success && window.glHaptic.success();
   _docRenderLibrary();
 
@@ -343,9 +522,6 @@ async function docHandleFiles(fileList){
 }
 
 // ── AI access opt-in modal ──
-// Privacy lock: sharing a doc with the team does NOT grant AI access; AI access
-// is a separate, explicit, per-document opt-in that defaults OFF. Reggie (the
-// regulatory assistant) arrives in a later phase; this stores the decision now.
 function _docShowAiOptIn(ids){
   const n = ids.length;
   const ov = document.createElement('div');
@@ -364,8 +540,8 @@ function _docShowAiOptIn(ids){
     </div></div>`;
   document.body.appendChild(ov);
   const close = ()=> ov.remove();
-  document.getElementById('_docai-later').onclick = close; // leaves default OFF
-  document.getElementById('_docai-no').onclick = close;    // already false
+  document.getElementById('_docai-later').onclick = close;
+  document.getElementById('_docai-no').onclick = close;
   document.getElementById('_docai-yes').onclick = ()=>{ ids.forEach(id => _docSetAi(id, true)); close(); };
 }
 
@@ -374,7 +550,7 @@ async function _docSetAi(id, on){
   if(!d) return;
   d.aiAccessOptIn = !!on; d.updatedAt = Date.now();
   try{ await _udb().collection('docs').doc(id).set({ aiAccessOptIn: d.aiAccessOptIn, updatedAt: d.updatedAt }, { merge:true }); }catch(e){}
-  try{ window.idbSet && window.idbSet('gl_docs::'+_docPid(), JSON.stringify(window._docs)); }catch(e){}
+  _docCacheDocs();
   _docRenderLibrary();
 }
 
@@ -401,6 +577,13 @@ async function _docSource(d){
   return { url: d.downloadUrl };
 }
 
+// ── Virtualized continuous-scroll PDF viewer (#18) ──
+// Memory-bounded: each page gets a placeholder sized from its real dimensions; only
+// pages within RENDER_MARGIN of the viewport hold a live canvas, each capped to
+// _MAX_CANVAS_PX. Pages beyond KEEP_MARGIN release their canvas. dpr clamped to 2.
+const _MAX_CANVAS_PX = 6_000_000;  // ~24 MB per canvas worst case; a few alive = safe
+const _PAGE_GAP = 10;              // px between pages (must match CSS .gl-doc-vpages gap)
+const _PAGE_PAD = 8;               // top padding of #_dv-pages (must match CSS)
 async function _docOpenPdf(d){
   const ov = document.createElement('div');
   ov.className = 'modal-overlay gl-doc-viewer';
@@ -409,137 +592,161 @@ async function _docOpenPdf(d){
     <div class="gl-doc-vbar">
       <span class="gl-doc-vtitle">${_docIcon(d)} ${_docEsc(d.title)}</span>
       <div class="gl-doc-vctrl">
-        <button id="_dv-prev" title="Previous page">‹</button>
         <span id="_dv-page" class="gl-doc-vpage">…</span>
-        <button id="_dv-next" title="Next page">›</button>
         <button id="_dv-zout" title="Zoom out">−</button>
         <button id="_dv-zin" title="Zoom in">＋</button>
         <button id="_dv-close" title="Close">✕</button>
       </div>
     </div>
-    <div class="gl-doc-vscroll" id="_dv-scroll"><canvas id="_dv-canvas"></canvas><div id="_dv-loading" class="gl-doc-vloading">Loading…</div></div>
+    <div class="gl-doc-vscroll" id="_dv-scroll"><div id="_dv-pages" class="gl-doc-vpages"></div></div>
+    <div id="_dv-loading" class="gl-doc-vloading">Loading…</div>
   </div>`;
   document.body.appendChild(ov);
   const scroll = document.getElementById('_dv-scroll');
-  const canvas = document.getElementById('_dv-canvas');
-  const ctx = canvas.getContext('2d');
+  const pagesEl = document.getElementById('_dv-pages');
   const pageLbl = document.getElementById('_dv-page');
-  let pdf=null, page=1, zoom=1, rendering=false;
+  let pdf = null, zoom = 1, numPages = 0;
+  const pages = [];   // { index, baseW, baseH, wrap, canvas, top, w, h, rendered, rendering, task }
 
   const _cleanupFns = [];
-  function cleanup(){ _cleanupFns.forEach(fn=>{ try{ fn(); }catch(e){} }); try{ if(pdf) pdf.destroy(); }catch(e){} ov.remove(); }
+  let _alive = true;
+  function cleanup(){
+    _alive = false;
+    _cleanupFns.forEach(fn=>{ try{ fn(); }catch(e){} });
+    pages.forEach(p=>{ if(p.task){ try{ p.task.cancel(); }catch(e){} } });
+    try{ if(pdf) pdf.destroy(); }catch(e){}
+    ov.remove();
+  }
   document.getElementById('_dv-close').onclick = cleanup;
-  ov.addEventListener('click', e=>{ if(e.target===ov) cleanup(); });
 
-  async function render(){
-    if(!pdf || rendering) return;
-    rendering = true;
+  const DPR = Math.min(2, window.devicePixelRatio || 1);
+  const containerW = ()=> Math.max(120, scroll.clientWidth - (_PAGE_PAD*2));
+  const cssScaleFor = m => (containerW() / m.baseW) * zoom;
+
+  function layout(){
+    let y = _PAGE_PAD;
+    pages.forEach(m=>{
+      const cssScale = cssScaleFor(m);
+      m.w = Math.round(m.baseW * cssScale);
+      m.h = Math.round(m.baseH * cssScale);
+      m.top = y;
+      if(m.wrap){ m.wrap.style.width = m.w+'px'; m.wrap.style.height = m.h+'px'; }
+      y += m.h + _PAGE_GAP;
+    });
+  }
+
+  function releaseCanvas(m){
+    if(m.task){ try{ m.task.cancel(); }catch(e){} m.task = null; }
+    m.rendering = false; m.rendered = false;
+    if(m.wrap) m.wrap.classList.remove('rendered');
+    if(m.canvas){ m.canvas.width = 0; m.canvas.height = 0; }
+  }
+
+  async function renderPage(m){
+    if(!pdf || !_alive || m.rendering || m.rendered) return;
+    m.rendering = true;
     try{
-      const pg = await pdf.getPage(page);
-      const dpr = window.devicePixelRatio || 1;
+      const pg = await pdf.getPage(m.index+1);
+      if(!_alive) return;
+      // Correct the placeholder if this page's real size differs from the estimate.
       const base = pg.getViewport({ scale:1 });
-      const fit = Math.max(0.2, (scroll.clientWidth - 12) / base.width);
-      const vp = pg.getViewport({ scale: fit * zoom * dpr });
-      canvas.width = vp.width; canvas.height = vp.height;
-      canvas.style.width = (vp.width/dpr)+'px';
-      canvas.style.height = (vp.height/dpr)+'px';
-      await pg.render({ canvasContext: ctx, viewport: vp }).promise;
-      pageLbl.textContent = page + ' / ' + pdf.numPages;
-    }catch(e){ console.warn('pdf render:', e && e.message); }
-    rendering = false;
+      if(Math.abs(base.width - m.baseW) > 1 || Math.abs(base.height - m.baseH) > 1){
+        m.baseW = base.width; m.baseH = base.height; layout();
+      }
+      const cssScale = cssScaleFor(m);
+      let renderScale = cssScale * DPR;
+      const px = (m.baseW*renderScale) * (m.baseH*renderScale);
+      if(px > _MAX_CANVAS_PX) renderScale *= Math.sqrt(_MAX_CANVAS_PX/px);
+      const vp = pg.getViewport({ scale: renderScale });
+      const c = m.canvas;
+      c.width = Math.floor(vp.width); c.height = Math.floor(vp.height);
+      const task = pg.render({ canvasContext: c.getContext('2d'), viewport: vp });
+      m.task = task;
+      await task.promise;
+      m.task = null; m.rendered = true;
+      if(m.wrap) m.wrap.classList.add('rendered');
+    }catch(e){ if(!(e && e.name==='RenderingCancelledException')) console.warn('pdf page render:', e && e.message); }
+    m.rendering = false;
   }
-  document.getElementById('_dv-prev').onclick = ()=>{ if(page>1){ page--; scroll.scrollTop=0; render(); } };
-  document.getElementById('_dv-next').onclick = ()=>{ if(pdf && page<pdf.numPages){ page++; scroll.scrollTop=0; render(); } };
-  document.getElementById('_dv-zin').onclick  = ()=>{ zoom = Math.min(5, zoom*1.3); render(); };
-  document.getElementById('_dv-zout').onclick = ()=>{ zoom = Math.max(0.5, zoom/1.3); render(); };
 
-  // Re-render at newZoom while keeping the focal point — captured BEFORE the
-  // gesture as a ratio (rx,ry) of the page that was under the client point
-  // (fx,fy) — stationary on screen. getBoundingClientRect deltas handle the
-  // margin-auto centering + padding without manual math.
-  async function _zoomTo(newZoom, fx, fy, rx, ry){
-    zoom = Math.min(5, Math.max(0.5, newZoom));
-    await render();
-    const nr = canvas.getBoundingClientRect();
-    scroll.scrollLeft += (nr.left + rx * nr.width)  - fx;
-    scroll.scrollTop  += (nr.top  + ry * nr.height) - fy;
+  const RENDER_MARGIN = 1400;  // pre-render this far above/below the viewport
+  const KEEP_MARGIN = 2800;    // release canvases beyond this
+  function updateVisible(){
+    if(!_alive) return;
+    const st = scroll.scrollTop, vh = scroll.clientHeight;
+    pages.forEach(m=>{
+      const top = m.top, bot = m.top + m.h;
+      const near = bot > st - RENDER_MARGIN && top < st + vh + RENDER_MARGIN;
+      const keep = bot > st - KEEP_MARGIN && top < st + vh + KEEP_MARGIN;
+      if(near) renderPage(m);
+      else if(!keep && (m.rendered || m.rendering)) releaseCanvas(m);
+    });
+    if(numPages){
+      const mid = st + vh/2;
+      let cur = 1;
+      for(let i=0;i<pages.length;i++){ if(pages[i].top <= mid) cur = i+1; else break; }
+      pageLbl.textContent = cur + ' / ' + numPages;
+    }
   }
-  const _focusRatio = (cx, cy)=>{
-    const r = canvas.getBoundingClientRect();
-    return {
-      rx: r.width  ? Math.min(1, Math.max(0, (cx - r.left)/r.width))  : 0.5,
-      ry: r.height ? Math.min(1, Math.max(0, (cy - r.top)/r.height)) : 0,
-      ox: cx - r.left, oy: cy - r.top
-    };
-  };
 
-  // Pinch-to-zoom + one-finger pan (iOS/touch). Smooth CSS transform during the
-  // gesture, crisp focal-preserving re-render at the end; panning uses native
-  // scroll (touch-action:pan-x pan-y so the browser won't also page-zoom).
-  let _pDist = 0, _pZoom = 1, _pinching = false, _pFx = 0, _pFy = 0, _pRx = 0.5, _pRy = 0;
+  let _scrollRaf = 0;
+  scroll.addEventListener('scroll', ()=>{
+    if(_scrollRaf) return;
+    _scrollRaf = requestAnimationFrame(()=>{ _scrollRaf = 0; updateVisible(); });
+  });
+
+  function setZoom(nz){
+    nz = Math.min(6, Math.max(0.4, nz));
+    if(Math.abs(nz - zoom) < 0.001) return;
+    // anchor on the page at the top of the viewport so it stays put across the zoom
+    const st = scroll.scrollTop;
+    let anchor = 0, frac = 0;
+    for(let i=0;i<pages.length;i++){ if(pages[i].top <= st){ anchor = i; frac = (st - pages[i].top) / (pages[i].h||1); } else break; }
+    zoom = nz;
+    pages.forEach(releaseCanvas);
+    layout();
+    scroll.scrollTop = pages[anchor].top + frac * pages[anchor].h;
+    updateVisible();
+  }
+  document.getElementById('_dv-zin').onclick  = ()=> setZoom(zoom*1.25);
+  document.getElementById('_dv-zout').onclick = ()=> setZoom(zoom/1.25);
+
+  // Desktop: ctrl/cmd + wheel zooms (trackpad pinch arrives as ctrl+wheel); plain
+  // wheel scrolls natively (no preventDefault).
+  scroll.addEventListener('wheel', e=>{
+    if(!pdf) return;
+    if(e.ctrlKey || e.metaKey){ e.preventDefault(); setZoom(zoom * (e.deltaY < 0 ? 1.12 : 1/1.12)); }
+  }, { passive:false });
+
+  // Touch pinch-zoom: live CSS transform on the pages container for feedback,
+  // commit a crisp re-render on release. Anchored to the current top page.
+  let _pinching = false, _pDist = 0, _pZoom = 1;
   const _tDist = t => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
   scroll.addEventListener('touchstart', e=>{
-    if(e.touches.length===2){
-      _pinching = true; _pDist = _tDist(e.touches) || 1; _pZoom = zoom;
-      _pFx = (e.touches[0].clientX + e.touches[1].clientX)/2;
-      _pFy = (e.touches[0].clientY + e.touches[1].clientY)/2;
-      const f = _focusRatio(_pFx, _pFy);
-      _pRx = f.rx; _pRy = f.ry;
-      canvas.style.transformOrigin = f.ox + 'px ' + f.oy + 'px';
-      e.preventDefault();
-    }
+    if(e.touches.length===2){ _pinching = true; _pDist = _tDist(e.touches) || 1; _pZoom = zoom; pagesEl.style.transformOrigin = 'center top'; e.preventDefault(); }
   }, { passive:false });
   scroll.addEventListener('touchmove', e=>{
     if(_pinching && e.touches.length===2){
       e.preventDefault();
-      let ratio = _tDist(e.touches) / _pDist;
-      ratio = Math.min(Math.max(ratio, 0.5/_pZoom), 5/_pZoom);   // keep final zoom in [0.5, 5]
-      canvas.style.transform = 'scale(' + ratio + ')';
+      let r = _tDist(e.touches) / _pDist;
+      r = Math.min(Math.max(r, 0.4/_pZoom), 6/_pZoom);
+      pagesEl.style.transform = 'scale(' + r + ')';
     }
   }, { passive:false });
   const _endPinch = ()=>{
     if(!_pinching) return;
     _pinching = false;
-    const m = (canvas.style.transform.match(/scale\(([^)]+)\)/) || [])[1];
-    canvas.style.transform = ''; canvas.style.transformOrigin = '';
-    _zoomTo(_pZoom * (m ? parseFloat(m) : 1), _pFx, _pFy, _pRx, _pRy);
+    const m = (pagesEl.style.transform.match(/scale\(([^)]+)\)/) || [])[1];
+    pagesEl.style.transform = ''; pagesEl.style.transformOrigin = '';
+    setZoom(_pZoom * (m ? parseFloat(m) : 1));
   };
   scroll.addEventListener('touchend', e=>{ if(_pinching && e.touches.length<2) _endPinch(); }, { passive:false });
   scroll.addEventListener('touchcancel', _endPinch, { passive:false });
 
-  // Desktop (PWA): mouse-wheel zoom (live CSS transform for feedback, crisp
-  // focal-preserving re-render when the wheel settles) + click-drag pan.
-  let _wTimer = null, _wScale = 1, _wFx = 0, _wFy = 0, _wRx = 0.5, _wRy = 0;
-  scroll.addEventListener('wheel', e=>{
-    if(!pdf) return;
-    e.preventDefault();
-    if(_wScale === 1){                       // start of a wheel burst — capture focus
-      const f = _focusRatio(e.clientX, e.clientY);
-      _wFx = e.clientX; _wFy = e.clientY; _wRx = f.rx; _wRy = f.ry;
-      canvas.style.transformOrigin = f.ox + 'px ' + f.oy + 'px';
-    }
-    const factor = e.deltaY < 0 ? 1.12 : 1/1.12;
-    _wScale = Math.min(5/zoom, Math.max(0.5/zoom, _wScale * factor));
-    canvas.style.transform = 'scale(' + _wScale + ')';
-    clearTimeout(_wTimer);
-    _wTimer = setTimeout(()=>{
-      canvas.style.transform = ''; canvas.style.transformOrigin = '';
-      const target = zoom * _wScale; _wScale = 1;
-      _zoomTo(target, _wFx, _wFy, _wRx, _wRy);
-    }, 150);
-  }, { passive:false });
-
-  let _drag = false, _dx = 0, _dy = 0, _dsl = 0, _dst = 0;
-  scroll.addEventListener('mousedown', e=>{
-    _drag = true; _dx = e.clientX; _dy = e.clientY; _dsl = scroll.scrollLeft; _dst = scroll.scrollTop;
-    scroll.style.cursor = 'grabbing'; e.preventDefault();
-  });
-  const _onMove = e=>{ if(!_drag) return; scroll.scrollLeft = _dsl - (e.clientX - _dx); scroll.scrollTop = _dst - (e.clientY - _dy); };
-  const _onUp   = ()=>{ if(_drag){ _drag = false; scroll.style.cursor = 'grab'; } };
-  window.addEventListener('mousemove', _onMove);
-  window.addEventListener('mouseup', _onUp);
-  _cleanupFns.push(()=>window.removeEventListener('mousemove', _onMove));
-  _cleanupFns.push(()=>window.removeEventListener('mouseup', _onUp));
+  // Re-fit on rotation / resize.
+  const _onResize = ()=>{ if(!_alive) return; const st = scroll.scrollTop; let a=0,fr=0; for(let i=0;i<pages.length;i++){ if(pages[i].top<=st){a=i;fr=(st-pages[i].top)/(pages[i].h||1);} else break; } layout(); if(pages[a]) scroll.scrollTop = pages[a].top + fr*pages[a].h; updateVisible(); };
+  window.addEventListener('resize', _onResize);
+  _cleanupFns.push(()=> window.removeEventListener('resize', _onResize));
 
   try{
     const pdfjsLib = await _loadPdfjs();
@@ -548,8 +755,26 @@ async function _docOpenPdf(d){
     if(src.blob){ params = { data: new Uint8Array(await src.blob.arrayBuffer()), ..._PDF_DOC_OPTS }; }
     else { params = { url: src.url, ..._PDF_DOC_OPTS }; }
     pdf = await pdfjsLib.getDocument(params).promise;
+    if(!_alive){ try{ pdf.destroy(); }catch(e){} return; }
+    numPages = pdf.numPages;
+
+    // Estimate every placeholder from page 1's size (corrected per-page on render).
+    const p1 = await pdf.getPage(1);
+    const b = p1.getViewport({ scale:1 });
+    for(let i=0;i<numPages;i++){
+      const wrap = document.createElement('div');
+      wrap.className = 'gl-doc-vpage-wrap';
+      const canvas = document.createElement('canvas');
+      const spin = document.createElement('div');
+      spin.className = 'gl-doc-vpage-spin';
+      spin.textContent = 'Page ' + (i+1);
+      wrap.appendChild(canvas); wrap.appendChild(spin);
+      pagesEl.appendChild(wrap);
+      pages.push({ index:i, baseW:b.width, baseH:b.height, wrap, canvas, top:0, w:0, h:0, rendered:false, rendering:false, task:null });
+    }
     const ld = document.getElementById('_dv-loading'); if(ld) ld.remove();
-    await render();
+    layout();
+    updateVisible();
   }catch(e){
     const ld = document.getElementById('_dv-loading');
     if(ld) ld.textContent = 'Could not open this PDF' + (navigator.onLine ? '' : ' (offline — pin it for offline first)') + '.';
@@ -628,14 +853,14 @@ async function docToggleShare(id){
     if(willShare){
       const m = { id:d.id, ownerUid: d.ownerUid, projectId: pid, title: d.title,
         type: d.type, ext: d.ext, storagePath: d.storagePath, downloadUrl: d.downloadUrl,
-        folder: d.folder||'Unfiled', size: d.size||0, shared:true, createdAt: d.createdAt||Date.now(), updatedAt: Date.now() };
+        folder: _docFolderName(d.folderId), size: d.size||0, shared:true, createdAt: d.createdAt||Date.now(), updatedAt: Date.now() };
       await mref.set(m);
     } else {
       await mref.delete();
     }
     d.shared = willShare; d.updatedAt = Date.now();
     await _udb().collection('docs').doc(id).set({ shared: willShare, updatedAt: d.updatedAt }, { merge:true });
-    try{ window.idbSet && window.idbSet('gl_docs::'+pid, JSON.stringify(window._docs)); }catch(e){}
+    _docCacheDocs();
     if(window.glHaptic && window.glHaptic.light) window.glHaptic.light();
     if(typeof showCloudBanner==='function') showCloudBanner(willShare?'🤝 Shared with the project.':'Stopped sharing with the project.');
   }catch(e){ if(typeof showCloudBanner==='function') showCloudBanner('⚠ Share failed ('+(e&&e.message||'error')+').'); }
@@ -653,7 +878,6 @@ async function _docLoadShared(pid){
   _docRenderSharedBody();
 }
 
-// Fills the Shared-by-teammates CARD body (its own section, card #3).
 function _docRenderSharedBody(){
   const box = document.getElementById('doc-shared-body');
   if(!box) return;
@@ -683,8 +907,6 @@ function _docSharedRow(d){
 // ═══════════════════════════════════════════
 // PER-DOC MENU  (open / offline / share / rename / move / AI / delete)
 // ═══════════════════════════════════════════
-// One menu for own + teammates' shared docs — keeps rows to a single ⋯ button.
-// Open/Offline/Share live here now (used to be always-present row buttons).
 function docMenu(id){
   let d = (window._docs||[]).find(x=>x.id===id);
   const own = !!d;
@@ -724,22 +946,61 @@ function docRename(id){
     d.title = val; d.updatedAt = Date.now();
     try{ await _udb().collection('docs').doc(id).set({ title: val, updatedAt: d.updatedAt }, { merge:true }); }catch(e){}
     if(d.shared){ try{ await db.collection('projects').doc(_docPid()).collection('docs').doc(id).set({ title: val, updatedAt: d.updatedAt }, { merge:true }); }catch(e){} }
-    try{ window.idbSet && window.idbSet('gl_docs::'+_docPid(), JSON.stringify(window._docs)); }catch(e){}
+    _docCacheDocs();
     _docRenderLibrary();
   });
 }
+
+// Move = a real folder PICKER (the old text-prompt couldn't pick existing folders).
 function docMove(id){
   const d = (window._docs||[]).find(x=>x.id===id); if(!d) return;
   _docCloseMenu();
-  _docPrompt('Move to folder', d.folder||'Unfiled', 'Move', async (val)=>{
-    val = (val||'').trim() || 'Unfiled';
-    d.folder = val; d.updatedAt = Date.now();
-    try{ await _udb().collection('docs').doc(id).set({ folder: val, updatedAt: d.updatedAt }, { merge:true }); }catch(e){}
-    if(d.shared){ try{ await db.collection('projects').doc(_docPid()).collection('docs').doc(id).set({ folder: val, updatedAt: d.updatedAt }, { merge:true }); }catch(e){} }
-    try{ window.idbSet && window.idbSet('gl_docs::'+_docPid(), JSON.stringify(window._docs)); }catch(e){}
-    _docRenderLibrary();
+  let opts = `<button class="gl-doc-pick${!d.folderId?' cur':''}" onclick="_docMoveTo('${id}','')">🗂 Unfiled (no folder)</button>`;
+  const walk = (parentId, depth)=>{
+    _docChildFolders(parentId).forEach(f=>{
+      opts += `<button class="gl-doc-pick${d.folderId===f.id?' cur':''}" style="padding-left:${13+depth*16}px" onclick="_docMoveTo('${id}','${f.id}')">📂 ${_docEsc(f.name)}</button>`;
+      walk(f.id, depth+1);
+    });
+  };
+  walk(null, 0);
+  const ov = document.createElement('div');
+  ov.className = 'modal-overlay';
+  ov.id = '_doc-move';
+  ov.innerHTML = `<div class="modal-box" style="max-width:380px">
+    <div class="modal-title">📂 Move “${_docEsc(d.title)}”</div>
+    <div class="gl-doc-pick-list">${opts}</div>
+    <div class="modal-btns" style="gap:8px">
+      <button class="modal-cancel" onclick="document.getElementById('_doc-move').remove()">Cancel</button>
+      <button class="modal-confirm" onclick="_docMoveNewFolder('${id}')">＋ New folder…</button>
+    </div>
+  </div>`;
+  document.body.appendChild(ov);
+  ov.addEventListener('click', e=>{ if(e.target===ov) ov.remove(); });
+}
+function _docMoveClose(){ const m=document.getElementById('_doc-move'); if(m) m.remove(); }
+
+async function _docMoveTo(id, folderId){
+  const d = (window._docs||[]).find(x=>x.id===id); if(!d) return;
+  _docMoveClose();
+  const fid = folderId || null;
+  const name = fid ? _docFolderName(fid) : 'Unfiled';
+  d.folderId = fid; d.folder = name; d.updatedAt = Date.now();
+  try{ await _udb().collection('docs').doc(id).set({ folderId: fid, folder: name, updatedAt: d.updatedAt }, { merge:true }); }catch(e){}
+  if(d.shared){ try{ await db.collection('projects').doc(_docPid()).collection('docs').doc(id).set({ folder: name, updatedAt: d.updatedAt }, { merge:true }); }catch(e){} }
+  if(fid) _docFolderOpen[fid] = true;
+  _docCacheDocs();
+  if(window.glHaptic && window.glHaptic.light) window.glHaptic.light();
+  _docRenderLibrary();
+}
+function _docMoveNewFolder(id){
+  _docMoveClose();
+  _docPrompt('New folder', '', 'Create & move', async (name)=>{
+    name = (name||'').trim(); if(!name) return;
+    const f = await _docCreateFolder(name, null);
+    _docMoveTo(id, f.id);
   });
 }
+
 function docDelete(id){
   const d = (window._docs||[]).find(x=>x.id===id); if(!d) return;
   _docCloseMenu();
@@ -751,7 +1012,7 @@ function docDelete(id){
     try{ await idbKvDel(id, _docBlobStore); }catch(e){}
     _docOfflineIds.delete(id);
     window._docs = (window._docs||[]).filter(x=>x.id!==id);
-    try{ window.idbSet && window.idbSet('gl_docs::'+pid, JSON.stringify(window._docs)); }catch(e){}
+    _docCacheDocs();
     if(typeof showCloudBanner==='function') showCloudBanner('🗑 Document deleted.');
     _docRenderLibrary();
   };
@@ -780,9 +1041,6 @@ function _docPrompt(title, value, okLabel, onOk){
 }
 
 // ── Privacy: purge pinned offline blobs on account switch / sign-out ──
-// The uid-fence's idbClearAll() only clears idb-keyval's DEFAULT store; our
-// pinned doc blobs live in a separate store, so they must be purged here too or
-// they'd be cross-account residue (the f73334d incident's failure mode).
 window._docsPurgeOffline = function(){
   _docOfflineIds = new Set();
   try { return idbKvClear(_docBlobStore); } catch(e){ return Promise.resolve(); }
@@ -792,15 +1050,25 @@ window._docsPurgeOffline = function(){
 window.glRenderDocsPage = glRenderDocsPage;
 window.docSearch = docSearch;
 window.docPickFiles = docPickFiles;
+window.docPickRoot = docPickRoot;
+window.docDropRoot = docDropRoot;
 window.docHandleFiles = docHandleFiles;
 window.docOpen = docOpen;
 window.docToggleOffline = docToggleOffline;
 window.docToggleShare = docToggleShare;
 window.docToggleFolder = docToggleFolder;
+window.docToggleCard = docToggleCard;
 window.docNewFolder = docNewFolder;
+window.docFolderMenu = docFolderMenu;
+window._docFolderCloseMenu = _docFolderCloseMenu;
+window.docUploadToFolder = docUploadToFolder;
+window.docRenameFolder = docRenameFolder;
+window.docDeleteFolder = docDeleteFolder;
 window.docMenu = docMenu;
 window._docCloseMenu = _docCloseMenu;
 window.docRename = docRename;
 window.docMove = docMove;
+window._docMoveTo = _docMoveTo;
+window._docMoveNewFolder = _docMoveNewFolder;
 window.docDelete = docDelete;
 window._docToggleAiFromMenu = _docToggleAiFromMenu;
