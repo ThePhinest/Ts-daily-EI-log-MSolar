@@ -727,17 +727,30 @@ async function _docOpenPdf(d){
     _scrollRaf = requestAnimationFrame(()=>{ _scrollRaf = 0; updateVisible(); });
   });
 
-  function setZoom(nz){
+  // Zoom toward a focal client point (fx,fy) — keeps that spot under the cursor /
+  // pinch center fixed (a getBoundingClientRect delta on the anchor page handles
+  // the padding/gap/centering math). Omit fx/fy to zoom about the viewport center
+  // (the +/- buttons). layout() resizes wrappers first so existing canvases CSS-
+  // scale instantly (no white flash), then visible pages re-render crisp.
+  function setZoom(nz, fx, fy){
     nz = Math.min(6, Math.max(0.4, nz));
     if(Math.abs(nz - zoom) < 0.001) return;
-    // anchor on the page at the top of the viewport so it stays put across the zoom
-    const st = scroll.scrollTop;
-    let anchor = 0, frac = 0;
-    for(let i=0;i<pages.length;i++){ if(pages[i].top <= st){ anchor = i; frac = (st - pages[i].top) / (pages[i].h||1); } else break; }
+    const rect = scroll.getBoundingClientRect();
+    const useX = (fx==null) ? rect.left + rect.width/2  : fx;
+    const useY = (fy==null) ? rect.top  + rect.height/2 : fy;
+    const sy = scroll.scrollTop + (useY - rect.top);
+    let m = pages[0];
+    for(let i=0;i<pages.length;i++){ if(pages[i].top <= sy) m = pages[i]; else break; }
+    if(!m){ zoom = nz; layout(); updateVisible(); return; }
+    const r0 = m.wrap.getBoundingClientRect();
+    const rx = r0.width  ? Math.min(1, Math.max(0, (useX - r0.left)/r0.width))  : 0.5;
+    const ry = r0.height ? Math.min(1, Math.max(0, (useY - r0.top )/r0.height)) : 0;
     zoom = nz;
-    layout();   // resize wrappers — existing canvases CSS-scale instantly (soft), no white flash
-    scroll.scrollTop = pages[anchor].top + frac * pages[anchor].h;
-    updateVisible();  // re-render visible pages crisply at the new zoom (renderedZoom mismatch)
+    layout();
+    const r1 = m.wrap.getBoundingClientRect();   // forces reflow → new geometry
+    scroll.scrollLeft += (r1.left + rx*r1.width)  - useX;
+    scroll.scrollTop  += (r1.top  + ry*r1.height) - useY;
+    updateVisible();
   }
   document.getElementById('_dv-zin').onclick  = ()=> setZoom(zoom*1.25);
   document.getElementById('_dv-zout').onclick = ()=> setZoom(zoom/1.25);
@@ -746,15 +759,20 @@ async function _docOpenPdf(d){
   // wheel scrolls natively (no preventDefault).
   scroll.addEventListener('wheel', e=>{
     if(!pdf) return;
-    if(e.ctrlKey || e.metaKey){ e.preventDefault(); setZoom(zoom * (e.deltaY < 0 ? 1.12 : 1/1.12)); }
+    if(e.ctrlKey || e.metaKey){ e.preventDefault(); setZoom(zoom * (e.deltaY < 0 ? 1.12 : 1/1.12), e.clientX, e.clientY); }
   }, { passive:false });
 
   // Touch pinch-zoom: live CSS transform on the pages container for feedback,
   // commit a crisp re-render on release. Anchored to the current top page.
-  let _pinching = false, _pDist = 0, _pZoom = 1;
+  let _pinching = false, _pDist = 0, _pZoom = 1, _pCx = 0, _pCy = 0;
   const _tDist = t => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
   scroll.addEventListener('touchstart', e=>{
-    if(e.touches.length===2){ _pinching = true; _pDist = _tDist(e.touches) || 1; _pZoom = zoom; pagesEl.style.transformOrigin = 'center top'; e.preventDefault(); }
+    if(e.touches.length===2){
+      _pinching = true; _pDist = _tDist(e.touches) || 1; _pZoom = zoom;
+      _pCx = (e.touches[0].clientX + e.touches[1].clientX)/2;
+      _pCy = (e.touches[0].clientY + e.touches[1].clientY)/2;
+      pagesEl.style.transformOrigin = 'center top'; e.preventDefault();
+    }
   }, { passive:false });
   scroll.addEventListener('touchmove', e=>{
     if(_pinching && e.touches.length===2){
@@ -769,7 +787,7 @@ async function _docOpenPdf(d){
     _pinching = false;
     const m = (pagesEl.style.transform.match(/scale\(([^)]+)\)/) || [])[1];
     pagesEl.style.transform = ''; pagesEl.style.transformOrigin = '';
-    setZoom(_pZoom * (m ? parseFloat(m) : 1));
+    setZoom(_pZoom * (m ? parseFloat(m) : 1), _pCx, _pCy);
   };
   scroll.addEventListener('touchend', e=>{ if(_pinching && e.touches.length<2) _endPinch(); }, { passive:false });
   scroll.addEventListener('touchcancel', _endPinch, { passive:false });
