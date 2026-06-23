@@ -597,8 +597,8 @@ async function _docSource(d){
 // Memory-bounded: each page gets a placeholder sized from its real dimensions; only
 // pages within RENDER_MARGIN of the viewport hold a live canvas, each capped to
 // _MAX_CANVAS_PX. Pages beyond KEEP_MARGIN release their canvas. dpr clamped to 2.
-const _MAX_CANVAS_PX = 4_000_000;  // ~16 MB per canvas worst case
-const _MAX_LIVE = 5;               // never hold more than this many rendered canvases at once
+const _MAX_CANVAS_PX = 3_000_000;  // ~12 MB per canvas worst case
+const _MAX_LIVE = 3;               // never hold more than this many rendered canvases at once
 const _PAGE_GAP = 10;              // px between pages (must match CSS .gl-doc-vpages gap)
 const _PAGE_PAD = 8;               // top padding of #_dv-pages (must match CSS)
 async function _docOpenPdf(d){
@@ -657,6 +657,12 @@ async function _docOpenPdf(d){
     m.rendering = false; m.rendered = false; m.renderedZoom = undefined;
     if(m.wrap) m.wrap.classList.remove('rendered');
     if(m.canvas){ m.canvas.width = 0; m.canvas.height = 0; }
+    // CRITICAL on iOS: free pdf.js's per-page decoded images/fonts. Without this
+    // the document's internal cache climbs as you scroll an image-heavy plan set
+    // (aerial backgrounds) until the WebView OOM-reloads — independent of the
+    // canvas cap. cleanup() releases that page's render data; getPage re-creates
+    // it cheaply if we scroll back.
+    if(m.page){ try{ m.page.cleanup(); }catch(e){} m.page = null; }
   }
 
   // ── Serialized render queue — THE memory-safety mechanism ──
@@ -698,6 +704,7 @@ async function _docOpenPdf(d){
     try{
       const pg = await pdf.getPage(m.index+1);
       if(!_alive){ m.rendering = false; return; }
+      m.page = pg;   // held so releaseCanvas can pg.cleanup() its decoded data later
       // Correct the placeholder if this page's real size differs from the estimate.
       const base = pg.getViewport({ scale:1 });
       if(Math.abs(base.width - m.baseW) > 1 || Math.abs(base.height - m.baseH) > 1){
