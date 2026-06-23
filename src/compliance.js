@@ -362,15 +362,15 @@ function clRenderTrackerCard(search){
       .filter(e=>(e.categoryId===t.categoryId)&&e.entryType!=='planned'&&((e.state||(dcs?dcs.id:null))===sid))
       .reduce((s,e)=>s+((typeof trEntryMeasure==='function')?trEntryMeasure(e,t.displayUnit,pid):0),0);
     t.stateTotals=childStates.map(s=>({label:s.label,color:s.color,value:stateTotal(s.id)}));
-    if(mode==='running-balance'){
-      const term=childStates[childStates.length-1];
-      const active=childStates.slice(0,-1).length?childStates.slice(0,-1):[childStates[0]];
-      const net=Math.max(0,active.reduce((s,st)=>s+stateTotal(st.id),0)-(childStates.length>1?stateTotal(term.id):0));
-      t.headlineMode='area'; t.headlineVal=net;
-    } else if(mode==='running-total'){
-      // Cumulative — active states only, never subtract the terminal (Stabilized) state.
-      const active=childStates.slice(0,-1).length?childStates.slice(0,-1):[childStates[0]];
-      t.headlineMode='area'; t.headlineVal=active.reduce((s,st)=>s+stateTotal(st.id),0);
+    if(mode==='running-balance'||mode==='running-total'){
+      // Signed sum by per-state countMode: Total = Σ(add) − Σ(subtract); 'none' is ignored.
+      let add=0,sub=0;
+      childStates.forEach((st,idx)=>{
+        const cm=(typeof tcStateCountMode==='function')?tcStateCountMode(st,idx,childStates,mode):'add';
+        const v=stateTotal(st.id);
+        if(cm==='add') add+=v; else if(cm==='subtract') sub+=v;
+      });
+      t.headlineMode='area'; t.headlineVal=Math.max(0,add-sub);
     } else if(t.plannedValue>0 && childStates.length){
       t.headlineMode='pct'; t.headlinePct=Math.min(100,(stateTotal(childStates[childStates.length-1].id)/t.plannedValue)*100);
     } else {
@@ -657,48 +657,35 @@ function _catStateBars(cid, g, pid){
   const planTotal=planned.reduce((s,e)=>s+measure(e),0);
   const stateTotal=(sid)=>installed.filter(e=>(e.state||(dcs?dcs.id:null))===sid).reduce((s,e)=>s+measure(e),0);
 
-  if(mode==='running-balance'){
-    const terminal=childStates[childStates.length-1];
-    const activeStates=childStates.slice(0,-1).length?childStates.slice(0,-1):[childStates[0]];
-    const activeTotal=activeStates.reduce((s,st)=>s+stateTotal(st.id),0);
-    const resolvedTotal=childStates.length>1?stateTotal(terminal.id):0;
-    const net=Math.max(0,activeTotal-resolvedTotal);
+  if(mode==='running-balance'||mode==='running-total'){
+    // Signed sum by per-state countMode: Total open = Σ(add) − Σ(subtract); 'none' is
+    // tracked but not counted. countMode is editable per state; falls back to the old
+    // positional rule for legacy categories (see tcStateCountMode).
+    let add=0,sub=0;
+    const chips=childStates.map((st,idx)=>{
+      const cm=(typeof tcStateCountMode==='function')?tcStateCountMode(st,idx,childStates,mode):'add';
+      const v=stateTotal(st.id);
+      if(cm==='add') add+=v; else if(cm==='subtract') sub+=v;
+      if(v<=0 && cm==='none') return '';
+      const c=(st.color&&/^#[0-9A-Fa-f]{6}$/.test(st.color))?st.color:'var(--muted)';
+      const sign=cm==='add'?'+':(cm==='subtract'?'−':'·');
+      const scol=cm==='subtract'?'var(--green,#27AE60)':(cm==='none'?'var(--muted)':'var(--text)');
+      return `<span style="display:inline-flex;align-items:center;gap:3px;font-family:var(--mono);font-size:9px;color:${scol}"><span style="display:inline-block;width:7px;height:7px;border-radius:2px;background:${c}"></span>${st.label}: ${sign}${fmt(v)}</span>`;
+    }).filter(Boolean).join('');
+    const net=Math.max(0,add-sub);
     const cap=cat.disturbanceCap;
     const over=cap!=null&&net>cap;
     const pct=cap!=null&&cap>0?Math.min(100,(net/cap)*100):(net>0?100:0);
     const color=over?'#e74c3c':(net>0?'var(--amber)':'var(--muted)');
-    const lhs=childStates.length>1?`${activeStates.map(s=>s.label).join('+')} − ${terminal.label}`:activeStates[0].label;
+    const headLabel=mode==='running-total'?'Disturbed (cumulative)':'Open disturbed';
     const capText=cap!=null?` / ${fmt(cap)} limit`:'';
     return `<div style="padding:6px 16px 8px;background:var(--s1)">
       <div style="display:flex;justify-content:space-between;font-family:var(--mono);font-size:9px;color:var(--muted);margin-bottom:3px">
-        <span>${lhs}: <b style="color:${color}">${fmt(net)}</b>${capText}</span>
+        <span>${headLabel}: <b style="color:${color}">${fmt(net)}</b>${capText}</span>
         ${over?`<span style="color:#e74c3c;font-weight:700">⚠ OVER LIMIT</span>`:(cap!=null?`<span style="color:${color}">${pct.toFixed(0)}%</span>`:'')}
       </div>
       ${cap!=null?`<div style="height:4px;background:var(--border);border-radius:2px;overflow:hidden"><div style="height:100%;width:${pct.toFixed(1)}%;background:${color};border-radius:2px"></div></div>`:''}
-    </div>`;
-  }
-
-  if(mode==='running-total'){
-    // Cumulative — active states only, never subtract the terminal (Stabilized) state.
-    const activeStates=childStates.slice(0,-1).length?childStates.slice(0,-1):[childStates[0]];
-    const total=activeStates.reduce((s,st)=>s+stateTotal(st.id),0);
-    const cap=cat.disturbanceCap;
-    const over=cap!=null&&total>cap;
-    const pct=cap!=null&&cap>0?Math.min(100,(total/cap)*100):(total>0?100:0);
-    const color=over?'#e74c3c':(total>0?'var(--amber)':'var(--muted)');
-    const lhs=activeStates.map(s=>s.label).join('+')+' (cumulative)';
-    const capText=cap!=null?` / ${fmt(cap)} limit`:'';
-    // Show the terminal (Stabilized) state as an informational chip — tracked, not subtracted.
-    const terminal=childStates[childStates.length-1];
-    const termTot=childStates.length>1?stateTotal(terminal.id):0;
-    const termChip=termTot>0?`<div style="font-family:var(--mono);font-size:9px;color:var(--muted);margin-top:3px"><span style="display:inline-block;width:7px;height:7px;border-radius:2px;background:${(terminal.color&&/^#[0-9A-Fa-f]{6}$/.test(terminal.color))?terminal.color:'var(--muted)'};margin-right:3px"></span>${terminal.label}: ${fmt(termTot)} (not deducted)</div>`:'';
-    return `<div style="padding:6px 16px 8px;background:var(--s1)">
-      <div style="display:flex;justify-content:space-between;font-family:var(--mono);font-size:9px;color:var(--muted);margin-bottom:3px">
-        <span>${lhs}: <b style="color:${color}">${fmt(total)}</b>${capText}</span>
-        ${over?`<span style="color:#e74c3c;font-weight:700">⚠ OVER LIMIT</span>`:(cap!=null?`<span style="color:${color}">${pct.toFixed(0)}%</span>`:'')}
-      </div>
-      ${cap!=null?`<div style="height:4px;background:var(--border);border-radius:2px;overflow:hidden"><div style="height:100%;width:${pct.toFixed(1)}%;background:${color};border-radius:2px"></div></div>`:''}
-      ${termChip}
+      ${chips?`<div style="display:flex;flex-wrap:wrap;gap:4px 10px;margin-top:5px">${chips}</div>`:''}
     </div>`;
   }
 

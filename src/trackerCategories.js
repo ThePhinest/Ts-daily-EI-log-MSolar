@@ -220,12 +220,18 @@ function tcTemplateSchema(template, measurementType){
     },
     disturbance: {
       measurementType:'area', trackMaterial:false, statePatterns:false,
-      progressMode:'running-balance', overallMode:'terminal',
+      progressMode:'running-balance', overallMode:'terminal', noPlan:true,
       disturbanceCap:null, capUnit:'ac', phases:[], methods:[],
+      // SWPPP disturbance (2026-06-23): NO plan baseline — "plan = actual disturbed",
+      // so the first thing drawn IS Active disturbed (noPlan:true). Active+Inactive =
+      // open disturbance; any stabilization (temp/final/closeout) subtracts (Forest's
+      // call). Total open = Σ(add) − Σ(subtract). countMode editable per state.
       states:[
-        {label:'Planned',    color:'#8E9BA3', isPlanned:true},
-        {label:'Disturbed',  color:'#E67E22'},
-        {label:'Stabilized', color:'#27AE60'}
+        {label:'Active disturbed',       color:'#E67E22', countMode:'add'},
+        {label:'Inactive disturbed',     color:'#C0392B', countMode:'add'},
+        {label:'Temporary stabilization',color:'#F1C40F', countMode:'subtract'},
+        {label:'Final stabilization',    color:'#27AE60', countMode:'subtract'},
+        {label:'Closeout (80% veg)',     color:'#1E8449', countMode:'subtract'}
       ]
     },
     // Like 'disturbance' but cumulative — overlays only ADD (Stabilized never
@@ -335,8 +341,27 @@ function tcOverallMode(catOrId, projectId){
   return _tcResolve(catOrId, projectId)?.overallMode || 'terminal';
 }
 
+// How a state affects a running total: 'add' | 'subtract' | 'none' (tracked, not counted).
+// Explicit state.countMode wins. Otherwise derive from the old positional rule so existing
+// categories compute exactly as before: running-balance → last state subtracts, others add;
+// running-total → last state is informational (none), others add. `childStates` must be the
+// non-planned states in order; `idx` is this state's index within them.
+function tcStateCountMode(state, idx, childStates, mode){
+  if(state && (state.countMode==='add'||state.countMode==='subtract'||state.countMode==='none')) return state.countMode;
+  const isLast = idx === (childStates.length - 1);
+  if(mode==='running-balance') return isLast ? 'subtract' : 'add';
+  if(mode==='running-total')   return isLast ? 'none' : 'add';
+  return 'add';
+}
+
 function tcStatePatterns(catOrId, projectId){
   return _tcResolve(catOrId, projectId)?.statePatterns === true;
+}
+
+// No plan baseline: the category has no separate "plan" state/polygon — drawings go
+// straight to a state (e.g. SWPPP disturbance, where "plan = actual disturbed").
+function tcNoPlan(catOrId, projectId){
+  return _tcResolve(catOrId, projectId)?.noPlan === true;
 }
 
 // Per-category phase/method lists; fall back to the legacy global config.
@@ -408,7 +433,9 @@ if(typeof window !== 'undefined'){
   window.tcTrackMaterial        = tcTrackMaterial;
   window.tcProgressMode         = tcProgressMode;
   window.tcOverallMode          = tcOverallMode;
+  window.tcStateCountMode       = tcStateCountMode;
   window.tcStatePatterns        = tcStatePatterns;
+  window.tcNoPlan               = tcNoPlan;
   window.tcCategoryPhases       = tcCategoryPhases;
   window.tcCategoryMethods      = tcCategoryMethods;
   window.TC_FILL_STYLES         = TC_FILL_STYLES;

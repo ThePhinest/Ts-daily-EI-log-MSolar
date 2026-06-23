@@ -1747,12 +1747,25 @@ function mapSelectCategoryForDraw(catId){
   const name=cat?cat.name:'Uncategorized';
   const color=cat?(cat.color||'#888'):'#555';
   const list=document.getElementById('map-category-list');
-  list.innerHTML=`
+  const noPlan=(typeof tcNoPlan==='function')?tcNoPlan(cat,pid):false;
+  const header=`
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
       <button onclick="mapShowCategorySheet()" style="background:none;border:none;color:var(--muted);font-size:16px;cursor:pointer;padding:0;line-height:1">‹</button>
       <div style="width:10px;height:10px;border-radius:50%;background:${color};flex-shrink:0"></div>
       <span style="font-family:var(--mono);font-size:13px;color:var(--text);font-weight:600">${name}</span>
-    </div>
+    </div>`;
+  // No-plan categories (e.g. SWPPP disturbance) skip the plan step — one Draw button that
+  // goes straight to the default state (Active disturbed); the state picker handles the rest.
+  if(noPlan){
+    const ds=(typeof tcDefaultChildState==='function')?tcDefaultChildState(cat,pid):null;
+    list.innerHTML=header+`
+    <button onclick="mapActivateDrawModeTyped('${catId}','installed')" style="width:100%;background:rgba(230,126,34,0.12);border:1px solid #E67E22;border-radius:8px;padding:12px;color:var(--text);font-family:var(--mono);font-size:12px;cursor:pointer;text-align:left;font-weight:700">
+      ✏️ Draw${ds?` — ${ds.label}`:''}
+      <div style="font-size:10px;color:var(--muted);font-weight:400;margin-top:3px">Draws straight to a state — pick the state in the entry form (default ${ds?ds.label:'first'}). No plan needed.</div>
+    </button>`;
+    return;
+  }
+  list.innerHTML=header+`
     <button onclick="mapActivateDrawModeTyped('${catId}','planned')" style="width:100%;background:rgba(201,168,76,0.1);border:1px solid var(--amber);border-radius:8px;padding:12px;color:var(--amber);font-family:var(--mono);font-size:12px;cursor:pointer;text-align:left;margin-bottom:8px;font-weight:700">
       📍 Draw Planned Area
       <div style="font-size:10px;color:var(--muted);font-weight:400;margin-top:3px">Define the full scope — rate × area sets required amount</div>
@@ -2035,9 +2048,18 @@ function _cdRenderStates(isLinear){
   // Per-state material shows when the category tracks material (area only); the plan
   // baseline has no material. Each state can be its own amendment (Lime/Fert/Seed).
   const showMat=!isLinear && !!document.getElementById('_cd-trackmat')?.checked;
+  // countMode picker shows only for running modes (it only affects those totals).
+  const running=['running-balance','running-total'].includes(document.getElementById('_cd-progmode')?.value);
   // Two-line rows so the name field stays readable (single-line overflowed/squeezed it).
   wrap.innerHTML=_cdStates.map((s,i)=>{
     const col=/^#[0-9A-Fa-f]{6}$/.test(s.color)?s.color:'#888888';
+    const cmLine=(running && !s.isPlanned)?`
+      <div style="display:flex;align-items:center;gap:6px;margin-top:5px">
+        <span style="font-family:var(--mono);font-size:10px;color:var(--muted);flex-shrink:0">counts as</span>
+        <select onchange="_cdSetStateCount(${i},this.value)" title="How this state affects the disturbed total" style="flex:1;min-width:0;${_INPUT_STYLE}">
+          ${[['add','＋ Adds (open disturbance)'],['subtract','－ Subtracts (stabilized)'],['none','· Track only (don’t count)']].map(([v,l])=>`<option value="${v}"${((s.countMode||'add')===v)?' selected':''}>${l}</option>`).join('')}
+        </select>
+      </div>`:'';
     const matLine=(showMat && !s.isPlanned)?`
       <div style="display:flex;align-items:center;gap:6px;margin-top:6px;padding-top:6px;border-top:1px dashed var(--border)">
         <select onchange="_cdSetStateMat(${i},'amendmentType',this.value)" title="Amendment" style="flex:1;min-width:0;${_INPUT_STYLE}">${_cdAmendOpts(s.amendmentType)}</select>
@@ -2055,14 +2077,16 @@ function _cdRenderStates(isLinear){
       </div>
       <div style="display:flex;align-items:center;gap:6px">
         <select onchange="_cdSetStateStyle(${i},this.value)" title="Style" style="flex:1;min-width:0;${_INPUT_STYLE}">${_cdStyleOptions(isLinear,s.style)}</select>
-        <button onclick="_cdSetPlanned(${i})" title="Plan baseline — renders faint" style="${_cdMiniBtn(s.isPlanned?'background:var(--amber);color:#111;border-color:var(--amber);font-weight:700':'')}">${s.isPlanned?'✓ plan':'plan'}</button>
+        ${_cdNoPlan?'':`<button onclick="_cdSetPlanned(${i})" title="Plan baseline — renders faint" style="${_cdMiniBtn(s.isPlanned?'background:var(--amber);color:#111;border-color:var(--amber);font-weight:700':'')}">${s.isPlanned?'✓ plan':'plan'}</button>`}
         <button onclick="_cdMoveState(${i},-1)" ${i===0?'disabled':''} style="${_cdMiniBtn(i===0?'opacity:.3':'')}">↑</button>
         <button onclick="_cdMoveState(${i},1)" ${i===_cdStates.length-1?'disabled':''} style="${_cdMiniBtn(i===_cdStates.length-1?'opacity:.3':'')}">↓</button>
       </div>
+      ${cmLine}
       ${matLine}
     </div>`;
   }).join('');
 }
+function _cdSetStateCount(i,v){ if(_cdStates[i]) _cdStates[i].countMode=v; }
 function _cdSetStateColor(i,v){ if(_cdStates[i]) _cdStates[i].color=v; }
 function _cdSetStateLabel(i,v){ if(_cdStates[i]) _cdStates[i].label=v; }
 function _cdSetStateStyle(i,v){ if(_cdStates[i]) _cdStates[i].style=v; }
@@ -2089,7 +2113,7 @@ function _cdDelState(i){
 }
 function _cdAddState(){
   const palette=['#E67E22','#27AE60','#4A90E2','#9B59B6','#C9A84C','#E74C3C','#1E6B3A'];
-  _cdStates.push({id:_cdGenStateId(),label:'',color:palette[_cdStates.length%palette.length],style:'solid',pattern:null,isPlanned:false});
+  _cdStates.push({id:_cdGenStateId(),label:'',color:palette[_cdStates.length%palette.length],style:'solid',pattern:null,isPlanned:false,countMode:'add'});
   _cdRenderStates(_cdIsLinear);
 }
 function _cdToggleMaterial(on){
@@ -2102,9 +2126,12 @@ function _cdToggleCap(){
   const mode=document.getElementById('_cd-progmode')?.value;
   const box=document.getElementById('_cd-cap-row');
   if(box) box.style.display=(mode==='running-balance'||mode==='running-total')?'block':'none';
+  // Re-render states so the per-state countMode picker appears/disappears with the mode.
+  _cdRenderStates(_cdIsLinear);
 }
 
 let _cdIsLinear=false;
+let _cdNoPlan=false;
 let _cdCatColor=null;
 function _cdSetCatColor(v){ _cdCatColor=v; }
 
@@ -2116,9 +2143,11 @@ function mapShowCategoryDetails(catId){
   const isLinear=cat.measurementType==='linear';
   _cdIsLinear=isLinear;
   _cdCatColor=(cat.color&&/^#[0-9A-Fa-f]{6}$/.test(cat.color))?cat.color:'#888888';
+  _cdNoPlan=(typeof tcNoPlan==='function')?tcNoPlan(cat,pid):false;
   // Deep-clone states (synthesizes legacy defaults) so edits don't touch the cache.
   _cdStates=(typeof tcGetStates==='function'?tcGetStates(cat,pid):[]).map(s=>({...s}));
-  if(!_cdStates.some(s=>s.isPlanned)&&_cdStates.length) _cdStates[0].isPlanned=true;
+  // No-plan categories (e.g. SWPPP disturbance) have NO plan baseline — don't force one.
+  if(!_cdNoPlan && !_cdStates.some(s=>s.isPlanned)&&_cdStates.length) _cdStates[0].isPlanned=true;
   // The plan (first) state's color IS the category's identity color (locked 2026-06-18) —
   // seed it from cat.color so the editor shows them unified and editing the plan color
   // edits the category identity. Kills the legacy gray plan default on existing categories.
@@ -2127,6 +2156,10 @@ function mapShowCategoryDetails(catId){
   const trackMat=(typeof tcTrackMaterial==='function')?tcTrackMaterial(cat,pid):true;
   const progMode=(typeof tcProgressMode==='function')?tcProgressMode(cat,pid):'per-state-vs-plan';
   const overMode=(typeof tcOverallMode==='function')?tcOverallMode(cat,pid):'terminal';
+  // Seed countMode on child states so the editor reflects (and persists) current behavior —
+  // legacy categories with no explicit flag derive from the old positional rule.
+  const _cdChild=_cdStates.filter(s=>!s.isPlanned);
+  _cdChild.forEach((s,idx)=>{ if(!s.countMode) s.countMode=(typeof tcStateCountMode==='function')?tcStateCountMode(s,idx,_cdChild,progMode):'add'; });
   const statePat=(typeof tcStatePatterns==='function')?tcStatePatterns(cat,pid):false;
   const capVal=cat.disturbanceCap!=null?cat.disturbanceCap:'';
   const capUnit=cat.capUnit||cat.defaultUnit||(isLinear?'ft':'ac');
@@ -2217,17 +2250,23 @@ async function mapSaveCategoryDetails(catId, ov, isLinear){
     style:s.style||'solid',
     pattern:s.pattern||null,
     isPlanned:!!s.isPlanned,
+    // How this state affects a running total (add/subtract/none) — editable per state.
+    ...(['add','subtract','none'].includes(s.countMode)?{countMode:s.countMode}:{}),
     // Per-state material (Lime/Fert/Seed each its own amendment + product + rate)
     ...(s.amendmentType&&s.amendmentType!=='None'?{amendmentType:s.amendmentType}:{}),
     ...(s.productName&&s.productName.trim()?{productName:s.productName.trim()}:{}),
     ...(s.targetRate!=null?{targetRate:s.targetRate}:{}),
     ...(s.targetRateUnit?{targetRateUnit:s.targetRateUnit}:{})
   }));
-  if(!states.length) states=[{id:_cdGenStateId(),label:'Planned',color:existing.color||'#888',style:'solid',pattern:null,isPlanned:true}];
-  if(!states.some(s=>s.isPlanned)) states[0].isPlanned=true;
-  // Only the first planned wins (guard against multiple)
-  let seenPlan=false;
-  states.forEach(s=>{ if(s.isPlanned){ if(seenPlan) s.isPlanned=false; else seenPlan=true; } });
+  if(!states.length) states=[{id:_cdGenStateId(),label:_cdNoPlan?'Active disturbed':'Planned',color:existing.color||'#888',style:'solid',pattern:null,isPlanned:!_cdNoPlan}];
+  // No-plan categories have NO plan baseline; everything else needs exactly one.
+  if(!_cdNoPlan){
+    if(!states.some(s=>s.isPlanned)) states[0].isPlanned=true;
+    let seenPlan=false;
+    states.forEach(s=>{ if(s.isPlanned){ if(seenPlan) s.isPlanned=false; else seenPlan=true; } });
+  } else {
+    states.forEach(s=>{ s.isPlanned=false; });
+  }
 
   const trackMaterial=!!document.getElementById('_cd-trackmat')?.checked;
   const progressMode=document.getElementById('_cd-progmode')?.value||'per-state-vs-plan';
@@ -2238,7 +2277,7 @@ async function mapSaveCategoryDetails(catId, ov, isLinear){
   // color across a job. Each state still owns its own fill+outline; this keeps cat.color
   // (used for exports, legend, ramp-chip fallback, no-category drawings) in sync.
   const _planSt=states.find(s=>s.isPlanned)||states[0];
-  const patch={ states, trackMaterial, progressMode, overallMode, statePatterns,
+  const patch={ states, trackMaterial, progressMode, overallMode, statePatterns, noPlan:_cdNoPlan,
     color:(_planSt&&/^#[0-9A-Fa-f]{6}$/.test(_planSt.color))?_planSt.color:existing.color };
 
   if(progressMode==='running-balance'||progressMode==='running-total'){
