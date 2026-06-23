@@ -598,7 +598,7 @@ async function _docSource(d){
 // pages within RENDER_MARGIN of the viewport hold a live canvas, each capped to
 // _MAX_CANVAS_PX. Pages beyond KEEP_MARGIN release their canvas. dpr clamped to 2.
 const _MAX_CANVAS_PX = 3_000_000;  // ~12 MB per canvas worst case
-const _MAX_LIVE = 3;               // never hold more than this many rendered canvases at once
+const _MAX_LIVE = 5;               // current page + ~2 neighbors each way; bounded by page.cleanup
 const _PAGE_GAP = 10;              // px between pages (must match CSS .gl-doc-vpages gap)
 const _PAGE_PAD = 8;               // top padding of #_dv-pages (must match CSS)
 async function _docOpenPdf(d){
@@ -670,8 +670,12 @@ async function _docOpenPdf(d){
   // many fit in the viewport at once; rendering them concurrently blew the iOS
   // WebView's memory and crash-reloaded the app. The queue caps in-flight renders
   // at exactly 1 and always renders the page nearest the viewport center first.
-  const RENDER_MARGIN = 350;   // only render pages within ~⅓ screen of the viewport
-  const KEEP_MARGIN = 1000;    // release canvases beyond this
+  // Pre-render ~one screen in each direction so the next page is ready before you
+  // reach it (professional scroll feel). Safe now that page.cleanup() bounds pdf.js
+  // memory and _MAX_LIVE caps live canvases — the crash was unbounded accumulation,
+  // not this look-ahead.
+  const RENDER_MARGIN = 700;   // ≈ one phone screen → ±1 portrait page / ±2 landscape
+  const KEEP_MARGIN = 1600;    // release canvases beyond this
   const _wantRender = new Set();
   let _pumpRunning = false;
   function requestRender(m){
@@ -814,7 +818,11 @@ async function _docOpenPdf(d){
       _pinching = true; _pDist = _tDist(e.touches) || 1; _pZoom = zoom;
       _pCx = (e.touches[0].clientX + e.touches[1].clientX)/2;
       _pCy = (e.touches[0].clientY + e.touches[1].clientY)/2;
-      pagesEl.style.transformOrigin = 'center top'; e.preventDefault();
+      // Grow the live pinch from BETWEEN the fingers (not top-center) so the page
+      // tracks the gesture instead of drifting/skipping until release.
+      const pr = pagesEl.getBoundingClientRect();
+      pagesEl.style.transformOrigin = (_pCx - pr.left) + 'px ' + (_pCy - pr.top) + 'px';
+      e.preventDefault();
     }
   }, { passive:false });
   scroll.addEventListener('touchmove', e=>{
