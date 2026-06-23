@@ -1196,21 +1196,21 @@ async function _tlogExportXlsx(scheme, entries, pid){
   const NCOLS=16;
 
   const cols=[
-    {header:'Date',            width:12},
-    {header:'Category',        width:24},
-    {header:'Type',            width:16},
-    {header:'State',           width:14},
-    {header:'Measurement',     width:12},
-    {header:'Location',        width:22},
-    {header:'Notes',           width:36},
-    {header:'Photos',          width:8},
-    {header:'Seed Tags',       width:10},
-    {header:'Mix / Product',   width:22},
-    {header:'Applied Rate',    width:15},
-    {header:'Required Amount', width:18},
-    {header:'Actual Amount',   width:15},
-    {header:'Method',          width:20},
-    {header:'Contractor',      width:24},
+    {header:'Date',            width:15},
+    {header:'Category',        width:30},
+    {header:'Type',            width:40},
+    {header:'State',           width:20},
+    {header:'Measurement',     width:18},
+    {header:'Location',        width:26},
+    {header:'Notes',           width:42},
+    {header:'Photos',          width:10},
+    {header:'Seed Tags',       width:12},
+    {header:'Mix / Product',   width:24},
+    {header:'Applied Rate',    width:18},
+    {header:'Required Amount', width:20},
+    {header:'Actual Amount',   width:18},
+    {header:'Method',          width:22},
+    {header:'Contractor',      width:26},
     {header:'Progress',        width:14},
   ];
   ws.columns=cols.map(c=>({width:c.width}));
@@ -1373,9 +1373,25 @@ async function _tlogExportXlsx(scheme, entries, pid){
         const actUnit=installed.find(e=>e.fields?.actualUnit)?.fields?.actualUnit||'lbs';
         const totalSeeds=installed.reduce((s,e)=>s+(e.fields?.seedTagCount||0),0);
         const totalPhotos=installed.reduce((s,e)=>s+(Array.isArray(e.photoIds)?e.photoIds.length:0),0);
+        // Running-balance/total (disturbance) categories: a gross SUM of overlapping
+        // drawings is meaningless — show the NET open total instead (see the dedicated
+        // Disturbance tab for the per-state breakdown).
+        const _mode=(typeof tcProgressMode==='function')?tcProgressMode(cid,pid):'';
+        const _isRunning=_mode==='running-balance'||_mode==='running-total';
+        let _measCell, _typeCell;
+        if(_isRunning){
+          const _childStates=((typeof tcGetStates==='function')?tcGetStates(cid,pid):[]).filter(s=>!s.isPlanned);
+          const _defUnit=(typeof tcGetDefaultUnit==='function')?tcGetDefaultUnit(cid,pid):'ac';
+          const _rt=(typeof _runningTotals==='function')?_runningTotals(cid,installed,_childStates,_defUnit,pid,_mode):{open:0};
+          _measCell=(typeof tcFormatMeasurement==='function')?tcFormatMeasurement(_rt.open,_defUnit):`${(_rt.open||0).toFixed(2)} ${_defUnit}`;
+          _typeCell=`Net open disturbed (${installed.length} drawing${installed.length!==1?'s':''}) → see Disturbance tab`;
+        } else {
+          _measCell=totalMeas>0?`${totalMeas.toFixed(2)} ${measUnit}`:'';
+          _typeCell=`Category Total (${installed.length} entr${installed.length!==1?'ies':'y'})`;
+        }
         const tRow=ws.addRow([
-          '', catName, `Category Total (${installed.length} entr${installed.length!==1?'ies':'y'})`, '',
-          totalMeas>0?`${totalMeas.toFixed(2)} ${measUnit}`:'',
+          '', catName, _typeCell, '',
+          _measCell,
           '', '',
           totalPhotos||'', totalSeeds||'', '',
           '', '',
@@ -1418,6 +1434,17 @@ async function _tlogExportXlsx(scheme, entries, pid){
     }
   });
 
+  // ── Body font ≥ 12 across the whole workbook (titles keep their larger size) ──
+  wb.eachSheet(sheet=>{
+    sheet.eachRow(row=>{
+      if(!row.height || row.height<16) row.height=16; // fit 12pt text
+      row.eachCell({includeEmpty:false},c=>{
+        const f=c.font||{};
+        if((f.size||11)<12) c.font={...f,size:12};
+      });
+    });
+  });
+
   // ── Download / Share ──
   const buf=await wb.xlsx.writeBuffer();
   const blob=new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
@@ -1456,7 +1483,7 @@ function _disturbanceSheet(wb, cid, allEntries, pid){
   let nm=base, n=2;
   while(wb.getWorksheet(nm)){ nm=base.slice(0,28)+' '+n; n++; }
   const ws=wb.addWorksheet(nm);
-  ws.columns=[{width:28},{width:16},{width:14},{width:24},{width:36},{width:9},{width:22}];
+  ws.columns=[{width:30},{width:24},{width:16},{width:28},{width:42},{width:10},{width:26}];
 
   // ── Title ──
   ws.addRow([name+' — SWPPP Disturbance']);
