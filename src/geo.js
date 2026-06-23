@@ -84,9 +84,31 @@ function glStateNetAreasM2(entries, orderedStates){
   return { netM2, totalM2 };
 }
 
+// Per-ENTRY net area (m²): each drawing's geometry minus the union of all LATER-state
+// drawings (later state wins). So a list of drawings shows each one's CURRENT contribution
+// after stabilization is drawn on top — not the misleading gross drawn size. Returns
+// { entryId: m² } or null. (For one-drawing-per-state this equals the per-state net.)
+function glEntryNetAreasM2(entries, orderedStates){
+  if(!Array.isArray(entries) || !Array.isArray(orderedStates) || !orderedStates.length) return null;
+  const prec = {}; orderedStates.forEach((s, i) => { prec[s.id] = i; });
+  const parsed = entries
+    .map(e => ({ e, f: _parseGeom(e), p: (prec[e.state] != null ? prec[e.state] : 0) }))
+    .filter(x => x.f);
+  if(!parsed.length) return null;
+  const out = {};
+  parsed.forEach(x => {
+    const later = _unionAll(parsed.filter(y => y.p > x.p).map(y => y.f));
+    let g = x.f;
+    if(later) g = _safeDiff(g, later);
+    out[x.e.id] = _safeArea(g);
+  });
+  return out;
+}
+
 if(typeof window !== 'undefined'){
   window.glStateNetAreasM2 = glStateNetAreasM2;
+  window.glEntryNetAreasM2 = glEntryNetAreasM2;
   window.glAreaConvertM2   = glAreaConvertM2;
 }
 
-export { glStateNetAreasM2, glAreaConvertM2 };
+export { glStateNetAreasM2, glEntryNetAreasM2, glAreaConvertM2 };

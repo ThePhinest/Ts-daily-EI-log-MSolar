@@ -881,6 +881,14 @@ function clShowTrackerLog(){
           ?_sumMeas(g.entries.filter(e=>e.entryType==='planned'&&!e.temporary))
           :_sumMeas(_installed);
         const _metaTotalText=_metaTotal>0?((typeof tcFormatMeasurement==='function')?tcFormatMeasurement(_metaTotal,_metaUnit):`${_metaTotal.toFixed(2)} ${_metaUnit}`):'';
+        // Disturbance (running-balance/total): list each drawing's NET area (its current
+        // contribution after later states carve it) — matches the bar/legend/export. The
+        // gross drawn size is misleading once stabilization is drawn on top.
+        const _runMode=(typeof tcProgressMode==='function')?tcProgressMode(cid,pid):'';
+        const _isRunning=_runMode==='running-balance'||_runMode==='running-total';
+        const _entryNet=(_isRunning && _metaType==='area' && typeof glEntryNetAreasM2==='function')
+          ?glEntryNetAreasM2(_installed, (_catObjMeta&&Array.isArray(_catObjMeta.states))?_catObjMeta.states.filter(s=>!s.isPlanned):[])
+          :null;
         const gPhotos=_installed.reduce((s,e)=>s+(Array.isArray(e.photoIds)?e.photoIds.length:0),0);
         const gSeeds=_installed.reduce((s,e)=>s+(e.fields?.seedTagCount||0),0);
         const gReports=_installed.reduce((s,e)=>s+(Array.isArray(e.reportIds)?e.reportIds.length:0),0);
@@ -894,9 +902,18 @@ function clShowTrackerLog(){
             ?`${e.fields.actualAmount.toLocaleString()} / ${e.fields.requiredAmount.toLocaleString()} ${e.fields.requiredUnit||'lbs'}`
             :hasAct?`${e.fields.actualAmount.toLocaleString()} ${e.fields.actualUnit||'lbs'} used`
             :hasReq?`${e.fields.requiredAmount.toLocaleString()} ${e.fields.requiredUnit||'lbs'} req.`:'';
-          const rowMeas=(e.measurementValue!=null&&e.measurementUnit)
-            ?`<span style="font-family:var(--mono);font-size:10px;color:var(--amber);white-space:nowrap;flex-shrink:0">${(typeof tcFormatMeasurement==='function')?tcFormatMeasurement(e.measurementValue,e.measurementUnit):(e.measurementValue+' '+e.measurementUnit)}</span>`
-            :e.acres?`<span style="font-family:var(--mono);font-size:10px;color:var(--amber);white-space:nowrap;flex-shrink:0">${e.acres} ac</span>`:'';
+          const rowMeas=(()=>{
+            // Disturbance: show this drawing's NET area (current, after overlaps), not gross.
+            if(_entryNet && e.entryType!=='planned' && _entryNet[e.id]!=null){
+              const nv=(typeof glAreaConvertM2==='function')?glAreaConvertM2(_entryNet[e.id],_metaUnit):0;
+              const txt=(typeof tcFormatMeasurement==='function')?tcFormatMeasurement(nv,_metaUnit):`${nv.toFixed(2)} ${_metaUnit}`;
+              return `<span style="font-family:var(--mono);font-size:10px;color:var(--amber);white-space:nowrap;flex-shrink:0">${txt}</span>`;
+            }
+            if(e.measurementValue!=null&&e.measurementUnit)
+              return `<span style="font-family:var(--mono);font-size:10px;color:var(--amber);white-space:nowrap;flex-shrink:0">${(typeof tcFormatMeasurement==='function')?tcFormatMeasurement(e.measurementValue,e.measurementUnit):(e.measurementValue+' '+e.measurementUnit)}</span>`;
+            if(e.acres) return `<span style="font-family:var(--mono);font-size:10px;color:var(--amber);white-space:nowrap;flex-shrink:0">${e.acres} ac</span>`;
+            return '';
+          })();
                 const isPlannedRow=e.entryType==='planned';
           const planBadge=isPlannedRow?`<span style="font-family:var(--mono);font-size:9px;font-weight:700;color:var(--amber);white-space:nowrap;flex-shrink:0;letter-spacing:.06em">PLAN</span>`:'';
           // State badge (child overlays of schema categories) — colored dot + label.
@@ -907,8 +924,9 @@ function clShowTrackerLog(){
             const col=(st.color&&/^#[0-9A-Fa-f]{6}$/.test(st.color))?st.color:'var(--muted)';
             return `<span style="display:inline-flex;align-items:center;gap:3px;flex-shrink:0;font-family:var(--mono);font-size:9px;color:var(--muted);white-space:nowrap"><span style="width:7px;height:7px;border-radius:2px;background:${col}"></span>${st.label}</span>`;
           })();
-          // For linear entries, show measurement context in middle column
-          if(!amtText&&e.measurementValue!=null&&e.measurementUnit){
+          // For linear entries, show measurement context in middle column. Disturbance
+          // (running) shows its NET area in rowMeas instead, so skip the gross middle text.
+          if(!amtText&&e.measurementValue!=null&&e.measurementUnit&&!_isRunning){
             const fv=parseFloat(e.measurementValue);
             if(!isNaN(fv)){
               if(isPlannedRow){
