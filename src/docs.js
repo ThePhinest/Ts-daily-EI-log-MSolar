@@ -595,8 +595,11 @@ async function _docSource(d){
 
 // ── Virtualized continuous-scroll PDF viewer (#18) ──
 // Memory-bounded: each page gets a placeholder sized from its real dimensions; only
-// pages within RENDER_MARGIN of the viewport hold a live canvas, each capped to
-// _MAX_CANVAS_PX. Pages beyond KEEP_MARGIN release their canvas. dpr clamped to 2.
+// the _MAX_LIVE pages nearest the viewport hold a live canvas (each capped to
+// _MAX_CANVAS_PX, dpr clamped to 2). The "want to render" set and the "keep live"
+// set are identical (the nearest N), so a page is never released then immediately
+// re-requested — that thrash was the iOS crash. Released pages also pg.cleanup()
+// their decoded data. Rendering is serialized (one page at a time).
 const _MAX_CANVAS_PX = 3_000_000;  // ~12 MB per canvas worst case
 const _MAX_LIVE = 4;               // the 4 pages nearest the viewport — render set == live set
 const _PAGE_GAP = 10;              // px between pages (must match CSS .gl-doc-vpages gap)
