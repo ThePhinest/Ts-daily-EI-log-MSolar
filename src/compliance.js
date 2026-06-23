@@ -1516,17 +1516,24 @@ function _disturbanceSheet(wb, cid, allEntries, pid){
     else r.getCell(1).font={name:'Calibri',size:10};
     r.getCell(2).font={name:'Calibri',size:10}; r.height=15;
   });
-  const totR=ws.addRow(['Total open disturbed', fmt(rt.open)]);
-  totR.getCell(1).font={bold:true,size:10}; totR.getCell(2).font={bold:true,size:10};
+  // Total open — the headline number: larger (16pt) + bordered band so it stands out.
+  const totR=ws.addRow(['TOTAL open disturbed', fmt(rt.open)]);
+  totR.getCell(1).font={bold:true,size:16}; totR.getCell(2).font={bold:true,size:16,color:{argb:'FF006B75'}};
   totR.getCell(1).fill={type:'pattern',pattern:'solid',fgColor:{argb:AMBER_LIGHT}};
   totR.getCell(2).fill={type:'pattern',pattern:'solid',fgColor:{argb:AMBER_LIGHT}};
+  const _tBorder={top:{style:'medium',color:{argb:'FFC9A84C'}},bottom:{style:'medium',color:{argb:'FFC9A84C'}}};
+  totR.getCell(1).border=_tBorder; totR.getCell(2).border=_tBorder;
+  totR.height=30;
   const cap=cat.disturbanceCap;
   if(cap!=null){
-    const aR=ws.addRow(['Allowed (limit)', fmt(cap)]); aR.getCell(1).font={bold:true,size:10}; aR.getCell(2).font={name:'Calibri',size:10};
-    const pct=cap>0?Math.min(100,(rt.open/cap)*100):0; const over=rt.open>cap;
+    const over=rt.open>cap; const remaining=Math.max(0,cap-rt.open);
+    const aR=ws.addRow(['Allowed (limit)', fmt(cap)]); aR.getCell(1).font={bold:true,size:12}; aR.getCell(2).font={name:'Calibri',size:12};
+    const rR=ws.addRow(['Remaining to limit', over?('0 — ⚠ OVER by '+fmt(rt.open-cap)):fmt(remaining)]);
+    rR.getCell(1).font={bold:true,size:12}; rR.getCell(2).font={bold:true,size:12,color:{argb:over?'FFC0392B':'FF27AE60'}};
+    const pct=cap>0?Math.min(100,(rt.open/cap)*100):0;
     const pR=ws.addRow(['% of allowed', Math.round(pct)+'%'+(over?'  ⚠ OVER LIMIT':'')]);
-    pR.getCell(1).font={bold:true,size:10};
-    pR.getCell(2).font={bold:true,size:10,color:{argb:over?'FFC0392B':'FF006B75'}};
+    pR.getCell(1).font={bold:true,size:12};
+    pR.getCell(2).font={bold:true,size:12,color:{argb:over?'FFC0392B':'FF006B75'}};
   }
   ws.addRow([]);
 
@@ -1547,6 +1554,8 @@ function _disturbanceSheet(wb, cid, allEntries, pid){
     r.height=15;
   });
   if(!sorted.length){ const r=ws.addRow(['—','No drawings yet']); r.getCell(2).font={italic:true,size:10,color:{argb:'FF999999'}}; }
+  // Disturbance tab reads as a standalone deliverable — taller rows than the combined log.
+  ws.eachRow((row,rn)=>{ if(rn===1) return; if(!row.height || row.height<22) row.height=22; });
 }
 
 // ── Material Tag photo ZIP export ──
