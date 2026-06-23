@@ -914,7 +914,11 @@ function clShowTrackerLog(){
               if(isPlannedRow){
                 amtText=`📍 ${fv.toLocaleString()} ${e.measurementUnit} planned`;
               } else if(e.parentId){
-                const par=(typeof trGetEntry==='function')?trGetEntry(e.parentId,pid):null;
+                // Running-balance/total (disturbance) has NO plan — don't show "X / parent"
+                // (that framed the first drawing as a total). Just show this drawing's own area.
+                const _pm=(typeof tcProgressMode==='function')?tcProgressMode(e.categoryId||e.category,pid):'';
+                const _running=_pm==='running-balance'||_pm==='running-total';
+                const par=(!_running && typeof trGetEntry==='function')?trGetEntry(e.parentId,pid):null;
                 if(par?.measurementValue!=null) amtText=`${fv.toLocaleString()} / ${parseFloat(par.measurementValue).toLocaleString()} ${par.measurementUnit||e.measurementUnit}`;
                 else amtText=`${fv.toLocaleString()} ${e.measurementUnit}`;
               }
