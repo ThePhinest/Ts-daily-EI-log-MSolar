@@ -597,7 +597,8 @@ async function _docSource(d){
 // Memory-bounded: each page gets a placeholder sized from its real dimensions; only
 // pages within RENDER_MARGIN of the viewport hold a live canvas, each capped to
 // _MAX_CANVAS_PX. Pages beyond KEEP_MARGIN release their canvas. dpr clamped to 2.
-const _MAX_CANVAS_PX = 6_000_000;  // ~24 MB per canvas worst case; a few alive = safe
+const _MAX_CANVAS_PX = 4_000_000;  // ~16 MB per canvas worst case
+const _MAX_LIVE = 5;               // never hold more than this many rendered canvases at once
 const _PAGE_GAP = 10;              // px between pages (must match CSS .gl-doc-vpages gap)
 const _PAGE_PAD = 8;               // top padding of #_dv-pages (must match CSS)
 async function _docOpenPdf(d){
@@ -658,9 +659,40 @@ async function _docOpenPdf(d){
     if(m.canvas){ m.canvas.width = 0; m.canvas.height = 0; }
   }
 
-  async function renderPage(m){
+  // ── Serialized render queue — THE memory-safety mechanism ──
+  // Render strictly ONE page at a time. Landscape site-plan sheets are short, so
+  // many fit in the viewport at once; rendering them concurrently blew the iOS
+  // WebView's memory and crash-reloaded the app. The queue caps in-flight renders
+  // at exactly 1 and always renders the page nearest the viewport center first.
+  const RENDER_MARGIN = 350;   // only render pages within ~⅓ screen of the viewport
+  const KEEP_MARGIN = 1000;    // release canvases beyond this
+  const _wantRender = new Set();
+  let _pumpRunning = false;
+  function requestRender(m){
+    if(m.rendered && m.renderedZoom === zoom) return;
+    _wantRender.add(m);
+    _pump();
+  }
+  async function _pump(){
+    if(_pumpRunning) return;
+    _pumpRunning = true;
+    try{
+      while(_alive && _wantRender.size){
+        const st = scroll.scrollTop, vh = scroll.clientHeight, mid = st + vh/2;
+        let best = null, bestD = Infinity;
+        _wantRender.forEach(m=>{ const d = Math.abs((m.top + m.h/2) - mid); if(d < bestD){ bestD = d; best = m; } });
+        _wantRender.delete(best);
+        if(!best || (best.rendered && best.renderedZoom === zoom)) continue;
+        // skip if it scrolled out of the render window since being queued
+        if(!(best.top + best.h > st - RENDER_MARGIN && best.top < st + vh + RENDER_MARGIN)) continue;
+        await renderOne(best);   // awaited → one render at a time, never concurrent
+      }
+    } finally { _pumpRunning = false; }
+  }
+
+  async function renderOne(m){
     if(!pdf || !_alive || m.rendering) return;
-    if(m.rendered && m.renderedZoom === zoom) return;   // already crisp at this zoom
+    if(m.rendered && m.renderedZoom === zoom) return;
     m.rendering = true;
     const renderZoom = zoom;
     try{
@@ -676,17 +708,15 @@ async function _docOpenPdf(d){
       const px = (m.baseW*renderScale) * (m.baseH*renderScale);
       if(px > _MAX_CANVAS_PX) renderScale *= Math.sqrt(_MAX_CANVAS_PX/px);
       const vp = pg.getViewport({ scale: renderScale });
-      // Render into a FRESH canvas so the currently-displayed one stays visible
-      // (CSS-scaled to the new wrapper size = instant zoom) until the crisp render
-      // is ready, then swap. This kills the white flash on zoom — we never blank a
-      // page that's already showing something.
+      // Fresh canvas → the currently-shown one stays visible (CSS-scaled = instant
+      // zoom) until the crisp render is ready, then swap. No white flash.
       const nc = document.createElement('canvas');
       nc.width = Math.floor(vp.width); nc.height = Math.floor(vp.height);
       const task = pg.render({ canvasContext: nc.getContext('2d'), viewport: vp });
       m.task = task;
       await task.promise;
       m.task = null;
-      if(!_alive) return;
+      if(!_alive){ nc.width = 0; nc.height = 0; return; }
       if(m.canvas && m.canvas.parentNode === m.wrap) m.wrap.replaceChild(nc, m.canvas);
       else m.wrap.insertBefore(nc, m.wrap.firstChild);
       m.canvas = nc;
@@ -694,15 +724,13 @@ async function _docOpenPdf(d){
       if(m.wrap) m.wrap.classList.add('rendered');
     }catch(e){ if(!(e && e.name==='RenderingCancelledException')) console.warn('pdf page render:', e && e.message); }
     m.rendering = false;
-    // Zoom changed while rendering? Re-render to the latest if still near the viewport.
+    // zoom changed mid-render → requeue if still near
     if(_alive && m.renderedZoom !== zoom){
       const st = scroll.scrollTop, vh = scroll.clientHeight;
-      if(m.top + m.h > st - RENDER_MARGIN && m.top < st + vh + RENDER_MARGIN) renderPage(m);
+      if(m.top + m.h > st - RENDER_MARGIN && m.top < st + vh + RENDER_MARGIN) requestRender(m);
     }
   }
 
-  const RENDER_MARGIN = 1400;  // pre-render this far above/below the viewport
-  const KEEP_MARGIN = 2800;    // release canvases beyond this
   function updateVisible(){
     if(!_alive) return;
     const st = scroll.scrollTop, vh = scroll.clientHeight;
@@ -710,9 +738,17 @@ async function _docOpenPdf(d){
       const top = m.top, bot = m.top + m.h;
       const near = bot > st - RENDER_MARGIN && top < st + vh + RENDER_MARGIN;
       const keep = bot > st - KEEP_MARGIN && top < st + vh + KEEP_MARGIN;
-      if(near) renderPage(m);
-      else if(!keep && (m.rendered || m.rendering)) releaseCanvas(m);
+      if(near) requestRender(m);
+      else if(!keep){ _wantRender.delete(m); if(m.rendered || m.rendering) releaseCanvas(m); }
     });
+    // Hard cap on live canvases — belt-and-suspenders against many short pages:
+    // never hold more than _MAX_LIVE rendered canvases; release the farthest.
+    const live = pages.filter(m=>m.rendered || m.rendering);
+    if(live.length > _MAX_LIVE){
+      const mid = st + vh/2;
+      live.sort((a,b)=> Math.abs((a.top+a.h/2)-mid) - Math.abs((b.top+b.h/2)-mid));
+      live.slice(_MAX_LIVE).forEach(m=>{ _wantRender.delete(m); releaseCanvas(m); });
+    }
     if(numPages){
       const mid = st + vh/2;
       let cur = 1;
