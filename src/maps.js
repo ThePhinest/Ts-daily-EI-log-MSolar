@@ -3648,21 +3648,52 @@ async function _compositeBrandWordmark(blob, legendCat, pid){
         const sts=tcGetStates(legendCat,pid).filter(s=>!s.isPlanned);
         if(sts.length){
           const catNm=(typeof tcGetName==='function')?tcGetName(legendCat,pid):'Legend';
+          const defUnit=(typeof tcGetDefaultUnit==='function')?tcGetDefaultUnit(legendCat,pid):'ac';
+          const mode=(typeof tcProgressMode==='function')?tcProgressMode(legendCat,pid):'';
+          const fmtA=(v)=>(typeof tcFormatMeasurement==='function')?tcFormatMeasurement(v,defUnit):`${(v||0).toFixed(2)} ${defUnit}`;
+          // Net per-state areas (turf) so the legend carries live acreage + an open total.
+          const areaByState={}; let openTotal=0, haveAreas=false;
+          try{
+            if(typeof trGetEntriesForProject==='function' && typeof glStateNetAreasM2==='function'){
+              const inst=trGetEntriesForProject(pid).filter(e=>(e.categoryId===legendCat)&&e.entryType!=='planned'&&!e.temporary&&!e.deletedAt);
+              const g=glStateNetAreasM2(inst,sts);
+              if(g){
+                haveAreas=true;
+                sts.forEach((s,idx)=>{
+                  const a=(typeof glAreaConvertM2==='function')?glAreaConvertM2(g.netM2[s.id]||0,defUnit):0;
+                  areaByState[s.id]=a;
+                  const cm=(typeof tcStateCountMode==='function')?tcStateCountMode(s,idx,sts,mode):'add';
+                  if(cm==='add') openTotal+=a;
+                });
+              }
+            }
+          }catch{}
           const LP=Math.max(14,Math.round(c.width*0.011));   // inner padding
           const LF=Math.max(13,Math.round(c.height*0.021));  // row font px
           const TF=Math.round(LF*1.08);                      // title font px
           const SW=Math.round(LF*1.15);                      // swatch size
           const ROW=Math.round(LF*1.6);                      // row pitch
+          const GAP=Math.round(LF*1.2);                      // label↔area column gap
           ctx.save();
-          ctx.textAlign='left'; ctx.textBaseline='middle';
+          ctx.textBaseline='middle';
+          // measure columns
           ctx.font=`600 ${TF}px system-ui, sans-serif`;
-          let maxW=ctx.measureText(catNm).width;
+          let maxLabelW=ctx.measureText(catNm).width;
           ctx.font=`500 ${LF}px system-ui, sans-serif`;
-          sts.forEach(s=>{ const w=ctx.measureText(s.label).width; if(w>maxW) maxW=w; });
-          const boxW=Math.round(SW+LP*0.7+maxW+LP*2);
-          const boxH=Math.round(LP*1.5+ROW+ROW*sts.length);
+          sts.forEach(s=>{ const w=ctx.measureText(s.label).width; if(w>maxLabelW) maxLabelW=w; });
+          if(haveAreas){ const w=ctx.measureText('Total open').width; if(w>maxLabelW) maxLabelW=w; }
+          let maxAreaW=0;
+          if(haveAreas){
+            sts.forEach(s=>{ const w=ctx.measureText(fmtA(areaByState[s.id]||0)).width; if(w>maxAreaW) maxAreaW=w; });
+            const w=ctx.measureText(fmtA(openTotal)).width; if(w>maxAreaW) maxAreaW=w;
+          }
+          const contentW=SW+Math.round(LF*0.7)+maxLabelW+(haveAreas?GAP+maxAreaW:0);
+          const boxW=Math.round(contentW+LP*2);
+          const totalRows=sts.length+(haveAreas?1:0);
+          const boxH=Math.round(LP*1.5+ROW+ROW*totalRows);
           const bx=LP, by=LP, br=Math.round(LF*0.4);
-          ctx.fillStyle='rgba(15,31,46,0.80)';
+          const areaRightX=bx+boxW-LP;
+          ctx.fillStyle='rgba(15,31,46,0.82)';
           ctx.beginPath();
           ctx.moveTo(bx+br,by);
           ctx.arcTo(bx+boxW,by,bx+boxW,by+boxH,br);
@@ -3670,9 +3701,12 @@ async function _compositeBrandWordmark(blob, legendCat, pid){
           ctx.arcTo(bx,by+boxH,bx,by,br);
           ctx.arcTo(bx,by,bx+boxW,by,br);
           ctx.closePath(); ctx.fill();
+          // title
+          ctx.textAlign='left';
           ctx.font=`600 ${TF}px system-ui, sans-serif`;
           ctx.fillStyle='#C9A84C';
           ctx.fillText(catNm, bx+LP, by+LP*0.75+TF*0.5);
+          // state rows (swatch + label + net area)
           ctx.font=`500 ${LF}px system-ui, sans-serif`;
           let ry=by+LP*0.75+ROW;
           sts.forEach(s=>{
@@ -3686,10 +3720,20 @@ async function _compositeBrandWordmark(blob, legendCat, pid){
             ctx.arcTo(swx,swy+SW,swx,swy,sr);
             ctx.arcTo(swx,swy,swx+SW,swy,sr);
             ctx.closePath(); ctx.fill();
-            ctx.fillStyle='#ffffff';
-            ctx.fillText(s.label, swx+SW+LP*0.7, cy);
+            ctx.textAlign='left'; ctx.fillStyle='#ffffff';
+            ctx.fillText(s.label, swx+SW+Math.round(LF*0.7), cy);
+            if(haveAreas){ ctx.textAlign='right'; ctx.fillStyle='#dfe8f0'; ctx.fillText(fmtA(areaByState[s.id]||0), areaRightX, cy); }
             ry+=ROW;
           });
+          // total row (divider + Total open)
+          if(haveAreas){
+            const cy=ry+ROW*0.5;
+            ctx.strokeStyle='rgba(255,255,255,0.25)'; ctx.lineWidth=Math.max(1,Math.round(LF*0.06));
+            ctx.beginPath(); ctx.moveTo(bx+LP, ry+Math.round(ROW*0.08)); ctx.lineTo(bx+boxW-LP, ry+Math.round(ROW*0.08)); ctx.stroke();
+            ctx.font=`700 ${LF}px system-ui, sans-serif`;
+            ctx.textAlign='left'; ctx.fillStyle='#ffffff'; ctx.fillText('Total open', bx+LP, cy);
+            ctx.textAlign='right'; ctx.fillStyle='#C9A84C'; ctx.fillText(fmtA(openTotal), areaRightX, cy);
+          }
           ctx.restore();
         }
       }catch(e){ console.warn('legend composite failed:',e.message); }
