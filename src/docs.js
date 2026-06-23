@@ -598,7 +598,7 @@ async function _docSource(d){
 // pages within RENDER_MARGIN of the viewport hold a live canvas, each capped to
 // _MAX_CANVAS_PX. Pages beyond KEEP_MARGIN release their canvas. dpr clamped to 2.
 const _MAX_CANVAS_PX = 3_000_000;  // ~12 MB per canvas worst case
-const _MAX_LIVE = 5;               // current page + ~2 neighbors each way; bounded by page.cleanup
+const _MAX_LIVE = 4;               // the 4 pages nearest the viewport — render set == live set
 const _PAGE_GAP = 10;              // px between pages (must match CSS .gl-doc-vpages gap)
 const _PAGE_PAD = 8;               // top padding of #_dv-pages (must match CSS)
 async function _docOpenPdf(d){
@@ -665,19 +665,29 @@ async function _docOpenPdf(d){
     if(m.page){ try{ m.page.cleanup(); }catch(e){} m.page = null; }
   }
 
-  // ── Serialized render queue — THE memory-safety mechanism ──
-  // Render strictly ONE page at a time. Landscape site-plan sheets are short, so
-  // many fit in the viewport at once; rendering them concurrently blew the iOS
-  // WebView's memory and crash-reloaded the app. The queue caps in-flight renders
-  // at exactly 1 and always renders the page nearest the viewport center first.
-  // Pre-render ~one screen in each direction so the next page is ready before you
-  // reach it (professional scroll feel). Safe now that page.cleanup() bounds pdf.js
-  // memory and _MAX_LIVE caps live canvases — the crash was unbounded accumulation,
-  // not this look-ahead.
-  const RENDER_MARGIN = 700;   // ≈ one phone screen → ±1 portrait page / ±2 landscape
-  const KEEP_MARGIN = 1600;    // release canvases beyond this
+  // ── Bounded render set — render EXACTLY the N pages nearest the viewport ──
+  // (N = _MAX_LIVE). The set we WANT rendered and the set we KEEP live are the
+  // SAME set, so a page is never released only to be immediately re-requested.
+  // That render→release→re-render THRASH — which happened whenever more pages sat
+  // in the render window than the live cap allowed (short landscape sheets zoomed
+  // out) — was the iOS crash: every cycle allocated a canvas + decoded a page,
+  // spiking memory until the WebView was killed. Rendering is still serialized
+  // (one at a time) and each released page hands its decoded data back via
+  // pg.cleanup(). Memory is therefore bounded to _MAX_LIVE pages, period.
   const _wantRender = new Set();
   let _pumpRunning = false;
+  // A page is a render candidate only if it's within ~one screen of the viewport.
+  function _nearViewport(m){
+    const st = scroll.scrollTop, vh = scroll.clientHeight;
+    return m.top + m.h > st - vh && m.top < st + vh + vh;
+  }
+  // The set we want rendered right now: the nearest up-to-_MAX_LIVE candidates.
+  function _desiredSet(){
+    const st = scroll.scrollTop, vh = scroll.clientHeight, mid = st + vh/2;
+    const cand = pages.filter(_nearViewport).sort((a,b)=>
+      Math.abs((a.top+a.h/2)-mid) - Math.abs((b.top+b.h/2)-mid));
+    return new Set(cand.slice(0, _MAX_LIVE));
+  }
   function requestRender(m){
     if(m.rendered && m.renderedZoom === zoom) return;
     _wantRender.add(m);
@@ -693,9 +703,8 @@ async function _docOpenPdf(d){
         _wantRender.forEach(m=>{ const d = Math.abs((m.top + m.h/2) - mid); if(d < bestD){ bestD = d; best = m; } });
         _wantRender.delete(best);
         if(!best || (best.rendered && best.renderedZoom === zoom)) continue;
-        // skip if it scrolled out of the render window since being queued
-        if(!(best.top + best.h > st - RENDER_MARGIN && best.top < st + vh + RENDER_MARGIN)) continue;
-        await renderOne(best);   // awaited → one render at a time, never concurrent
+        if(!_nearViewport(best)) continue;   // scrolled away since queued
+        await renderOne(best);               // awaited → one render at a time
       }
     } finally { _pumpRunning = false; }
   }
@@ -735,33 +744,19 @@ async function _docOpenPdf(d){
       if(m.wrap) m.wrap.classList.add('rendered');
     }catch(e){ if(!(e && e.name==='RenderingCancelledException')) console.warn('pdf page render:', e && e.message); }
     m.rendering = false;
-    // zoom changed mid-render → requeue if still near
-    if(_alive && m.renderedZoom !== zoom){
-      const st = scroll.scrollTop, vh = scroll.clientHeight;
-      if(m.top + m.h > st - RENDER_MARGIN && m.top < st + vh + RENDER_MARGIN) requestRender(m);
-    }
+    // zoom changed mid-render → requeue if still a desired page
+    if(_alive && m.renderedZoom !== zoom && _nearViewport(m)) requestRender(m);
   }
 
   function updateVisible(){
     if(!_alive) return;
-    const st = scroll.scrollTop, vh = scroll.clientHeight;
+    const want = _desiredSet();
     pages.forEach(m=>{
-      const top = m.top, bot = m.top + m.h;
-      const near = bot > st - RENDER_MARGIN && top < st + vh + RENDER_MARGIN;
-      const keep = bot > st - KEEP_MARGIN && top < st + vh + KEEP_MARGIN;
-      if(near) requestRender(m);
-      else if(!keep){ _wantRender.delete(m); if(m.rendered || m.rendering) releaseCanvas(m); }
+      if(want.has(m)) requestRender(m);
+      else { _wantRender.delete(m); if(m.rendered || m.rendering) releaseCanvas(m); }
     });
-    // Hard cap on live canvases — belt-and-suspenders against many short pages:
-    // never hold more than _MAX_LIVE rendered canvases; release the farthest.
-    const live = pages.filter(m=>m.rendered || m.rendering);
-    if(live.length > _MAX_LIVE){
-      const mid = st + vh/2;
-      live.sort((a,b)=> Math.abs((a.top+a.h/2)-mid) - Math.abs((b.top+b.h/2)-mid));
-      live.slice(_MAX_LIVE).forEach(m=>{ _wantRender.delete(m); releaseCanvas(m); });
-    }
     if(numPages){
-      const mid = st + vh/2;
+      const st = scroll.scrollTop, vh = scroll.clientHeight, mid = st + vh/2;
       let cur = 1;
       for(let i=0;i<pages.length;i++){ if(pages[i].top <= mid) cur = i+1; else break; }
       pageLbl.textContent = cur + ' / ' + numPages;
