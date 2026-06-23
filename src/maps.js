@@ -3604,7 +3604,7 @@ window.mapToggleDateLabelEdit=mapToggleDateLabelEdit;
 // bottom-left, then composites "GROUND|LOG" wordmark (white + amber pipe) on top
 // and re-encodes. Fails open — returns the raw blob if anything throws so capture
 // still succeeds without branding.
-async function _compositeBrandWordmark(blob){
+async function _compositeBrandWordmark(blob, legendCat, pid){
   try{
     const bmp=await createImageBitmap(blob);
     const c=document.createElement('canvas');
@@ -3641,6 +3641,59 @@ async function _compositeBrandWordmark(blob){
         });
       }
     }catch(e){ console.warn('marker composite failed:',e.message); }
+    // Optional state-color LEGEND (top-left) — bakes the color meaning into the image so
+    // the captured map is self-explanatory in the export. Shown for the category captured.
+    if(legendCat && typeof tcGetStates==='function'){
+      try{
+        const sts=tcGetStates(legendCat,pid).filter(s=>!s.isPlanned);
+        if(sts.length){
+          const catNm=(typeof tcGetName==='function')?tcGetName(legendCat,pid):'Legend';
+          const LP=Math.max(14,Math.round(c.width*0.011));   // inner padding
+          const LF=Math.max(13,Math.round(c.height*0.021));  // row font px
+          const TF=Math.round(LF*1.08);                      // title font px
+          const SW=Math.round(LF*1.15);                      // swatch size
+          const ROW=Math.round(LF*1.6);                      // row pitch
+          ctx.save();
+          ctx.textAlign='left'; ctx.textBaseline='middle';
+          ctx.font=`600 ${TF}px system-ui, sans-serif`;
+          let maxW=ctx.measureText(catNm).width;
+          ctx.font=`500 ${LF}px system-ui, sans-serif`;
+          sts.forEach(s=>{ const w=ctx.measureText(s.label).width; if(w>maxW) maxW=w; });
+          const boxW=Math.round(SW+LP*0.7+maxW+LP*2);
+          const boxH=Math.round(LP*1.5+ROW+ROW*sts.length);
+          const bx=LP, by=LP, br=Math.round(LF*0.4);
+          ctx.fillStyle='rgba(15,31,46,0.80)';
+          ctx.beginPath();
+          ctx.moveTo(bx+br,by);
+          ctx.arcTo(bx+boxW,by,bx+boxW,by+boxH,br);
+          ctx.arcTo(bx+boxW,by+boxH,bx,by+boxH,br);
+          ctx.arcTo(bx,by+boxH,bx,by,br);
+          ctx.arcTo(bx,by,bx+boxW,by,br);
+          ctx.closePath(); ctx.fill();
+          ctx.font=`600 ${TF}px system-ui, sans-serif`;
+          ctx.fillStyle='#C9A84C';
+          ctx.fillText(catNm, bx+LP, by+LP*0.75+TF*0.5);
+          ctx.font=`500 ${LF}px system-ui, sans-serif`;
+          let ry=by+LP*0.75+ROW;
+          sts.forEach(s=>{
+            const col=(s.color&&/^#[0-9A-Fa-f]{6}$/.test(s.color))?s.color:'#888888';
+            const cy=ry+ROW*0.5, swx=bx+LP, swy=cy-SW/2, sr=Math.round(SW*0.25);
+            ctx.fillStyle=col;
+            ctx.beginPath();
+            ctx.moveTo(swx+sr,swy);
+            ctx.arcTo(swx+SW,swy,swx+SW,swy+SW,sr);
+            ctx.arcTo(swx+SW,swy+SW,swx,swy+SW,sr);
+            ctx.arcTo(swx,swy+SW,swx,swy,sr);
+            ctx.arcTo(swx,swy,swx+SW,swy,sr);
+            ctx.closePath(); ctx.fill();
+            ctx.fillStyle='#ffffff';
+            ctx.fillText(s.label, swx+SW+LP*0.7, cy);
+            ry+=ROW;
+          });
+          ctx.restore();
+        }
+      }catch(e){ console.warn('legend composite failed:',e.message); }
+    }
     const PAD=Math.max(16,Math.round(c.width*0.012));
     const PILL_H=Math.max(28,Math.round(c.height*0.035));
     const FONT_PX=Math.round(PILL_H*0.50);
@@ -3733,7 +3786,7 @@ async function _doCaptureForEntry(entryId){
   const today=new Date().toLocaleDateString('en-CA');
   const rawBlob=await new Promise(res=>canvas.toBlob(res,'image/png'));
   if(!rawBlob){ _hideCaptureToast(); console.warn('_doCaptureForEntry: canvas returned null'); return; }
-  const branded=await _compositeBrandWordmark(rawBlob);
+  const branded=await _compositeBrandWordmark(rawBlob, entry.categoryId, pid);
   if(typeof phSaveCapturedImage!=='function'){ _hideCaptureToast(); return; }
   _showCaptureToast('☁️ Saving…');
   const catName=(typeof tcGetName==='function')?tcGetName(entry.categoryId,pid):(entry.categoryName||'Drawing');

@@ -1427,12 +1427,12 @@ async function _tlogExportXlsx(scheme, entries, pid){
   // Disturbance (running-balance/total) categories get a purpose-built SWPPP sheet:
   // net per-state areas (turf), total open vs cap + %, and itemized drawings. Each
   // disturbance category becomes its own tab; other types live in the combined sheet above.
-  catOrder.forEach(cid=>{
+  for(const cid of catOrder){
     const m=(typeof tcProgressMode==='function')?tcProgressMode(cid,pid):'';
     if(m==='running-balance'||m==='running-total'){
-      try{ _disturbanceSheet(wb, cid, entries, pid); }catch(err){ console.warn('disturbance sheet failed for',cid,err); }
+      try{ await _disturbanceSheet(wb, cid, entries, pid); }catch(err){ console.warn('disturbance sheet failed for',cid,err); }
     }
-  });
+  }
 
   // ── Body font ≥ 12 across the whole workbook (titles keep their larger size) ──
   wb.eachSheet(sheet=>{
@@ -1461,10 +1461,13 @@ function _xlContrast(hex){
   return (0.299*r+0.587*g+0.114*b)>150?'FF000000':'FFFFFFFF';
 }
 
+function _blobToDataURL(blob){ return new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=rej; r.readAsDataURL(blob); }); }
+
 // Dedicated SWPPP-disturbance deliverable sheet for one running-balance/total category:
 // a net-per-state summary (current area per state, turf-computed), total open vs the cap
-// + % of allowed (with OVER-LIMIT flag), then the itemized list of every drawn area.
-function _disturbanceSheet(wb, cid, allEntries, pid){
+// + % of allowed (with OVER-LIMIT flag), the itemized list of every drawn area, and the
+// attached map captures (legend baked in) embedded so the XLSX is one self-contained file.
+async function _disturbanceSheet(wb, cid, allEntries, pid){
   const cat=(typeof tcGetCategory==='function')?tcGetCategory(cid,pid):null;
   if(!cat) return;
   const name=(typeof tcGetName==='function')?tcGetName(cid,pid):'Disturbance';
@@ -1563,6 +1566,42 @@ function _disturbanceSheet(wb, cid, allEntries, pid){
   if(!sorted.length){ const r=ws.addRow(['—','No drawings yet']); r.getCell(2).font={italic:true,size:10,color:{argb:'FF999999'}}; }
   // Disturbance tab reads as a standalone deliverable — taller rows than the combined log.
   ws.eachRow((row,rn)=>{ if(rn===1) return; if(!row.height || row.height<22) row.height=22; });
+
+  // ── Map Captures (embedded) — map_capture photos attached to this category's drawings
+  //    (legend baked in at capture time). Embedded so the XLSX is one self-contained
+  //    deliverable; the separate photo-ZIP remains for bulk/full-res photos.
+  const caps=[];
+  installed.forEach(e=>{ (e.photoIds||[]).forEach(id=>{
+    const ph=(window._phPhotos||[]).find(p=>p.id===id);
+    if(ph && ph.type==='map_capture' && ph.storageUrl) caps.push({ph,e});
+  }); });
+  if(caps.length){
+    const ch=ws.addRow(['Map Captures']); ws.mergeCells(ch.number,1,ch.number,NC);
+    ch.getCell(1).font={bold:true,size:13,color:{argb:WHITE}};
+    ch.getCell(1).fill={type:'pattern',pattern:'solid',fgColor:{argb:TEAL}};
+    ch.getCell(1).alignment={vertical:'middle',horizontal:'left',indent:1}; ch.height=22;
+    for(const {ph,e} of caps){
+      const capR=ws.addRow([(e.photoCaptions||{})[ph.id]||ph.caption||`${e.date||''} map capture`]);
+      ws.mergeCells(capR.number,1,capR.number,NC);
+      capR.getCell(1).font={italic:true,size:11,color:{argb:'FF555555'}}; capR.height=18;
+      try{
+        const resp=await fetch(ph.storageUrl); if(!resp.ok) continue;
+        const blob=await resp.blob();
+        const dataUrl=await _blobToDataURL(blob);
+        const raw=dataUrl.substring(dataUrl.indexOf(',')+1);
+        const ext=(ph.filename||'png').split('.').pop().toLowerCase();
+        const extension=(ext==='jpg'||ext==='jpeg')?'jpeg':(ext==='gif'?'gif':'png');
+        const bmp=await createImageBitmap(blob);
+        const maxW=680, scale=Math.min(1,maxW/bmp.width);
+        const w=Math.round(bmp.width*scale), h=Math.round(bmp.height*scale); bmp.close();
+        const imgId=wb.addImage({base64:raw, extension});
+        ws.addImage(imgId,{ tl:{col:0,row:ws.rowCount}, ext:{width:w, height:h} });
+        // Reserve vertical space so stacked captures don't overlap (rows ~18pt ≈ 24px).
+        const spacer=Math.ceil(h/24)+1;
+        for(let i=0;i<spacer;i++){ const br=ws.addRow([]); br.height=18; }
+      }catch(err){ console.warn('embed capture failed',err); }
+    }
+  }
 }
 
 // ── Material Tag photo ZIP export ──
