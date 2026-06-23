@@ -1407,11 +1407,119 @@ async function _tlogExportXlsx(scheme, entries, pid){
     }],
   });
 
+  // ── Dedicated per-category deliverable sheets ──
+  // Disturbance (running-balance/total) categories get a purpose-built SWPPP sheet:
+  // net per-state areas (turf), total open vs cap + %, and itemized drawings. Each
+  // disturbance category becomes its own tab; other types live in the combined sheet above.
+  catOrder.forEach(cid=>{
+    const m=(typeof tcProgressMode==='function')?tcProgressMode(cid,pid):'';
+    if(m==='running-balance'||m==='running-total'){
+      try{ _disturbanceSheet(wb, cid, entries, pid); }catch(err){ console.warn('disturbance sheet failed for',cid,err); }
+    }
+  });
+
   // ── Download / Share ──
   const buf=await wb.xlsx.writeBuffer();
   const blob=new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
   const safeName=(cfg.projectName||pid).replace(/[^a-zA-Z0-9 _-]/g,'').trim().replace(/\s+/g,'-');
   await _glShareOrDownload(blob,`tracker-log-${safeName}-${today}.xlsx`,'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+}
+
+// hex '#RRGGBB' → ExcelJS argb 'FFRRGGBB' (or null if not a valid hex).
+function _xlHex(c){ return (c&&/^#[0-9A-Fa-f]{6}$/.test(c))?('FF'+c.slice(1).toUpperCase()):null; }
+// Pick black/white text for legibility on a colored fill (luminance).
+function _xlContrast(hex){
+  if(!hex||!/^#[0-9A-Fa-f]{6}$/.test(hex)) return 'FF000000';
+  const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16);
+  return (0.299*r+0.587*g+0.114*b)>150?'FF000000':'FFFFFFFF';
+}
+
+// Dedicated SWPPP-disturbance deliverable sheet for one running-balance/total category:
+// a net-per-state summary (current area per state, turf-computed), total open vs the cap
+// + % of allowed (with OVER-LIMIT flag), then the itemized list of every drawn area.
+function _disturbanceSheet(wb, cid, allEntries, pid){
+  const cat=(typeof tcGetCategory==='function')?tcGetCategory(cid,pid):null;
+  if(!cat) return;
+  const name=(typeof tcGetName==='function')?tcGetName(cid,pid):'Disturbance';
+  const mode=(typeof tcProgressMode==='function')?tcProgressMode(cid,pid):'running-balance';
+  const defUnit=(typeof tcGetDefaultUnit==='function')?tcGetDefaultUnit(cid,pid):'ac';
+  const states=(typeof tcGetStates==='function')?tcGetStates(cat,pid):[];
+  const childStates=states.filter(s=>!s.isPlanned);
+  const installed=allEntries.filter(e=>(e.categoryId===cid)&&e.entryType!=='planned'&&!e.temporary&&!e.deletedAt);
+  const rt=(typeof _runningTotals==='function')?_runningTotals(cid,installed,childStates,defUnit,pid,mode):{perState:{},open:0};
+  const fmt=(v)=>(typeof tcFormatMeasurement==='function')?tcFormatMeasurement(v,defUnit):`${(v||0).toFixed(2)} ${defUnit}`;
+
+  const TEAL='006B75', WHITE='FFFFFF', AMBER_LIGHT='FDF5DC';
+  const NC=7;
+  // Sheet name: ≤31 chars, no \ / ? * [ ] : — and unique within the workbook.
+  let base=('Disturbance — '+name).replace(/[\\\/\?\*\[\]:]/g,'').slice(0,31);
+  let nm=base, n=2;
+  while(wb.getWorksheet(nm)){ nm=base.slice(0,28)+' '+n; n++; }
+  const ws=wb.addWorksheet(nm);
+  ws.columns=[{width:28},{width:16},{width:14},{width:24},{width:36},{width:9},{width:22}];
+
+  // ── Title ──
+  ws.addRow([name+' — SWPPP Disturbance']);
+  ws.mergeCells(1,1,1,NC);
+  const tc=ws.getCell('A1');
+  tc.font={name:'Calibri',bold:true,size:14,color:{argb:WHITE}};
+  tc.fill={type:'pattern',pattern:'solid',fgColor:{argb:TEAL}};
+  tc.alignment={vertical:'middle',horizontal:'left',indent:1};
+  ws.getRow(1).height=26;
+
+  const cfg=JSON.parse(localStorage.getItem('msf_projectconfig')||'{}');
+  const today=new Date().toLocaleDateString('en-CA');
+  [['Project',cfg.projectName||''],['Snapshot date',today],['Prepared By',cfg.preparedBy||'']].forEach(([l,v])=>{
+    const r=ws.addRow([l,v]); ws.mergeCells(r.number,2,r.number,NC);
+    r.getCell(1).font={name:'Consolas',size:9,bold:true,color:{argb:'FF'+TEAL}};
+    r.getCell(2).font={name:'Calibri',size:10}; r.height=15;
+  });
+  ws.addRow([]);
+
+  // ── Summary (net per-state) ──
+  const sh=ws.addRow(['Disturbance Summary (current)']); ws.mergeCells(sh.number,1,sh.number,NC);
+  sh.getCell(1).font={bold:true,size:11}; sh.height=18;
+  const hdr=ws.addRow(['State','Area']);
+  hdr.getCell(1).font={bold:true,size:10}; hdr.getCell(2).font={bold:true,size:10};
+  childStates.forEach(s=>{
+    const v=rt.perState[s.id]||0;
+    const r=ws.addRow([s.label, fmt(v)]);
+    const fill=_xlHex(s.color);
+    if(fill){ r.getCell(1).fill={type:'pattern',pattern:'solid',fgColor:{argb:fill}}; r.getCell(1).font={name:'Calibri',size:10,color:{argb:_xlContrast(s.color)}}; }
+    else r.getCell(1).font={name:'Calibri',size:10};
+    r.getCell(2).font={name:'Calibri',size:10}; r.height=15;
+  });
+  const totR=ws.addRow(['Total open disturbed', fmt(rt.open)]);
+  totR.getCell(1).font={bold:true,size:10}; totR.getCell(2).font={bold:true,size:10};
+  totR.getCell(1).fill={type:'pattern',pattern:'solid',fgColor:{argb:AMBER_LIGHT}};
+  totR.getCell(2).fill={type:'pattern',pattern:'solid',fgColor:{argb:AMBER_LIGHT}};
+  const cap=cat.disturbanceCap;
+  if(cap!=null){
+    const aR=ws.addRow(['Allowed (limit)', fmt(cap)]); aR.getCell(1).font={bold:true,size:10}; aR.getCell(2).font={name:'Calibri',size:10};
+    const pct=cap>0?Math.min(100,(rt.open/cap)*100):0; const over=rt.open>cap;
+    const pR=ws.addRow(['% of allowed', Math.round(pct)+'%'+(over?'  ⚠ OVER LIMIT':'')]);
+    pR.getCell(1).font={bold:true,size:10};
+    pR.getCell(2).font={bold:true,size:10,color:{argb:over?'FFC0392B':'FF006B75'}};
+  }
+  ws.addRow([]);
+
+  // ── Itemized drawings ──
+  const ih=ws.addRow(['Itemized Drawings']); ws.mergeCells(ih.number,1,ih.number,NC);
+  ih.getCell(1).font={bold:true,size:11}; ih.height=18;
+  const chRow=ws.addRow(['Date','State','Area','Location','Notes','Photos','Contractor']);
+  chRow.eachCell({includeEmpty:true},c=>{ c.font={bold:true,size:10,color:{argb:WHITE}}; c.fill={type:'pattern',pattern:'solid',fgColor:{argb:TEAL}}; });
+  chRow.height=18;
+  const stById={}; childStates.forEach(s=>stById[s.id]=s);
+  const sorted=installed.slice().sort((a,b)=>String(a.date||'').localeCompare(String(b.date||'')));
+  sorted.forEach(e=>{
+    const s=stById[e.state]||null;
+    const meas=e.measurementValue!=null?`${e.measurementValue} ${e.measurementUnit||defUnit}`:(e.acres!=null?`${e.acres} ac`:'');
+    const r=ws.addRow([e.date||'', s?s.label:(e.state||''), meas, e.location||'', e.notes||'', Array.isArray(e.photoIds)?e.photoIds.length:'', e.contractor||'']);
+    r.eachCell({includeEmpty:true},c=>{ c.font={name:'Calibri',size:10}; c.alignment={vertical:'top',wrapText:true}; });
+    if(s){ const fill=_xlHex(s.color); if(fill){ r.getCell(2).fill={type:'pattern',pattern:'solid',fgColor:{argb:fill}}; r.getCell(2).font={name:'Calibri',size:10,color:{argb:_xlContrast(s.color)}}; } }
+    r.height=15;
+  });
+  if(!sorted.length){ const r=ws.addRow(['—','No drawings yet']); r.getCell(2).font={italic:true,size:10,color:{argb:'FF999999'}}; }
 }
 
 // ── Material Tag photo ZIP export ──
