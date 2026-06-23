@@ -772,21 +772,20 @@ async function _docOpenPdf(d){
     _scrollRaf = requestAnimationFrame(()=>{ _scrollRaf = 0; updateVisible(); });
   });
 
-  // Zoom toward a focal client point (fx,fy) — keeps that spot under the cursor /
-  // pinch center fixed (a getBoundingClientRect delta on the anchor page handles
-  // the padding/gap/centering math). Omit fx/fy to zoom about the viewport center
-  // (the +/- buttons). layout() resizes wrappers first so existing canvases CSS-
-  // scale instantly (no white flash), then visible pages re-render crisp.
-  function setZoom(nz, fx, fy){
+  // _zoomVisual = the INSTANT part of a zoom: resize the page frames so existing
+  // canvases display-scale to fit (a cheap GPU scale of an already-rendered bitmap
+  // — NO new memory, NO compositing of a transformed layer), and keep the focal
+  // point (fx,fy) fixed via a getBoundingClientRect delta. setZoom adds the crisp
+  // re-render. Pinch calls _zoomVisual live and updateVisible once on release.
+  function _zoomVisual(nz, fx, fy){
     nz = Math.min(6, Math.max(0.4, nz));
-    if(Math.abs(nz - zoom) < 0.001) return;
     const rect = scroll.getBoundingClientRect();
     const useX = (fx==null) ? rect.left + rect.width/2  : fx;
     const useY = (fy==null) ? rect.top  + rect.height/2 : fy;
     const sy = scroll.scrollTop + (useY - rect.top);
     let m = pages[0];
     for(let i=0;i<pages.length;i++){ if(pages[i].top <= sy) m = pages[i]; else break; }
-    if(!m){ zoom = nz; layout(); updateVisible(); return; }
+    if(!m){ zoom = nz; layout(); return; }
     const r0 = m.wrap.getBoundingClientRect();
     const rx = r0.width  ? Math.min(1, Math.max(0, (useX - r0.left)/r0.width))  : 0.5;
     const ry = r0.height ? Math.min(1, Math.max(0, (useY - r0.top )/r0.height)) : 0;
@@ -795,6 +794,11 @@ async function _docOpenPdf(d){
     const r1 = m.wrap.getBoundingClientRect();   // forces reflow → new geometry
     scroll.scrollLeft += (r1.left + rx*r1.width)  - useX;
     scroll.scrollTop  += (r1.top  + ry*r1.height) - useY;
+  }
+  function setZoom(nz, fx, fy){
+    nz = Math.min(6, Math.max(0.4, nz));
+    if(Math.abs(nz - zoom) < 0.001) return;
+    _zoomVisual(nz, fx, fy);
     updateVisible();
   }
   document.getElementById('_dv-zin').onclick  = ()=> setZoom(zoom*1.25);
@@ -807,36 +811,34 @@ async function _docOpenPdf(d){
     if(e.ctrlKey || e.metaKey){ e.preventDefault(); setZoom(zoom * (e.deltaY < 0 ? 1.12 : 1/1.12), e.clientX, e.clientY); }
   }, { passive:false });
 
-  // Touch pinch-zoom: live CSS transform on the pages container for feedback,
-  // commit a crisp re-render on release. Anchored to the current top page.
-  let _pinching = false, _pDist = 0, _pZoom = 1, _pCx = 0, _pCy = 0;
+  // Touch pinch-zoom: NO CSS transform. Compositing the whole page stack as one
+  // transformed GPU layer (with big rendered canvases inside) was the iOS memory
+  // spike that crashed on zoom-out. Instead we resize the frames live via
+  // _zoomVisual (canvases display-scale for free) and re-render crisp once on
+  // release. rAF-throttled so we reflow at most once per frame.
+  let _pinching = false, _pDist = 0, _pZoom = 1, _pCx = 0, _pCy = 0, _pRatio = 1, _pinchRaf = 0;
   const _tDist = t => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
   scroll.addEventListener('touchstart', e=>{
     if(e.touches.length===2){
-      _pinching = true; _pDist = _tDist(e.touches) || 1; _pZoom = zoom;
+      _pinching = true; _pDist = _tDist(e.touches) || 1; _pZoom = zoom; _pRatio = 1;
       _pCx = (e.touches[0].clientX + e.touches[1].clientX)/2;
       _pCy = (e.touches[0].clientY + e.touches[1].clientY)/2;
-      // Grow the live pinch from BETWEEN the fingers (not top-center) so the page
-      // tracks the gesture instead of drifting/skipping until release.
-      const pr = pagesEl.getBoundingClientRect();
-      pagesEl.style.transformOrigin = (_pCx - pr.left) + 'px ' + (_pCy - pr.top) + 'px';
       e.preventDefault();
     }
   }, { passive:false });
   scroll.addEventListener('touchmove', e=>{
     if(_pinching && e.touches.length===2){
       e.preventDefault();
-      let r = _tDist(e.touches) / _pDist;
-      r = Math.min(Math.max(r, 0.4/_pZoom), 6/_pZoom);
-      pagesEl.style.transform = 'scale(' + r + ')';
+      _pRatio = _tDist(e.touches) / _pDist;
+      if(!_pinchRaf) _pinchRaf = requestAnimationFrame(()=>{ _pinchRaf = 0; if(_alive && _pinching) _zoomVisual(_pZoom * _pRatio, _pCx, _pCy); });
     }
   }, { passive:false });
   const _endPinch = ()=>{
     if(!_pinching) return;
     _pinching = false;
-    const m = (pagesEl.style.transform.match(/scale\(([^)]+)\)/) || [])[1];
-    pagesEl.style.transform = ''; pagesEl.style.transformOrigin = '';
-    setZoom(_pZoom * (m ? parseFloat(m) : 1), _pCx, _pCy);
+    if(_pinchRaf){ cancelAnimationFrame(_pinchRaf); _pinchRaf = 0; }
+    _zoomVisual(_pZoom * _pRatio, _pCx, _pCy);   // settle visual at the release zoom
+    updateVisible();                              // then render crisp
   };
   scroll.addEventListener('touchend', e=>{ if(_pinching && e.touches.length<2) _endPinch(); }, { passive:false });
   scroll.addEventListener('touchcancel', _endPinch, { passive:false });
