@@ -1485,8 +1485,8 @@ function _disturbanceSheet(wb, cid, allEntries, pid){
   const ws=wb.addWorksheet(nm);
   ws.columns=[{width:30},{width:24},{width:16},{width:28},{width:42},{width:10},{width:26}];
 
-  // ── Title ──
-  ws.addRow([name+' — SWPPP Disturbance']);
+  // ── Title ── (just the category name — the tab already says "Disturbance —")
+  ws.addRow([name]);
   ws.mergeCells(1,1,1,NC);
   const tc=ws.getCell('A1');
   tc.font={name:'Calibri',bold:true,size:14,color:{argb:WHITE}};
@@ -1505,7 +1505,9 @@ function _disturbanceSheet(wb, cid, allEntries, pid){
 
   // ── Summary (net per-state) ──
   const sh=ws.addRow(['Disturbance Summary (current)']); ws.mergeCells(sh.number,1,sh.number,NC);
-  sh.getCell(1).font={bold:true,size:11}; sh.height=18;
+  sh.getCell(1).font={bold:true,size:13,color:{argb:WHITE}};
+  sh.getCell(1).fill={type:'pattern',pattern:'solid',fgColor:{argb:TEAL}};
+  sh.getCell(1).alignment={vertical:'middle',horizontal:'left',indent:1}; sh.height=22;
   const hdr=ws.addRow(['State','Area']);
   hdr.getCell(1).font={bold:true,size:10}; hdr.getCell(2).font={bold:true,size:10};
   childStates.forEach(s=>{
@@ -1526,20 +1528,25 @@ function _disturbanceSheet(wb, cid, allEntries, pid){
   totR.height=30;
   const cap=cat.disturbanceCap;
   if(cap!=null){
-    const over=rt.open>cap; const remaining=Math.max(0,cap-rt.open);
+    const pctRaw=cap>0?(rt.open/cap)*100:0;
+    const over=rt.open>cap; const warn=!over && pctRaw>=90;     // amber warning band near the cap
+    const remaining=Math.max(0,cap-rt.open);
+    // 3-tier status color: green (clear) → amber (≥90%, getting close) → red (over).
+    const statusColor=over?'FFC0392B':(warn?'FFE69500':'FF27AE60');
     const aR=ws.addRow(['Allowed (limit)', fmt(cap)]); aR.getCell(1).font={bold:true,size:12}; aR.getCell(2).font={name:'Calibri',size:12};
     const rR=ws.addRow(['Remaining to limit', over?('0 — ⚠ OVER by '+fmt(rt.open-cap)):fmt(remaining)]);
-    rR.getCell(1).font={bold:true,size:12}; rR.getCell(2).font={bold:true,size:12,color:{argb:over?'FFC0392B':'FF27AE60'}};
-    const pct=cap>0?Math.min(100,(rt.open/cap)*100):0;
-    const pR=ws.addRow(['% of allowed', Math.round(pct)+'%'+(over?'  ⚠ OVER LIMIT':'')]);
+    rR.getCell(1).font={bold:true,size:12}; rR.getCell(2).font={bold:true,size:12,color:{argb:statusColor}};
+    const pR=ws.addRow(['% of allowed', Math.round(Math.min(100,pctRaw))+'%'+(over?'  ⚠ OVER LIMIT':(warn?'  ⚠ APPROACHING LIMIT':''))]);
     pR.getCell(1).font={bold:true,size:12};
-    pR.getCell(2).font={bold:true,size:12,color:{argb:over?'FFC0392B':'FF006B75'}};
+    pR.getCell(2).font={bold:true,size:12,color:{argb:statusColor}};
   }
   ws.addRow([]);
 
   // ── Itemized drawings ──
   const ih=ws.addRow(['Itemized Drawings']); ws.mergeCells(ih.number,1,ih.number,NC);
-  ih.getCell(1).font={bold:true,size:11}; ih.height=18;
+  ih.getCell(1).font={bold:true,size:13,color:{argb:WHITE}};
+  ih.getCell(1).fill={type:'pattern',pattern:'solid',fgColor:{argb:TEAL}};
+  ih.getCell(1).alignment={vertical:'middle',horizontal:'left',indent:1}; ih.height=22;
   const chRow=ws.addRow(['Date','State','Area','Location','Notes','Photos','Contractor']);
   chRow.eachCell({includeEmpty:true},c=>{ c.font={bold:true,size:10,color:{argb:WHITE}}; c.fill={type:'pattern',pattern:'solid',fgColor:{argb:TEAL}}; });
   chRow.height=18;
