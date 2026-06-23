@@ -363,14 +363,11 @@ function clRenderTrackerCard(search){
       .reduce((s,e)=>s+((typeof trEntryMeasure==='function')?trEntryMeasure(e,t.displayUnit,pid):0),0);
     t.stateTotals=childStates.map(s=>({label:s.label,color:s.color,value:stateTotal(s.id)}));
     if(mode==='running-balance'||mode==='running-total'){
-      // Signed sum by per-state countMode: Total = Σ(add) − Σ(subtract); 'none' is ignored.
-      let add=0,sub=0;
-      childStates.forEach((st,idx)=>{
-        const cm=(typeof tcStateCountMode==='function')?tcStateCountMode(st,idx,childStates,mode):'add';
-        const v=stateTotal(st.id);
-        if(cm==='add') add+=v; else if(cm==='subtract') sub+=v;
-      });
-      t.headlineMode='area'; t.headlineVal=Math.max(0,add-sub);
+      // Net per-state via turf (later state wins overlaps); open = Σ(add). Scalar fallback signs.
+      const _inst=_allProjEntries.filter(e=>(e.categoryId===t.categoryId)&&e.entryType!=='planned'&&!e.temporary&&!e.deletedAt);
+      const rt=_runningTotals(t.categoryId,_inst,childStates,t.displayUnit,pid,mode);
+      t.stateTotals=childStates.map(s=>({label:s.label,color:s.color,value:rt.perState[s.id]||0}));
+      t.headlineMode='area'; t.headlineVal=rt.open;
     } else if(t.plannedValue>0 && childStates.length){
       t.headlineMode='pct'; t.headlinePct=Math.min(100,(stateTotal(childStates[childStates.length-1].id)/t.plannedValue)*100);
     } else {
@@ -637,9 +634,41 @@ function clRefreshDetailPhotoStrip(entryId){
   clRenderTrackerCard();
 }
 
+// Net per-state areas + open total for running-balance/running-total categories.
+// Uses the turf net-area engine (geo.js) when the category is area-type with polygon
+// geometry — a LATER state wins overlaps, so per-state areas are the CURRENT (net) area
+// in each state, never double-counted (stabilizing carves ground out of "active"). Falls
+// back to gross scalar sums (signed by countMode) when geometry isn't usable (e.g. linear).
+function _runningTotals(cid, instEntries, childStates, defUnit, pid, mode){
+  const measType=(typeof tcGetMeasurementType==='function')?tcGetMeasurementType(cid,pid):'area';
+  const perState={}; let geoOk=false;
+  if(measType==='area' && typeof glStateNetAreasM2==='function'){
+    const g=glStateNetAreasM2(instEntries, childStates);
+    if(g){
+      geoOk=true;
+      childStates.forEach(s=>{ perState[s.id]=(typeof glAreaConvertM2==='function')?glAreaConvertM2(g.netM2[s.id]||0, defUnit):0; });
+    }
+  }
+  if(!geoOk){
+    const dcs=(typeof tcDefaultChildState==='function')?tcDefaultChildState(cid,pid):null;
+    const measure=(e)=>(typeof trEntryMeasure==='function')?trEntryMeasure(e,defUnit,pid):0;
+    childStates.forEach(s=>{ perState[s.id]=instEntries.filter(e=>(e.state||(dcs?dcs.id:null))===s.id).reduce((a,e)=>a+measure(e),0); });
+  }
+  let open=0;
+  childStates.forEach((s,idx)=>{
+    const cm=(typeof tcStateCountMode==='function')?tcStateCountMode(s,idx,childStates,mode):'add';
+    const v=perState[s.id]||0;
+    // Geo net already carves stabilized ground out of the add-states → open = Σ(add).
+    // Scalar fallback can't, so it compensates by subtracting the subtract-states.
+    if(geoOk){ if(cm==='add') open+=v; }
+    else { if(cm==='add') open+=v; else if(cm==='subtract') open-=v; }
+  });
+  return { perState, open:Math.max(0,open), geoOk };
+}
+
 // Per-state progress bars for schema categories (states + templates, 2026-06-03).
 // per-state-vs-plan → one bar per non-planned state vs the planned total + overall (terminal %).
-// running-balance   → net (active states − terminal state) vs editable cap, warns when over.
+// running-balance/-total → net open disturbance (turf geometry) vs editable cap, warns when over.
 function _catStateBars(cid, g, pid){
   const cat=(typeof tcGetCategory==='function')?tcGetCategory(cid,pid):null;
   if(!cat) return '';
@@ -658,21 +687,20 @@ function _catStateBars(cid, g, pid){
   const stateTotal=(sid)=>installed.filter(e=>(e.state||(dcs?dcs.id:null))===sid).reduce((s,e)=>s+measure(e),0);
 
   if(mode==='running-balance'||mode==='running-total'){
-    // Signed sum by per-state countMode: Total open = Σ(add) − Σ(subtract); 'none' is
-    // tracked but not counted. countMode is editable per state; falls back to the old
-    // positional rule for legacy categories (see tcStateCountMode).
-    let add=0,sub=0;
+    // Net per-state areas via turf (geo.js) — later state wins overlaps, so each state
+    // shows its CURRENT area; open = Σ(add). Scalar fallback signs by countMode.
+    const rt=_runningTotals(cid, installed, childStates, defUnit, pid, mode);
     const chips=childStates.map((st,idx)=>{
+      const v=rt.perState[st.id]||0;
+      if(v<=0) return '';
       const cm=(typeof tcStateCountMode==='function')?tcStateCountMode(st,idx,childStates,mode):'add';
-      const v=stateTotal(st.id);
-      if(cm==='add') add+=v; else if(cm==='subtract') sub+=v;
-      if(v<=0 && cm==='none') return '';
       const c=(st.color&&/^#[0-9A-Fa-f]{6}$/.test(st.color))?st.color:'var(--muted)';
-      const sign=cm==='add'?'+':(cm==='subtract'?'−':'·');
-      const scol=cm==='subtract'?'var(--green,#27AE60)':(cm==='none'?'var(--muted)':'var(--text)');
+      // Net mode shows current areas (no signs); scalar fallback keeps +/− to convey the math.
+      const sign=rt.geoOk?'':(cm==='add'?'+':(cm==='subtract'?'−':'·'));
+      const scol=cm==='add'?'var(--text)':(cm==='subtract'?'var(--green,#27AE60)':'var(--muted)');
       return `<span style="display:inline-flex;align-items:center;gap:3px;font-family:var(--mono);font-size:9px;color:${scol}"><span style="display:inline-block;width:7px;height:7px;border-radius:2px;background:${c}"></span>${st.label}: ${sign}${fmt(v)}</span>`;
     }).filter(Boolean).join('');
-    const net=Math.max(0,add-sub);
+    const net=rt.open;
     const cap=cat.disturbanceCap;
     const over=cap!=null&&net>cap;
     const pct=cap!=null&&cap>0?Math.min(100,(net/cap)*100):(net>0?100:0);
