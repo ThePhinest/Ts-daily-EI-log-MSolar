@@ -88,6 +88,15 @@ const _docBlobStore = createStore('groundlog-docs', 'blobs');
 const _docNative = () => !!(window.Capacitor?.isNativePlatform?.());
 const _DOC_PIN_DIR = 'groundlog-docs';
 const _docPinPath = id => `${_DOC_PIN_DIR}/${id}.pdf`;
+// blob → bare base64 (no data: prefix) for Filesystem.writeFile binary writes.
+function _blobToBase64(blob){
+  return new Promise((resolve, reject)=>{
+    const r = new FileReader();
+    r.onloadend = ()=>{ const s = String(r.result||''); resolve(s.slice(s.indexOf(',')+1)); };
+    r.onerror = reject;
+    r.readAsDataURL(blob);
+  });
+}
 
 window._docs = window._docs || [];              // own docs metadata (active project)
 window._docsShared = window._docsShared || [];  // teammates' shared docs (active project)
@@ -643,8 +652,10 @@ async function _docOpenPdf(d){
     let arg = null;
     if(_docOfflineIds.has(d.id)){
       try{
-        const { uri } = await Filesystem.getUri({ path: _docPinPath(d.id), directory: Directory.LibraryNoCloud });
-        if(uri) arg = { path: uri };
+        // stat (not getUri) → authoritative uri AND throws if the file isn't
+        // actually on disk, so a missing/failed pin falls back to the URL below.
+        const st = await Filesystem.stat({ path: _docPinPath(d.id), directory: Directory.LibraryNoCloud });
+        if(st && st.uri) arg = { path: st.uri };
       }catch(e){ arg = null; }
     }
     if(!arg && d.downloadUrl) arg = { url: d.downloadUrl };
@@ -1000,8 +1011,14 @@ async function docToggleOffline(id){
     try{
       if(typeof showCloudBanner==='function') showCloudBanner('⬇ Downloading for offline…');
       if(_docNative()){
-        // Native: stream straight to the app-private file (no base64, bounded memory).
-        await Filesystem.downloadFile({ url: d.downloadUrl, path: _docPinPath(id), directory: Directory.LibraryNoCloud, recursive: true });
+        // Native: fetch then writeFile to the app-private LibraryNoCloud dir.
+        // writeFile honors directory+recursive reliably (downloadFile's dir
+        // handling was dropping the file off-path). Fine for per-doc sizes;
+        // a no-base64 streamed write is a future optimization once verified.
+        const resp = await fetch(d.downloadUrl);
+        const blob = await resp.blob();
+        const b64 = await _blobToBase64(blob);
+        await Filesystem.writeFile({ path: _docPinPath(id), data: b64, directory: Directory.LibraryNoCloud, recursive: true });
       } else {
         const resp = await fetch(d.downloadUrl);
         const blob = await resp.blob();
