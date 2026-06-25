@@ -15,7 +15,7 @@
     "@firebase/rules-unit-testing": "^5.0.1",
     "@sentry/vite-plugin": "^5.2.1",
     "patch-package": "^8.0.1",
-    "vite": "^6.3.4",
+    "vite": "^8.1.0",
     "vite-plugin-pwa": "^1.3.0",
     "vite-plugin-static-copy": "^4.1.1",
     "vitest": "^4.1.9"
