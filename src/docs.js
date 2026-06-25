@@ -44,6 +44,13 @@
 
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import { get as idbKvGet, set as idbKvSet, del as idbKvDel, keys as idbKvKeys, clear as idbKvClear, createStore } from 'idb-keyval'
+import { Capacitor, registerPlugin } from '@capacitor/core'
+
+// Native iOS PDF viewer (PDFKit) — kills the WKWebView OOM crash on large site
+// plans. iOS-only; on web this resolves to a no-op proxy and we never call it
+// (we branch on Capacitor.isNativePlatform()). The pdf.js viewer below STAYS as
+// the web-PWA viewer. See ios-pdf-viewer-build-plan.md.
+const GroundLogPdf = registerPlugin('GroundLogPdf')
 
 // pdfjs is heavy (~1.2 MB). Lazy-load it only when a PDF is actually opened so it
 // stays OUT of the main bundle.
@@ -605,6 +612,25 @@ const _MAX_LIVE = 4;               // the 4 pages nearest the viewport — rende
 const _PAGE_GAP = 10;              // px between pages (must match CSS .gl-doc-vpages gap)
 const _PAGE_PAD = 8;               // top padding of #_dv-pages (must match CSS)
 async function _docOpenPdf(d){
+  // ── iOS native path (crash-killer) ──
+  // On the native app, hand the PDF to the native PDFKit viewer instead of
+  // rendering it with pdf.js in the WKWebView (which OOM-reloads the app on big
+  // aerial-backed plans). v1 streams the tokenized downloadUrl natively; the
+  // offline-pinned-while-offline case is handled when pins migrate to Filesystem
+  // (see ios-pdf-viewer-build-plan.md step 4). Web falls through to pdf.js below.
+  if(Capacitor?.isNativePlatform?.() && d.downloadUrl){
+    try{
+      await GroundLogPdf.present({ url: d.downloadUrl, title: d.title || 'Document' });
+    }catch(e){
+      if(typeof showCloudBanner==='function'){
+        showCloudBanner(navigator.onLine
+          ? '⚠ Could not open this PDF.'
+          : '⚠ Pin this document for offline use, then reopen (offline viewing is coming).');
+      }
+    }
+    return;
+  }
+
   const ov = document.createElement('div');
   ov.className = 'modal-overlay gl-doc-viewer';
   ov.id = '_doc-viewer';
