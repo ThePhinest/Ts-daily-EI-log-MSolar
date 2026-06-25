@@ -2,13 +2,15 @@
   "name": "groundlog-pdf",
   "version": "0.1.0",
   "description": "Native iOS PDF viewer (PDFKit) for GroundLog — kills the WKWebView OOM crash on large site plans. iOS-only; web keeps pdf.js.",
-  "main": "dist/plugin.cjs.js",
-  "module": "dist/esm/index.js",
-  "types": "dist/esm/index.d.ts",
+  "type": "module",
+  "main": "index.js",
+  "module": "index.js",
+  "types": "index.d.ts",
   "files": [
     "ios/Sources",
     "Package.swift",
-    "dist/"
+    "index.js",
+    "index.d.ts"
   ],
   "author": "GroundLog",
   "license": "UNLICENSED",
