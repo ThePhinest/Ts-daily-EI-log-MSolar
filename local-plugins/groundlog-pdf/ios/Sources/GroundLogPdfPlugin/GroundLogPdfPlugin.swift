@@ -21,80 +21,48 @@ public class GroundLogPdfPlugin: CAPPlugin, CAPBridgedPlugin {
     ]
 
     /// present({ url?: string, path?: string, title?: string, startPage?: number })
-    ///   url  — a remote (tokenized Firebase Storage) URL; downloaded natively to a
-    ///          temp file (streamed to disk, low memory) before display.
+    ///   url  — a remote (tokenized Firebase Storage) URL; downloaded natively.
     ///   path — a local file path/URL (offline-pinned doc); displayed directly.
-    /// Resolves { closed: true, lastPage: <int> } when the user dismisses.
+    ///
+    /// The viewer opens IMMEDIATELY with a loading spinner, then downloads/loads
+    /// in the background. On failure it shows an inline "Couldn't load — Retry"
+    /// state inside the viewer (not a cryptic webview banner). Resolves
+    /// { closed: true, lastPage: <int> } when the user dismisses.
     @objc func present(_ call: CAPPluginCall) {
         let title = call.getString("title") ?? "Document"
         let startPage = call.getInt("startPage") ?? 0
         let urlStr = call.getString("url")
         let pathStr = call.getString("path")
 
-        // Local file path wins (offline-pinned). Accepts "file://…" or a bare path.
+        let source: GLPdfSource
         if let p = pathStr, !p.isEmpty {
             let fileURL = p.hasPrefix("file://") ? (URL(string: p) ?? URL(fileURLWithPath: p))
                                                  : URL(fileURLWithPath: p)
-            guard FileManager.default.fileExists(atPath: fileURL.path) else {
-                call.reject("Offline file not found at path.")
-                return
-            }
-            self.presentViewer(call: call, fileURL: fileURL, title: title, startPage: startPage, isTemp: false)
-            return
-        }
-
-        guard let urlStr = urlStr, let remoteURL = URL(string: urlStr) else {
+            source = .file(fileURL)
+        } else if let u = urlStr, let remote = URL(string: u) {
+            source = .remote(remote)
+        } else {
             call.reject("No valid 'url' or 'path' provided.")
             return
         }
 
-        // Stream the remote PDF to a temp file (URLSession download = disk-backed,
-        // does not load the whole file into memory).
-        let task = URLSession.shared.downloadTask(with: remoteURL) { tempURL, response, error in
-            if let error = error {
-                call.reject("Download failed: \(error.localizedDescription)")
-                return
-            }
-            guard let tempURL = tempURL else {
-                call.reject("Download produced no file.")
-                return
-            }
-            // Move to a stable temp path with a .pdf extension (needed for the iOS
-            // share sheet / "Copy to Books" to recognise the type).
-            let dest = FileManager.default.temporaryDirectory
-                .appendingPathComponent("gl-\(UUID().uuidString).pdf")
-            do {
-                try? FileManager.default.removeItem(at: dest)
-                try FileManager.default.moveItem(at: tempURL, to: dest)
-            } catch {
-                call.reject("Could not stage downloaded PDF: \(error.localizedDescription)")
-                return
-            }
-            self.presentViewer(call: call, fileURL: dest, title: title, startPage: startPage, isTemp: true)
-        }
-        task.resume()
-    }
-
-    private func presentViewer(call: CAPPluginCall, fileURL: URL, title: String, startPage: Int, isTemp: Bool) {
         DispatchQueue.main.async {
-            guard let doc = PDFDocument(url: fileURL) else {
-                call.reject("Could not open this PDF (it may be corrupt or unsupported).")
-                return
-            }
             guard let presenter = self.bridge?.viewController else {
                 call.reject("No view controller available to present from.")
                 return
             }
-            let vc = GLPdfViewController(document: doc, title: title, fileURL: fileURL,
-                                        startPage: startPage, deleteOnClose: isTemp)
-            vc.onClose = { lastPage in
-                call.resolve(["closed": true, "lastPage": lastPage])
-            }
+            let vc = GLPdfViewController(source: source, title: title, startPage: startPage)
+            vc.onClose = { lastPage in call.resolve(["closed": true, "lastPage": lastPage]) }
             let nav = UINavigationController(rootViewController: vc)
             nav.modalPresentationStyle = .fullScreen
             presenter.present(nav, animated: true, completion: nil)
         }
     }
+}
+
+enum GLPdfSource {
+    case remote(URL)
+    case file(URL)
 }
 
 /// Full-screen PDFKit viewer hosted in a UINavigationController.
@@ -103,18 +71,22 @@ public class GroundLogPdfPlugin: CAPPlugin, CAPBridgedPlugin {
 ///   Nav bar  — Done (left) · title + tappable page X/Y [jump-to-page] (center) · Share (right)
 ///   Toolbar  — Thumbnails toggle · Continuous/Single toggle · Search
 ///              (when searching: ‹ prev · "n/m" · next › appear)
-/// Continuous vertical scroll by default, auto-scaled. PDFKit handles the heavy
-/// tiling/downsampling so large aerial-backed plan sets never OOM the webview.
+///
+/// The viewer presents instantly with a spinner; the document downloads/loads in
+/// the background and chrome stays disabled until it's ready. A load failure
+/// shows an inline Retry state. PDFKit handles tiling/downsampling so large
+/// aerial-backed plan sets never OOM the webview.
 class GLPdfViewController: UIViewController {
     private let pdfView = PDFView()
     private let thumbnailView = PDFThumbnailView()
-    private let document: PDFDocument
-    private let fileURL: URL
+    private let source: GLPdfSource
     private let startPage: Int
-    private let deleteOnClose: Bool
     private let docTitle: String
-    private let pageLabel = UILabel()
     var onClose: ((Int) -> Void)?
+
+    private var document: PDFDocument?
+    private var loadedFileURL: URL?
+    private var deleteOnClose = false
     private var didReportClose = false
 
     private var isContinuous = true
@@ -123,6 +95,14 @@ class GLPdfViewController: UIViewController {
 
     private var searchMatches: [PDFSelection] = []
     private var searchIndex = 0
+
+    private let pageLabel = UILabel()
+    private let spinner = UIActivityIndicatorView(style: .large)
+    private let loadingLabel = UILabel()
+    private var errorView: UIView!
+    private let errorLabel = UILabel()
+
+    private var shareItemNav: UIBarButtonItem!
     private var thumbItem: UIBarButtonItem!
     private var layoutItem: UIBarButtonItem!
     private var searchItem: UIBarButtonItem!
@@ -130,12 +110,10 @@ class GLPdfViewController: UIViewController {
     private var prevMatchItem: UIBarButtonItem!
     private var nextMatchItem: UIBarButtonItem!
 
-    init(document: PDFDocument, title: String, fileURL: URL, startPage: Int, deleteOnClose: Bool) {
-        self.document = document
-        self.fileURL = fileURL
-        self.startPage = startPage
-        self.deleteOnClose = deleteOnClose
+    init(source: GLPdfSource, title: String, startPage: Int) {
+        self.source = source
         self.docTitle = title
+        self.startPage = startPage
         super.init(nibName: nil, bundle: nil)
         self.title = title
     }
@@ -146,7 +124,6 @@ class GLPdfViewController: UIViewController {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
 
-        pdfView.document = document
         pdfView.autoScales = true
         pdfView.displayMode = .singlePageContinuous
         pdfView.displayDirection = .vertical
@@ -175,15 +152,29 @@ class GLPdfViewController: UIViewController {
             pdfView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         ])
 
-        if startPage > 0, startPage < document.pageCount, let pg = document.page(at: startPage) {
-            DispatchQueue.main.async { [weak self] in self?.pdfView.go(to: pg) }
-        }
+        // Loading spinner (centered, subtle).
+        spinner.hidesWhenStopped = true
+        spinner.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(spinner)
+        loadingLabel.text = "Loading…"
+        loadingLabel.font = .systemFont(ofSize: 13, weight: .medium)
+        loadingLabel.textColor = .secondaryLabel
+        loadingLabel.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(loadingLabel)
+        NSLayoutConstraint.activate([
+            spinner.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            spinner.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            loadingLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            loadingLabel.topAnchor.constraint(equalTo: spinner.bottomAnchor, constant: 10)
+        ])
+
+        buildErrorView()
 
         // Nav bar: Done · title+page (tap page to jump) · Share.
         navigationItem.leftBarButtonItem = UIBarButtonItem(
             barButtonSystemItem: .done, target: self, action: #selector(closeTapped))
-        navigationItem.rightBarButtonItem = UIBarButtonItem(
-            barButtonSystemItem: .action, target: self, action: #selector(shareTapped))
+        shareItemNav = UIBarButtonItem(barButtonSystemItem: .action, target: self, action: #selector(shareTapped))
+        navigationItem.rightBarButtonItem = shareItemNav
 
         let titleLbl = UILabel()
         titleLbl.text = docTitle
@@ -193,7 +184,6 @@ class GLPdfViewController: UIViewController {
         pageLabel.font = .systemFont(ofSize: 12, weight: .medium)
         pageLabel.textColor = .secondaryLabel
         pageLabel.textAlignment = .center
-        pageLabel.isUserInteractionEnabled = true
         pageLabel.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(jumpTapped)))
         let stack = UIStackView(arrangedSubviews: [titleLbl, pageLabel])
         stack.axis = .vertical
@@ -218,7 +208,128 @@ class GLPdfViewController: UIViewController {
         NotificationCenter.default.addObserver(
             self, selector: #selector(pageChanged),
             name: Notification.Name.PDFViewPageChanged, object: pdfView)
+
+        setChromeEnabled(false)
+        startLoad()
+    }
+
+    // ── Loading / error ──
+    private func buildErrorView() {
+        let icon = UIImageView(image: UIImage(systemName: "exclamationmark.triangle"))
+        icon.tintColor = .secondaryLabel
+        icon.contentMode = .scaleAspectFit
+        icon.translatesAutoresizingMaskIntoConstraints = false
+        icon.heightAnchor.constraint(equalToConstant: 40).isActive = true
+
+        errorLabel.text = ""
+        errorLabel.font = .systemFont(ofSize: 15)
+        errorLabel.textColor = .label
+        errorLabel.textAlignment = .center
+        errorLabel.numberOfLines = 0
+
+        let retry = UIButton(type: .system)
+        retry.setTitle("Retry", for: .normal)
+        retry.titleLabel?.font = .systemFont(ofSize: 16, weight: .semibold)
+        retry.addTarget(self, action: #selector(retryTapped), for: .touchUpInside)
+
+        let stack = UIStackView(arrangedSubviews: [icon, errorLabel, retry])
+        stack.axis = .vertical
+        stack.alignment = .center
+        stack.spacing = 12
+        stack.translatesAutoresizingMaskIntoConstraints = false
+
+        let container = UIView()
+        container.backgroundColor = .systemBackground
+        container.isHidden = true
+        container.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(stack)
+        view.addSubview(container)
+        NSLayoutConstraint.activate([
+            container.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            container.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            container.topAnchor.constraint(equalTo: view.topAnchor),
+            container.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            stack.centerXAnchor.constraint(equalTo: container.centerXAnchor),
+            stack.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+            stack.leadingAnchor.constraint(greaterThanOrEqualTo: container.leadingAnchor, constant: 32),
+            stack.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor, constant: -32)
+        ])
+        errorView = container
+    }
+
+    private func startLoad() {
+        errorView.isHidden = true
+        spinner.startAnimating()
+        loadingLabel.isHidden = false
+        switch source {
+        case .file(let url):
+            if FileManager.default.fileExists(atPath: url.path) {
+                finishLoad(url: url, isTemp: false)
+            } else {
+                showError("This offline file couldn't be found.")
+            }
+        case .remote(let url):
+            let task = URLSession.shared.downloadTask(with: url) { [weak self] tempURL, _, error in
+                guard let self = self else { return }
+                if let error = error {
+                    DispatchQueue.main.async { self.showError("Couldn't load this PDF.\n\(error.localizedDescription)") }
+                    return
+                }
+                guard let tempURL = tempURL else {
+                    DispatchQueue.main.async { self.showError("Couldn't load this PDF.") }
+                    return
+                }
+                let dest = FileManager.default.temporaryDirectory
+                    .appendingPathComponent("gl-\(UUID().uuidString).pdf")
+                do {
+                    try? FileManager.default.removeItem(at: dest)
+                    try FileManager.default.moveItem(at: tempURL, to: dest)
+                } catch {
+                    DispatchQueue.main.async { self.showError("Couldn't save this PDF for viewing.") }
+                    return
+                }
+                DispatchQueue.main.async { self.finishLoad(url: dest, isTemp: true) }
+            }
+            task.resume()
+        }
+    }
+
+    private func finishLoad(url: URL, isTemp: Bool) {
+        guard let doc = PDFDocument(url: url) else {
+            if isTemp { try? FileManager.default.removeItem(at: url) }
+            showError("This PDF couldn't be opened (it may be corrupt).")
+            return
+        }
+        document = doc
+        loadedFileURL = url
+        deleteOnClose = isTemp
+        pdfView.document = doc
+        spinner.stopAnimating()
+        loadingLabel.isHidden = true
+        errorView.isHidden = true
+        setChromeEnabled(true)
+        if startPage > 0, startPage < doc.pageCount, let pg = doc.page(at: startPage) {
+            pdfView.go(to: pg)
+        }
         updatePageLabel()
+    }
+
+    private func showError(_ msg: String) {
+        spinner.stopAnimating()
+        loadingLabel.isHidden = true
+        errorLabel.text = msg
+        errorView.isHidden = false
+        setChromeEnabled(false)
+    }
+
+    @objc private func retryTapped() { startLoad() }
+
+    private func setChromeEnabled(_ on: Bool) {
+        shareItemNav?.isEnabled = on
+        thumbItem?.isEnabled = on
+        layoutItem?.isEnabled = on
+        searchItem?.isEnabled = on
+        pageLabel.isUserInteractionEnabled = on
     }
 
     private func rebuildToolbar(searching: Bool) {
@@ -242,24 +353,37 @@ class GLPdfViewController: UIViewController {
     }
 
     // ── Continuous / single-page toggle ──
+    // Single page uses a page-view-controller for proper swipe-paging (the Books
+    // feel). Without it, .singlePage renders one page into a mis-sized scroll view
+    // (scrollbar into empty space, blank on swipe) — the iteration-2 bug.
     @objc private func toggleLayout() {
+        guard pdfView.document != nil else { return }
         isContinuous.toggle()
-        pdfView.displayMode = isContinuous ? .singlePageContinuous : .singlePage
+        let cur = pdfView.currentPage
+        if isContinuous {
+            pdfView.usePageViewController(false)
+            pdfView.displayMode = .singlePageContinuous
+            pdfView.displayDirection = .vertical
+        } else {
+            pdfView.usePageViewController(true, withViewOptions: nil)
+            pdfView.displayMode = .singlePage
+        }
+        pdfView.autoScales = true
+        if let cur = cur { pdfView.go(to: cur) }
         layoutItem.image = UIImage(systemName: isContinuous ? "doc.plaintext" : "doc")
     }
 
     // ── Jump to page ──
     @objc private func jumpTapped() {
-        let total = document.pageCount
-        guard total > 0 else { return }
+        guard let doc = document, doc.pageCount > 0 else { return }
+        let total = doc.pageCount
         let ac = UIAlertController(title: "Go to page", message: "1–\(total)", preferredStyle: .alert)
         ac.addTextField { tf in tf.keyboardType = .numberPad; tf.placeholder = "Page number" }
         ac.addAction(UIAlertAction(title: "Cancel", style: .cancel))
         ac.addAction(UIAlertAction(title: "Go", style: .default) { [weak self] _ in
             guard let self = self,
                   let text = ac.textFields?.first?.text, let n = Int(text),
-                  n >= 1, n <= self.document.pageCount,
-                  let pg = self.document.page(at: n - 1) else { return }
+                  n >= 1, n <= total, let pg = doc.page(at: n - 1) else { return }
             self.pdfView.go(to: pg)
         })
         present(ac, animated: true)
@@ -279,9 +403,10 @@ class GLPdfViewController: UIViewController {
 
     private func performSearch(_ raw: String) {
         clearSearch()
+        guard let doc = document else { return }
         let query = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else { return }
-        let matches = document.findString(query, withOptions: [.caseInsensitive])
+        let matches = doc.findString(query, withOptions: [.caseInsensitive])
         searchMatches = matches
         searchIndex = 0
         if matches.isEmpty {
@@ -349,20 +474,22 @@ class GLPdfViewController: UIViewController {
     @objc private func pageChanged() { updatePageLabel() }
 
     private func currentPageIndex() -> Int {
-        guard let cur = pdfView.currentPage else { return 0 }
-        return document.index(for: cur)
+        guard let doc = document, let cur = pdfView.currentPage else { return 0 }
+        return doc.index(for: cur)
     }
 
     private func updatePageLabel() {
-        let total = document.pageCount
+        guard let doc = document else { pageLabel.text = ""; return }
+        let total = doc.pageCount
         let idx = currentPageIndex() + 1
         pageLabel.text = total > 0 ? "\(idx) / \(total)" : ""
     }
 
     // ── Share / close ──
     @objc private func shareTapped() {
-        let av = UIActivityViewController(activityItems: [fileURL], applicationActivities: nil)
-        av.popoverPresentationController?.barButtonItem = navigationItem.rightBarButtonItem
+        guard let url = loadedFileURL else { return }
+        let av = UIActivityViewController(activityItems: [url], applicationActivities: nil)
+        av.popoverPresentationController?.barButtonItem = shareItemNav
         present(av, animated: true)
     }
 
@@ -376,8 +503,8 @@ class GLPdfViewController: UIViewController {
             onClose?(currentPageIndex())
         }
         dismiss(animated: true) { [weak self] in
-            guard let self = self, self.deleteOnClose else { return }
-            try? FileManager.default.removeItem(at: self.fileURL)
+            guard let self = self, self.deleteOnClose, let url = self.loadedFileURL else { return }
+            try? FileManager.default.removeItem(at: url)
         }
     }
 
@@ -386,7 +513,7 @@ class GLPdfViewController: UIViewController {
         if !didReportClose {
             didReportClose = true
             onClose?(currentPageIndex())
-            if deleteOnClose { try? FileManager.default.removeItem(at: fileURL) }
+            if deleteOnClose, let url = loadedFileURL { try? FileManager.default.removeItem(at: url) }
         }
     }
 
