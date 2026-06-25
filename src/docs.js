@@ -45,6 +45,7 @@
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import { get as idbKvGet, set as idbKvSet, del as idbKvDel, keys as idbKvKeys, clear as idbKvClear, createStore } from 'idb-keyval'
 import { Capacitor, registerPlugin } from '@capacitor/core'
+import { Filesystem, Directory } from '@capacitor/filesystem'
 
 // Native iOS PDF viewer (PDFKit) — kills the WKWebView OOM crash on large site
 // plans. iOS-only; on web this resolves to a no-op proxy and we never call it
@@ -73,8 +74,20 @@ const _PDF_DOC_OPTS = {
   standardFontDataUrl: _PDF_ASSETS + 'standard_fonts/',
 };
 
-// Separate device store for pinned blobs — kept OUT of the shared idbCache mirror.
+// Separate device store for pinned blobs (WEB) — kept OUT of the shared idbCache mirror.
 const _docBlobStore = createStore('groundlog-docs', 'blobs');
+
+// ── Native offline-pin storage (iOS) ──
+// On the native app, pinned docs are stored as real FILES in the app-private,
+// non-iCloud-backed-up LibraryNoCloud dir (NOT IndexedDB blobs), so the native
+// PDFKit viewer reads them by file path directly — no JS-bridge base64 round-trip
+// (which would re-spike webview memory) and offline reading works. Web PWA keeps
+// the IndexedDB blob store (no Filesystem in a browser). Branch on isNativePlatform().
+// See ios-pdf-viewer-build-plan.md §5. Privacy: _docsPurgeOffline wipes this dir
+// on account switch (the cross-account device fence).
+const _docNative = () => !!(window.Capacitor?.isNativePlatform?.());
+const _DOC_PIN_DIR = 'groundlog-docs';
+const _docPinPath = id => `${_DOC_PIN_DIR}/${id}.pdf`;
 
 window._docs = window._docs || [];              // own docs metadata (active project)
 window._docsShared = window._docsShared || [];  // teammates' shared docs (active project)
@@ -154,6 +167,14 @@ function _docFolderName(id){ const f=_docFolderById(id); return f ? f.name : 'Un
 
 // ── Boot helper: which ids have a pinned blob on this device ──
 async function _docRefreshOfflineSet(){
+  if(_docNative()){
+    try{
+      const res = await Filesystem.readdir({ path: _DOC_PIN_DIR, directory: Directory.LibraryNoCloud });
+      // Newer Filesystem returns FileInfo objects ({name}); older returns strings.
+      _docOfflineIds = new Set((res.files||[]).map(f => String(f && f.name != null ? f.name : f).replace(/\.pdf$/i,'')));
+    }catch(e){ _docOfflineIds = new Set(); }  // dir not created yet = nothing pinned
+    return;
+  }
   try{
     const ks = await idbKvKeys(_docBlobStore);
     _docOfflineIds = new Set(ks.map(String));
@@ -612,21 +633,29 @@ const _MAX_LIVE = 4;               // the 4 pages nearest the viewport — rende
 const _PAGE_GAP = 10;              // px between pages (must match CSS .gl-doc-vpages gap)
 const _PAGE_PAD = 8;               // top padding of #_dv-pages (must match CSS)
 async function _docOpenPdf(d){
-  // ── iOS native path (crash-killer) ──
-  // On the native app, hand the PDF to the native PDFKit viewer instead of
-  // rendering it with pdf.js in the WKWebView (which OOM-reloads the app on big
-  // aerial-backed plans). v1 streams the tokenized downloadUrl natively; the
-  // offline-pinned-while-offline case is handled when pins migrate to Filesystem
-  // (see ios-pdf-viewer-build-plan.md step 4). Web falls through to pdf.js below.
-  if(Capacitor?.isNativePlatform?.() && d.downloadUrl){
+  // ── iOS native path (crash-killer + offline) ──
+  // Hand the PDF to the native PDFKit viewer instead of rendering it with pdf.js
+  // in the WKWebView (which OOM-reloads the app on big aerial-backed plans).
+  // Pinned docs open from the local Filesystem file (offline-capable, no network);
+  // un-pinned docs stream the tokenized downloadUrl natively. The native viewer
+  // shows its own spinner + inline retry, so JS rarely needs to surface an error.
+  if(_docNative() && (d.downloadUrl || _docOfflineIds.has(d.id))){
+    let arg = null;
+    if(_docOfflineIds.has(d.id)){
+      try{
+        const { uri } = await Filesystem.getUri({ path: _docPinPath(d.id), directory: Directory.LibraryNoCloud });
+        if(uri) arg = { path: uri };
+      }catch(e){ arg = null; }
+    }
+    if(!arg && d.downloadUrl) arg = { url: d.downloadUrl };
+    if(!arg){
+      if(typeof showCloudBanner==='function') showCloudBanner('⚠ Not available offline — pin it for offline first.');
+      return;
+    }
     try{
-      await GroundLogPdf.present({ url: d.downloadUrl, title: d.title || 'Document' });
+      await GroundLogPdf.present({ ...arg, title: d.title || 'Document' });
     }catch(e){
-      if(typeof showCloudBanner==='function'){
-        showCloudBanner(navigator.onLine
-          ? '⚠ Could not open this PDF.'
-          : '⚠ Pin this document for offline use, then reopen (offline viewing is coming).');
-      }
+      if(typeof showCloudBanner==='function') showCloudBanner('⚠ Could not open this PDF.');
     }
     return;
   }
@@ -959,16 +988,25 @@ async function docToggleOffline(id){
   const d = (window._docs||[]).find(x=>x.id===id) || (window._docsShared||[]).find(x=>x.id===id);
   if(!d) return;
   if(_docOfflineIds.has(id)){
-    try{ await idbKvDel(id, _docBlobStore); }catch(e){}
+    if(_docNative()){
+      try{ await Filesystem.deleteFile({ path: _docPinPath(id), directory: Directory.LibraryNoCloud }); }catch(e){}
+    } else {
+      try{ await idbKvDel(id, _docBlobStore); }catch(e){}
+    }
     _docOfflineIds.delete(id);
     if(typeof showCloudBanner==='function') showCloudBanner('🗑 Removed offline copy.');
   } else {
     if(!d.downloadUrl){ if(typeof showCloudBanner==='function') showCloudBanner('⚠ No file URL to download.'); return; }
     try{
       if(typeof showCloudBanner==='function') showCloudBanner('⬇ Downloading for offline…');
-      const resp = await fetch(d.downloadUrl);
-      const blob = await resp.blob();
-      await idbKvSet(id, blob, _docBlobStore);
+      if(_docNative()){
+        // Native: stream straight to the app-private file (no base64, bounded memory).
+        await Filesystem.downloadFile({ url: d.downloadUrl, path: _docPinPath(id), directory: Directory.LibraryNoCloud, recursive: true });
+      } else {
+        const resp = await fetch(d.downloadUrl);
+        const blob = await resp.blob();
+        await idbKvSet(id, blob, _docBlobStore);
+      }
       _docOfflineIds.add(id);
       if(window.glHaptic && window.glHaptic.success) window.glHaptic.success();
       if(typeof showCloudBanner==='function') showCloudBanner('✓ Saved for offline.');
@@ -1150,7 +1188,11 @@ function docDelete(id){
     try{ await _udb().collection('docs').doc(id).delete(); }catch(e){}
     if(d.shared){ try{ await db.collection('projects').doc(pid).collection('docs').doc(id).delete(); }catch(e){} }
     try{ if(d.storagePath) await storage.ref(d.storagePath).delete(); }catch(e){}
-    try{ await idbKvDel(id, _docBlobStore); }catch(e){}
+    if(_docNative()){
+      try{ await Filesystem.deleteFile({ path: _docPinPath(id), directory: Directory.LibraryNoCloud }); }catch(e){}
+    } else {
+      try{ await idbKvDel(id, _docBlobStore); }catch(e){}
+    }
     _docOfflineIds.delete(id);
     window._docs = (window._docs||[]).filter(x=>x.id!==id);
     _docCacheDocs();
@@ -1181,10 +1223,18 @@ function _docPrompt(title, value, okLabel, onOk){
   input.addEventListener('keydown', e=>{ if(e.key==='Enter'){ const v=input.value; close(); if(typeof onOk==='function') onOk(v); } });
 }
 
-// ── Privacy: purge pinned offline blobs on account switch / sign-out ──
+// ── Privacy: purge pinned offline copies on account switch / sign-out ──
+// Wipes BOTH stores (web IndexedDB blobs + native LibraryNoCloud files) so a
+// second user on the same device can never see the first user's cached plans.
+// Wired into the cross-account device-uid fence — keep this exhaustive.
 window._docsPurgeOffline = function(){
   _docOfflineIds = new Set();
-  try { return idbKvClear(_docBlobStore); } catch(e){ return Promise.resolve(); }
+  const tasks = [];
+  try { tasks.push(Promise.resolve(idbKvClear(_docBlobStore))); } catch(e){}
+  if(_docNative()){
+    try { tasks.push(Promise.resolve(Filesystem.rmdir({ path: _DOC_PIN_DIR, directory: Directory.LibraryNoCloud, recursive: true }))); } catch(e){}
+  }
+  return Promise.all(tasks.map(p => p.catch(()=>{}))).then(()=>{});
 };
 
 // ── Window exposure (inline onclick handlers) ──

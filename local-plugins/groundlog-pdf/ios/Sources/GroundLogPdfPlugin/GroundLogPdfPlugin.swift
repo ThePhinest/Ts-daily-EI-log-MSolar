@@ -365,6 +365,8 @@ class GLPdfViewController: UIViewController {
             pdfView.displayMode = .singlePageContinuous
             pdfView.displayDirection = .vertical
         } else {
+            // Horizontal so single-page mode swipes LEFT/RIGHT (Books feel), not up/down.
+            pdfView.displayDirection = .horizontal
             pdfView.usePageViewController(true, withViewOptions: nil)
             pdfView.displayMode = .singlePage
         }
