@@ -11,7 +11,7 @@
   },
   "devDependencies": {
     "@capacitor/assets": "^3.0.5",
-    "@capacitor/cli": "^8.3.1",
+    "@capacitor/cli": "^8.4.1",
     "@firebase/rules-unit-testing": "^5.0.1",
     "@sentry/vite-plugin": "^5.2.1",
     "patch-package": "^8.0.1",
@@ -21,13 +21,13 @@
     "vitest": "^4.1.9"
   },
   "dependencies": {
-    "@capacitor-firebase/authentication": "^8.2.0",
+    "@capacitor-firebase/authentication": "^8.3.0",
     "@capacitor/app": "^8.1.0",
-    "@capacitor/core": "^8.3.1",
+    "@capacitor/core": "^8.4.1",
     "@capacitor/filesystem": "^8.1.2",
     "@capacitor/haptics": "^8.0.2",
-    "@capacitor/ios": "^8.3.1",
-    "@capacitor/keyboard": "^8.0.3",
+    "@capacitor/ios": "^8.4.1",
+    "@capacitor/keyboard": "^8.0.5",
     "@capacitor/share": "^8.0.1",
     "@capacitor/splash-screen": "^8.0.1",
     "@capacitor/status-bar": "^8.0.2",
