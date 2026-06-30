@@ -1728,20 +1728,26 @@ async function _embedCapturesInline(ws, wb, owners, NC){
     try{
       const resp=await fetch(ph.storageUrl); if(!resp.ok) continue;
       const blob=await resp.blob();
-      const dataUrl=await _blobToDataURL(blob);
-      const raw=dataUrl.substring(dataUrl.indexOf(',')+1);
-      const ext=(ph.filename||'png').split('.').pop().toLowerCase();
-      const extension=(ext==='jpg'||ext==='jpeg')?'jpeg':(ext==='gif'?'gif':'png');
       const bmp=await createImageBitmap(blob);
-      const aspect=bmp.height/bmp.width; bmp.close();
+      const aspect=bmp.height/bmp.width;
       // Widest column span whose resulting height still fits in one row (portrait → narrower).
       let brCol=0, rangeW=cum[0];
       for(let i=0;i<cum.length;i++){ if(cum[i]*aspect<=MAXROWPX){ brCol=i; rangeW=cum[i]; } }
       const rowHpx=Math.min(MAXROWPX, Math.round(rangeW*aspect));
       const rowPt=Math.min(405, Math.round(rowHpx*0.75)); // px→pt, under Excel's 409 cap
+      // Re-encode at a modest size + JPEG so the workbook stays small. The originals can be
+      // multi-MB each (full phone photos); a ~720px JPEG is tens of KB and is plenty for a
+      // report — embedding the originals was bloating the file dozens of × over.
+      const EMB=720, es=Math.min(1, EMB/Math.max(bmp.width,bmp.height));
+      const cw=Math.max(1,Math.round(bmp.width*es)), chh=Math.max(1,Math.round(bmp.height*es));
+      const cv=document.createElement('canvas'); cv.width=cw; cv.height=chh;
+      cv.getContext('2d').drawImage(bmp,0,0,cw,chh); bmp.close();
+      const jblob=await new Promise(res=>cv.toBlob(res,'image/jpeg',0.72));
+      const dataUrl=await _blobToDataURL(jblob);
+      const raw=dataUrl.substring(dataUrl.indexOf(',')+1);
       const ir=ws.addRow([]); ir.height=rowPt; ir.outlineLevel=1; ir.hidden=true; // collapsed by default
       const r0=ir.number-1; // 0-indexed
-      const imgId=wb.addImage({base64:raw, extension});
+      const imgId=wb.addImage({base64:raw, extension:'jpeg'});
       // One tall row, twoCellAnchor so it sizes/collapses with the row.
       ws.addImage(imgId,{ tl:{col:0.08,row:r0+0.03}, br:{col:brCol+1,row:r0+0.97}, editAs:'twoCell' });
     }catch(err){ console.warn('inline capture failed',err); }
