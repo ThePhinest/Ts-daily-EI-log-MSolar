@@ -1148,53 +1148,68 @@ async function _glShareOrDownload(blob, filename, mimeType){
 }
 
 // ── Tracker log export — scheme picker modal ──
+// Per-category deliverables: each category exports its OWN focused workbook (a SWPPP/net
+// sheet for disturbance, a coverage-vs-plan sheet for seeding). No combined tab — pick the
+// category (or the photo bundle) you want. The current filter scopes which entries go in.
 function _showTlogExportModal(getEntries, pid){
-  const count=getEntries().length;
-  const btnBase='display:flex;flex-direction:column;gap:3px;width:100%;text-align:left;padding:11px 14px;border-radius:8px;cursor:pointer;border:2px solid var(--border);background:var(--s1);transition:border-color .15s';
-  const btnActive='display:flex;flex-direction:column;gap:3px;width:100%;text-align:left;padding:11px 14px;border-radius:8px;cursor:pointer;border:2px solid var(--amber);background:var(--s1);transition:border-color .15s';
-  const schemes=[
-    {id:'brand',  label:'GroundLog Brand',   sub:'Teal headers · amber labels · alternating row tint'},
-    {id:'category',label:'Category Colors',  sub:'Each row tinted with its category color'},
-    {id:'neutral', label:'Neutral',           sub:'Standard Excel — no color fills'},
-  ];
-  let selected='brand';
+  const entries=getEntries();
+  // Distinct categories present in the filtered set, first-seen order.
+  const seen=new Set(); const cats=[];
+  entries.forEach(e=>{
+    const cid=e.categoryId; if(!cid||seen.has(cid)) return; seen.add(cid);
+    const mode=(typeof tcProgressMode==='function')?tcProgressMode(cid,pid):'';
+    const isRunning=mode==='running-balance'||mode==='running-total';
+    const name=e.categoryName||((typeof tcGetName==='function')?tcGetName(cid,pid):'Category');
+    const n=entries.filter(x=>x.categoryId===cid).length;
+    cats.push({cid,name,isRunning,n,
+      type:isRunning?'SWPPP · net disturbed':'Coverage · vs plan',
+      icon:isRunning?'🟧':'🌱'});
+  });
 
   const ov=document.createElement('div');
   ov.className='modal-overlay';
   ov.style.cssText='z-index:9500';
-  const render=()=>{
-    ov.innerHTML=`
-      <div class="modal-box" style="max-width:340px;width:92%">
-        <div class="modal-title" style="margin-bottom:4px">Export Tracker Log</div>
-        <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-bottom:18px">${count} entr${count===1?'y':'ies'} · current filter</div>
-        <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:20px">
-          ${schemes.map(s=>`
-            <button class="_xlсхeme" data-id="${s.id}" style="${selected===s.id?btnActive:btnBase}">
-              <span style="font-family:var(--cond);font-weight:700;font-size:13px;letter-spacing:.04em;color:${selected===s.id?'var(--amber)':'var(--text)'}">${s.label}</span>
-              <span style="font-family:var(--mono);font-size:10px;color:var(--muted)">${s.sub}</span>
-            </button>`).join('')}
-        </div>
-        <label style="display:flex;align-items:center;gap:10px;padding:12px 0;border-top:1px solid var(--border);cursor:pointer">
-          <input type="checkbox" id="_tlog-zip-cb" style="width:16px;height:16px;accent-color:var(--amber);cursor:pointer;flex-shrink:0">
-          <span style="font-family:var(--mono);font-size:11px;color:var(--text)">📎 Include Material Tag Photos <span style="color:var(--muted)">.zip</span></span>
-        </label>
-        <button id="_tlog-dl-btn" style="width:100%;padding:12px;background:var(--amber);color:#000;font-family:var(--cond);font-weight:700;font-size:14px;letter-spacing:.06em;border:none;border-radius:8px;cursor:pointer;margin-bottom:8px">⬇ Download .xlsx</button>
-        <button id="_tlog-dl-cancel" style="width:100%;padding:9px;background:none;color:var(--muted);font-family:var(--mono);font-size:11px;border:1px solid var(--border);border-radius:8px;cursor:pointer">Cancel</button>
-      </div>`;
-    ov.querySelectorAll('._xlсхeme').forEach(btn=>{
-      btn.onclick=()=>{ selected=btn.dataset.id; render(); };
-    });
-    ov.querySelector('#_tlog-dl-cancel').onclick=()=>ov.remove();
-    ov.querySelector('#_tlog-dl-btn').onclick=async()=>{
-      const dlBtn=ov.querySelector('#_tlog-dl-btn');
-      dlBtn.textContent='Building…'; dlBtn.disabled=true;
-      const includeZip=ov.querySelector('#_tlog-zip-cb').checked;
-      await _tlogExportXlsx(selected, getEntries(), pid);
-      if(includeZip) await _tlogExportPhotoZip(getEntries(), pid);
+  const rowBase='display:flex;align-items:center;gap:11px;width:100%;text-align:left;padding:12px 14px;border-radius:8px;cursor:pointer;border:2px solid var(--border);background:var(--s1);transition:border-color .15s';
+  ov.innerHTML=`
+    <div class="modal-box" style="max-width:360px;width:92%">
+      <div class="modal-title" style="margin-bottom:4px">Export Deliverable</div>
+      <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-bottom:16px">Pick a category — each exports its own .xlsx</div>
+      <div id="_exp-list" style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px">
+        ${cats.length?cats.map(c=>`
+          <button class="_exp-cat" data-cid="${c.cid}" style="${rowBase}">
+            <span style="font-size:20px;flex-shrink:0">${c.icon}</span>
+            <span style="display:flex;flex-direction:column;gap:2px;min-width:0">
+              <span style="font-family:var(--cond);font-weight:700;font-size:14px;letter-spacing:.03em;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${c.name}</span>
+              <span style="font-family:var(--mono);font-size:10px;color:var(--muted)">${c.type} · ${c.n} entr${c.n===1?'y':'ies'}</span>
+            </span>
+          </button>`).join('')
+        :`<div style="font-family:var(--mono);font-size:11px;color:var(--muted);padding:8px 0">No categories in the current filter.</div>`}
+        <button class="_exp-zip" style="${rowBase}">
+          <span style="font-size:20px;flex-shrink:0">🖼</span>
+          <span style="display:flex;flex-direction:column;gap:2px">
+            <span style="font-family:var(--cond);font-weight:700;font-size:14px;letter-spacing:.03em;color:var(--text)">Photos</span>
+            <span style="font-family:var(--mono);font-size:10px;color:var(--muted)">Material tags + map captures · .zip</span>
+          </span>
+        </button>
+      </div>
+      <button id="_exp-cancel" style="width:100%;padding:9px;background:none;color:var(--muted);font-family:var(--mono);font-size:11px;border:1px solid var(--border);border-radius:8px;cursor:pointer">Cancel</button>
+    </div>`;
+  ov.querySelector('#_exp-cancel').onclick=()=>ov.remove();
+  ov.querySelectorAll('._exp-cat').forEach(btn=>{
+    btn.onclick=async()=>{
+      btn.style.opacity='.55'; ov.querySelectorAll('button').forEach(b=>b.style.pointerEvents='none');
+      try{ await _exportCategoryDeliverable(btn.dataset.cid, getEntries(), pid); }
+      catch(err){ console.warn('category export failed',err); }
       ov.remove();
     };
+  });
+  ov.querySelector('._exp-zip').onclick=async()=>{
+    ov.querySelectorAll('button').forEach(b=>b.style.pointerEvents='none');
+    ov.querySelector('._exp-zip').style.opacity='.55';
+    try{ await _tlogExportPhotoZip(getEntries(), pid); }
+    catch(err){ console.warn('photo zip failed',err); }
+    ov.remove();
   };
-  render();
   document.body.appendChild(ov);
 }
 
@@ -1207,6 +1222,38 @@ function _tlogLightenHex(hex, t){
   }).join('');
 }
 
+// Build + download ONE category's focused deliverable workbook. Branches on progress mode:
+// running-balance/total → SWPPP net-disturbed sheet; everything else → coverage-vs-plan
+// (seeding) sheet. Each export is scoped to its own category — no combined tab.
+async function _exportCategoryDeliverable(cid, entries, pid){
+  const {default:ExcelJS}=await import('exceljs');
+  const wb=new ExcelJS.Workbook();
+  wb.creator='GroundLog'; wb.created=new Date();
+  const mode=(typeof tcProgressMode==='function')?tcProgressMode(cid,pid):'';
+  const isRunning=mode==='running-balance'||mode==='running-total';
+  if(isRunning) await _disturbanceSheet(wb, cid, entries, pid);
+  else await _seedingSheet(wb, cid, entries, pid);
+  // Body font ≥ 12 across the workbook (titles/headline keep their larger size).
+  wb.eachSheet(sheet=>{
+    sheet.eachRow(row=>{
+      if(!row.height || row.height<16) row.height=16;
+      row.eachCell({includeEmpty:false},c=>{ const f=c.font||{}; if((f.size||11)<12) c.font={...f,size:12}; });
+    });
+  });
+  const cfg=JSON.parse(localStorage.getItem('msf_projectconfig')||'{}');
+  const today=new Date().toLocaleDateString('en-CA');
+  const name=(typeof tcGetName==='function')?tcGetName(cid,pid):'category';
+  const safeProj=(cfg.projectName||pid).replace(/[^a-zA-Z0-9 _-]/g,'').trim().replace(/\s+/g,'-');
+  const safeCat=String(name).replace(/[^a-zA-Z0-9 _-]/g,'').trim().replace(/\s+/g,'-')||'category';
+  const typeTag=isRunning?'disturbance':'seeding';
+  const buf=await wb.xlsx.writeBuffer();
+  const blob=new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+  await _glShareOrDownload(blob,`${typeTag}-${safeCat}-${safeProj}-${today}.xlsx`,'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+}
+
+// DEPRECATED — combined "Tracker Log" workbook. Superseded by per-category deliverables
+// (_exportCategoryDeliverable); no longer reachable from the UI. Kept temporarily; remove
+// in a follow-up cleanup pass.
 async function _tlogExportXlsx(scheme, entries, pid){
   const {default:ExcelJS}=await import('exceljs');
   const wb=new ExcelJS.Workbook();
@@ -1589,41 +1636,174 @@ async function _disturbanceSheet(wb, cid, allEntries, pid){
   // Disturbance tab reads as a standalone deliverable — taller rows than the combined log.
   ws.eachRow((row,rn)=>{ if(rn===1) return; if(!row.height || row.height<22) row.height=22; });
 
-  // ── Map Captures (embedded) — map_capture photos attached to this category's drawings
-  //    (legend baked in at capture time). Embedded so the XLSX is one self-contained
-  //    deliverable; the separate photo-ZIP remains for bulk/full-res photos.
+  // Map captures (legend baked in at capture time) embedded so the XLSX is self-contained.
+  await _embedCaptures(ws, wb, installed, pid, NC);
+}
+
+// Embed every map_capture photo attached to a category's drawings into a worksheet (one
+// self-contained deliverable). Shared by the disturbance + seeding sheets. The separate
+// photo-ZIP remains for bulk/full-res photos.
+async function _embedCaptures(ws, wb, installed, pid, NC){
+  const TEAL='006B75', WHITE='FFFFFF';
   const caps=[];
   installed.forEach(e=>{ (e.photoIds||[]).forEach(id=>{
     const ph=(window._phPhotos||[]).find(p=>p.id===id);
     if(ph && ph.type==='map_capture' && ph.storageUrl) caps.push({ph,e});
   }); });
-  if(caps.length){
-    const ch=ws.addRow(['Map Captures']); ws.mergeCells(ch.number,1,ch.number,NC);
-    ch.getCell(1).font={bold:true,size:13,color:{argb:WHITE}};
-    ch.getCell(1).fill={type:'pattern',pattern:'solid',fgColor:{argb:TEAL}};
-    ch.getCell(1).alignment={vertical:'middle',horizontal:'left',indent:1}; ch.height=22;
-    for(const {ph,e} of caps){
-      const capR=ws.addRow([(e.photoCaptions||{})[ph.id]||ph.caption||`${e.date||''} map capture`]);
-      ws.mergeCells(capR.number,1,capR.number,NC);
-      capR.getCell(1).font={italic:true,size:11,color:{argb:'FF555555'}}; capR.height=18;
-      try{
-        const resp=await fetch(ph.storageUrl); if(!resp.ok) continue;
-        const blob=await resp.blob();
-        const dataUrl=await _blobToDataURL(blob);
-        const raw=dataUrl.substring(dataUrl.indexOf(',')+1);
-        const ext=(ph.filename||'png').split('.').pop().toLowerCase();
-        const extension=(ext==='jpg'||ext==='jpeg')?'jpeg':(ext==='gif'?'gif':'png');
-        const bmp=await createImageBitmap(blob);
-        const maxW=680, scale=Math.min(1,maxW/bmp.width);
-        const w=Math.round(bmp.width*scale), h=Math.round(bmp.height*scale); bmp.close();
-        const imgId=wb.addImage({base64:raw, extension});
-        ws.addImage(imgId,{ tl:{col:0,row:ws.rowCount}, ext:{width:w, height:h} });
-        // Reserve vertical space so stacked captures don't overlap (rows ~18pt ≈ 24px).
-        const spacer=Math.ceil(h/24)+1;
-        for(let i=0;i<spacer;i++){ const br=ws.addRow([]); br.height=18; }
-      }catch(err){ console.warn('embed capture failed',err); }
-    }
+  if(!caps.length) return;
+  const ch=ws.addRow(['Map Captures']); ws.mergeCells(ch.number,1,ch.number,NC);
+  ch.getCell(1).font={bold:true,size:13,color:{argb:WHITE}};
+  ch.getCell(1).fill={type:'pattern',pattern:'solid',fgColor:{argb:TEAL}};
+  ch.getCell(1).alignment={vertical:'middle',horizontal:'left',indent:1}; ch.height=22;
+  for(const {ph,e} of caps){
+    const capR=ws.addRow([(e.photoCaptions||{})[ph.id]||ph.caption||`${e.date||''} map capture`]);
+    ws.mergeCells(capR.number,1,capR.number,NC);
+    capR.getCell(1).font={italic:true,size:11,color:{argb:'FF555555'}}; capR.height=18;
+    try{
+      const resp=await fetch(ph.storageUrl); if(!resp.ok) continue;
+      const blob=await resp.blob();
+      const dataUrl=await _blobToDataURL(blob);
+      const raw=dataUrl.substring(dataUrl.indexOf(',')+1);
+      const ext=(ph.filename||'png').split('.').pop().toLowerCase();
+      const extension=(ext==='jpg'||ext==='jpeg')?'jpeg':(ext==='gif'?'gif':'png');
+      const bmp=await createImageBitmap(blob);
+      const maxW=680, scale=Math.min(1,maxW/bmp.width);
+      const w=Math.round(bmp.width*scale), h=Math.round(bmp.height*scale); bmp.close();
+      const imgId=wb.addImage({base64:raw, extension});
+      ws.addImage(imgId,{ tl:{col:0,row:ws.rowCount}, ext:{width:w, height:h} });
+      // Reserve vertical space so stacked captures don't overlap (rows ~18pt ≈ 24px).
+      const spacer=Math.ceil(h/24)+1;
+      for(let i=0;i<spacer;i++){ const br=ws.addRow([]); br.height=18; }
+    }catch(err){ console.warn('embed capture failed',err); }
   }
+}
+
+// Coverage-vs-plan (seeding) deliverable sheet for one per-state-vs-plan category. States
+// STACK on the same ground (lime→fert→seed→mulch) so per-state areas are GROSS sums (turf
+// net is NOT used). Shows a category-wide Coverage Summary (gross per-state ÷ plan, with
+// progress bars) + a By-Drawing breakdown (each planned area's per-state coverage), and the
+// attached map captures (legend, no totals) embedded.
+async function _seedingSheet(wb, cid, allEntries, pid){
+  const cat=(typeof tcGetCategory==='function')?tcGetCategory(cid,pid):null;
+  if(!cat) return;
+  const name=(typeof tcGetName==='function')?tcGetName(cid,pid):'Seeding';
+  const defUnit=(typeof tcGetDefaultUnit==='function')?tcGetDefaultUnit(cid,pid):'ac';
+  const states=(typeof tcGetStates==='function')?tcGetStates(cat,pid):[];
+  const childStates=states.filter(s=>!s.isPlanned);
+  const dcs=(typeof tcDefaultChildState==='function')?tcDefaultChildState(cat,pid):null;
+  const planned=allEntries.filter(e=>(e.categoryId===cid)&&e.entryType==='planned'&&!e.temporary&&!e.deletedAt);
+  const installed=allEntries.filter(e=>(e.categoryId===cid)&&e.entryType!=='planned'&&!e.temporary&&!e.deletedAt);
+  const measure=(e)=>(typeof trEntryMeasure==='function')?trEntryMeasure(e,defUnit,pid):0;
+  const fmt=(v)=>(typeof tcFormatMeasurement==='function')?tcFormatMeasurement(v,defUnit):`${(v||0).toFixed(2)} ${defUnit}`;
+  const stOf=(e)=>e.state||(dcs?dcs.id:null);
+  const planTotal=planned.reduce((s,e)=>s+measure(e),0);
+
+  const TEAL='006B75', WHITE='FFFFFF', AMBER_LIGHT='FDF5DC';
+  const NC=6;
+  let base=('Seeding — '+name).replace(/[\\\/\?\*\[\]:]/g,'').slice(0,31);
+  let nm=base, n=2;
+  while(wb.getWorksheet(nm)){ nm=base.slice(0,28)+' '+n; n++; }
+  const ws=wb.addWorksheet(nm);
+  ws.columns=[{width:30},{width:18},{width:14},{width:24},{width:42},{width:10}];
+
+  // ── Title ──
+  ws.addRow([name]); ws.mergeCells(1,1,1,NC);
+  const tc=ws.getCell('A1');
+  tc.font={name:'Calibri',bold:true,size:14,color:{argb:WHITE}};
+  tc.fill={type:'pattern',pattern:'solid',fgColor:{argb:TEAL}};
+  tc.alignment={vertical:'middle',horizontal:'left',indent:1}; ws.getRow(1).height=26;
+
+  const cfg=JSON.parse(localStorage.getItem('msf_projectconfig')||'{}');
+  const today=new Date().toLocaleDateString('en-CA');
+  [['Project',cfg.projectName||''],['Snapshot date',today],['Prepared By',cfg.preparedBy||'']].forEach(([l,v])=>{
+    const r=ws.addRow([l,v]); ws.mergeCells(r.number,2,r.number,NC);
+    r.getCell(1).font={name:'Consolas',size:9,bold:true,color:{argb:'FF'+TEAL}};
+    r.getCell(2).font={name:'Calibri',size:10}; r.height=15;
+  });
+  ws.addRow([]);
+
+  // ── Coverage Summary (category-wide, gross per state vs plan) ──
+  const sh=ws.addRow(['Coverage Summary (vs plan)']); ws.mergeCells(sh.number,1,sh.number,NC);
+  sh.getCell(1).font={bold:true,size:13,color:{argb:WHITE}};
+  sh.getCell(1).fill={type:'pattern',pattern:'solid',fgColor:{argb:TEAL}};
+  sh.getCell(1).alignment={vertical:'middle',horizontal:'left',indent:1}; sh.height=22;
+  const hdr=ws.addRow(['State','Coverage','% of Plan']);
+  hdr.eachCell({includeEmpty:true},c=>{ c.font={bold:true,size:10,color:{argb:WHITE}}; c.fill={type:'pattern',pattern:'solid',fgColor:{argb:TEAL}}; });
+  hdr.height=18;
+  const barStart=ws.rowCount+1;
+  childStates.forEach(s=>{
+    const gross=installed.filter(e=>stOf(e)===s.id).reduce((a,e)=>a+measure(e),0);
+    const pct=planTotal>0?Math.min(100,(gross/planTotal)*100):null;
+    const r=ws.addRow([s.label, fmt(gross), pct!=null?Math.round(pct):'']);
+    const fill=_xlHex(s.color);
+    if(fill){ r.getCell(1).fill={type:'pattern',pattern:'solid',fgColor:{argb:fill}}; r.getCell(1).font={name:'Calibri',size:11,bold:true,color:{argb:_xlContrast(s.color)}}; }
+    else r.getCell(1).font={name:'Calibri',size:11,bold:true};
+    r.getCell(2).font={name:'Calibri',size:11};
+    r.getCell(3).font={name:'Calibri',size:11,bold:true};
+    if(pct!=null) r.getCell(3).numFmt='0"%"';
+    r.height=16;
+  });
+  const barEnd=ws.rowCount;
+  // Planned-area total — the denominator, banded like the disturbance headline.
+  const pr=ws.addRow(['Planned area (total)', fmt(planTotal)]);
+  pr.getCell(1).font={bold:true,size:14}; pr.getCell(2).font={bold:true,size:14,color:{argb:'FF006B75'}};
+  pr.getCell(1).fill={type:'pattern',pattern:'solid',fgColor:{argb:AMBER_LIGHT}};
+  pr.getCell(2).fill={type:'pattern',pattern:'solid',fgColor:{argb:AMBER_LIGHT}};
+  const _b={top:{style:'medium',color:{argb:'FFC9A84C'}},bottom:{style:'medium',color:{argb:'FFC9A84C'}}};
+  pr.getCell(1).border=_b; pr.getCell(2).border=_b; pr.height=26;
+  // Data bar behind the % column (renders only on numeric cells → fixes the blank-bar bug).
+  if(barEnd>=barStart){
+    ws.addConditionalFormatting({ ref:`C${barStart}:C${barEnd}`, rules:[{type:'dataBar',cfvo:[{type:'num',value:0},{type:'num',value:100}],color:{argb:'FFC9A84C'}}] });
+  }
+  if(!childStates.length){ const r=ws.addRow(['—','No states defined']); r.getCell(2).font={italic:true,size:10,color:{argb:'FF999999'}}; }
+  ws.addRow([]);
+
+  // ── By Drawing — each planned area's per-state coverage of THAT drawing's plan ──
+  const bh=ws.addRow(['By Drawing']); ws.mergeCells(bh.number,1,bh.number,NC);
+  bh.getCell(1).font={bold:true,size:13,color:{argb:WHITE}};
+  bh.getCell(1).fill={type:'pattern',pattern:'solid',fgColor:{argb:TEAL}};
+  bh.getCell(1).alignment={vertical:'middle',horizontal:'left',indent:1}; bh.height=22;
+
+  const renderGroup=(label, planArea, kids)=>{
+    const dh=ws.addRow([label, planArea!=null?`Plan: ${fmt(planArea)}`:'']);
+    ws.mergeCells(dh.number,2,dh.number,NC);
+    dh.getCell(1).font={bold:true,size:11,color:{argb:'FF006B75'}};
+    dh.getCell(2).font={italic:true,size:10,color:{argb:'FF555555'}}; dh.height=18;
+    const ch=ws.addRow(['State','Coverage','% of Plan','Dates','Notes','Photos']);
+    ch.eachCell({includeEmpty:true},c=>{ c.font={bold:true,size:9,color:{argb:'FF888888'}}; }); ch.height=15;
+    let any=false;
+    childStates.forEach(s=>{
+      const ks=kids.filter(e=>stOf(e)===s.id);
+      if(!ks.length) return; any=true;
+      const cov=ks.reduce((a,e)=>a+measure(e),0);
+      const pct=(planArea>0)?Math.min(100,(cov/planArea)*100):null;
+      const dates=[...new Set(ks.map(e=>e.date).filter(Boolean))].join(', ');
+      const notes=ks.map(e=>e.notes||'').filter(Boolean).join(' · ');
+      const photos=ks.reduce((a,e)=>a+(Array.isArray(e.photoIds)?e.photoIds.length:0),0);
+      const r=ws.addRow([s.label, fmt(cov), pct!=null?Math.round(pct):'', dates, notes, photos||'']);
+      const fill=_xlHex(s.color);
+      if(fill){ r.getCell(1).fill={type:'pattern',pattern:'solid',fgColor:{argb:fill}}; r.getCell(1).font={name:'Calibri',size:10,color:{argb:_xlContrast(s.color)}}; }
+      else r.getCell(1).font={name:'Calibri',size:10};
+      r.getCell(2).font={name:'Calibri',size:10};
+      r.getCell(3).font={name:'Calibri',size:10,bold:true}; if(pct!=null) r.getCell(3).numFmt='0"%"';
+      [4,5].forEach(ci=>{ r.getCell(ci).font={name:'Calibri',size:10}; r.getCell(ci).alignment={vertical:'top',wrapText:true}; });
+      r.height=15;
+    });
+    if(!any){ const r=ws.addRow(['—','No layers drawn yet']); r.getCell(2).font={italic:true,size:9,color:{argb:'FF999999'}}; }
+    ws.addRow([]);
+  };
+
+  const planIds=new Set(planned.map(p=>p.id));
+  const sortedPlans=planned.slice().sort((a,b)=>String(a.location||'').localeCompare(String(b.location||'')));
+  sortedPlans.forEach((p,i)=>{ renderGroup(p.location||p.notes||`Area ${i+1}`, measure(p), installed.filter(e=>e.parentId===p.id)); });
+  const unlinked=installed.filter(e=>!e.parentId||!planIds.has(e.parentId));
+  if(unlinked.length) renderGroup('Unlinked drawings', null, unlinked);
+  if(!planned.length && !installed.length){ const r=ws.addRow(['—','No entries yet']); r.getCell(2).font={italic:true,size:10,color:{argb:'FF999999'}}; }
+
+  ws.eachRow((row,rn)=>{ if(rn===1) return; if(!row.height||row.height<16) row.height=16; });
+
+  // Map captures (legend baked in, no totals for seeding) embedded for a self-contained file.
+  await _embedCaptures(ws, wb, installed, pid, NC);
 }
 
 // ── Material Tag photo ZIP export ──

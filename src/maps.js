@@ -3651,23 +3651,41 @@ async function _compositeBrandWordmark(blob, legendCat, pid){
           const defUnit=(typeof tcGetDefaultUnit==='function')?tcGetDefaultUnit(legendCat,pid):'ac';
           const mode=(typeof tcProgressMode==='function')?tcProgressMode(legendCat,pid):'';
           const fmtA=(v)=>(typeof tcFormatMeasurement==='function')?tcFormatMeasurement(v,defUnit):`${(v||0).toFixed(2)} ${defUnit}`;
-          // Net per-state areas (turf) so the legend carries live acreage + an open total.
+          // Per-state areas baked into the legend so buried layers' totals stay visible.
+          // DISTURBANCE (running-balance/total): net areas (turf, later state wins) + an
+          //   "open" total (Σ add) — the SWPPP net-disturbed picture.
+          // SEEDING (per-state-vs-plan): GROSS per-state sums (lime→fert→seed→mulch stack
+          //   on the same ground; lime under fertilizer still counts its FULL area), and
+          //   NO open total — "Total open" is a disturbance concept and must not bleed here.
+          const isRunning=(mode==='running-balance'||mode==='running-total');
           const areaByState={}; let openTotal=0, haveAreas=false;
           try{
-            if(typeof trGetEntriesForProject==='function' && typeof glStateNetAreasM2==='function'){
+            if(typeof trGetEntriesForProject==='function'){
               const inst=trGetEntriesForProject(pid).filter(e=>(e.categoryId===legendCat)&&e.entryType!=='planned'&&!e.temporary&&!e.deletedAt);
-              const g=glStateNetAreasM2(inst,sts);
-              if(g){
-                haveAreas=true;
-                sts.forEach((s,idx)=>{
-                  const a=(typeof glAreaConvertM2==='function')?glAreaConvertM2(g.netM2[s.id]||0,defUnit):0;
+              if(isRunning && typeof glStateNetAreasM2==='function'){
+                const g=glStateNetAreasM2(inst,sts);
+                if(g){
+                  haveAreas=true;
+                  sts.forEach((s,idx)=>{
+                    const a=(typeof glAreaConvertM2==='function')?glAreaConvertM2(g.netM2[s.id]||0,defUnit):0;
+                    areaByState[s.id]=a;
+                    const cm=(typeof tcStateCountMode==='function')?tcStateCountMode(s,idx,sts,mode):'add';
+                    if(cm==='add') openTotal+=a;
+                  });
+                }
+              } else if(typeof trEntryMeasure==='function'){
+                const dcs=(typeof tcDefaultChildState==='function')?tcDefaultChildState(legendCat,pid):null;
+                sts.forEach(s=>{
+                  const a=inst.filter(e=>(e.state||(dcs?dcs.id:null))===s.id)
+                    .reduce((sum,e)=>sum+(trEntryMeasure(e,defUnit,pid)||0),0);
                   areaByState[s.id]=a;
-                  const cm=(typeof tcStateCountMode==='function')?tcStateCountMode(s,idx,sts,mode):'add';
-                  if(cm==='add') openTotal+=a;
+                  if(a>0) haveAreas=true;
                 });
               }
             }
           }catch{}
+          // "Total open" row is disturbance-only; seeding legends carry per-state areas alone.
+          const showOpenTotal=isRunning && haveAreas;
           const LP=Math.max(14,Math.round(c.width*0.011));   // inner padding
           const LF=Math.max(13,Math.round(c.height*0.021));  // row font px
           const TF=Math.round(LF*1.08);                      // title font px
@@ -3681,15 +3699,15 @@ async function _compositeBrandWordmark(blob, legendCat, pid){
           let maxLabelW=ctx.measureText(catNm).width;
           ctx.font=`500 ${LF}px system-ui, sans-serif`;
           sts.forEach(s=>{ const w=ctx.measureText(s.label).width; if(w>maxLabelW) maxLabelW=w; });
-          if(haveAreas){ const w=ctx.measureText('Total open').width; if(w>maxLabelW) maxLabelW=w; }
+          if(showOpenTotal){ const w=ctx.measureText('Total open').width; if(w>maxLabelW) maxLabelW=w; }
           let maxAreaW=0;
           if(haveAreas){
             sts.forEach(s=>{ const w=ctx.measureText(fmtA(areaByState[s.id]||0)).width; if(w>maxAreaW) maxAreaW=w; });
-            const w=ctx.measureText(fmtA(openTotal)).width; if(w>maxAreaW) maxAreaW=w;
+            if(showOpenTotal){ const w=ctx.measureText(fmtA(openTotal)).width; if(w>maxAreaW) maxAreaW=w; }
           }
           const contentW=SW+Math.round(LF*0.7)+maxLabelW+(haveAreas?GAP+maxAreaW:0);
           const boxW=Math.round(contentW+LP*2);
-          const totalRows=sts.length+(haveAreas?1:0);
+          const totalRows=sts.length+(showOpenTotal?1:0);
           const boxH=Math.round(LP*1.5+ROW+ROW*totalRows);
           const bx=LP, by=LP, br=Math.round(LF*0.4);
           const areaRightX=bx+boxW-LP;
@@ -3725,8 +3743,8 @@ async function _compositeBrandWordmark(blob, legendCat, pid){
             if(haveAreas){ ctx.textAlign='right'; ctx.fillStyle='#dfe8f0'; ctx.fillText(fmtA(areaByState[s.id]||0), areaRightX, cy); }
             ry+=ROW;
           });
-          // total row (divider + Total open)
-          if(haveAreas){
+          // total row (divider + Total open) — disturbance only
+          if(showOpenTotal){
             const cy=ry+ROW*0.5;
             ctx.strokeStyle='rgba(255,255,255,0.25)'; ctx.lineWidth=Math.max(1,Math.round(LF*0.06));
             ctx.beginPath(); ctx.moveTo(bx+LP, ry+Math.round(ROW*0.08)); ctx.lineTo(bx+boxW-LP, ry+Math.round(ROW*0.08)); ctx.stroke();
