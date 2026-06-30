@@ -1708,12 +1708,12 @@ async function _seedingSheet(wb, cid, allEntries, pid){
   // State, Coverage, %, Date, Seed Tags, Mix/Product, Applied Rate, Required, Actual, Method, Contractor, Notes, Photos
   ws.columns=[{width:26},{width:14},{width:10},{width:13},{width:11},{width:24},{width:18},{width:18},{width:18},{width:18},{width:22},{width:40},{width:9}];
 
-  // ── Title ──
+  // ── Title (category name) — top of the hierarchy: biggest + teal ──
   ws.addRow([name]); ws.mergeCells(1,1,1,NC);
   const tc=ws.getCell('A1');
-  tc.font={name:'Calibri',bold:true,size:14,color:{argb:WHITE}};
+  tc.font={name:'Calibri',bold:true,size:18,color:{argb:WHITE}};
   tc.fill={type:'pattern',pattern:'solid',fgColor:{argb:TEAL}};
-  tc.alignment={vertical:'middle',horizontal:'left',indent:1}; ws.getRow(1).height=26;
+  tc.alignment={vertical:'middle',horizontal:'left',indent:1}; ws.getRow(1).height=34;
 
   const cfg=JSON.parse(localStorage.getItem('msf_projectconfig')||'{}');
   const today=new Date().toLocaleDateString('en-CA');
@@ -1724,29 +1724,62 @@ async function _seedingSheet(wb, cid, allEntries, pid){
   });
   ws.addRow([]);
 
-  // ── Coverage Summary (category-wide, gross per state vs plan) ──
-  const sh=ws.addRow(['Coverage Summary (vs plan)']); ws.mergeCells(sh.number,1,sh.number,NC);
-  sh.getCell(1).font={bold:true,size:13,color:{argb:WHITE}};
-  sh.getCell(1).fill={type:'pattern',pattern:'solid',fgColor:{argb:TEAL}};
-  sh.getCell(1).alignment={vertical:'middle',horizontal:'left',indent:1}; sh.height=22;
-  const hdr=ws.addRow(['State','Coverage','% of Plan']);
-  hdr.eachCell({includeEmpty:true},c=>{ c.font={bold:true,size:10,color:{argb:WHITE}}; c.fill={type:'pattern',pattern:'solid',fgColor:{argb:TEAL}}; });
-  hdr.height=18;
+  // Full client column set + per-state ordering, shared by the Summary + By-Drawing.
+  const COLS=['State','Coverage','% of Plan','Date','Seed Tags','Mix / Product','Applied Rate','Required','Actual','Method','Contractor','Notes','Photos'];
+  const stById={}; childStates.forEach((s,i)=>{ stById[s.id]={...s,_ord:i}; });
+  const stOrd=(e)=>{ const s=stById[stOf(e)]; return s?s._ord:99; };
+  // Per-state rollup — additive material columns summed across that state's drawings.
+  const stateAgg=(sid)=>{
+    const es=installed.filter(e=>stOf(e)===sid);
+    return {
+      n:es.length,
+      cov:es.reduce((a,e)=>a+measure(e),0),
+      seedTags:es.reduce((a,e)=>a+((e.fields&&e.fields.seedTagCount)||0),0),
+      required:es.reduce((a,e)=>a+((e.fields&&e.fields.requiredAmount)||0),0),
+      reqUnit:(es.find(e=>e.fields&&e.fields.requiredUnit)||{}).fields?.requiredUnit||'',
+      actual:es.reduce((a,e)=>a+((e.fields&&e.fields.actualAmount)||0),0),
+      actUnit:(es.find(e=>e.fields&&e.fields.actualUnit)||{}).fields?.actualUnit||'',
+      photos:es.reduce((a,e)=>a+(Array.isArray(e.photoIds)?e.photoIds.length:0),0),
+    };
+  };
+
+  // ── Coverage Summary — the headline section: AMBER band, larger, all columns ──
+  const sh=ws.addRow(['COVERAGE SUMMARY — totals vs plan']); ws.mergeCells(sh.number,1,sh.number,NC);
+  sh.getCell(1).font={bold:true,size:15,color:{argb:'FF0F1F2E'}};
+  sh.getCell(1).fill={type:'pattern',pattern:'solid',fgColor:{argb:'C9A84C'}};
+  sh.getCell(1).alignment={vertical:'middle',horizontal:'left',indent:1}; sh.height=28;
+  const hdr=ws.addRow(COLS);
+  hdr.eachCell({includeEmpty:true},c=>{ c.font={bold:true,size:10,color:{argb:WHITE}}; c.fill={type:'pattern',pattern:'solid',fgColor:{argb:TEAL}}; c.alignment={vertical:'middle',wrapText:true}; });
+  hdr.height=20;
   const barStart=ws.rowCount+1;
+  let totTags=0,totReq=0,totAct=0,totPhotos=0,reqU='',actU='';
   childStates.forEach(s=>{
-    const gross=installed.filter(e=>stOf(e)===s.id).reduce((a,e)=>a+measure(e),0);
-    const pct=planTotal>0?Math.min(100,(gross/planTotal)*100):null;
-    const r=ws.addRow([s.label, fmt(gross), pct!=null?Math.round(pct):'']);
+    const a=stateAgg(s.id);
+    const pct=planTotal>0?Math.min(100,(a.cov/planTotal)*100):null;
+    totTags+=a.seedTags; totReq+=a.required; totAct+=a.actual; totPhotos+=a.photos;
+    reqU=reqU||a.reqUnit; actU=actU||a.actUnit;
+    const r=ws.addRow([
+      s.label, fmt(a.cov), pct!=null?Math.round(pct):'', '',
+      a.seedTags||'', '', '',
+      a.required?a.required.toLocaleString()+(a.reqUnit?' '+a.reqUnit:''):'',
+      a.actual?a.actual.toLocaleString()+(a.actUnit?' '+a.actUnit:''):'',
+      '', '', '', a.photos||'',
+    ]);
+    r.eachCell({includeEmpty:true},c=>{ c.font={name:'Calibri',size:11}; c.alignment={vertical:'middle'}; });
     const fill=_xlHex(s.color);
     if(fill){ r.getCell(1).fill={type:'pattern',pattern:'solid',fgColor:{argb:fill}}; r.getCell(1).font={name:'Calibri',size:11,bold:true,color:{argb:_xlContrast(s.color)}}; }
     else r.getCell(1).font={name:'Calibri',size:11,bold:true};
-    r.getCell(2).font={name:'Calibri',size:11};
-    r.getCell(3).font={name:'Calibri',size:11,bold:true};
-    if(pct!=null) r.getCell(3).numFmt='0"%"';
+    r.getCell(3).font={name:'Calibri',size:11,bold:true}; if(pct!=null) r.getCell(3).numFmt='0"%"';
     r.height=22;
   });
   const barEnd=ws.rowCount;
-  // Planned-area total — the denominator, banded like the disturbance headline.
+  // All-states grand totals (additive material columns; coverage omitted — states stack).
+  if(childStates.length){
+    const gr=ws.addRow(['TOTAL — all states','','','', totTags||'','','', totReq?totReq.toLocaleString()+(reqU?' '+reqU:''):'', totAct?totAct.toLocaleString()+(actU?' '+actU:''):'','','','', totPhotos||'']);
+    gr.eachCell({includeEmpty:true},c=>{ c.font={bold:true,size:11}; c.fill={type:'pattern',pattern:'solid',fgColor:{argb:AMBER_LIGHT}}; });
+    gr.height=22;
+  }
+  // Planned-area total — the denominator, banded headline.
   const pr=ws.addRow(['Planned area (total)', fmt(planTotal)]);
   pr.getCell(1).font={bold:true,size:14}; pr.getCell(2).font={bold:true,size:14,color:{argb:'FF006B75'}};
   pr.getCell(1).fill={type:'pattern',pattern:'solid',fgColor:{argb:AMBER_LIGHT}};
@@ -1767,17 +1800,13 @@ async function _seedingSheet(wb, cid, allEntries, pid){
   bh.getCell(1).fill={type:'pattern',pattern:'solid',fgColor:{argb:TEAL}};
   bh.getCell(1).alignment={vertical:'middle',horizontal:'left',indent:1}; bh.height=22;
 
-  const stById={}; childStates.forEach((s,i)=>{ stById[s.id]={...s,_ord:i}; });
-  const stOrd=(e)=>{ const s=stById[stOf(e)]; return s?s._ord:99; };
-  const COLS=['State','Coverage','% of Plan','Date','Seed Tags','Mix / Product','Applied Rate','Required','Actual','Method','Contractor','Notes','Photos'];
-
   const renderGroup=(label, planArea, kids)=>{
     const dh=ws.addRow([label, planArea!=null?`Plan: ${fmt(planArea)}`:'']);
     ws.mergeCells(dh.number,2,dh.number,NC);
     dh.getCell(1).font={bold:true,size:12,color:{argb:'FF006B75'}};
     dh.getCell(2).font={italic:true,size:10,color:{argb:'FF555555'}}; dh.height=22;
     const ch=ws.addRow(COLS);
-    ch.eachCell({includeEmpty:true},c=>{ c.font={bold:true,size:9,color:{argb:'FF888888'}}; c.alignment={vertical:'middle',wrapText:true}; }); ch.height=20;
+    ch.eachCell({includeEmpty:true},c=>{ c.font={bold:true,size:10,color:{argb:'FF006B75'}}; c.fill={type:'pattern',pattern:'solid',fgColor:{argb:'E8F4F5'}}; c.border={bottom:{style:'thin',color:{argb:'FF006B75'}}}; c.alignment={vertical:'middle',wrapText:true}; }); ch.height=20;
     const sorted=kids.slice().sort((a,b)=>(stOrd(a)-stOrd(b))||String(a.date||'').localeCompare(String(b.date||'')));
     if(!sorted.length){ const r=ws.addRow(['—','No layers drawn yet']); r.getCell(2).font={italic:true,size:9,color:{argb:'FF999999'}}; r.height=20; }
     sorted.forEach(e=>{
