@@ -837,8 +837,29 @@ async function phSaveCapturedImage(blob, photoDate, captionOverride){
   window._phPhotos=(window._phPhotos||[]);
   window._phPhotos.push(entry);
   phSaveLocal();
-  phSaveCloud();
+  // Write ONLY the new photo's doc — phSaveCloud() rewrites the entire library in one
+  // batch, which overflows Firestore's write-stream queue once the library is large
+  // (resource-exhausted). Single-doc set is all a fresh capture needs.
+  phSaveCloudOne(entry);
   return entry;
+}
+
+// Persist a single photo doc (used by add/capture paths) so we never re-batch the whole
+// library on a one-photo change. Mirrors the per-photo doc shape in phSaveCloud.
+async function phSaveCloudOne(p){
+  if(!db || !_fbReady || !p) return;
+  try{
+    const doc={ id:p.id, date:p.date, caption:p.caption, filename:p.filename, thumb:p.thumb, uploadedAt:p.uploadedAt };
+    if(p.storageUrl) doc.storageUrl=p.storageUrl;
+    if(p.lat!==undefined){ doc.lat=p.lat; doc.lng=p.lng; }
+    if(p.direction!==undefined) doc.direction=p.direction;
+    if(p.takenAt) doc.takenAt=p.takenAt;
+    if(p.software) doc.software=p.software;
+    if(p.projectId) doc.projectId=p.projectId;
+    if(p.type) doc.type=p.type;
+    if(p.published!==undefined){ doc.published=p.published; doc.publishedAt=p.publishedAt||null; }
+    await _udb().collection('photos').doc(p.id).set(doc,{merge:true});
+  }catch(e){ console.warn('phSaveCloudOne failed:', e.message); }
 }
 
 // ── Expose to window for HTML onclick handlers and cross-module calls ──

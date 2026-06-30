@@ -1699,12 +1699,14 @@ async function _seedingSheet(wb, cid, allEntries, pid){
   const planTotal=planned.reduce((s,e)=>s+measure(e),0);
 
   const TEAL='006B75', WHITE='FFFFFF', AMBER_LIGHT='FDF5DC';
-  const NC=6;
+  // Full client-facing column set (the old Tracker Log columns the seed reports need).
+  const NC=13;
   let base=('Seeding — '+name).replace(/[\\\/\?\*\[\]:]/g,'').slice(0,31);
   let nm=base, n=2;
   while(wb.getWorksheet(nm)){ nm=base.slice(0,28)+' '+n; n++; }
   const ws=wb.addWorksheet(nm);
-  ws.columns=[{width:30},{width:18},{width:14},{width:24},{width:42},{width:10}];
+  // State, Coverage, %, Date, Seed Tags, Mix/Product, Applied Rate, Required, Actual, Method, Contractor, Notes, Photos
+  ws.columns=[{width:26},{width:14},{width:10},{width:13},{width:11},{width:24},{width:18},{width:18},{width:18},{width:18},{width:22},{width:40},{width:9}];
 
   // ── Title ──
   ws.addRow([name]); ws.mergeCells(1,1,1,NC);
@@ -1741,7 +1743,7 @@ async function _seedingSheet(wb, cid, allEntries, pid){
     r.getCell(2).font={name:'Calibri',size:11};
     r.getCell(3).font={name:'Calibri',size:11,bold:true};
     if(pct!=null) r.getCell(3).numFmt='0"%"';
-    r.height=16;
+    r.height=22;
   });
   const barEnd=ws.rowCount;
   // Planned-area total — the denominator, banded like the disturbance headline.
@@ -1758,38 +1760,52 @@ async function _seedingSheet(wb, cid, allEntries, pid){
   if(!childStates.length){ const r=ws.addRow(['—','No states defined']); r.getCell(2).font={italic:true,size:10,color:{argb:'FF999999'}}; }
   ws.addRow([]);
 
-  // ── By Drawing — each planned area's per-state coverage of THAT drawing's plan ──
+  // ── By Drawing — one row per drawn layer (full client columns), grouped under each
+  //    planned area; the Coverage Summary above carries the grand per-state totals. ──
   const bh=ws.addRow(['By Drawing']); ws.mergeCells(bh.number,1,bh.number,NC);
   bh.getCell(1).font={bold:true,size:13,color:{argb:WHITE}};
   bh.getCell(1).fill={type:'pattern',pattern:'solid',fgColor:{argb:TEAL}};
   bh.getCell(1).alignment={vertical:'middle',horizontal:'left',indent:1}; bh.height=22;
 
+  const stById={}; childStates.forEach((s,i)=>{ stById[s.id]={...s,_ord:i}; });
+  const stOrd=(e)=>{ const s=stById[stOf(e)]; return s?s._ord:99; };
+  const COLS=['State','Coverage','% of Plan','Date','Seed Tags','Mix / Product','Applied Rate','Required','Actual','Method','Contractor','Notes','Photos'];
+
   const renderGroup=(label, planArea, kids)=>{
     const dh=ws.addRow([label, planArea!=null?`Plan: ${fmt(planArea)}`:'']);
     ws.mergeCells(dh.number,2,dh.number,NC);
-    dh.getCell(1).font={bold:true,size:11,color:{argb:'FF006B75'}};
-    dh.getCell(2).font={italic:true,size:10,color:{argb:'FF555555'}}; dh.height=18;
-    const ch=ws.addRow(['State','Coverage','% of Plan','Dates','Notes','Photos']);
-    ch.eachCell({includeEmpty:true},c=>{ c.font={bold:true,size:9,color:{argb:'FF888888'}}; }); ch.height=15;
-    let any=false;
-    childStates.forEach(s=>{
-      const ks=kids.filter(e=>stOf(e)===s.id);
-      if(!ks.length) return; any=true;
-      const cov=ks.reduce((a,e)=>a+measure(e),0);
+    dh.getCell(1).font={bold:true,size:12,color:{argb:'FF006B75'}};
+    dh.getCell(2).font={italic:true,size:10,color:{argb:'FF555555'}}; dh.height=22;
+    const ch=ws.addRow(COLS);
+    ch.eachCell({includeEmpty:true},c=>{ c.font={bold:true,size:9,color:{argb:'FF888888'}}; c.alignment={vertical:'middle',wrapText:true}; }); ch.height=20;
+    const sorted=kids.slice().sort((a,b)=>(stOrd(a)-stOrd(b))||String(a.date||'').localeCompare(String(b.date||'')));
+    if(!sorted.length){ const r=ws.addRow(['—','No layers drawn yet']); r.getCell(2).font={italic:true,size:9,color:{argb:'FF999999'}}; r.height=20; }
+    sorted.forEach(e=>{
+      const s=stById[stOf(e)]||null;
+      const f=e.fields||{};
+      const rateUnit=f.requiredUnit?f.requiredUnit+'/ac':'';
+      const cov=measure(e);
       const pct=(planArea>0)?Math.min(100,(cov/planArea)*100):null;
-      const dates=[...new Set(ks.map(e=>e.date).filter(Boolean))].join(', ');
-      const notes=ks.map(e=>e.notes||'').filter(Boolean).join(' · ');
-      const photos=ks.reduce((a,e)=>a+(Array.isArray(e.photoIds)?e.photoIds.length:0),0);
-      const r=ws.addRow([s.label, fmt(cov), pct!=null?Math.round(pct):'', dates, notes, photos||'']);
-      const fill=_xlHex(s.color);
-      if(fill){ r.getCell(1).fill={type:'pattern',pattern:'solid',fgColor:{argb:fill}}; r.getCell(1).font={name:'Calibri',size:10,color:{argb:_xlContrast(s.color)}}; }
-      else r.getCell(1).font={name:'Calibri',size:10};
-      r.getCell(2).font={name:'Calibri',size:10};
+      const r=ws.addRow([
+        s?s.label:(e.state||''),
+        fmt(cov),
+        pct!=null?Math.round(pct):'',
+        e.date||'',
+        f.seedTagCount!=null?f.seedTagCount:'',
+        e.seedMix||'',
+        f.appliedRate!=null?(rateUnit?f.appliedRate+' '+rateUnit:f.appliedRate):'',
+        f.requiredAmount!=null?f.requiredAmount+' '+(f.requiredUnit||''):'',
+        f.actualAmount!=null?f.actualAmount+' '+(f.actualUnit||''):'',
+        e.method||'', e.contractor||'', e.notes||'',
+        Array.isArray(e.photoIds)?e.photoIds.length:'',
+      ]);
+      r.eachCell({includeEmpty:true},c=>{ c.font={name:'Calibri',size:10}; c.alignment={vertical:'top',wrapText:true}; });
+      const fill=s?_xlHex(s.color):null;
+      if(fill){ r.getCell(1).fill={type:'pattern',pattern:'solid',fgColor:{argb:fill}}; r.getCell(1).font={name:'Calibri',size:10,bold:true,color:{argb:_xlContrast(s.color)}}; }
+      else r.getCell(1).font={name:'Calibri',size:10,bold:true};
       r.getCell(3).font={name:'Calibri',size:10,bold:true}; if(pct!=null) r.getCell(3).numFmt='0"%"';
-      [4,5].forEach(ci=>{ r.getCell(ci).font={name:'Calibri',size:10}; r.getCell(ci).alignment={vertical:'top',wrapText:true}; });
-      r.height=15;
+      r.height=30; // padding so wrapped notes / mix read without expanding the row
     });
-    if(!any){ const r=ws.addRow(['—','No layers drawn yet']); r.getCell(2).font={italic:true,size:9,color:{argb:'FF999999'}}; }
     ws.addRow([]);
   };
 
@@ -1800,7 +1816,7 @@ async function _seedingSheet(wb, cid, allEntries, pid){
   if(unlinked.length) renderGroup('Unlinked drawings', null, unlinked);
   if(!planned.length && !installed.length){ const r=ws.addRow(['—','No entries yet']); r.getCell(2).font={italic:true,size:10,color:{argb:'FF999999'}}; }
 
-  ws.eachRow((row,rn)=>{ if(rn===1) return; if(!row.height||row.height<16) row.height=16; });
+  ws.eachRow((row,rn)=>{ if(rn===1) return; if(!row.height||row.height<18) row.height=18; });
 
   // Map captures (legend baked in, no totals for seeding) embedded for a self-contained file.
   await _embedCaptures(ws, wb, installed, pid, NC);
