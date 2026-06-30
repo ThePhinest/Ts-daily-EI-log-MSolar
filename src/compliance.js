@@ -1719,7 +1719,7 @@ async function _embedCapturesInline(ws, wb, owners, NC){
   for(const {ph,e,kind} of caps){
     const tag=kind==='capture'?'📷 Map capture':'🌱 Seed tag photo';
     const fillArgb=kind==='capture'?'FDF5DC':'EAF5EA';      // amber tint vs green tint
-    const lbl=ws.addRow([`▸ ${tag} · ${e.date||''}   ( − collapse / + expand )`]);
+    const lbl=ws.addRow([`▸ ${tag} · ${e.date||''}   ( click + to expand )`]);
     ws.mergeCells(lbl.number,1,lbl.number,NC);
     lbl.getCell(1).font={bold:true,size:10,color:{argb:'FF006B75'}};
     lbl.getCell(1).fill={type:'pattern',pattern:'solid',fgColor:{argb:fillArgb}};
@@ -1739,7 +1739,7 @@ async function _embedCapturesInline(ws, wb, owners, NC){
       for(let i=0;i<cum.length;i++){ if(cum[i]*aspect<=MAXROWPX){ brCol=i; rangeW=cum[i]; } }
       const rowHpx=Math.min(MAXROWPX, Math.round(rangeW*aspect));
       const rowPt=Math.min(405, Math.round(rowHpx*0.75)); // px→pt, under Excel's 409 cap
-      const ir=ws.addRow([]); ir.height=rowPt; ir.outlineLevel=1; // grouped (collapsible), one row
+      const ir=ws.addRow([]); ir.height=rowPt; ir.outlineLevel=1; ir.hidden=true; // collapsed by default
       const r0=ir.number-1; // 0-indexed
       const imgId=wb.addImage({base64:raw, extension});
       // One tall row, twoCellAnchor so it sizes/collapses with the row.
@@ -1777,12 +1777,12 @@ async function _seedingSheet(wb, cid, allEntries, pid){
   const ws=wb.addWorksheet(nm);
   // Outline summary ABOVE its group so each capture's dated toggle row sits above the
   // collapsed image rows (click the + on the toggle to expand the photo inline).
-  // Capture images sit in native Excel outline GROUPS (expanded by default). ExcelJS can't
-  // reliably place the `collapsed` flag on the summary row, so collapsed-on-open + the +/-
-  // toggle desync; expanded-by-default lets Excel own the collapse state → the −/+ and the
-  // top-left "1"/"2" level buttons all work. summaryBelow:false puts the toggle on the
-  // dated label row above each photo group.
+  // Capture images sit in native Excel outline GROUPS, COLLAPSED by default (one image row
+  // each). summaryBelow:false puts the +/- toggle on the dated label row above each photo;
+  // outlineLevelRow=1 marks the level-1 image rows collapsed so the sheet opens tidy —
+  // expand with + (after Protected View's "Enable Editing", which disables outline toggles).
   ws.properties.outlineProperties={summaryBelow:false,summaryRight:false};
+  ws.properties.outlineLevelRow=1;
   // State, Coverage, %, Date, Seed Tags, Mix/Product, Applied Rate, Required, Actual, Method, Contractor, Notes, Photos
   ws.columns=[{width:26},{width:14},{width:10},{width:13},{width:11},{width:24},{width:18},{width:18},{width:18},{width:18},{width:22},{width:40},{width:9}];
 
@@ -1801,7 +1801,7 @@ async function _seedingSheet(wb, cid, allEntries, pid){
     r.getCell(2).font={name:'Calibri',size:10}; r.height=15;
   });
   // Usage note — captures/seed-tag photos are grouped + collapsible per drawing.
-  const tip=ws.addRow(['ℹ  Photos are grouped under each drawing. Use the 1 / 2 outline buttons at the very top-left to collapse or expand all photos at once, or the − / + beside any single photo.']);
+  const tip=ws.addRow(['ℹ  Photos are collapsed under each drawing. Click + beside a photo to expand it (or the 1 / 2 buttons at the very top-left to expand / collapse all). If the +/- buttons do nothing, click "Enable Editing" up top first — Protected View disables them.']);
   ws.mergeCells(tip.number,1,tip.number,NC);
   tip.getCell(1).font={italic:true,size:9,color:{argb:'FF666666'}};
   tip.getCell(1).alignment={wrapText:true,vertical:'middle'}; tip.height=24;
