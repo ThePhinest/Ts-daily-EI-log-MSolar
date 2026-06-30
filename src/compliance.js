@@ -1243,9 +1243,11 @@ async function _exportCategoriesDeliverable(cids, entries, pid){
     if(isRunning){ allSeeding=false; await _disturbanceSheet(wb, cid, entries, pid); }
     else await _seedingSheet(wb, cid, entries, pid);
   }
-  // Body font ≥ 12 across the workbook (titles/headline keep their larger size).
+  // Body font ≥ 12 across the workbook (titles/headline keep their larger size). Skip
+  // hidden rows (the collapsed capture-image ranges) so their reserved height holds.
   wb.eachSheet(sheet=>{
     sheet.eachRow(row=>{
+      if(row.hidden) return;
       if(!row.height || row.height<16) row.height=16;
       row.eachCell({includeEmpty:false},c=>{ const f=c.font||{}; if((f.size||11)<12) c.font={...f,size:12}; });
     });
@@ -1695,6 +1697,47 @@ async function _embedCaptures(ws, wb, installed, pid, NC){
   }
 }
 
+// Inline, COLLAPSED capture(s) for ONE drawing: a dated/shaded summary row (carries the
+// +/- outline toggle) followed by the capture image in a grouped, hidden row range that
+// collapses with it (twoCellAnchor → the image hides when the rows collapse). `owners` =
+// the drawing's entries (planned parent + its layers) whose map_captures belong here. This
+// replaces the separate bottom "Map Captures" list — captures live with their drawing.
+async function _embedCapturesInline(ws, wb, owners, NC){
+  const caps=[];
+  (owners||[]).forEach(e=>{ if(!e) return; (e.photoIds||[]).forEach(id=>{
+    const ph=(window._phPhotos||[]).find(p=>p.id===id);
+    if(ph && ph.type==='map_capture' && ph.storageUrl) caps.push({ph,e});
+  }); });
+  if(!caps.length) return;
+  for(const {ph,e} of caps){
+    const lbl=ws.addRow([`▸ 📷 Map capture · ${e.date||''}   (click + to expand)`]);
+    ws.mergeCells(lbl.number,1,lbl.number,NC);
+    lbl.getCell(1).font={bold:true,size:10,color:{argb:'FF006B75'}};
+    lbl.getCell(1).fill={type:'pattern',pattern:'solid',fgColor:{argb:'FDF5DC'}};
+    lbl.getCell(1).border={top:{style:'thin',color:{argb:'FFC9A84C'}}};
+    lbl.height=18;
+    try{
+      const resp=await fetch(ph.storageUrl); if(!resp.ok) continue;
+      const blob=await resp.blob();
+      const dataUrl=await _blobToDataURL(blob);
+      const raw=dataUrl.substring(dataUrl.indexOf(',')+1);
+      const ext=(ph.filename||'png').split('.').pop().toLowerCase();
+      const extension=(ext==='jpg'||ext==='jpeg')?'jpeg':(ext==='gif'?'gif':'png');
+      const bmp=await createImageBitmap(blob);
+      const maxW=520, scale=Math.min(1,maxW/bmp.width);
+      const hPx=Math.round(bmp.height*scale); bmp.close();
+      // Reserve grouped+hidden rows sized (~24px each) to roughly hold the image height;
+      // 18pt rows survive the later min-height passes so the range stays put.
+      const span=Math.max(2,Math.ceil(hPx/24));
+      const firstRow0=ws.rowCount; // 0-indexed start of the image rows
+      for(let i=0;i<span;i++){ const r=ws.addRow([]); r.height=18; r.outlineLevel=1; r.hidden=true; }
+      const imgId=wb.addImage({base64:raw, extension});
+      // twoCellAnchor (move + size with cells) so collapsing the rows collapses the image.
+      ws.addImage(imgId,{ tl:{col:0.15,row:firstRow0+0.05}, br:{col:5,row:firstRow0+span-0.05}, editAs:'twoCell' });
+    }catch(err){ console.warn('inline capture failed',err); }
+  }
+}
+
 // Coverage-vs-plan (seeding) deliverable sheet for one per-state-vs-plan category. States
 // STACK on the same ground (lime→fert→seed→mulch) so per-state areas are GROSS sums (turf
 // net is NOT used). Shows a category-wide Coverage Summary (gross per-state ÷ plan, with
@@ -1722,6 +1765,9 @@ async function _seedingSheet(wb, cid, allEntries, pid){
   let nm=base, n=2;
   while(wb.getWorksheet(nm)){ nm=base.slice(0,28)+' '+n; n++; }
   const ws=wb.addWorksheet(nm);
+  // Outline summary ABOVE its group so each capture's dated toggle row sits above the
+  // collapsed image rows (click the + on the toggle to expand the photo inline).
+  ws.properties.outlineProperties={summaryBelow:false,summaryRight:false};
   // State, Coverage, %, Date, Seed Tags, Mix/Product, Applied Rate, Required, Actual, Method, Contractor, Notes, Photos
   ws.columns=[{width:26},{width:14},{width:10},{width:13},{width:11},{width:24},{width:18},{width:18},{width:18},{width:18},{width:22},{width:40},{width:9}];
 
@@ -1829,7 +1875,7 @@ async function _seedingSheet(wb, cid, allEntries, pid){
   bh.getCell(1).fill={type:'pattern',pattern:'solid',fgColor:{argb:TEAL}};
   bh.getCell(1).alignment={vertical:'middle',horizontal:'left',indent:1}; bh.height=22;
 
-  const renderGroup=(label, planArea, kids)=>{
+  const renderGroup=async (label, planArea, kids, owners)=>{
     // Per-drawing TITLE bar — drawing name + (location), with the plan area on the right.
     const dh=ws.addRow([label, planArea!=null?`Plan: ${fmt(planArea)}`:'']);
     ws.mergeCells(dh.number,2,dh.number,NC);
@@ -1868,25 +1914,27 @@ async function _seedingSheet(wb, cid, allEntries, pid){
       r.getCell(3).font={name:'Calibri',size:10,bold:true}; if(pct!=null) r.getCell(3).numFmt='0"%"';
       r.height=30; // padding so wrapped notes / mix read without expanding the row
     });
+    // This drawing's map captures, inline + collapsed right under it (no separate list).
+    await _embedCapturesInline(ws, wb, owners, NC);
     ws.addRow([]);
   };
 
   const planIds=new Set(planned.map(p=>p.id));
   const sortedPlans=planned.slice().sort((a,b)=>String(a.location||'').localeCompare(String(b.location||'')));
-  sortedPlans.forEach((p,i)=>{
+  for(let i=0;i<sortedPlans.length;i++){
+    const p=sortedPlans[i];
     // p.name = future per-drawing name field (forward-compat); falls back to notes → Area N.
     const nm=p.name||p.notes||`Area ${i+1}`;
     const lbl=p.location?`${nm} (${p.location})`:nm;
-    renderGroup(lbl, measure(p), installed.filter(e=>e.parentId===p.id));
-  });
+    const kids=installed.filter(e=>e.parentId===p.id);
+    await renderGroup(lbl, measure(p), kids, [p, ...kids]);
+  }
   const unlinked=installed.filter(e=>!e.parentId||!planIds.has(e.parentId));
-  if(unlinked.length) renderGroup('Unlinked drawings', null, unlinked);
+  if(unlinked.length) await renderGroup('Unlinked drawings', null, unlinked, unlinked);
   if(!planned.length && !installed.length){ const r=ws.addRow(['—','No entries yet']); r.getCell(2).font={italic:true,size:10,color:{argb:'FF999999'}}; }
 
-  ws.eachRow((row,rn)=>{ if(rn===1) return; if(!row.height||row.height<18) row.height=18; });
-
-  // Map captures (legend baked in, no totals for seeding) embedded for a self-contained file.
-  await _embedCaptures(ws, wb, installed, pid, NC);
+  // Min-height pass — skip the hidden capture-image rows so their reserved height holds.
+  ws.eachRow((row,rn)=>{ if(rn===1||row.hidden) return; if(!row.height||row.height<18) row.height=18; });
 }
 
 // ── Material Tag photo ZIP export ──
