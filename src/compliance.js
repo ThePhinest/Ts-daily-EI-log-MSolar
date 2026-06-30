@@ -1148,9 +1148,9 @@ async function _glShareOrDownload(blob, filename, mimeType){
 }
 
 // ── Tracker log export — scheme picker modal ──
-// Per-category deliverables: each category exports its OWN focused workbook (a SWPPP/net
-// sheet for disturbance, a coverage-vs-plan sheet for seeding). No combined tab — pick the
-// category (or the photo bundle) you want. The current filter scopes which entries go in.
+// Per-category deliverables: pick one OR MORE categories — they combine into a single
+// report workbook (a tab per category: SWPPP/net sheet for disturbance, coverage-vs-plan
+// sheet for seeding). The current filter scopes which entries go in.
 function _showTlogExportModal(getEntries, pid){
   const entries=getEntries();
   // Distinct categories present in the filtered set, first-seen order.
@@ -1166,50 +1166,55 @@ function _showTlogExportModal(getEntries, pid){
       icon:isRunning?'🟧':'🌱'});
   });
 
+  const selected=new Set();
   const ov=document.createElement('div');
   ov.className='modal-overlay';
   ov.style.cssText='z-index:9500';
-  const rowBase='display:flex;align-items:center;gap:11px;width:100%;text-align:left;padding:12px 14px;border-radius:8px;cursor:pointer;border:2px solid var(--border);background:var(--s1);transition:border-color .15s';
-  ov.innerHTML=`
-    <div class="modal-box" style="max-width:360px;width:92%">
-      <div class="modal-title" style="margin-bottom:4px">Export Deliverable</div>
-      <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-bottom:16px">Pick a category — each exports its own .xlsx</div>
-      <div id="_exp-list" style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px">
-        ${cats.length?cats.map(c=>`
-          <button class="_exp-cat" data-cid="${c.cid}" style="${rowBase}">
-            <span style="font-size:20px;flex-shrink:0">${c.icon}</span>
-            <span style="display:flex;flex-direction:column;gap:2px;min-width:0">
-              <span style="font-family:var(--cond);font-weight:700;font-size:14px;letter-spacing:.03em;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${c.name}</span>
-              <span style="font-family:var(--mono);font-size:10px;color:var(--muted)">${c.type} · ${c.n} entr${c.n===1?'y':'ies'}</span>
-            </span>
-          </button>`).join('')
-        :`<div style="font-family:var(--mono);font-size:11px;color:var(--muted);padding:8px 0">No categories in the current filter.</div>`}
-        <button class="_exp-zip" style="${rowBase}">
-          <span style="font-size:20px;flex-shrink:0">🖼</span>
-          <span style="display:flex;flex-direction:column;gap:2px">
-            <span style="font-family:var(--cond);font-weight:700;font-size:14px;letter-spacing:.03em;color:var(--text)">Photos</span>
-            <span style="font-family:var(--mono);font-size:10px;color:var(--muted)">Material tags + map captures · .zip</span>
-          </span>
-        </button>
-      </div>
-      <button id="_exp-cancel" style="width:100%;padding:9px;background:none;color:var(--muted);font-family:var(--mono);font-size:11px;border:1px solid var(--border);border-radius:8px;cursor:pointer">Cancel</button>
-    </div>`;
-  ov.querySelector('#_exp-cancel').onclick=()=>ov.remove();
-  ov.querySelectorAll('._exp-cat').forEach(btn=>{
-    btn.onclick=async()=>{
-      btn.style.opacity='.55'; ov.querySelectorAll('button').forEach(b=>b.style.pointerEvents='none');
-      try{ await _exportCategoryDeliverable(btn.dataset.cid, getEntries(), pid); }
+  const rowBase='display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:12px 14px;border-radius:8px;cursor:pointer;border:2px solid var(--border);background:var(--s1);transition:border-color .15s';
+  const rowOn ='display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:12px 14px;border-radius:8px;cursor:pointer;border:2px solid var(--amber);background:var(--s1);transition:border-color .15s';
+
+  const render=()=>{
+    const nSel=selected.size;
+    ov.innerHTML=`
+      <div class="modal-box" style="max-width:360px;width:92%">
+        <div class="modal-title" style="margin-bottom:4px">Export Deliverable</div>
+        <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-bottom:16px">Select one or more categories — combined into one report</div>
+        <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px">
+          ${cats.length?cats.map(c=>`
+            <button class="_exp-cat" data-cid="${c.cid}" style="${selected.has(c.cid)?rowOn:rowBase}">
+              <span style="font-size:15px;width:18px;flex-shrink:0;text-align:center;color:${selected.has(c.cid)?'var(--amber)':'var(--muted)'}">${selected.has(c.cid)?'☑':'☐'}</span>
+              <span style="font-size:19px;flex-shrink:0">${c.icon}</span>
+              <span style="display:flex;flex-direction:column;gap:2px;min-width:0">
+                <span style="font-family:var(--cond);font-weight:700;font-size:14px;letter-spacing:.03em;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${c.name}</span>
+                <span style="font-family:var(--mono);font-size:10px;color:var(--muted)">${c.type} · ${c.n} entr${c.n===1?'y':'ies'}</span>
+              </span>
+            </button>`).join('')
+          :`<div style="font-family:var(--mono);font-size:11px;color:var(--muted);padding:8px 0">No categories in the current filter.</div>`}
+        </div>
+        <button id="_exp-go" ${nSel?'':'disabled'} style="width:100%;padding:12px;background:${nSel?'var(--amber)':'var(--s2,#1a2a38)'};color:${nSel?'#000':'var(--muted)'};font-family:var(--cond);font-weight:700;font-size:14px;letter-spacing:.06em;border:none;border-radius:8px;cursor:${nSel?'pointer':'default'};margin-bottom:8px">⬇ Export${nSel?` (${nSel})`:''}</button>
+        <button class="_exp-zip" style="width:100%;padding:10px;background:none;color:var(--text);font-family:var(--mono);font-size:11px;border:1px solid var(--border);border-radius:8px;cursor:pointer;margin-bottom:8px">🖼 Photos (ZIP)</button>
+        <button id="_exp-cancel" style="width:100%;padding:9px;background:none;color:var(--muted);font-family:var(--mono);font-size:11px;border:1px solid var(--border);border-radius:8px;cursor:pointer">Cancel</button>
+      </div>`;
+    ov.querySelectorAll('._exp-cat').forEach(btn=>{
+      btn.onclick=()=>{ const id=btn.dataset.cid; if(selected.has(id)) selected.delete(id); else selected.add(id); render(); };
+    });
+    ov.querySelector('#_exp-cancel').onclick=()=>ov.remove();
+    const goBtn=ov.querySelector('#_exp-go');
+    if(goBtn) goBtn.onclick=async()=>{
+      if(!selected.size) return;
+      goBtn.textContent='Building…'; ov.querySelectorAll('button').forEach(b=>b.style.pointerEvents='none');
+      try{ await _exportCategoriesDeliverable([...selected], getEntries(), pid); }
       catch(err){ console.warn('category export failed',err); }
       ov.remove();
     };
-  });
-  ov.querySelector('._exp-zip').onclick=async()=>{
-    ov.querySelectorAll('button').forEach(b=>b.style.pointerEvents='none');
-    ov.querySelector('._exp-zip').style.opacity='.55';
-    try{ await _tlogExportPhotoZip(getEntries(), pid); }
-    catch(err){ console.warn('photo zip failed',err); }
-    ov.remove();
+    ov.querySelector('._exp-zip').onclick=async()=>{
+      ov.querySelectorAll('button').forEach(b=>b.style.pointerEvents='none');
+      try{ await _tlogExportPhotoZip(getEntries(), pid); }
+      catch(err){ console.warn('photo zip failed',err); }
+      ov.remove();
+    };
   };
+  render();
   document.body.appendChild(ov);
 }
 
@@ -1222,17 +1227,22 @@ function _tlogLightenHex(hex, t){
   }).join('');
 }
 
-// Build + download ONE category's focused deliverable workbook. Branches on progress mode:
-// running-balance/total → SWPPP net-disturbed sheet; everything else → coverage-vs-plan
-// (seeding) sheet. Each export is scoped to its own category — no combined tab.
-async function _exportCategoryDeliverable(cid, entries, pid){
+// Build + download ONE report workbook for one OR MORE categories — a tab per category.
+// Each tab branches on progress mode: running-balance/total → SWPPP net-disturbed sheet;
+// everything else → coverage-vs-plan (seeding) sheet. Pick pre-seeding + restoration and
+// the whole seed-tracking picture lands in a single file.
+async function _exportCategoriesDeliverable(cids, entries, pid){
+  if(!Array.isArray(cids) || !cids.length) return;
   const {default:ExcelJS}=await import('exceljs');
   const wb=new ExcelJS.Workbook();
   wb.creator='GroundLog'; wb.created=new Date();
-  const mode=(typeof tcProgressMode==='function')?tcProgressMode(cid,pid):'';
-  const isRunning=mode==='running-balance'||mode==='running-total';
-  if(isRunning) await _disturbanceSheet(wb, cid, entries, pid);
-  else await _seedingSheet(wb, cid, entries, pid);
+  let allSeeding=true;
+  for(const cid of cids){
+    const mode=(typeof tcProgressMode==='function')?tcProgressMode(cid,pid):'';
+    const isRunning=mode==='running-balance'||mode==='running-total';
+    if(isRunning){ allSeeding=false; await _disturbanceSheet(wb, cid, entries, pid); }
+    else await _seedingSheet(wb, cid, entries, pid);
+  }
   // Body font ≥ 12 across the workbook (titles/headline keep their larger size).
   wb.eachSheet(sheet=>{
     sheet.eachRow(row=>{
@@ -1242,13 +1252,20 @@ async function _exportCategoryDeliverable(cid, entries, pid){
   });
   const cfg=JSON.parse(localStorage.getItem('msf_projectconfig')||'{}');
   const today=new Date().toLocaleDateString('en-CA');
-  const name=(typeof tcGetName==='function')?tcGetName(cid,pid):'category';
   const safeProj=(cfg.projectName||pid).replace(/[^a-zA-Z0-9 _-]/g,'').trim().replace(/\s+/g,'-');
-  const safeCat=String(name).replace(/[^a-zA-Z0-9 _-]/g,'').trim().replace(/\s+/g,'-')||'category';
-  const typeTag=isRunning?'disturbance':'seeding';
+  let fname;
+  if(cids.length===1){
+    const name=(typeof tcGetName==='function')?tcGetName(cids[0],pid):'category';
+    const mode=(typeof tcProgressMode==='function')?tcProgressMode(cids[0],pid):'';
+    const isRunning=mode==='running-balance'||mode==='running-total';
+    const safeCat=String(name).replace(/[^a-zA-Z0-9 _-]/g,'').trim().replace(/\s+/g,'-')||'category';
+    fname=`${isRunning?'disturbance':'seeding'}-${safeCat}-${safeProj}-${today}.xlsx`;
+  } else {
+    fname=`${allSeeding?'seeding':'tracker'}-report-${safeProj}-${today}.xlsx`;
+  }
   const buf=await wb.xlsx.writeBuffer();
   const blob=new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
-  await _glShareOrDownload(blob,`${typeTag}-${safeCat}-${safeProj}-${today}.xlsx`,'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  await _glShareOrDownload(blob, fname, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
 }
 
 // DEPRECATED — combined "Tracker Log" workbook. Superseded by per-category deliverables
@@ -1807,16 +1824,20 @@ async function _seedingSheet(wb, cid, allEntries, pid){
 
   // ── By Drawing — one row per drawn layer (full client columns), grouped under each
   //    planned area; the Coverage Summary above carries the grand per-state totals. ──
-  const bh=ws.addRow(['By Drawing']); ws.mergeCells(bh.number,1,bh.number,NC);
+  const bh=ws.addRow(['By Drawing (location)']); ws.mergeCells(bh.number,1,bh.number,NC);
   bh.getCell(1).font={bold:true,size:13,color:{argb:WHITE}};
   bh.getCell(1).fill={type:'pattern',pattern:'solid',fgColor:{argb:TEAL}};
   bh.getCell(1).alignment={vertical:'middle',horizontal:'left',indent:1}; bh.height=22;
 
   const renderGroup=(label, planArea, kids)=>{
+    // Per-drawing TITLE bar — drawing name + (location), with the plan area on the right.
     const dh=ws.addRow([label, planArea!=null?`Plan: ${fmt(planArea)}`:'']);
     ws.mergeCells(dh.number,2,dh.number,NC);
-    dh.getCell(1).font={bold:true,size:12,color:{argb:'FF006B75'}};
-    dh.getCell(2).font={italic:true,size:10,color:{argb:'FF555555'}}; dh.height=22;
+    dh.getCell(1).font={bold:true,size:13,color:{argb:'FF006B75'}};
+    dh.getCell(1).fill={type:'pattern',pattern:'solid',fgColor:{argb:'E8F4F5'}};
+    dh.getCell(2).font={bold:true,italic:true,size:11,color:{argb:'FF006B75'}};
+    dh.getCell(2).fill={type:'pattern',pattern:'solid',fgColor:{argb:'E8F4F5'}};
+    dh.getCell(2).alignment={horizontal:'right'}; dh.height=24;
     const ch=ws.addRow(COLS);
     ch.eachCell({includeEmpty:true},c=>{ c.font={bold:true,size:10,color:{argb:'FF006B75'}}; c.fill={type:'pattern',pattern:'solid',fgColor:{argb:'E8F4F5'}}; c.border={bottom:{style:'thin',color:{argb:'FF006B75'}}}; c.alignment={vertical:'middle',wrapText:true}; }); ch.height=20;
     const sorted=kids.slice().sort((a,b)=>(stOrd(a)-stOrd(b))||String(a.date||'').localeCompare(String(b.date||'')));
@@ -1853,7 +1874,8 @@ async function _seedingSheet(wb, cid, allEntries, pid){
   const planIds=new Set(planned.map(p=>p.id));
   const sortedPlans=planned.slice().sort((a,b)=>String(a.location||'').localeCompare(String(b.location||'')));
   sortedPlans.forEach((p,i)=>{
-    const nm=p.notes||`Area ${i+1}`;
+    // p.name = future per-drawing name field (forward-compat); falls back to notes → Area N.
+    const nm=p.name||p.notes||`Area ${i+1}`;
     const lbl=p.location?`${nm} (${p.location})`:nm;
     renderGroup(lbl, measure(p), installed.filter(e=>e.parentId===p.id));
   });
