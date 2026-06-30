@@ -1712,10 +1712,14 @@ async function _embedCapturesInline(ws, wb, owners, NC){
     if(isCap||isTag) caps.push({ph,e,kind:isCap?'capture':'seedtag'});
   }); });
   if(!caps.length) return;
+  // Cumulative pixel widths of the first data columns (≈ charWidth*7+5 each) so we can pick
+  // a column span that keeps each photo in ONE row at its true aspect.
+  const cum=[]; [26,14,10,13,11].map(w=>w*7+5).reduce((a,w,i)=>{ a+=w; cum[i]=a; return a; },0);
+  const MAXROWPX=520; // one Excel row maxes ~409pt (~545px) — stay under
   for(const {ph,e,kind} of caps){
     const tag=kind==='capture'?'📷 Map capture':'🌱 Seed tag photo';
     const fillArgb=kind==='capture'?'FDF5DC':'EAF5EA';      // amber tint vs green tint
-    const lbl=ws.addRow([`▸ ${tag} · ${e.date||''}   (click + to expand)`]);
+    const lbl=ws.addRow([`▸ ${tag} · ${e.date||''}   ( − collapse / + expand )`]);
     ws.mergeCells(lbl.number,1,lbl.number,NC);
     lbl.getCell(1).font={bold:true,size:10,color:{argb:'FF006B75'}};
     lbl.getCell(1).fill={type:'pattern',pattern:'solid',fgColor:{argb:fillArgb}};
@@ -1729,16 +1733,17 @@ async function _embedCapturesInline(ws, wb, owners, NC){
       const ext=(ph.filename||'png').split('.').pop().toLowerCase();
       const extension=(ext==='jpg'||ext==='jpeg')?'jpeg':(ext==='gif'?'gif':'png');
       const bmp=await createImageBitmap(blob);
-      const maxW=520, scale=Math.min(1,maxW/bmp.width);
-      const hPx=Math.round(bmp.height*scale); bmp.close();
-      // Reserve grouped+hidden rows sized (~24px each) to roughly hold the image height;
-      // 18pt rows survive the later min-height passes so the range stays put.
-      const span=Math.max(2,Math.ceil(hPx/24));
-      const firstRow0=ws.rowCount; // 0-indexed start of the image rows
-      for(let i=0;i<span;i++){ const r=ws.addRow([]); r.height=18; r.outlineLevel=1; r.hidden=true; }
+      const aspect=bmp.height/bmp.width; bmp.close();
+      // Widest column span whose resulting height still fits in one row (portrait → narrower).
+      let brCol=0, rangeW=cum[0];
+      for(let i=0;i<cum.length;i++){ if(cum[i]*aspect<=MAXROWPX){ brCol=i; rangeW=cum[i]; } }
+      const rowHpx=Math.min(MAXROWPX, Math.round(rangeW*aspect));
+      const rowPt=Math.min(405, Math.round(rowHpx*0.75)); // px→pt, under Excel's 409 cap
+      const ir=ws.addRow([]); ir.height=rowPt; ir.outlineLevel=1; // grouped (collapsible), one row
+      const r0=ir.number-1; // 0-indexed
       const imgId=wb.addImage({base64:raw, extension});
-      // twoCellAnchor (move + size with cells) so collapsing the rows collapses the image.
-      ws.addImage(imgId,{ tl:{col:0.15,row:firstRow0+0.05}, br:{col:5,row:firstRow0+span-0.05}, editAs:'twoCell' });
+      // One tall row, twoCellAnchor so it sizes/collapses with the row.
+      ws.addImage(imgId,{ tl:{col:0.08,row:r0+0.03}, br:{col:brCol+1,row:r0+0.97}, editAs:'twoCell' });
     }catch(err){ console.warn('inline capture failed',err); }
   }
 }
@@ -1772,11 +1777,12 @@ async function _seedingSheet(wb, cid, allEntries, pid){
   const ws=wb.addWorksheet(nm);
   // Outline summary ABOVE its group so each capture's dated toggle row sits above the
   // collapsed image rows (click the + on the toggle to expand the photo inline).
+  // Capture images sit in native Excel outline GROUPS (expanded by default). ExcelJS can't
+  // reliably place the `collapsed` flag on the summary row, so collapsed-on-open + the +/-
+  // toggle desync; expanded-by-default lets Excel own the collapse state → the −/+ and the
+  // top-left "1"/"2" level buttons all work. summaryBelow:false puts the toggle on the
+  // dated label row above each photo group.
   ws.properties.outlineProperties={summaryBelow:false,summaryRight:false};
-  // outlineLevelRow=1 makes ExcelJS write the `collapsed` flag on the level-1 rows so Excel
-  // records them as a genuinely-collapsed group (without it, hidden rows + a desynced +/-
-  // toggle never expand — the bug where + did nothing).
-  ws.properties.outlineLevelRow=1;
   // State, Coverage, %, Date, Seed Tags, Mix/Product, Applied Rate, Required, Actual, Method, Contractor, Notes, Photos
   ws.columns=[{width:26},{width:14},{width:10},{width:13},{width:11},{width:24},{width:18},{width:18},{width:18},{width:18},{width:22},{width:40},{width:9}];
 
@@ -1794,6 +1800,11 @@ async function _seedingSheet(wb, cid, allEntries, pid){
     r.getCell(1).font={name:'Consolas',size:9,bold:true,color:{argb:'FF'+TEAL}};
     r.getCell(2).font={name:'Calibri',size:10}; r.height=15;
   });
+  // Usage note — captures/seed-tag photos are grouped + collapsible per drawing.
+  const tip=ws.addRow(['ℹ  Photos are grouped under each drawing. Use the 1 / 2 outline buttons at the very top-left to collapse or expand all photos at once, or the − / + beside any single photo.']);
+  ws.mergeCells(tip.number,1,tip.number,NC);
+  tip.getCell(1).font={italic:true,size:9,color:{argb:'FF666666'}};
+  tip.getCell(1).alignment={wrapText:true,vertical:'middle'}; tip.height=24;
   ws.addRow([]);
 
   // Full client column set + per-state ordering, shared by the Summary + By-Drawing.
