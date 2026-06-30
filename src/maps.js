@@ -3604,7 +3604,7 @@ window.mapToggleDateLabelEdit=mapToggleDateLabelEdit;
 // bottom-left, then composites "GROUND|LOG" wordmark (white + amber pipe) on top
 // and re-encodes. Fails open — returns the raw blob if anything throws so capture
 // still succeeds without branding.
-async function _compositeBrandWordmark(blob, legendCat, pid){
+async function _compositeBrandWordmark(blob, legendCat, pid, scopeEntryId){
   try{
     const bmp=await createImageBitmap(blob);
     const c=document.createElement('canvas');
@@ -3661,7 +3661,13 @@ async function _compositeBrandWordmark(blob, legendCat, pid){
           const areaByState={}; let openTotal=0, haveAreas=false;
           try{
             if(typeof trGetEntriesForProject==='function'){
-              const inst=trGetEntriesForProject(pid).filter(e=>(e.categoryId===legendCat)&&e.entryType!=='planned'&&!e.temporary&&!e.deletedAt);
+              let inst=trGetEntriesForProject(pid).filter(e=>(e.categoryId===legendCat)&&e.entryType!=='planned'&&!e.temporary&&!e.deletedAt);
+              // Scope to ONE drawing/area when requested: the planned area + its layers.
+              if(scopeEntryId && typeof trGetEntry==='function'){
+                const se=trGetEntry(scopeEntryId,pid);
+                const areaId=se?(se.entryType==='planned'?se.id:(se.parentId||se.id)):scopeEntryId;
+                inst=inst.filter(e=>e.id===areaId||e.parentId===areaId);
+              }
               if(isRunning && typeof glStateNetAreasM2==='function'){
                 const g=glStateNetAreasM2(inst,sts);
                 if(g){
@@ -3802,9 +3808,30 @@ function mapCaptureForEntry(entryId){
   if(typeof trGetEntry==='function' && !trGetEntry(entryId,pid)){ console.warn('mapCaptureForEntry: entry not found',entryId); return; }
   _captureEntryId=entryId;
   if(_trackerPopup){_trackerPopup.remove();_trackerPopup=null;}
-  _showCaptureBar(()=>_doCaptureForEntry(_captureEntryId));
+  _showCaptureScopeChoice(entryId);
 }
 window.mapCaptureForEntry=mapCaptureForEntry;
+
+// Ask what the baked-in legend should cover before framing: the WHOLE category's totals
+// (overall-project SS) or just THIS drawing's area (that day's work). Then frame + capture.
+function _showCaptureScopeChoice(entryId){
+  _hideCaptureBar();
+  const bar=document.createElement('div');
+  bar.id='_gl-capture-bar';
+  bar.style.cssText='position:fixed;left:50%;transform:translateX(-50%);bottom:calc(96px + env(safe-area-inset-bottom));z-index:9600;background:rgba(15,31,46,0.96);border:1px solid var(--amber,#C9A84C);border-radius:12px;padding:10px 12px;display:flex;flex-direction:column;gap:8px;box-shadow:0 4px 18px rgba(0,0,0,.55);max-width:92vw';
+  bar.innerHTML=`
+    <div style="font-family:var(--mono);font-size:11px;color:#dce8f4;text-align:center;line-height:1.4">🏷️ Legend totals for this capture?</div>
+    <div style="display:flex;gap:8px">
+      <button id="_gl-scope-cat" style="flex:1;background:var(--amber,#C9A84C);border:none;color:#111;padding:9px 10px;border-radius:8px;font-family:var(--mono);font-size:11px;font-weight:700;cursor:pointer">Whole category</button>
+      <button id="_gl-scope-draw" style="flex:1;background:var(--s2,#1a2a38);border:1px solid var(--amber,#C9A84C);color:var(--amber,#C9A84C);padding:9px 10px;border-radius:8px;font-family:var(--mono);font-size:11px;font-weight:700;cursor:pointer">This drawing</button>
+    </div>
+    <button id="_gl-scope-cancel" style="background:none;border:1px solid var(--border,#334);color:var(--muted,#888);padding:7px;border-radius:8px;font-family:var(--mono);font-size:11px;cursor:pointer">Cancel</button>`;
+  document.body.appendChild(bar);
+  const go=(scope)=>{ _hideCaptureBar(); _showCaptureBar(()=>_doCaptureForEntry(entryId, scope)); };
+  document.getElementById('_gl-scope-cat').onclick=()=>go('category');
+  document.getElementById('_gl-scope-draw').onclick=()=>go('drawing');
+  document.getElementById('_gl-scope-cancel').onclick=_hideCaptureBar;
+}
 
 // Standalone map-view capture (not tied to a drawing) — same frame-then-capture
 // flow, saves straight to the Photos page (e.g. an end-of-day site map). Triggered
@@ -3836,7 +3863,7 @@ function _hideCaptureBar(){ const b=document.getElementById('_gl-capture-bar'); 
 function _showCaptureToast(msg){ _hideCaptureToast(); const t=document.createElement('div'); t.id='_gl-capture-toast'; t.style.cssText='position:fixed;left:50%;transform:translateX(-50%);bottom:calc(96px + env(safe-area-inset-bottom));z-index:9600;background:rgba(15,31,46,0.96);border:1px solid var(--border2,#445);border-radius:10px;padding:10px 16px;font-family:var(--mono);font-size:12px;color:#dce8f4;box-shadow:0 4px 18px rgba(0,0,0,.55)'; t.textContent=msg; document.body.appendChild(t); }
 function _hideCaptureToast(){ const t=document.getElementById('_gl-capture-toast'); if(t) t.remove(); }
 
-async function _doCaptureForEntry(entryId){
+async function _doCaptureForEntry(entryId, scope){
   if(!_mapInstance) return;
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
   const entry=(typeof trGetEntry==='function')?trGetEntry(entryId,pid):null;
@@ -3848,7 +3875,7 @@ async function _doCaptureForEntry(entryId){
   const today=new Date().toLocaleDateString('en-CA');
   const rawBlob=await new Promise(res=>canvas.toBlob(res,'image/png'));
   if(!rawBlob){ _hideCaptureToast(); console.warn('_doCaptureForEntry: canvas returned null'); return; }
-  const branded=await _compositeBrandWordmark(rawBlob, entry.categoryId, pid);
+  const branded=await _compositeBrandWordmark(rawBlob, entry.categoryId, pid, scope==='drawing'?entryId:null);
   if(typeof phSaveCapturedImage!=='function'){ _hideCaptureToast(); return; }
   _showCaptureToast('☁️ Saving…');
   const catName=(typeof tcGetName==='function')?tcGetName(entry.categoryId,pid):(entry.categoryName||'Drawing');
