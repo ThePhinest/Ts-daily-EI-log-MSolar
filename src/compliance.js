@@ -1704,16 +1704,21 @@ async function _embedCaptures(ws, wb, installed, pid, NC){
 // replaces the separate bottom "Map Captures" list — captures live with their drawing.
 async function _embedCapturesInline(ws, wb, owners, NC){
   const caps=[];
-  (owners||[]).forEach(e=>{ if(!e) return; (e.photoIds||[]).forEach(id=>{
+  (owners||[]).forEach(e=>{ if(!e) return; const types=e.photoTypes||{}; (e.photoIds||[]).forEach(id=>{
     const ph=(window._phPhotos||[]).find(p=>p.id===id);
-    if(ph && ph.type==='map_capture' && ph.storageUrl) caps.push({ph,e});
+    if(!ph||!ph.storageUrl) return;
+    const isCap=ph.type==='map_capture';
+    const isTag=types[id]==='material_tag';
+    if(isCap||isTag) caps.push({ph,e,kind:isCap?'capture':'seedtag'});
   }); });
   if(!caps.length) return;
-  for(const {ph,e} of caps){
-    const lbl=ws.addRow([`▸ 📷 Map capture · ${e.date||''}   (click + to expand)`]);
+  for(const {ph,e,kind} of caps){
+    const tag=kind==='capture'?'📷 Map capture':'🌱 Seed tag photo';
+    const fillArgb=kind==='capture'?'FDF5DC':'EAF5EA';      // amber tint vs green tint
+    const lbl=ws.addRow([`▸ ${tag} · ${e.date||''}   (click + to expand)`]);
     ws.mergeCells(lbl.number,1,lbl.number,NC);
     lbl.getCell(1).font={bold:true,size:10,color:{argb:'FF006B75'}};
-    lbl.getCell(1).fill={type:'pattern',pattern:'solid',fgColor:{argb:'FDF5DC'}};
+    lbl.getCell(1).fill={type:'pattern',pattern:'solid',fgColor:{argb:fillArgb}};
     lbl.getCell(1).border={top:{style:'thin',color:{argb:'FFC9A84C'}}};
     lbl.height=18;
     try{
@@ -1768,6 +1773,10 @@ async function _seedingSheet(wb, cid, allEntries, pid){
   // Outline summary ABOVE its group so each capture's dated toggle row sits above the
   // collapsed image rows (click the + on the toggle to expand the photo inline).
   ws.properties.outlineProperties={summaryBelow:false,summaryRight:false};
+  // outlineLevelRow=1 makes ExcelJS write the `collapsed` flag on the level-1 rows so Excel
+  // records them as a genuinely-collapsed group (without it, hidden rows + a desynced +/-
+  // toggle never expand — the bug where + did nothing).
+  ws.properties.outlineLevelRow=1;
   // State, Coverage, %, Date, Seed Tags, Mix/Product, Applied Rate, Required, Actual, Method, Contractor, Notes, Photos
   ws.columns=[{width:26},{width:14},{width:10},{width:13},{width:11},{width:24},{width:18},{width:18},{width:18},{width:18},{width:22},{width:40},{width:9}];
 
