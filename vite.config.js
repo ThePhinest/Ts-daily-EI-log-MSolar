@@ -38,6 +38,14 @@ export default defineConfig({
       injectRegister: null,
       manifest: false,
       workbox: {
+        // clientsClaim so that when the waiting SW skip-waits (RELOAD button posts
+        // SKIP_WAITING), it immediately CLAIMS the open page → `controllerchange`
+        // fires deterministically and the reload sticks. Without this, skipWaiting
+        // activates the new SW but doesn't claim the current client, controllerchange
+        // never fires, the blind 1.5s fallback reloads before the new SW is in
+        // control, and the "App updated" banner re-fires forever (the stuck-banner
+        // loop). skipWaiting stays false — the prompt still controls WHEN we update.
+        clientsClaim: true,
         // Source maps (.map) deliberately NOT in globPatterns — Workbox precache
         // skips them; browsers fetch on-demand from server when DevTools opens.
         globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
