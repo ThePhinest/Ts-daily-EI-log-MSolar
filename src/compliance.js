@@ -1728,19 +1728,36 @@ async function _seedingSheet(wb, cid, allEntries, pid){
   const COLS=['State','Coverage','% of Plan','Date','Seed Tags','Mix / Product','Applied Rate','Required','Actual','Method','Contractor','Notes','Photos'];
   const stById={}; childStates.forEach((s,i)=>{ stById[s.id]={...s,_ord:i}; });
   const stOrd=(e)=>{ const s=stById[stOf(e)]; return s?s._ord:99; };
-  // Per-state rollup — additive material columns summed across that state's drawings.
-  const stateAgg=(sid)=>{
+  // Coverage Summary is a materials line-item schedule: one row per State × Mix × Rate.
+  // A single-material state collapses to one row; a state seeded with two mixes shows two.
+  const uniq=(arr)=>[...new Set(arr.filter(Boolean))];
+  const materialRows=(sid)=>{
     const es=installed.filter(e=>stOf(e)===sid);
-    return {
-      n:es.length,
-      cov:es.reduce((a,e)=>a+measure(e),0),
-      seedTags:es.reduce((a,e)=>a+((e.fields&&e.fields.seedTagCount)||0),0),
-      required:es.reduce((a,e)=>a+((e.fields&&e.fields.requiredAmount)||0),0),
-      reqUnit:(es.find(e=>e.fields&&e.fields.requiredUnit)||{}).fields?.requiredUnit||'',
-      actual:es.reduce((a,e)=>a+((e.fields&&e.fields.actualAmount)||0),0),
-      actUnit:(es.find(e=>e.fields&&e.fields.actualUnit)||{}).fields?.actualUnit||'',
-      photos:es.reduce((a,e)=>a+(Array.isArray(e.photoIds)?e.photoIds.length:0),0),
-    };
+    const map=new Map();
+    es.forEach(e=>{
+      const f=e.fields||{};
+      const rate=(f.appliedRate!=null)?f.appliedRate:'';
+      const key=`${e.seedMix||''}__${rate}__${f.requiredUnit||''}`;
+      if(!map.has(key)) map.set(key,[]);
+      map.get(key).push(e);
+    });
+    return [...map.values()].map(g=>{
+      const f0=g[0].fields||{};
+      const rateUnit=f0.requiredUnit?f0.requiredUnit+'/ac':'';
+      return {
+        mix:g[0].seedMix||'',
+        rate:f0.appliedRate!=null?(rateUnit?f0.appliedRate+' '+rateUnit:String(f0.appliedRate)):'',
+        cov:g.reduce((a,e)=>a+measure(e),0),
+        seedTags:g.reduce((a,e)=>a+((e.fields&&e.fields.seedTagCount)||0),0),
+        required:g.reduce((a,e)=>a+((e.fields&&e.fields.requiredAmount)||0),0),
+        reqUnit:(g.find(e=>e.fields&&e.fields.requiredUnit)||{}).fields?.requiredUnit||'',
+        actual:g.reduce((a,e)=>a+((e.fields&&e.fields.actualAmount)||0),0),
+        actUnit:(g.find(e=>e.fields&&e.fields.actualUnit)||{}).fields?.actualUnit||'',
+        method:uniq(g.map(e=>e.method)).length===1?g[0].method:'',
+        contractor:uniq(g.map(e=>e.contractor)).length===1?g[0].contractor:'',
+        photos:g.reduce((a,e)=>a+(Array.isArray(e.photoIds)?e.photoIds.length:0),0),
+      };
+    });
   };
 
   // ── Coverage Summary — the headline section: AMBER band, larger, all columns ──
@@ -1752,33 +1769,28 @@ async function _seedingSheet(wb, cid, allEntries, pid){
   hdr.eachCell({includeEmpty:true},c=>{ c.font={bold:true,size:10,color:{argb:WHITE}}; c.fill={type:'pattern',pattern:'solid',fgColor:{argb:TEAL}}; c.alignment={vertical:'middle',wrapText:true}; });
   hdr.height=20;
   const barStart=ws.rowCount+1;
-  let totTags=0,totReq=0,totAct=0,totPhotos=0,reqU='',actU='';
   childStates.forEach(s=>{
-    const a=stateAgg(s.id);
-    const pct=planTotal>0?Math.min(100,(a.cov/planTotal)*100):null;
-    totTags+=a.seedTags; totReq+=a.required; totAct+=a.actual; totPhotos+=a.photos;
-    reqU=reqU||a.reqUnit; actU=actU||a.actUnit;
-    const r=ws.addRow([
-      s.label, fmt(a.cov), pct!=null?Math.round(pct):'', '',
-      a.seedTags||'', '', '',
-      a.required?a.required.toLocaleString()+(a.reqUnit?' '+a.reqUnit:''):'',
-      a.actual?a.actual.toLocaleString()+(a.actUnit?' '+a.actUnit:''):'',
-      '', '', '', a.photos||'',
-    ]);
-    r.eachCell({includeEmpty:true},c=>{ c.font={name:'Calibri',size:11}; c.alignment={vertical:'middle'}; });
     const fill=_xlHex(s.color);
-    if(fill){ r.getCell(1).fill={type:'pattern',pattern:'solid',fgColor:{argb:fill}}; r.getCell(1).font={name:'Calibri',size:11,bold:true,color:{argb:_xlContrast(s.color)}}; }
-    else r.getCell(1).font={name:'Calibri',size:11,bold:true};
-    r.getCell(3).font={name:'Calibri',size:11,bold:true}; if(pct!=null) r.getCell(3).numFmt='0"%"';
-    r.height=22;
+    const rows=materialRows(s.id);
+    // A state with no drawings still shows one (empty) line so the legend reads complete.
+    const list=rows.length?rows:[{mix:'',rate:'',cov:0,seedTags:0,required:0,reqUnit:'',actual:0,actUnit:'',method:'',contractor:'',photos:0}];
+    list.forEach(g=>{
+      const pct=planTotal>0?Math.min(100,(g.cov/planTotal)*100):null;
+      const r=ws.addRow([
+        s.label, fmt(g.cov), pct!=null?Math.round(pct):'', '',
+        g.seedTags||'', g.mix||'', g.rate||'',
+        g.required?g.required.toLocaleString()+(g.reqUnit?' '+g.reqUnit:''):'',
+        g.actual?g.actual.toLocaleString()+(g.actUnit?' '+g.actUnit:''):'',
+        g.method||'', g.contractor||'', '', g.photos||'',
+      ]);
+      r.eachCell({includeEmpty:true},c=>{ c.font={name:'Calibri',size:11}; c.alignment={vertical:'middle',wrapText:true}; });
+      if(fill){ r.getCell(1).fill={type:'pattern',pattern:'solid',fgColor:{argb:fill}}; r.getCell(1).font={name:'Calibri',size:11,bold:true,color:{argb:_xlContrast(s.color)}}; }
+      else r.getCell(1).font={name:'Calibri',size:11,bold:true};
+      r.getCell(3).font={name:'Calibri',size:11,bold:true}; if(pct!=null) r.getCell(3).numFmt='0"%"';
+      r.height=22;
+    });
   });
   const barEnd=ws.rowCount;
-  // All-states grand totals (additive material columns; coverage omitted — states stack).
-  if(childStates.length){
-    const gr=ws.addRow(['TOTAL — all states','','','', totTags||'','','', totReq?totReq.toLocaleString()+(reqU?' '+reqU:''):'', totAct?totAct.toLocaleString()+(actU?' '+actU:''):'','','','', totPhotos||'']);
-    gr.eachCell({includeEmpty:true},c=>{ c.font={bold:true,size:11}; c.fill={type:'pattern',pattern:'solid',fgColor:{argb:AMBER_LIGHT}}; });
-    gr.height=22;
-  }
   // Planned-area total — the denominator, banded headline.
   const pr=ws.addRow(['Planned area (total)', fmt(planTotal)]);
   pr.getCell(1).font={bold:true,size:14}; pr.getCell(2).font={bold:true,size:14,color:{argb:'FF006B75'}};
@@ -1840,7 +1852,11 @@ async function _seedingSheet(wb, cid, allEntries, pid){
 
   const planIds=new Set(planned.map(p=>p.id));
   const sortedPlans=planned.slice().sort((a,b)=>String(a.location||'').localeCompare(String(b.location||'')));
-  sortedPlans.forEach((p,i)=>{ renderGroup(p.location||p.notes||`Area ${i+1}`, measure(p), installed.filter(e=>e.parentId===p.id)); });
+  sortedPlans.forEach((p,i)=>{
+    const nm=p.notes||`Area ${i+1}`;
+    const lbl=p.location?`${nm} (${p.location})`:nm;
+    renderGroup(lbl, measure(p), installed.filter(e=>e.parentId===p.id));
+  });
   const unlinked=installed.filter(e=>!e.parentId||!planIds.has(e.parentId));
   if(unlinked.length) renderGroup('Unlinked drawings', null, unlinked);
   if(!planned.length && !installed.length){ const r=ws.addRow(['—','No entries yet']); r.getCell(2).font={italic:true,size:10,color:{argb:'FF999999'}}; }
