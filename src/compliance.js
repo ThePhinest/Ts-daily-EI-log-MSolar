@@ -1615,9 +1615,12 @@ async function _disturbanceSheet(wb, cid, allEntries, pid){
   // Total open — the headline number: larger (16pt) + bordered band so it stands out.
   const totR=ws.addRow(['TOTAL open disturbed', fmt(rt.open)]);
   totR.getCell(1).font={bold:true,size:16}; totR.getCell(2).font={bold:true,size:16,color:{argb:'FF006B75'}};
-  totR.getCell(1).fill={type:'pattern',pattern:'solid',fgColor:{argb:AMBER_LIGHT}};
-  totR.getCell(2).fill={type:'pattern',pattern:'solid',fgColor:{argb:AMBER_LIGHT}};
-  totR.getCell(1).border={top:{style:'medium',color:{argb:'FFC9A84C'}}}; totR.getCell(2).border={top:{style:'medium',color:{argb:'FFC9A84C'}}};
+  // Band the amber fill + top rule across the whole row to the last column (col G) so it reads
+  // as one unit with the caption below it (Tim: extend the gold all the way over like row 14).
+  for(let c=1;c<=NC;c++){
+    totR.getCell(c).fill={type:'pattern',pattern:'solid',fgColor:{argb:AMBER_LIGHT}};
+    totR.getCell(c).border={top:{style:'medium',color:{argb:'FFC9A84C'}},...(c===1?{left:{style:'medium',color:{argb:'FFC9A84C'}}}:{}),...(c===NC?{right:{style:'medium',color:{argb:'FFC9A84C'}}}:{})};
+  }
   totR.height=30;
   // Spell out WHICH states this open total counts (Nick: make clear it's the active + inactive
   // disturbed only — stabilized / closed ground is excluded). Derived from each state's countMode
@@ -1629,7 +1632,7 @@ async function _disturbanceSheet(wb, cid, allEntries, pid){
   noteR.getCell(1).font={italic:true,size:9,color:{argb:'FF7A6A2E'}};
   // Fill + a continuous bottom border across the full merged width so it reads as one band with
   // the total above it (merged-cell borders must be set on every underlying cell).
-  for(let c=1;c<=NC;c++){ noteR.getCell(c).fill={type:'pattern',pattern:'solid',fgColor:{argb:AMBER_LIGHT}}; noteR.getCell(c).border={bottom:{style:'medium',color:{argb:'FFC9A84C'}}}; }
+  for(let c=1;c<=NC;c++){ noteR.getCell(c).fill={type:'pattern',pattern:'solid',fgColor:{argb:AMBER_LIGHT}}; noteR.getCell(c).border={bottom:{style:'medium',color:{argb:'FFC9A84C'}},...(c===1?{left:{style:'medium',color:{argb:'FFC9A84C'}}}:{}),...(c===NC?{right:{style:'medium',color:{argb:'FFC9A84C'}}}:{})}; }
   noteR.getCell(1).alignment={vertical:'middle',horizontal:'left',indent:1};
   noteR.height=16;
   const cap=cat.disturbanceCap;
