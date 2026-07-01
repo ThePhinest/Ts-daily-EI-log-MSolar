@@ -1574,6 +1574,9 @@ async function _disturbanceSheet(wb, cid, allEntries, pid){
   let nm=base, n=2;
   while(wb.getWorksheet(nm)){ nm=base.slice(0,28)+' '+n; n++; }
   const ws=wb.addWorksheet(nm);
+  // Native outline groups for the inline collapsed map captures (see seeding sheet).
+  ws.properties.outlineProperties={summaryBelow:false,summaryRight:false};
+  ws.properties.outlineLevelRow=1;
   ws.columns=[{width:30},{width:24},{width:16},{width:28},{width:42},{width:10},{width:26}];
 
   // ── Title ── (just the category name — the tab already says "Disturbance —")
@@ -1627,7 +1630,7 @@ async function _disturbanceSheet(wb, cid, allEntries, pid){
     const aR=ws.addRow(['Allowed (limit)', fmt(cap)]); aR.getCell(1).font={bold:true,size:12}; aR.getCell(2).font={name:'Calibri',size:12};
     const rR=ws.addRow(['Remaining to limit', over?('0 — ⚠ OVER by '+fmt(rt.open-cap)):fmt(remaining)]);
     rR.getCell(1).font={bold:true,size:12}; rR.getCell(2).font={bold:true,size:12,color:{argb:statusColor}};
-    const pR=ws.addRow(['% of allowed', Math.round(Math.min(100,pctRaw))+'%'+(over?'  ⚠ OVER LIMIT':(warn?'  ⚠ APPROACHING LIMIT':''))]);
+    const pR=ws.addRow(['% of allowed', Math.round(pctRaw)+'%'+(over?'  ⚠ OVER LIMIT':(warn?'  ⚠ APPROACHING LIMIT':''))]);
     pR.getCell(1).font={bold:true,size:12};
     pR.getCell(2).font={bold:true,size:12,color:{argb:statusColor}};
   }
@@ -1638,25 +1641,36 @@ async function _disturbanceSheet(wb, cid, allEntries, pid){
   ih.getCell(1).font={bold:true,size:13,color:{argb:WHITE}};
   ih.getCell(1).fill={type:'pattern',pattern:'solid',fgColor:{argb:TEAL}};
   ih.getCell(1).alignment={vertical:'middle',horizontal:'left',indent:1}; ih.height=22;
-  const chRow=ws.addRow(['Date','State','Area','Location','Notes','Photos','Contractor']);
+  const chRow=ws.addRow(['Date','State','Net area','Location','Notes','Photos','Contractor']);
   chRow.eachCell({includeEmpty:true},c=>{ c.font={bold:true,size:10,color:{argb:WHITE}}; c.fill={type:'pattern',pattern:'solid',fgColor:{argb:TEAL}}; });
   chRow.height=18;
   const stById={}; childStates.forEach(s=>stById[s.id]=s);
+  // Per-drawing NET area (turf): each drawing minus later-state overlays. This is the
+  // CURRENT contribution that reconciles with the net summary above — the raw drawn size
+  // double-counts ground that's since been stabilized over. Falls back to the drawn size
+  // only when geometry is unavailable.
+  const netByEntry=(typeof glEntryNetAreasM2==='function')?glEntryNetAreasM2(installed, childStates):null;
   const sorted=installed.slice().sort((a,b)=>String(a.date||'').localeCompare(String(b.date||'')));
-  sorted.forEach(e=>{
+  for(const e of sorted){
     const s=stById[e.state]||null;
-    const meas=e.measurementValue!=null?`${e.measurementValue} ${e.measurementUnit||defUnit}`:(e.acres!=null?`${e.acres} ac`:'');
+    let meas;
+    if(netByEntry && netByEntry[e.id]!=null){
+      const a=(typeof glAreaConvertM2==='function')?glAreaConvertM2(netByEntry[e.id],defUnit):0;
+      meas=fmt(a);
+    } else {
+      meas=e.measurementValue!=null?`${e.measurementValue} ${e.measurementUnit||defUnit}`:(e.acres!=null?`${e.acres} ac`:'');
+    }
     const r=ws.addRow([e.date||'', s?s.label:(e.state||''), meas, e.location||'', e.notes||'', Array.isArray(e.photoIds)?e.photoIds.length:'', e.contractor||'']);
     r.eachCell({includeEmpty:true},c=>{ c.font={name:'Calibri',size:10}; c.alignment={vertical:'top',wrapText:true}; });
     if(s){ const fill=_xlHex(s.color); if(fill){ r.getCell(2).fill={type:'pattern',pattern:'solid',fgColor:{argb:fill}}; r.getCell(2).font={name:'Calibri',size:10,color:{argb:_xlContrast(s.color)}}; } }
     r.height=15;
-  });
+    // This drawing's map captures, collapsed inline right under it (same as seeding).
+    await _embedCapturesInline(ws, wb, [e], NC);
+  }
   if(!sorted.length){ const r=ws.addRow(['—','No drawings yet']); r.getCell(2).font={italic:true,size:10,color:{argb:'FF999999'}}; }
   // Disturbance tab reads as a standalone deliverable — taller rows than the combined log.
-  ws.eachRow((row,rn)=>{ if(rn===1) return; if(!row.height || row.height<22) row.height=22; });
-
-  // Map captures (legend baked in at capture time) embedded so the XLSX is self-contained.
-  await _embedCaptures(ws, wb, installed, pid, NC);
+  // Skip hidden rows (collapsed capture images) so their reserved height holds.
+  ws.eachRow((row,rn)=>{ if(rn===1||row.hidden) return; if(!row.height || row.height<22) row.height=22; });
 }
 
 // Embed every map_capture photo attached to a category's drawings into a worksheet (one
@@ -1712,9 +1726,10 @@ async function _embedCapturesInline(ws, wb, owners, NC){
     if(isCap||isTag) caps.push({ph,e,kind:isCap?'capture':'seedtag'});
   }); });
   if(!caps.length) return;
-  // Cumulative pixel widths of the first data columns (≈ charWidth*7+5 each) so we can pick
-  // a column span that keeps each photo in ONE row at its true aspect.
-  const cum=[]; [26,14,10,13,11].map(w=>w*7+5).reduce((a,w,i)=>{ a+=w; cum[i]=a; return a; },0);
+  // Cumulative pixel widths of the first ~6 data columns (≈ charWidth*7+5) read from THIS
+  // sheet, so the single-row image span works for any sheet's column layout.
+  const widths=[]; for(let i=1;i<=Math.min(6,NC);i++){ widths.push((ws.getColumn(i).width)||10); }
+  const cum=[]; widths.map(w=>Math.round(w*7+5)).reduce((a,w,i)=>{ a+=w; cum[i]=a; return a; },0);
   const MAXROWPX=520; // one Excel row maxes ~409pt (~545px) — stay under
   for(const {ph,e,kind} of caps){
     const tag=kind==='capture'?'📷 Map capture':'🌱 Seed tag photo';
@@ -1857,14 +1872,14 @@ async function _seedingSheet(wb, cid, allEntries, pid){
   const hdr=ws.addRow(COLS);
   hdr.eachCell({includeEmpty:true},c=>{ c.font={bold:true,size:10,color:{argb:WHITE}}; c.fill={type:'pattern',pattern:'solid',fgColor:{argb:TEAL}}; c.alignment={vertical:'middle',wrapText:true}; });
   hdr.height=20;
-  const barStart=ws.rowCount+1;
   childStates.forEach(s=>{
     const fill=_xlHex(s.color);
     const rows=materialRows(s.id);
     // A state with no drawings still shows one (empty) line so the legend reads complete.
     const list=rows.length?rows:[{mix:'',rate:'',cov:0,seedTags:0,required:0,reqUnit:'',actual:0,actUnit:'',method:'',contractor:'',photos:0}];
     list.forEach(g=>{
-      const pct=planTotal>0?Math.min(100,(g.cov/planTotal)*100):null;
+      // Uncapped — over-coverage (>100%) shows truthfully; the data bar still maxes at 100.
+      const pct=planTotal>0?(g.cov/planTotal)*100:null;
       const r=ws.addRow([
         s.label, fmt(g.cov), pct!=null?Math.round(pct):'', '',
         g.seedTags||'', g.mix||'', g.rate||'',
@@ -1876,10 +1891,15 @@ async function _seedingSheet(wb, cid, allEntries, pid){
       if(fill){ r.getCell(1).fill={type:'pattern',pattern:'solid',fgColor:{argb:fill}}; r.getCell(1).font={name:'Calibri',size:11,bold:true,color:{argb:_xlContrast(s.color)}}; }
       else r.getCell(1).font={name:'Calibri',size:11,bold:true};
       r.getCell(3).font={name:'Calibri',size:11,bold:true}; if(pct!=null) r.getCell(3).numFmt='0"%"';
+      // Color-coded progress bar: red ≤ 50% · yellow 51–90% · green > 90% (per-row rule so
+      // each bar takes the color of its own value).
+      if(pct!=null){
+        const bc=pct<=50?'FFC0392B':(pct<=90?'FFF1C40F':'FF27AE60');
+        ws.addConditionalFormatting({ ref:`C${r.number}`, rules:[{type:'dataBar',cfvo:[{type:'num',value:0},{type:'num',value:100}],color:{argb:bc}}] });
+      }
       r.height=22;
     });
   });
-  const barEnd=ws.rowCount;
   // Planned-area total — the denominator, banded headline.
   const pr=ws.addRow(['Planned area (total)', fmt(planTotal)]);
   pr.getCell(1).font={bold:true,size:14}; pr.getCell(2).font={bold:true,size:14,color:{argb:'FF006B75'}};
@@ -1887,10 +1907,7 @@ async function _seedingSheet(wb, cid, allEntries, pid){
   pr.getCell(2).fill={type:'pattern',pattern:'solid',fgColor:{argb:AMBER_LIGHT}};
   const _b={top:{style:'medium',color:{argb:'FFC9A84C'}},bottom:{style:'medium',color:{argb:'FFC9A84C'}}};
   pr.getCell(1).border=_b; pr.getCell(2).border=_b; pr.height=26;
-  // Data bar behind the % column (renders only on numeric cells → fixes the blank-bar bug).
-  if(barEnd>=barStart){
-    ws.addConditionalFormatting({ ref:`C${barStart}:C${barEnd}`, rules:[{type:'dataBar',cfvo:[{type:'num',value:0},{type:'num',value:100}],color:{argb:'FFC9A84C'}}] });
-  }
+  // (Per-row color-coded data bars were added in the loop above.)
   if(!childStates.length){ const r=ws.addRow(['—','No states defined']); r.getCell(2).font={italic:true,size:10,color:{argb:'FF999999'}}; }
   ws.addRow([]);
 
@@ -1919,7 +1936,7 @@ async function _seedingSheet(wb, cid, allEntries, pid){
       const f=e.fields||{};
       const rateUnit=f.requiredUnit?f.requiredUnit+'/ac':'';
       const cov=measure(e);
-      const pct=(planArea>0)?Math.min(100,(cov/planArea)*100):null;
+      const pct=(planArea>0)?(cov/planArea)*100:null; // uncapped (truthful over-coverage)
       const r=ws.addRow([
         s?s.label:(e.state||''),
         fmt(cov),
