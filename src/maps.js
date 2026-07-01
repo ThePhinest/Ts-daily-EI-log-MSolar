@@ -4264,9 +4264,27 @@ function _showTrackerEntryPopup(lngLat,props){
   const entry=(typeof trGetEntry==='function')?trGetEntry(props.id,pid):null;
   const label=props.categoryName||(typeof tcGetName==='function'?tcGetName(props.categoryId,pid):(props.categoryId||'Unknown'));
   const color=(typeof tcGetColor==='function')?tcGetColor(props.categoryId,pid):'#888';
-  const measText=(props.measurementValue!=null&&props.measurementUnit)
+  let measText=(props.measurementValue!=null&&props.measurementUnit)
     ?((typeof tcFormatMeasurement==='function')?tcFormatMeasurement(props.measurementValue,props.measurementUnit):(props.measurementValue+' '+props.measurementUnit))
     :(props.acres?props.acres+' ac':'');
+  // For DISTURBANCE (running-balance/total) drawings, show the NET area — the drawn size
+  // double-counts ground that's since been stabilized over. Matches the tracker log,
+  // compliance summary, and the export's "Net area" so every surface agrees.
+  try{
+    const _mode=(typeof tcProgressMode==='function')?tcProgressMode(props.categoryId,pid):'';
+    if((_mode==='running-balance'||_mode==='running-total') && entry && entry.entryType!=='planned'
+       && typeof glEntryNetAreasM2==='function' && typeof trGetEntriesForProject==='function'){
+      const _cat0=(typeof tcGetCategory==='function')?tcGetCategory(props.categoryId,pid):null;
+      const _sts=(_cat0&&typeof tcGetStates==='function')?tcGetStates(_cat0,pid).filter(s=>!s.isPlanned):[];
+      const _inst=trGetEntriesForProject(pid).filter(e=>e.categoryId===props.categoryId&&e.entryType!=='planned'&&!e.temporary&&!e.deletedAt);
+      const _net=glEntryNetAreasM2(_inst,_sts);
+      if(_net && _net[props.id]!=null){
+        const _du=(typeof tcGetDefaultUnit==='function')?tcGetDefaultUnit(props.categoryId,pid):'ac';
+        const _a=(typeof glAreaConvertM2==='function')?glAreaConvertM2(_net[props.id],_du):0;
+        measText=((typeof tcFormatMeasurement==='function')?tcFormatMeasurement(_a,_du):`${(_a||0).toFixed(2)} ${_du}`)+' · net';
+      }
+    }
+  }catch{}
   const photoIds=entry?.photoIds||[];
   const photos=(window._phPhotos||[]).filter(p=>photoIds.includes(p.id));
   const seedTagCount=entry?.fields?.seedTagCount||0;
