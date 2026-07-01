@@ -1617,9 +1617,21 @@ async function _disturbanceSheet(wb, cid, allEntries, pid){
   totR.getCell(1).font={bold:true,size:16}; totR.getCell(2).font={bold:true,size:16,color:{argb:'FF006B75'}};
   totR.getCell(1).fill={type:'pattern',pattern:'solid',fgColor:{argb:AMBER_LIGHT}};
   totR.getCell(2).fill={type:'pattern',pattern:'solid',fgColor:{argb:AMBER_LIGHT}};
-  const _tBorder={top:{style:'medium',color:{argb:'FFC9A84C'}},bottom:{style:'medium',color:{argb:'FFC9A84C'}}};
-  totR.getCell(1).border=_tBorder; totR.getCell(2).border=_tBorder;
+  totR.getCell(1).border={top:{style:'medium',color:{argb:'FFC9A84C'}}}; totR.getCell(2).border={top:{style:'medium',color:{argb:'FFC9A84C'}}};
   totR.height=30;
+  // Spell out WHICH states this open total counts (Nick: make clear it's the active + inactive
+  // disturbed only — stabilized / closed ground is excluded). Derived from each state's countMode
+  // so it stays correct if the state set ever changes.
+  const _addLabels=childStates.filter((s,idx)=>((typeof tcStateCountMode==='function')?tcStateCountMode(s,idx,childStates,mode):'add')==='add').map(s=>s.label);
+  const _openNote=_addLabels.length?_addLabels.join(' + '):'active + inactive disturbed';
+  const noteR=ws.addRow([`↳ counts ${_openNote} only — stabilized / closed areas are excluded`]);
+  ws.mergeCells(noteR.number,1,noteR.number,NC);
+  noteR.getCell(1).font={italic:true,size:9,color:{argb:'FF7A6A2E'}};
+  // Fill + a continuous bottom border across the full merged width so it reads as one band with
+  // the total above it (merged-cell borders must be set on every underlying cell).
+  for(let c=1;c<=NC;c++){ noteR.getCell(c).fill={type:'pattern',pattern:'solid',fgColor:{argb:AMBER_LIGHT}}; noteR.getCell(c).border={bottom:{style:'medium',color:{argb:'FFC9A84C'}}}; }
+  noteR.getCell(1).alignment={vertical:'middle',horizontal:'left',indent:1};
+  noteR.height=16;
   const cap=cat.disturbanceCap;
   if(cap!=null){
     const pctRaw=cap>0?(rt.open/cap)*100:0;
@@ -1726,15 +1738,15 @@ async function _embedCapturesInline(ws, wb, owners, NC){
     if(isCap||isTag) caps.push({ph,e,kind:isCap?'capture':'seedtag'});
   }); });
   if(!caps.length) return;
-  // Cumulative pixel widths of the first ~6 data columns (≈ charWidth*7+5) read from THIS
-  // sheet, so the single-row image span works for any sheet's column layout.
-  const widths=[]; for(let i=1;i<=Math.min(6,NC);i++){ widths.push((ws.getColumn(i).width)||10); }
-  const cum=[]; widths.map(w=>Math.round(w*7+5)).reduce((a,w,i)=>{ a+=w; cum[i]=a; return a; },0);
-  const MAXROWPX=520; // one Excel row maxes ~409pt (~545px) — stay under
+  // Cumulative pixel widths of ALL data columns (≈ charWidth*7+5), read from THIS sheet, so
+  // the image can span the full sheet width regardless of the sheet's column layout.
+  const cum=[]; { let a=0; for(let i=1;i<=NC;i++){ a+=Math.round((((ws.getColumn(i).width)||10)*7)+5); cum[i-1]=a; } }
+  const MAXHPX=1100;  // ceiling on the expanded photo height so tall portraits stay sane
+  const ROWMAXPT=380; // one Excel row caps ~409pt — keep each grouped row under it
   for(const {ph,e,kind} of caps){
     const tag=kind==='capture'?'📷 Map capture':'🌱 Seed tag photo';
     const fillArgb=kind==='capture'?'FDF5DC':'EAF5EA';      // amber tint vs green tint
-    const lbl=ws.addRow([`▸ ${tag} · ${e.date||''}   ( click + to expand )`]);
+    const lbl=ws.addRow([`▸ ${tag} · ${e.date||''}   ( click the + in the far-left margin to expand ↓ )`]);
     ws.mergeCells(lbl.number,1,lbl.number,NC);
     lbl.getCell(1).font={bold:true,size:10,color:{argb:'FF006B75'}};
     lbl.getCell(1).fill={type:'pattern',pattern:'solid',fgColor:{argb:fillArgb}};
@@ -1745,11 +1757,16 @@ async function _embedCapturesInline(ws, wb, owners, NC){
       const blob=await resp.blob();
       const bmp=await createImageBitmap(blob);
       const aspect=bmp.height/bmp.width;
-      // Widest column span whose resulting height still fits in one row (portrait → narrower).
-      let brCol=0, rangeW=cum[0];
-      for(let i=0;i<cum.length;i++){ if(cum[i]*aspect<=MAXROWPX){ brCol=i; rangeW=cum[i]; } }
-      const rowHpx=Math.min(MAXROWPX, Math.round(rangeW*aspect));
-      const rowPt=Math.min(405, Math.round(rowHpx*0.75)); // px→pt, under Excel's 409 cap
+      // Default: span the FULL sheet width (Nick: expand the photo out to the last column —
+      // M on seeding, G on disturbance). If that makes a tall/portrait photo exceed the height
+      // ceiling, step the width back to the widest span that fits — keeps aspect, never stretches.
+      let brCol=NC, rangeW=cum[NC-1];
+      if(Math.round(rangeW*aspect)>MAXHPX){
+        for(let i=0;i<cum.length;i++){ if(Math.round(cum[i]*aspect)<=MAXHPX){ brCol=i+1; rangeW=cum[i]; } }
+      }
+      const totalPt=Math.round(Math.round(rangeW*aspect)*0.75); // px→pt, aspect-correct to the span
+      const K=Math.max(1,Math.ceil(totalPt/ROWMAXPT));          // split a tall image across rows
+      const perRowPt=Math.max(15,Math.round(totalPt/K));        // so each stays under Excel's cap
       // Re-encode at a modest size + JPEG so the workbook stays small. The originals can be
       // multi-MB each (full phone photos); a ~720px JPEG is tens of KB and is plenty for a
       // report — embedding the originals was bloating the file dozens of × over.
@@ -1760,11 +1777,14 @@ async function _embedCapturesInline(ws, wb, owners, NC){
       const jblob=await new Promise(res=>cv.toBlob(res,'image/jpeg',0.72));
       const dataUrl=await _blobToDataURL(jblob);
       const raw=dataUrl.substring(dataUrl.indexOf(',')+1);
-      const ir=ws.addRow([]); ir.height=rowPt; ir.outlineLevel=1; ir.hidden=true; // collapsed by default
-      const r0=ir.number-1; // 0-indexed
+      // K grouped rows, all collapsed by default (outline level 1 + hidden) so the photo
+      // hides/expands as one unit under the dated toggle row above it.
+      let firstNum=null;
+      for(let k=0;k<K;k++){ const ir=ws.addRow([]); ir.height=perRowPt; ir.outlineLevel=1; ir.hidden=true; if(k===0) firstNum=ir.number; }
+      const r0=firstNum-1; // 0-indexed
       const imgId=wb.addImage({base64:raw, extension:'jpeg'});
-      // One tall row, twoCellAnchor so it sizes/collapses with the row.
-      ws.addImage(imgId,{ tl:{col:0.08,row:r0+0.03}, br:{col:brCol+1,row:r0+0.97}, editAs:'twoCell' });
+      // twoCellAnchor across the full span + all K rows → sizes/collapses with the group.
+      ws.addImage(imgId,{ tl:{col:0.08,row:r0+0.03}, br:{col:brCol,row:r0+K-0.03}, editAs:'twoCell' });
     }catch(err){ console.warn('inline capture failed',err); }
   }
 }
@@ -1903,10 +1923,14 @@ async function _seedingSheet(wb, cid, allEntries, pid){
   // Planned-area total — the denominator, banded headline.
   const pr=ws.addRow(['Planned area (total)', fmt(planTotal)]);
   pr.getCell(1).font={bold:true,size:14}; pr.getCell(2).font={bold:true,size:14,color:{argb:'FF006B75'}};
-  pr.getCell(1).fill={type:'pattern',pattern:'solid',fgColor:{argb:AMBER_LIGHT}};
-  pr.getCell(2).fill={type:'pattern',pattern:'solid',fgColor:{argb:AMBER_LIGHT}};
-  const _b={top:{style:'medium',color:{argb:'FFC9A84C'}},bottom:{style:'medium',color:{argb:'FFC9A84C'}}};
-  pr.getCell(1).border=_b; pr.getCell(2).border=_b; pr.height=26;
+  // Band the whole row out to the last column (Nick: extend the total-row formatting to col M
+  // for consistency) — amber fill across, medium top/bottom rule, closed off left + right.
+  const _tb={top:{style:'medium',color:{argb:'FFC9A84C'}},bottom:{style:'medium',color:{argb:'FFC9A84C'}}};
+  for(let c=1;c<=NC;c++){
+    pr.getCell(c).fill={type:'pattern',pattern:'solid',fgColor:{argb:AMBER_LIGHT}};
+    pr.getCell(c).border={..._tb,...(c===1?{left:{style:'medium',color:{argb:'FFC9A84C'}}}:{}),...(c===NC?{right:{style:'medium',color:{argb:'FFC9A84C'}}}:{})};
+  }
+  pr.height=26;
   // (Per-row color-coded data bars were added in the loop above.)
   if(!childStates.length){ const r=ws.addRow(['—','No states defined']); r.getCell(2).font={italic:true,size:10,color:{argb:'FF999999'}}; }
   ws.addRow([]);
