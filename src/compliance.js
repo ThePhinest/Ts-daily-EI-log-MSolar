@@ -315,7 +315,72 @@ async function _glMigrateCompliancePhaseD() {
 }
 
 // ── Today's Tracker Activity card ──
+// ── Punchlist card — open repair flags (point markers on drawings) ──
+// Reads the temporary lifecycle (trGetOpenTemporary / trGetResolvedTemporary).
+// Open rows: what's wrong, where, photo, [Fixed] [Map]. Resolved history stays
+// collapsible — non-destructive record with timestamp + resolution note.
+function clRenderPunchlist(){
+  const el=document.getElementById('cl-punchlist-card');
+  if(!el) return;
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const open=(typeof trGetOpenTemporary==='function')?trGetOpenTemporary(pid):[];
+  const resolved=(typeof trGetResolvedTemporary==='function')?trGetResolvedTemporary(pid):[];
+  if(!open.length&&!resolved.length){ el.style.display='none'; return; }
+  const fmtWhen=ts=>{ if(!ts) return ''; const d=new Date(ts); return `${d.getMonth()+1}/${d.getDate()}/${String(d.getFullYear()).slice(2)}`; };
+  const rowHtml=(e,isOpen)=>{
+    const catName=e.categoryName||(typeof tcGetName==='function'?tcGetName(e.categoryId,pid):'')||'—';
+    const photos=(e.photoIds||[]).map(id=>(window._phPhotos||[]).find(p=>p.id===id)).filter(Boolean);
+    const thumb=photos.length?`<img src="${photos[0].thumb}" onclick="phOpenLightbox('${photos[0].id}',[${photos.map(p=>`'${p.id}'`).join(',')}])" style="width:44px;height:34px;object-fit:cover;border-radius:4px;cursor:pointer;flex-shrink:0;border:1px solid var(--border2)">`:'';
+    const btns=isOpen
+      ?`<div style="display:flex;gap:6px;flex-shrink:0">
+          <button onclick="event.stopPropagation();clPunchlistGoto('${e.id}')" style="background:var(--s1);border:1px solid var(--border);color:var(--muted);font-family:var(--mono);font-size:10px;padding:5px 8px;border-radius:5px;cursor:pointer">📍 Map</button>
+          <button onclick="event.stopPropagation();mapResolveTemporary('${e.id}')" style="background:rgba(39,174,96,0.15);border:1px solid var(--green,#27AE60);color:var(--green,#27AE60);font-family:var(--mono);font-size:10px;padding:5px 8px;border-radius:5px;cursor:pointer">✓ Fixed</button>
+        </div>`
+      :`<button onclick="event.stopPropagation();clPunchlistReopen('${e.id}')" style="background:var(--s1);border:1px solid var(--border);color:var(--muted);font-family:var(--mono);font-size:10px;padding:5px 8px;border-radius:5px;cursor:pointer;flex-shrink:0">↩ Reopen</button>`;
+    return `<div style="display:flex;align-items:center;gap:8px;padding:8px 4px;border-bottom:1px solid var(--border)">
+      ${thumb}
+      <div style="flex:1;min-width:0">
+        <div style="font-family:var(--mono);font-size:12px;color:${isOpen?'var(--text)':'var(--muted)'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${isOpen?'🚩':'✓'} ${(e.tempLabel||'Repair').replace(/</g,'&lt;')}</div>
+        <div style="font-family:var(--mono);font-size:10px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${catName} · flagged ${e.date||''}${isOpen?'':(e.resolvedAt?` · fixed ${fmtWhen(e.resolvedAt)}`:'')}</div>
+        ${(!isOpen&&e.resolveNote)?`<div style="font-family:var(--mono);font-size:10px;color:var(--green,#27AE60);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">→ ${String(e.resolveNote).replace(/</g,'&lt;')}</div>`:''}
+      </div>
+      ${btns}
+    </div>`;
+  };
+  const openRows=open.map(e=>rowHtml(e,true)).join('');
+  const resolvedBlock=resolved.length?`<div style="margin-top:6px">
+    <div onclick="const b=this.nextElementSibling;const on=b.style.display==='none';b.style.display=on?'block':'none';this.querySelector('span:last-child').textContent=on?'▾':'▸'" style="display:flex;align-items:center;gap:6px;cursor:pointer;font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;padding:6px 4px;user-select:none">
+      <span>Fixed history (${resolved.length})</span><span style="margin-left:auto">▸</span>
+    </div>
+    <div style="display:none">${resolved.map(e=>rowHtml(e,false)).join('')}</div>
+  </div>`:'';
+  el.innerHTML=`<div class="card">
+    <div class="card-head"><span class="card-num">🚩</span><span class="card-title">Punchlist</span><span class="card-badge"${open.length?'':' style="opacity:.4"'}>${open.length} open</span></div>
+    <div class="card-body" style="padding-top:4px">
+      ${open.length?openRows:`<div style="font-family:var(--mono);font-size:11px;color:var(--muted);padding:8px 4px">Nothing needs attention. Flag repairs from any drawing's popup on the map.</div>`}
+      ${resolvedBlock}
+    </div>
+  </div>`;
+  el.style.display='block';
+}
+// Jump from a punchlist row to its flag on the map (highlight pulls the eye).
+function clPunchlistGoto(entryId){
+  if(typeof showPage==='function') showPage('map');
+  setTimeout(()=>{ if(typeof mapHighlightEntry==='function') mapHighlightEntry(entryId); },400);
+}
+function clPunchlistReopen(entryId){
+  if(typeof trReopenTemporary==='function') trReopenTemporary(entryId);
+  if(typeof mapRenderTrackerLayers==='function'){ try{ mapRenderTrackerLayers(); }catch{} }
+  clRenderPunchlist();
+}
+if(typeof window!=='undefined'){
+  window.clRenderPunchlist=clRenderPunchlist;
+  window.clPunchlistGoto=clPunchlistGoto;
+  window.clPunchlistReopen=clPunchlistReopen;
+}
+
 function clRenderTrackerCard(search){
+  clRenderPunchlist();
   const el=document.getElementById('cl-tracker-card');
   if(!el) return;
   const today=new Date().toLocaleDateString('en-CA');
@@ -1240,7 +1305,9 @@ async function _exportCategoriesDeliverable(cids, entries, pid){
   for(const cid of cids){
     const mode=(typeof tcProgressMode==='function')?tcProgressMode(cid,pid):'';
     const isRunning=mode==='running-balance'||mode==='running-total';
+    const isLinear=((typeof tcGetMeasurementType==='function')?tcGetMeasurementType(cid,pid):'')==='linear';
     if(isRunning){ allSeeding=false; await _disturbanceSheet(wb, cid, entries, pid); }
+    else if(isLinear){ allSeeding=false; await _linearSheet(wb, cid, entries, pid); }
     else await _seedingSheet(wb, cid, entries, pid);
   }
   // Body font ≥ 12 across the workbook (titles/headline keep their larger size). Skip
@@ -1260,8 +1327,9 @@ async function _exportCategoriesDeliverable(cids, entries, pid){
     const name=(typeof tcGetName==='function')?tcGetName(cids[0],pid):'category';
     const mode=(typeof tcProgressMode==='function')?tcProgressMode(cids[0],pid):'';
     const isRunning=mode==='running-balance'||mode==='running-total';
+    const isLinear=((typeof tcGetMeasurementType==='function')?tcGetMeasurementType(cids[0],pid):'')==='linear';
     const safeCat=String(name).replace(/[^a-zA-Z0-9 _-]/g,'').trim().replace(/\s+/g,'-')||'category';
-    fname=`${isRunning?'disturbance':'seeding'}-${safeCat}-${safeProj}-${today}.xlsx`;
+    fname=`${isRunning?'disturbance':(isLinear?'bmp':'seeding')}-${safeCat}-${safeProj}-${today}.xlsx`;
   } else {
     fname=`${allSeeding?'seeding':'tracker'}-report-${safeProj}-${today}.xlsx`;
   }
@@ -1731,7 +1799,9 @@ async function _embedCaptures(ws, wb, installed, pid, NC){
 // collapses with it (twoCellAnchor → the image hides when the rows collapse). `owners` =
 // the drawing's entries (planned parent + its layers) whose map_captures belong here. This
 // replaces the separate bottom "Map Captures" list — captures live with their drawing.
-async function _embedCapturesInline(ws, wb, owners, NC){
+async function _embedCapturesInline(ws, wb, owners, NC, opts){
+  // opts.allPhotos: embed EVERY attached photo (repair-flag field photos), not just
+  // map captures / seed tags — a flag's photo IS its evidence, always belongs inline.
   const caps=[];
   (owners||[]).forEach(e=>{ if(!e) return; const types=e.photoTypes||{}; (e.photoIds||[]).forEach(id=>{
     const ph=(window._phPhotos||[]).find(p=>p.id===id);
@@ -1739,6 +1809,7 @@ async function _embedCapturesInline(ws, wb, owners, NC){
     const isCap=ph.type==='map_capture';
     const isTag=types[id]==='material_tag';
     if(isCap||isTag) caps.push({ph,e,kind:isCap?'capture':'seedtag'});
+    else if(opts&&opts.allPhotos) caps.push({ph,e,kind:'field'});
   }); });
   if(!caps.length) return;
   // Cumulative pixel widths of ALL data columns (≈ charWidth*7+5), read from THIS sheet, so
@@ -1747,8 +1818,8 @@ async function _embedCapturesInline(ws, wb, owners, NC){
   const MAXHPX=1100;  // ceiling on the expanded photo height so tall portraits stay sane
   const ROWMAXPT=380; // one Excel row caps ~409pt — keep each grouped row under it
   for(const {ph,e,kind} of caps){
-    const tag=kind==='capture'?'📷 Map capture':'🌱 Seed tag photo';
-    const fillArgb=kind==='capture'?'FDF5DC':'EAF5EA';      // amber tint vs green tint
+    const tag=kind==='capture'?'📷 Map capture':(kind==='field'?'📷 Field photo':'🌱 Seed tag photo');
+    const fillArgb=kind==='capture'?'FDF5DC':(kind==='field'?'FBEAEA':'EAF5EA'); // amber / red / green tints
     const lbl=ws.addRow([`▸ ${tag} · ${e.date||''}   ( click the + in the far-left margin to expand ↓ )`]);
     ws.mergeCells(lbl.number,1,lbl.number,NC);
     lbl.getCell(1).font={bold:true,size:10,color:{argb:'FF006B75'}};
@@ -1790,6 +1861,157 @@ async function _embedCapturesInline(ws, wb, owners, NC){
       ws.addImage(imgId,{ tl:{col:0.08,row:r0+0.03}, br:{col:brCol,row:r0+K-0.03}, editAs:'twoCell' });
     }catch(err){ console.warn('inline capture failed',err); }
   }
+}
+
+// Linear-BMP deliverable sheet (silt fence & friends) — installed ft vs the plan per
+// state, a 🚩 punchlist section (open repair flags w/ field photos + fixed history),
+// and the itemized drawings with inline captures. The contractor-facing read: WHERE
+// fence is installed (allowed to move dirt), what's planned, and what needs repair.
+async function _linearSheet(wb, cid, allEntries, pid){
+  const cat=(typeof tcGetCategory==='function')?tcGetCategory(cid,pid):null;
+  if(!cat) return;
+  const name=(typeof tcGetName==='function')?tcGetName(cid,pid):'BMP';
+  const defUnit=(typeof tcGetDefaultUnit==='function')?tcGetDefaultUnit(cid,pid):'ft';
+  const states=(typeof tcGetStates==='function')?tcGetStates(cat,pid):[];
+  const childStates=states.filter(s=>!s.isPlanned);
+  const dcs=(typeof tcDefaultChildState==='function')?tcDefaultChildState(cat,pid):null;
+  const planned=allEntries.filter(e=>(e.categoryId===cid)&&e.entryType==='planned'&&!e.temporary&&!e.deletedAt);
+  const installed=allEntries.filter(e=>(e.categoryId===cid)&&e.entryType!=='planned'&&!e.temporary&&!e.deletedAt);
+  const openFlags=allEntries.filter(e=>(e.categoryId===cid)&&e.temporary&&e.tempStatus!=='resolved'&&!e.deletedAt);
+  const fixedFlags=allEntries.filter(e=>(e.categoryId===cid)&&e.temporary&&e.tempStatus==='resolved'&&!e.deletedAt)
+    .sort((a,b)=>(b.resolvedAt||0)-(a.resolvedAt||0));
+  const measure=(e)=>(typeof trEntryMeasure==='function')?trEntryMeasure(e,defUnit,pid):0;
+  const fmt=(v)=>(typeof tcFormatMeasurement==='function')?tcFormatMeasurement(v,defUnit):`${(v||0).toFixed(0)} ${defUnit}`;
+  const stOf=(e)=>e.state||(dcs?dcs.id:null);
+  const planTotal=planned.reduce((s,e)=>s+measure(e),0);
+
+  const TEAL='006B75', WHITE='FFFFFF', AMBER_LIGHT='FDF5DC';
+  const NC=7;
+  let base=('BMP — '+name).replace(/[\\\/\?\*\[\]:]/g,'').slice(0,31);
+  let nm=base, n=2;
+  while(wb.getWorksheet(nm)){ nm=base.slice(0,28)+' '+n; n++; }
+  const ws=wb.addWorksheet(nm);
+  ws.properties.outlineProperties={summaryBelow:false,summaryRight:false};
+  ws.properties.outlineLevelRow=1;
+  // Date, State/Item, Length, Location, Notes, Photos, Contractor
+  ws.columns=[{width:13},{width:26},{width:16},{width:28},{width:44},{width:9},{width:24}];
+
+  // ── Title ──
+  ws.addRow([name]); ws.mergeCells(1,1,1,NC);
+  const tc=ws.getCell('A1');
+  tc.font={name:'Calibri',bold:true,size:18,color:{argb:WHITE}};
+  tc.fill={type:'pattern',pattern:'solid',fgColor:{argb:TEAL}};
+  tc.alignment={vertical:'middle',horizontal:'left',indent:1}; ws.getRow(1).height=34;
+  const cfg=JSON.parse(localStorage.getItem('msf_projectconfig')||'{}');
+  const today=new Date().toLocaleDateString('en-CA');
+  [['Project',cfg.projectName||''],['Snapshot date',today],['Prepared By',cfg.preparedBy||'']].forEach(([l,v])=>{
+    const r=ws.addRow([l,v]); ws.mergeCells(r.number,2,r.number,NC);
+    r.getCell(1).font={name:'Consolas',size:9,bold:true,color:{argb:'FF'+TEAL}};
+    r.getCell(2).font={name:'Calibri',size:10}; r.height=15;
+  });
+  const tip=ws.addRow(['ℹ  Photos are collapsed under each row. Click + in the far-left margin to expand one (or the 1 / 2 buttons at the very top-left for all). If +/- do nothing, click "Enable Editing" first — Protected View disables them.']);
+  ws.mergeCells(tip.number,1,tip.number,NC);
+  tip.getCell(1).font={italic:true,size:9,color:{argb:'FF666666'}};
+  tip.getCell(1).alignment={wrapText:true,vertical:'middle'}; tip.height=24;
+  ws.addRow([]);
+
+  // ── Installation Summary — per-state totals vs plan, color-coded bars ──
+  const sh=ws.addRow(['INSTALLATION SUMMARY — totals vs plan']); ws.mergeCells(sh.number,1,sh.number,NC);
+  sh.getCell(1).font={bold:true,size:15,color:{argb:'FF0F1F2E'}};
+  sh.getCell(1).fill={type:'pattern',pattern:'solid',fgColor:{argb:'C9A84C'}};
+  sh.getCell(1).alignment={vertical:'middle',horizontal:'left',indent:1}; sh.height=28;
+  const hdr=ws.addRow(['','State','Length','% of Plan']);
+  hdr.eachCell({includeEmpty:true},c=>{ c.font={bold:true,size:10,color:{argb:WHITE}}; c.fill={type:'pattern',pattern:'solid',fgColor:{argb:TEAL}}; });
+  hdr.height=18;
+  childStates.forEach(s=>{
+    const tot=installed.filter(e=>stOf(e)===s.id).reduce((a,e)=>a+measure(e),0);
+    const pct=planTotal>0?(tot/planTotal)*100:null;
+    const r=ws.addRow(['', s.label, fmt(tot), pct!=null?Math.round(pct):'' ]);
+    const fill=_xlHex(s.color);
+    if(fill){ r.getCell(2).fill={type:'pattern',pattern:'solid',fgColor:{argb:fill}}; r.getCell(2).font={name:'Calibri',size:11,bold:true,color:{argb:_xlContrast(s.color)}}; }
+    else r.getCell(2).font={name:'Calibri',size:11,bold:true};
+    r.getCell(3).font={name:'Calibri',size:11};
+    r.getCell(4).font={name:'Calibri',size:11,bold:true};
+    if(pct!=null){
+      r.getCell(4).numFmt='0"%"';
+      const bc=pct<=50?'FFC0392B':(pct<=90?'FFF1C40F':'FF27AE60');
+      ws.addConditionalFormatting({ ref:`D${r.number}`, rules:[{type:'dataBar',cfvo:[{type:'num',value:0},{type:'num',value:100}],color:{argb:bc}}] });
+    }
+    r.height=20;
+  });
+  if(!childStates.length){ const r=ws.addRow(['','—','No states defined']); r.getCell(3).font={italic:true,size:10,color:{argb:'FF999999'}}; }
+  // Planned total — banded headline (the denominator).
+  const pr=ws.addRow(['','Planned (total)', fmt(planTotal)]);
+  pr.getCell(2).font={bold:true,size:14}; pr.getCell(3).font={bold:true,size:14,color:{argb:'FF006B75'}};
+  const _tb={top:{style:'medium',color:{argb:'FFC9A84C'}},bottom:{style:'medium',color:{argb:'FFC9A84C'}}};
+  for(let c=1;c<=NC;c++){
+    pr.getCell(c).fill={type:'pattern',pattern:'solid',fgColor:{argb:AMBER_LIGHT}};
+    pr.getCell(c).border={..._tb,...(c===1?{left:{style:'medium',color:{argb:'FFC9A84C'}}}:{}),...(c===NC?{right:{style:'medium',color:{argb:'FFC9A84C'}}}:{})};
+  }
+  pr.height=26;
+  ws.addRow([]);
+
+  // ── 🚩 Punchlist — open repairs, each with its field photo collapsed inline ──
+  const fh=ws.addRow([`🚩 OPEN REPAIRS — ${openFlags.length}`]); ws.mergeCells(fh.number,1,fh.number,NC);
+  fh.getCell(1).font={bold:true,size:15,color:{argb:WHITE}};
+  fh.getCell(1).fill={type:'pattern',pattern:'solid',fgColor:{argb:'C0392B'}};
+  fh.getCell(1).alignment={vertical:'middle',horizontal:'left',indent:1}; fh.height=28;
+  if(openFlags.length){
+    const fhd=ws.addRow(['Flagged','What\'s wrong','','Location / parent','Details','Photos','']);
+    fhd.eachCell({includeEmpty:true},c=>{ c.font={bold:true,size:10,color:{argb:WHITE}}; c.fill={type:'pattern',pattern:'solid',fgColor:{argb:TEAL}}; });
+    fhd.height=18;
+    for(const f of openFlags.slice().sort((a,b)=>String(a.date||'').localeCompare(String(b.date||'')))){
+      const parent=(typeof trGetEntry==='function')?trGetEntry(f.parentId,pid):null;
+      const where=(parent&&(parent.location||parent.categoryName))||'';
+      const r=ws.addRow([f.date||'', '🚩 '+(f.tempLabel||'Repair'), '', where, f.notes||'', Array.isArray(f.photoIds)?f.photoIds.length:'', '']);
+      r.eachCell({includeEmpty:true},c=>{ c.font={name:'Calibri',size:11}; c.alignment={vertical:'top',wrapText:true}; });
+      r.getCell(2).font={name:'Calibri',size:11,bold:true,color:{argb:'FFC0392B'}};
+      r.height=18;
+      await _embedCapturesInline(ws, wb, [f], NC, {allPhotos:true});
+    }
+  } else {
+    const r=ws.addRow(['','Nothing needs attention.']);
+    r.getCell(2).font={italic:true,size:10,color:{argb:'FF27AE60'}};
+  }
+  // Fixed history — non-destructive record: when + what was done.
+  if(fixedFlags.length){
+    const rh=ws.addRow([`Fixed history — ${fixedFlags.length}`]); ws.mergeCells(rh.number,1,rh.number,NC);
+    rh.getCell(1).font={bold:true,size:11,color:{argb:WHITE}};
+    rh.getCell(1).fill={type:'pattern',pattern:'solid',fgColor:{argb:'27AE60'}};
+    rh.getCell(1).alignment={vertical:'middle',horizontal:'left',indent:1}; rh.height=20;
+    fixedFlags.forEach(f=>{
+      const when=f.resolvedAt?new Date(f.resolvedAt).toLocaleDateString('en-CA'):'';
+      const r=ws.addRow([f.date||'', '✓ '+(f.tempLabel||'Repair'), '', when?('fixed '+when):'', f.resolveNote||f.notes||'', Array.isArray(f.photoIds)?f.photoIds.length:'', '']);
+      r.eachCell({includeEmpty:true},c=>{ c.font={name:'Calibri',size:10,color:{argb:'FF555555'}}; c.alignment={vertical:'top',wrapText:true}; });
+      r.getCell(2).font={name:'Calibri',size:10,bold:true,color:{argb:'FF27AE60'}};
+      r.height=15;
+    });
+  }
+  ws.addRow([]);
+
+  // ── Itemized drawings ──
+  const ih=ws.addRow(['Itemized Drawings']); ws.mergeCells(ih.number,1,ih.number,NC);
+  ih.getCell(1).font={bold:true,size:13,color:{argb:WHITE}};
+  ih.getCell(1).fill={type:'pattern',pattern:'solid',fgColor:{argb:TEAL}};
+  ih.getCell(1).alignment={vertical:'middle',horizontal:'left',indent:1}; ih.height=22;
+  const chRow=ws.addRow(['Date','State','Length','Location','Notes','Photos','Contractor']);
+  chRow.eachCell({includeEmpty:true},c=>{ c.font={bold:true,size:10,color:{argb:WHITE}}; c.fill={type:'pattern',pattern:'solid',fgColor:{argb:TEAL}}; });
+  chRow.height=18;
+  const stById={}; childStates.forEach(s=>stById[s.id]=s);
+  const allDraw=[...planned,...installed].sort((a,b)=>String(a.date||'').localeCompare(String(b.date||'')));
+  for(const e of allDraw){
+    const isPlan=e.entryType==='planned';
+    const s=isPlan?null:(stById[stOf(e)]||null);
+    const meas=e.measurementValue!=null?`${e.measurementValue} ${e.measurementUnit||defUnit}`:(measure(e)?fmt(measure(e)):'');
+    const r=ws.addRow([e.date||'', isPlan?'Planned':(s?s.label:(e.state||'')), meas, e.location||'', e.notes||'', Array.isArray(e.photoIds)?e.photoIds.length:'', e.contractor||'']);
+    r.eachCell({includeEmpty:true},c=>{ c.font={name:'Calibri',size:10}; c.alignment={vertical:'top',wrapText:true}; });
+    if(s){ const fill=_xlHex(s.color); if(fill){ r.getCell(2).fill={type:'pattern',pattern:'solid',fgColor:{argb:fill}}; r.getCell(2).font={name:'Calibri',size:10,color:{argb:_xlContrast(s.color)}}; } }
+    else if(isPlan){ r.getCell(2).font={name:'Calibri',size:10,italic:true,color:{argb:'FF8E9BA3'}}; }
+    r.height=15;
+    await _embedCapturesInline(ws, wb, [e], NC);
+  }
+  if(!allDraw.length){ const r=ws.addRow(['—','No drawings yet']); r.getCell(2).font={italic:true,size:10,color:{argb:'FF999999'}}; }
+  ws.eachRow((row,rn)=>{ if(rn===1||row.hidden) return; if(!row.height || row.height<22) row.height=22; });
 }
 
 // Coverage-vs-plan (seeding) deliverable sheet for one per-state-vs-plan category. States

@@ -247,13 +247,14 @@ function tcTemplateSchema(template, measurementType){
         {label:'Stabilized', color:'#27AE60'}
       ]
     },
+    // Maintenance is NOT a state — repairs are point-marker flags on the punchlist
+    // (locked 2026-07-01), so the lifecycle is just Planned → Installed → Removed.
     'linear-bmp': {
       measurementType:'linear', trackMaterial:false, statePatterns:false,
       progressMode:'per-state-vs-plan', overallMode:'terminal', phases:[], methods:[],
       states:[
         {label:'Planned',    color:'#8E9BA3', isPlanned:true},
         {label:'Installed',  color:'#4A90E2'},
-        {label:'Maintained', color:'#27AE60'},
         {label:'Removed',    color:'#8E9BA3'}
       ]
     },

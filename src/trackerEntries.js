@@ -509,8 +509,9 @@ function trSetTemporary(entryId, on, opts, projectId){
 }
 
 // Resolve a temporary item — leaves the live map (archived) but stays in the
-// record ("fixed" / "work resumed here").
-function trResolveTemporary(entryId, projectId){
+// record ("fixed" / "work resumed here"). `note` is the optional resolution note
+// shown in the punchlist history (what was done to fix it).
+function trResolveTemporary(entryId, projectId, note){
   const pid = projectId || ((typeof _activeProjectId === 'function') ? _activeProjectId() : 'default');
   if(_trReviewerBlocked(pid)) return false;
   const uid = (typeof _currentUser !== 'undefined' && _currentUser) ? _currentUser.uid : null;
@@ -518,6 +519,7 @@ function trResolveTemporary(entryId, projectId){
     e.tempStatus = 'resolved';
     e.resolvedAt = Date.now();
     e.resolvedBy = uid;
+    if(note != null && String(note).trim()) e.resolveNote = String(note).trim().slice(0,300);
     e.archivedFromMap = true; // drop off the live plan; kept in compliance history
   });
 }
@@ -528,7 +530,7 @@ function trReopenTemporary(entryId, projectId){
   if(_trReviewerBlocked(pid)) return false;
   return _trMutateEntry(entryId, pid, e => {
     e.tempStatus = 'open';
-    e.resolvedAt = null; e.resolvedBy = null;
+    e.resolvedAt = null; e.resolvedBy = null; e.resolveNote = null;
     e.archivedFromMap = false;
   });
 }
@@ -541,6 +543,14 @@ function trGetOpenTemporary(projectId){
   return trGetEntriesForProject(pid).filter(e => trIsOpenTemporary(e));
 }
 
+// Resolved temporary items — the punchlist's "fixed" history (newest first).
+function trGetResolvedTemporary(projectId){
+  const pid = projectId || ((typeof _activeProjectId === 'function') ? _activeProjectId() : 'default');
+  return trGetEntriesForProject(pid)
+    .filter(e => e.temporary && e.tempStatus === 'resolved' && !e.deletedAt)
+    .sort((a,b) => (b.resolvedAt||0) - (a.resolvedAt||0));
+}
+
 // Window exposure — mirrors the pattern in db.js / timesheet.js.
 if(typeof window !== 'undefined'){
   window.trGenId = trGenId;
@@ -550,6 +560,7 @@ if(typeof window !== 'undefined'){
   window.trResolveTemporary = trResolveTemporary;
   window.trReopenTemporary = trReopenTemporary;
   window.trGetOpenTemporary = trGetOpenTemporary;
+  window.trGetResolvedTemporary = trGetResolvedTemporary;
   window.trGetEntriesForProject = trGetEntriesForProject;
   window.trMarkDeletedFromMap = trMarkDeletedFromMap;
   window.trArchiveFromMap = trArchiveFromMap;

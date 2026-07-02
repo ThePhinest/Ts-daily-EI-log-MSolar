@@ -16,6 +16,7 @@
 import area from '@turf/area';
 import union from '@turf/union';
 import difference from '@turf/difference';
+import length from '@turf/length';
 import { featureCollection } from '@turf/helpers';
 
 // m² → area unit (matches the cap-unit selector: ac/sqft/sqyd/sqm/ha).
@@ -105,10 +106,23 @@ function glEntryNetAreasM2(entries, orderedStates){
   return out;
 }
 
+// Line length in FEET for a LineString/MultiLineString geometry (object or JSON
+// string). Used by the KML→planned-category promotion to measure imported lines.
+function glLineLengthFt(geometry){
+  try{
+    let g = geometry;
+    if(typeof g === 'string') g = JSON.parse(g);
+    if(!g || (g.type !== 'LineString' && g.type !== 'MultiLineString')) return 0;
+    const km = length({ type:'Feature', properties:{}, geometry:g }, { units:'kilometers' });
+    return km * 3280.8398950131; // km → ft
+  }catch{ return 0; }
+}
+
 if(typeof window !== 'undefined'){
   window.glStateNetAreasM2 = glStateNetAreasM2;
   window.glEntryNetAreasM2 = glEntryNetAreasM2;
   window.glAreaConvertM2   = glAreaConvertM2;
+  window.glLineLengthFt    = glLineLengthFt;
 }
 
-export { glStateNetAreasM2, glEntryNetAreasM2, glAreaConvertM2 };
+export { glStateNetAreasM2, glEntryNetAreasM2, glAreaConvertM2, glLineLengthFt };

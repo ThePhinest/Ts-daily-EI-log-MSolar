@@ -39,7 +39,9 @@ let _drawEntryType='installed'; // 'planned' | 'installed'
 let _activePlannedEntryId=null;
 // When set ({label,type}), the next drawn overlay is flagged a temporary/maintenance
 // item (open lifecycle). Drawn on top of an existing drawing via the snap/anchor flow.
-let _pendingTemporary=null;
+// Repair-flag placement mode: holds the parent entry id while the user picks the
+// spot on the map (point-marker punchlist model, locked 2026-07-01).
+let _placingFlagParentId=null;
 let _fabOpen=false, _viewFabOpen=false, _gpsFollowActive=false, _gpsFollowWatch=null;
 // GPS location/direction mode cycle: 0=off, 1=locate, 2=direction(cone,north-up), 3=heading(cone+map spins)
 let _gpsMode=0, _compassActive=false, _compassHandler=null, _curHeading=0, _lastSpinTs=0, _origCompassHTML=null, _followPaused=false;
@@ -1285,6 +1287,7 @@ function mapUpdateKmlLayerList(){
         <input type="checkbox" ${layer.visible?'checked':''} onchange="mapToggleKmlLayerById('${layer.id}',this.checked)">
         <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${layer.name}</span>
       </label>
+      <button onclick="mapPromoteKmlLayer('${layer.id}')" title="Adopt this layer's lines as a planned tracker category (silt fence from a plan, LOD spans…)" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px;padding:0 2px;">⇪</button>
       <button onclick="mapRemoveKmlLayerById('${layer.id}')" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;padding:0;">✕</button>`;
     }
     return row;
@@ -1576,6 +1579,93 @@ async function mapToggleKmlLayerById(id, visible){
   kmlSaveLayers();
 }
 
+// ── KML → planned tracker category (adoption seam, 2026-07-01) ──
+// Turns an imported KML layer's LINE features into PLANNED drawings in a linear
+// category — the import half of the silt-fence auto-draw pipeline (extract lines
+// from the E&S plan → KML → import → adopt as the plan, no hand-tracing). Each
+// LineString becomes one planned entry measured in ft (turf).
+async function mapPromoteKmlLayer(layerId){
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const layer=_mapKmlLayers.find(l=>l.id===layerId);
+  if(!layer) return;
+  // Features may not be loaded yet (metadata-only restore) — same load path as toggle ON.
+  if(!(layer.features&&layer.features.length)&&(layer.storagePath||layer.downloadUrl)){
+    try{
+      const kmlText=await _kmlFetchKmlText(layer.storagePath,[layer]);
+      layer.features=await _kmlReparseFeaturesForLayer(kmlText,layer);
+    }catch(err){ console.warn('mapPromoteKmlLayer load:',err.message); }
+  }
+  const feats=(layer.features||[]).filter(f=>f&&f.geometry&&(f.geometry.type==='LineString'||f.geometry.type==='MultiLineString'));
+  const skipped=(layer.features||[]).length-feats.length;
+  if(!feats.length){
+    if(typeof showCloudBanner==='function') showCloudBanner('No line features in this layer — adopting areas/points isn\'t supported yet.');
+    return;
+  }
+  // Pick a target category: existing linear categories + create-new (template default).
+  const cats=((typeof tcGetCategories==='function')?tcGetCategories(pid):[])
+    .filter(c=>((typeof tcGetMeasurementType==='function')?tcGetMeasurementType(c.id,pid):'')==='linear');
+  document.getElementById('_pk-ov')?.remove();
+  const ov=document.createElement('div');
+  ov.className='modal-overlay'; ov.id='_pk-ov';
+  ov.style.cssText='z-index:9000';
+  ov.innerHTML=`<div class="modal-box" style="max-width:340px;width:90%">
+    <div class="modal-title" style="margin-bottom:8px">⇪ Adopt as planned category</div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.5"><b>${String(layer.name).replace(/</g,'&lt;')}</b> — ${feats.length} line${feats.length>1?'s':''}${skipped>0?` (${skipped} non-line feature${skipped>1?'s':''} skipped)`:''}. Each line becomes a <b>planned</b> drawing you can install / flag against.</div>
+    <label style="${_LABEL_STYLE}">Into category</label>
+    <select id="_pk-cat" style="${_INPUT_STYLE}width:100%;box-sizing:border-box;margin-bottom:10px">
+      <option value="__new">＋ New category — "${String(layer.name).replace(/"/g,'&quot;').slice(0,30)}"</option>
+      ${cats.map(c=>`<option value="${c.id}">${(typeof tcGetName==='function')?tcGetName(c.id,pid):c.id}</option>`).join('')}
+    </select>
+    <div class="modal-btns">
+      <button class="modal-confirm" id="_pk-go">⇪ Adopt ${feats.length} line${feats.length>1?'s':''}</button>
+      <button class="modal-cancel" id="_pk-cancel">Cancel</button>
+    </div>
+  </div>`;
+  document.body.appendChild(ov);
+  ov.querySelector('#_pk-cancel').onclick=()=>ov.remove();
+  ov.addEventListener('click',ev=>{ if(ev.target===ov) ov.remove(); });
+  ov.querySelector('#_pk-go').onclick=async()=>{
+    const sel=ov.querySelector('#_pk-cat').value;
+    ov.remove();
+    let catId=sel, catName;
+    if(sel==='__new'){
+      if(typeof tcTemplateSchema!=='function'||typeof tcSaveCategory!=='function') return;
+      const schema=tcTemplateSchema('linear-bmp','linear');
+      const color='#4A90E2';
+      if(schema.states&&schema.states[0]) schema.states[0].color='#8E9BA3';
+      const cat=await tcSaveCategory({...schema,template:'linear-bmp',name:String(layer.name).slice(0,40),color,measurementType:'linear',defaultUnit:'ft'},pid);
+      if(!cat){ if(typeof showCloudBanner==='function') showCloudBanner('Couldn\'t create the category (needs a real project).'); return; }
+      catId=cat.id; catName=cat.name;
+    } else {
+      catName=(typeof tcGetName==='function')?tcGetName(catId,pid):'';
+    }
+    const today=document.getElementById('reportDate')?.value||new Date().toLocaleDateString('en-CA');
+    let count=0, totalFt=0;
+    for(const f of feats){
+      const ft=(typeof glLineLengthFt==='function')?glLineLengthFt(f.geometry):0;
+      const centroid=_geoCentroid({geometry:f.geometry});
+      const nameProp=(f.properties&&(f.properties.name||f.properties.Name))||null;
+      const entry={
+        date:today, categoryId:catId, categoryName:catName, measurementType:'linear',
+        geometry:f.geometry,
+        centroidLng:centroid?centroid.lng:null, centroidLat:centroid?centroid.lat:null,
+        acres:null, measurementValue:ft?Math.round(ft):null, measurementUnit:'ft',
+        location:nameProp, phase:null, method:null, status:'Planned', contractor:null,
+        fields:{}, seedMix:null, showDateLabel:false, labelText:null, labelColor:null,
+        notes:'Adopted from KML layer "'+layer.name+'"',
+        photoIds:[], photoTypes:{}, photoCaptions:{},
+        entryType:'planned', parentId:null, state:null,
+      };
+      if((typeof trSaveEntry==='function')?trSaveEntry(entry,pid):null){ count++; totalFt+=ft; }
+    }
+    mapRenderTrackerLayers();
+    mapUpdateKmlLayerList();
+    if(typeof clRenderTrackerCard==='function') clRenderTrackerCard();
+    if(typeof showCloudBanner==='function') showCloudBanner(`⇪ Adopted ${count} planned line${count>1?'s':''} (~${Math.round(totalFt).toLocaleString()} ft) into "${catName}".`);
+  };
+}
+window.mapPromoteKmlLayer=mapPromoteKmlLayer;
+
 // B2 Stage 1.4 — called from projects.js loadProject() on project switch.
 // Tears down all KML sources/layers + clears in-memory state, then triggers
 // kmlLoadLayers() to rehydrate from the new project's per-project cache.
@@ -1679,6 +1769,7 @@ function mapToggleFab(){
   document.getElementById('map-fab').classList.toggle('open',_fabOpen);
   document.getElementById('map-fab-palette').classList.toggle('open',_fabOpen);
   document.getElementById('map-compass')?.classList.toggle('fab-open',_fabOpen);
+  if(_fabOpen&&typeof _syncFlagFabBtn==='function') _syncFlagFabBtn();
 }
 function mapCloseFab(){
   _fabOpen=false;
@@ -2552,7 +2643,6 @@ function mapDeactivateDrawMode(){
   _drawCategory=null;
   _drawEntryType='installed';
   _activePlannedEntryId=null;
-  _pendingTemporary=null;
   _pendingDrawFeature=null;
   if(prevMode==='draw'&&_drawInstance){
     // Switch to a non-snap mode FIRST so the active snap mode's onStop runs and
@@ -2742,14 +2832,6 @@ function mapShowTrackerModal(feat,category){
   if(conEl) conEl.value='';
   if(statusEl) statusEl.value=isPlanned?'Planned':'Installed';
   _populateLinkToPlanDropdown(category);
-  // A temporary/maintenance flag describes a damaged spot, not the drawing's
-  // state/status/phase/material — hide those so the save form is just the flag
-  // (size, location, notes, photo). Set the title so it's clearly a temp item.
-  if(_pendingTemporary){
-    ['map-tr-state-row','map-tr-linear-fields','map-tr-area-fields','map-tr-calc-section']
-      .forEach(id=>{ const el=document.getElementById(id); if(el) el.style.display='none'; });
-    if(titleEl) titleEl.textContent='Temporary item'+(_pendingTemporary.label?(' — '+_pendingTemporary.label):'');
-  }
   document.getElementById('map-tracker-modal').classList.add('open');
 }
 
@@ -2984,19 +3066,13 @@ function mapSaveTrackerEntry(){
       entry.temporary=true; entry.tempStatus=_prev.tempStatus||'open';
       entry.tempLabel=_prev.tempLabel; entry.tempType=_prev.tempType;
       entry.resolvedAt=_prev.resolvedAt||null; entry.resolvedBy=_prev.resolvedBy||null;
+      entry.resolveNote=_prev.resolveNote||null;
       entry.archivedFromMap=_prev.tempStatus==='resolved'; // keep resolved ones filed
     } else {
       entry.archivedFromMap=false;
     }
   }
   _editingEntryId=null;
-  // A newly drawn temporary/maintenance overlay (armed via mapDrawTemporary).
-  if(_pendingTemporary && !entry.id){
-    entry.temporary=true; entry.tempStatus='open';
-    entry.tempType=_pendingTemporary.type||'maintenance';
-    if(_pendingTemporary.label) entry.tempLabel=String(_pendingTemporary.label).slice(0,60);
-    _pendingTemporary=null;
-  }
   _pendingPhotoIds=[];
   const saved=(typeof trSaveEntry==='function')?trSaveEntry(entry,pid):null;
   if(saved) _showUndoToast(saved,pid);
@@ -3461,6 +3537,7 @@ function mapRefreshDateLabels(){
       const cid=e.categoryId||e.category;
       if(_tcLayerVisible[cid]===false) return false;
       const isOpenTemp=e.temporary&&e.tempStatus!=='resolved';
+      if(isOpenTemp&&!_flagsVisible()) return false; // FAB flag toggle hides these
       if(!e.showDateLabel&&!isOpenTemp) return false;
       return true;
     })
@@ -3468,10 +3545,10 @@ function mapRefreshDateLabels(){
       const c=_calcCentroid(e.geometry);
       if(!c) return null;
       const isOpenTemp=e.temporary&&e.tempStatus!=='resolved';
-      // Open temporaries override the date label with an amber ⚠ flag so the
+      // Open repair flags override the date label with an amber 🚩 so the
       // live punchlist reads at a glance; otherwise the normal date/custom label.
       const text=isOpenTemp
-        ? '⚠ '+((e.tempLabel&&e.tempLabel.trim())||'Temporary')
+        ? '🚩 '+((e.tempLabel&&e.tempLabel.trim())||'Repair')
         : ((e.labelText&&e.labelText.trim())?e.labelText.trim():_fmtLabelDate(e.date));
       const color=isOpenTemp ? '#C9A84C'
         : ((e.labelColor&&/^#[0-9A-Fa-f]{6}$/.test(e.labelColor))?e.labelColor:'#ffffff');
@@ -3658,16 +3735,20 @@ async function _compositeBrandWordmark(blob, legendCat, pid, scopeEntryId){
           //   on the same ground; lime under fertilizer still counts its FULL area), and
           //   NO open total — "Total open" is a disturbance concept and must not bleed here.
           const isRunning=(mode==='running-balance'||mode==='running-total');
-          const areaByState={}; let openTotal=0, haveAreas=false;
+          const areaByState={}; let openTotal=0, haveAreas=false, flagCount=0;
           try{
             if(typeof trGetEntriesForProject==='function'){
               let inst=trGetEntriesForProject(pid).filter(e=>(e.categoryId===legendCat)&&e.entryType!=='planned'&&!e.temporary&&!e.deletedAt);
+              // Open repair flags baked into the legend too — the punchlist at a glance.
+              let flags=trGetEntriesForProject(pid).filter(e=>(e.categoryId===legendCat)&&e.temporary&&e.tempStatus!=='resolved'&&!e.deletedAt);
               // Scope to ONE drawing/area when requested: the planned area + its layers.
               if(scopeEntryId && typeof trGetEntry==='function'){
                 const se=trGetEntry(scopeEntryId,pid);
                 const areaId=se?(se.entryType==='planned'?se.id:(se.parentId||se.id)):scopeEntryId;
                 inst=inst.filter(e=>e.id===areaId||e.parentId===areaId);
+                flags=flags.filter(e=>e.id===areaId||e.parentId===areaId);
               }
+              flagCount=flags.length;
               if(isRunning && typeof glStateNetAreasM2==='function'){
                 const g=glStateNetAreasM2(inst,sts);
                 if(g){
@@ -3692,6 +3773,7 @@ async function _compositeBrandWordmark(blob, legendCat, pid, scopeEntryId){
           }catch{}
           // "Total open" row is disturbance-only; seeding legends carry per-state areas alone.
           const showOpenTotal=isRunning && haveAreas;
+          const showFlags=flagCount>0;
           const LP=Math.max(14,Math.round(c.width*0.011));   // inner padding
           const LF=Math.max(13,Math.round(c.height*0.021));  // row font px
           const TF=Math.round(LF*1.08);                      // title font px
@@ -3706,14 +3788,16 @@ async function _compositeBrandWordmark(blob, legendCat, pid, scopeEntryId){
           ctx.font=`500 ${LF}px system-ui, sans-serif`;
           sts.forEach(s=>{ const w=ctx.measureText(s.label).width; if(w>maxLabelW) maxLabelW=w; });
           if(showOpenTotal){ const w=ctx.measureText('Total open').width; if(w>maxLabelW) maxLabelW=w; }
+          if(showFlags){ const w=ctx.measureText('🚩 Needs repair').width; if(w>maxLabelW) maxLabelW=w; }
           let maxAreaW=0;
           if(haveAreas){
             sts.forEach(s=>{ const w=ctx.measureText(fmtA(areaByState[s.id]||0)).width; if(w>maxAreaW) maxAreaW=w; });
             if(showOpenTotal){ const w=ctx.measureText(fmtA(openTotal)).width; if(w>maxAreaW) maxAreaW=w; }
           }
-          const contentW=SW+Math.round(LF*0.7)+maxLabelW+(haveAreas?GAP+maxAreaW:0);
+          if(showFlags){ const w=ctx.measureText(String(flagCount)).width; if(w>maxAreaW) maxAreaW=w; }
+          const contentW=SW+Math.round(LF*0.7)+maxLabelW+((haveAreas||showFlags)?GAP+maxAreaW:0);
           const boxW=Math.round(contentW+LP*2);
-          const totalRows=sts.length+(showOpenTotal?1:0);
+          const totalRows=sts.length+(showOpenTotal?1:0)+(showFlags?1:0);
           const boxH=Math.round(LP*1.5+ROW+ROW*totalRows);
           const bx=LP, by=LP, br=Math.round(LF*0.4);
           const areaRightX=bx+boxW-LP;
@@ -3757,6 +3841,16 @@ async function _compositeBrandWordmark(blob, legendCat, pid, scopeEntryId){
             ctx.font=`700 ${LF}px system-ui, sans-serif`;
             ctx.textAlign='left'; ctx.fillStyle='#ffffff'; ctx.fillText('Total open', bx+LP, cy);
             ctx.textAlign='right'; ctx.fillStyle='#C9A84C'; ctx.fillText(fmtA(openTotal), areaRightX, cy);
+            ry+=ROW;
+          }
+          // open repair flags — any category; the punchlist count in the shot
+          if(showFlags){
+            const cy=ry+ROW*0.5;
+            ctx.strokeStyle='rgba(255,255,255,0.25)'; ctx.lineWidth=Math.max(1,Math.round(LF*0.06));
+            ctx.beginPath(); ctx.moveTo(bx+LP, ry+Math.round(ROW*0.08)); ctx.lineTo(bx+boxW-LP, ry+Math.round(ROW*0.08)); ctx.stroke();
+            ctx.font=`700 ${LF}px system-ui, sans-serif`;
+            ctx.textAlign='left'; ctx.fillStyle='#ffffff'; ctx.fillText('🚩 Needs repair', bx+LP, cy);
+            ctx.textAlign='right'; ctx.fillStyle='#E67E22'; ctx.fillText(String(flagCount), areaRightX, cy);
           }
           ctx.restore();
         }
@@ -4098,6 +4192,8 @@ function mapRenderTrackerLayers(){
     _trackerClickHandlerRegistered=true;
     _mapInstance.on('click',e=>{
       if(_drawMode) return;
+      // Placing a repair flag — that tap belongs to the flag placement handler.
+      if(_placingFlagParentId) return;
       const clickTarget=e.originalEvent&&e.originalEvent.target;
       // Don't open tracker popup when user clicked a photo pin or field marker
       if(clickTarget&&clickTarget.closest&&(
@@ -4134,7 +4230,10 @@ function mapRenderTrackerLayers(){
   }
 
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
-  const entries=(typeof trGetEntriesForProject==='function')?trGetEntriesForProject(pid).filter(e=>!e.deletedFromMap&&!e.archivedFromMap):[];
+  // Repair flags honor the FAB visibility toggle (open temporaries only — resolved
+  // ones are archived and never reach the map anyway).
+  const _flagsOn=_flagsVisible();
+  const entries=(typeof trGetEntriesForProject==='function')?trGetEntriesForProject(pid).filter(e=>!e.deletedFromMap&&!e.archivedFromMap&&(_flagsOn||!(e.temporary&&e.tempStatus!=='resolved'))):[];
   const cats=_sortCatsByOrder((typeof tcGetCategories==='function')?tcGetCategories(pid):[],pid);
 
   const byCategory={};
@@ -4154,9 +4253,11 @@ function mapRenderTrackerLayers(){
     const visible=_tcLayerVisible[cat.id]!==false;
     const geojson={type:'FeatureCollection',features:(visible?byCategory[cat.id]:[]).map(e=>{
       // Per-state render props: stateColor drives fill/line color; faint = plan baseline.
+      // Open repair flags render attention-amber regardless of state colors.
+      const _openTemp=!!(e.temporary&&e.tempStatus!=='resolved');
       const st=(typeof tcEntryState==='function')?tcEntryState(e,cat,_rtPid):null;
-      const faint=st?!!st.isPlanned:(e.entryType==='planned');
-      const stateColor=(st&&/^#[0-9A-Fa-f]{6}$/.test(st.color))?st.color:color;
+      const faint=_openTemp?false:(st?!!st.isPlanned:(e.entryType==='planned'));
+      const stateColor=_openTemp?'#C9A84C':((st&&/^#[0-9A-Fa-f]{6}$/.test(st.color))?st.color:color);
       return {
         type:'Feature',
         id:e.id,
@@ -4313,18 +4414,19 @@ function _showTrackerEntryPopup(lngLat,props){
   const _isPub=!!entry?.published;
   const shareBtn=_mineEntry?`<button onclick="mapShareTrackerEntry('${props.id}')" style="${_TRP_BTN}grid-column:1/-1;background:${_isPub?'rgba(79,209,197,0.15)':'var(--s2,#1a2a38)'};border:1px solid ${_isPub?'#4FD1C5':'var(--border,#334)'};color:${_isPub?'#4FD1C5':'var(--muted,#888)'}" title="${_isPub?'Visible to project members — tap to unshare':'Publish this drawing to project members now'}">${_isPub?'🌐 Shared with project ✓':'📤 Share with project'}</button>`:'';
   const sharedByNote=(!_mineEntry&&entry)?`<div style="font-size:10px;color:#4FD1C5;margin-top:4px;border-top:1px solid rgba(255,255,255,.08);padding-top:4px">🌐 Shared by a project member</div>`:'';
-  // Temporary / maintenance item (open-until-resolved). Owner-only controls.
+  // Repair flag (open-until-resolved point marker). Owner-only controls.
   const _isTemp=!!(entry&&entry.temporary&&entry.tempStatus!=='resolved');
-  const tempStatusLine=_isTemp?`<div style="color:#C9A84C;display:flex;align-items:center;gap:6px;margin-top:2px">⏱ <b>${(entry.tempLabel||'Temporary').replace(/</g,'&lt;')}</b><span style="opacity:.7">· ${entry.tempType==='note'?'note':'maintenance'}</span></div>`:'';
+  const tempStatusLine=_isTemp?`<div style="color:#C9A84C;display:flex;align-items:center;gap:6px;margin-top:2px">🚩 <b>${(entry.tempLabel||'Repair').replace(/</g,'&lt;')}</b><span style="opacity:.7">· needs attention</span></div>`:'';
   const tempBtn=_mineEntry?(_isTemp
-    ?`<button onclick="mapResolveTemporary('${props.id}')" style="${_TRP_BTN}background:rgba(39,174,96,0.18);border:1px solid #27AE60;color:#27AE60" title="Mark resolved — leaves the live map but stays in the record">✓ Resolve</button>`
-    :`<button onclick="mapDrawTemporary('${props.id}')" style="${_TRP_BTN}background:var(--s2,#1a2a38);border:1px solid var(--border,#334);color:var(--muted,#888)" title="Draw a temporary / maintenance area on this drawing (damaged section) — shows until resolved, never counts toward totals">⏱ Temporary</button>`):'';
+    ?`<button onclick="mapResolveTemporary('${props.id}')" style="${_TRP_BTN}background:rgba(39,174,96,0.18);border:1px solid #27AE60;color:#27AE60" title="Mark fixed — leaves the live map but stays in the punchlist record">✓ Fixed</button>`
+    :`<button onclick="mapFlagRepair('${props.id}')" style="${_TRP_BTN}background:var(--s2,#1a2a38);border:1px solid var(--border,#334);color:var(--muted,#888)" title="Pin a repair / needs-attention flag on this drawing — photo + note, shows on the punchlist until fixed">🚩 Flag repair</button>`):'';
   // Category identity = the multicolor state-ramp chip (same as the tracker log),
   // not a single dot. Falls back to the entry's state color for no-category drawings.
   const _dotFallback=(props.stateColor&&/^#[0-9A-Fa-f]{6}$/.test(props.stateColor))?props.stateColor:color;
   // Which STATE this drawing is in — shown in the always-visible info list.
   const _cat=(typeof tcGetCategory==='function')?tcGetCategory(props.categoryId,pid):null;
-  const _state=(entry&&typeof tcEntryState==='function')?tcEntryState(entry,_cat||props.categoryId,pid):null;
+  // A repair flag isn't a state layer — suppress the state line for it.
+  const _state=(entry&&!_isTemp&&typeof tcEntryState==='function')?tcEntryState(entry,_cat||props.categoryId,pid):null;
   const _stateColor=(props.stateColor&&/^#[0-9A-Fa-f]{6}$/.test(props.stateColor))?props.stateColor
     :((_state&&/^#[0-9A-Fa-f]{6}$/.test(_state.color))?_state.color:_dotFallback);
   const stateLine=_state?`<div style="color:#dce8f4;display:flex;align-items:center;gap:6px"><span style="width:9px;height:9px;border-radius:50%;background:${_stateColor};flex-shrink:0"></span>${_state.label}${_state.isPlanned?' (plan)':''}</div>`:'';
@@ -4342,7 +4444,7 @@ function _showTrackerEntryPopup(lngLat,props){
     if(_hasV(_f.requiredAmount)) _detailRows.push(['Required',_f.requiredAmount+(_f.requiredUnit?(' '+_f.requiredUnit):'')]);
     if(_hasV(_f.actualAmount)) _detailRows.push(['Actual',_f.actualAmount+(_f.actualUnit?(' '+_f.actualUnit):'')]);
   }
-  if(entry) _detailRows.push(['Type',_isPlanned?'Planned':'Installed']);
+  if(entry&&!_isTemp) _detailRows.push(['Type',_isPlanned?'Planned':'Installed']);
   const detailsBlock=_detailRows.length?`<div style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,.12)">
     <div onclick="mapTogglePopupDetails(this)" style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:11px;color:#dce8f4;user-select:none">
       <span>ℹ️ Details</span>
@@ -4378,7 +4480,7 @@ function _showTrackerEntryPopup(lngLat,props){
         <span class="_trp-chev" style="margin-left:auto;display:inline-block;transition:transform .15s">▸</span>
       </div>
       <div class="_trp-actions" style="display:none;margin-top:8px">
-        ${entry?`<button onclick="mapActivatePlannedEntry('${props.id}')" style="${_TRP_BTN}padding:11px 4px;font-size:12px;background:rgba(201,168,76,0.22);border:1px solid var(--amber,#C9A84C);color:var(--amber,#C9A84C);font-weight:700" title="${entry?.entryType==='planned'?'Draw overlays on this plan':'Stack the next state on this layer'}">📍 Activate</button>
+        ${entry?`${_isTemp?'':`<button onclick="mapActivatePlannedEntry('${props.id}')" style="${_TRP_BTN}padding:11px 4px;font-size:12px;background:rgba(201,168,76,0.22);border:1px solid var(--amber,#C9A84C);color:var(--amber,#C9A84C);font-weight:700" title="${entry?.entryType==='planned'?'Draw overlays on this plan':'Stack the next state on this layer'}">📍 Activate</button>`}
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px">
           <button onclick="mapToggleDateLabel('${props.id}')" style="${_TRP_BTN}background:${labelOn?'rgba(201,168,76,0.2)':'var(--s2,#1a2a38)'};border:1px solid ${labelOn?'var(--amber,#C9A84C)':'var(--border,#334)'};color:${labelOn?'var(--amber,#C9A84C)':'var(--muted,#888)'}">🔖${labelOn?' On':' Label'}</button>
           <button onclick="mapHighlightEntry('${props.id}')" style="${_TRP_BTN}background:var(--s2,#1a2a38);border:1px solid var(--border,#334);color:var(--muted,#888)" title="Make this drawing stand out on the map">✨ Highlight</button>
@@ -4418,70 +4520,207 @@ async function mapShareTrackerEntry(id){
 }
 window.mapShareTrackerEntry=mapShareTrackerEntry;
 
-// ── Temporary / maintenance item flow ──
-// A temporary/maintenance item is DRAWN as an overlay on top of an existing
-// drawing (the damaged section), using the same snap/anchor flow as states/
-// layers — it never flags the whole parent. Pick a label + type, then draw the
-// affected area; it shows on the live map (⚠ amber flag) until resolved, never
-// counts toward totals, and is never deleted. Foundation of the punchlist.
-function mapDrawTemporary(id){
+// ── Repair flag flow (point-marker punchlist, locked 2026-07-01) ──
+// A repair/needs-attention item is a lightweight POINT MARKER pinned on the
+// damaged spot — not a state change and not a drawn overlay (drawn lines carry
+// the still-open iOS line-draw bugs). It carries a note + field photo, shows on
+// the live map (amber dot + 🚩 label) and the compliance-page punchlist until
+// resolved, never counts toward totals, and is never deleted. Works on ANY
+// tracker drawing (silt fence, disturbance, seeding…).
+
+// FAB visibility toggle for flags — tiny per-project pref, localStorage tier.
+function _flagsVisible(){
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
-  const e=(typeof trGetEntry==='function')?trGetEntry(id,pid):null;
-  if(!e) return;
+  try{ return localStorage.getItem('gl_flags_vis::'+pid)!=='0'; }catch{ return true; }
+}
+function mapToggleRepairFlags(){
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const next=!_flagsVisible();
+  try{ localStorage.setItem('gl_flags_vis::'+pid,next?'1':'0'); }catch{}
+  _syncFlagFabBtn();
+  mapRenderTrackerLayers();
+  if(typeof showCloudBanner==='function') showCloudBanner(next?'🚩 Repair flags shown':'🚩 Repair flags hidden');
+}
+window.mapToggleRepairFlags=mapToggleRepairFlags;
+function _syncFlagFabBtn(){
+  const btn=document.getElementById('map-fab-flags-btn');
+  if(btn) btn.classList.toggle('active',_flagsVisible());
+}
+
+// Step 1 — popup 🚩 → pick the spot. One follow-up tap places the flag.
+function mapFlagRepair(parentId){
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const parent=(typeof trGetEntry==='function')?trGetEntry(parentId,pid):null;
+  if(!parent||!_mapInstance) return;
   if(_trackerPopup){_trackerPopup.remove();_trackerPopup=null;}
-  document.getElementById('_mt-ov')?.remove();
+  _placingFlagParentId=parentId;
+  // Cancel chip (mirrors the highlight chip pattern).
+  document.getElementById('_rf-cancel-chip')?.remove();
+  const chip=document.createElement('div');
+  chip.id='_rf-cancel-chip';
+  chip.style.cssText='position:fixed;top:calc(var(--app-bar-h,60px) + 10px);left:50%;transform:translateX(-50%);z-index:5100;background:var(--bg);border:1px solid var(--amber,#C9A84C);color:var(--amber,#C9A84C);font-family:var(--mono);font-size:11px;padding:7px 14px;border-radius:20px;cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,.5)';
+  chip.textContent='🚩 Tap the damaged spot — or tap here to cancel';
+  chip.onclick=()=>_cancelFlagPlacement();
+  document.body.appendChild(chip);
+  _mapInstance.once('click',_onFlagPlaceClick);
+}
+window.mapFlagRepair=mapFlagRepair;
+function _cancelFlagPlacement(){
+  _placingFlagParentId=null;
+  document.getElementById('_rf-cancel-chip')?.remove();
+  try{ _mapInstance&&_mapInstance.off('click',_onFlagPlaceClick); }catch{}
+}
+// Page-switch guard (called from showPage): only tears down the PLACEMENT step —
+// an open flag sheet is a modal overlay and manages itself.
+function mapCancelFlagPlacement(){ if(!document.getElementById('_rf-ov')) _cancelFlagPlacement(); }
+window.mapCancelFlagPlacement=mapCancelFlagPlacement;
+function _onFlagPlaceClick(e){
+  const parentId=_placingFlagParentId;
+  if(!parentId){ return; }
+  const lngLat=[e.lngLat.lng,e.lngLat.lat];
+  document.getElementById('_rf-cancel-chip')?.remove();
+  // Keep _placingFlagParentId set until the sheet closes so the tracker popup
+  // click handler stays suppressed for this tap; the sheet clears it.
+  _showRepairFlagSheet(parentId,lngLat,null);
+}
+
+// Step 2 — the flag sheet: what's wrong + field photo. Sits ABOVE the bottom
+// nav (95px + safe-area) — the old temporary sheet covering the nav was a bug.
+function _showRepairFlagSheet(parentId,lngLat,existing){
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const parent=(typeof trGetEntry==='function')?trGetEntry(parentId,pid):null;
+  document.getElementById('_rf-ov')?.remove();
+  _pendingPhotoIds=existing?[...(existing.photoIds||[])]:[];
+  const parentName=(parent&&(parent.categoryName||parent.location))||'drawing';
   const ov=document.createElement('div');
-  ov.className='modal-overlay'; ov.id='_mt-ov';
+  ov.className='modal-overlay'; ov.id='_rf-ov';
   ov.style.cssText='z-index:5200;align-items:flex-end;padding:0';
-  ov.innerHTML=`<div style="width:100%;background:var(--bg);border-top:1px solid var(--border);border-radius:16px 16px 0 0;padding:16px 16px env(safe-area-inset-bottom);display:flex;flex-direction:column;gap:12px">
-    <div class="modal-title" style="margin:0;font-size:15px">⏱ Temporary / maintenance item</div>
-    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);line-height:1.5">Next you'll <b>draw the affected area</b> on top of this drawing (snap/anchor work just like layers). It shows until you resolve it, doesn't count toward totals, and is never deleted.</div>
+  ov.innerHTML=`<div style="width:100%;background:var(--bg);border-top:1px solid var(--border);border-radius:16px 16px 0 0;padding:16px 16px calc(95px + env(safe-area-inset-bottom) + 12px);display:flex;flex-direction:column;gap:12px;max-height:calc(100dvh - var(--app-bar-h,60px) - 20px);overflow-y:auto">
+    <div class="modal-title" style="margin:0;font-size:15px">🚩 ${existing?'Edit repair flag':'Flag a repair'}</div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);line-height:1.5">Pinned on <b>${String(parentName).replace(/</g,'&lt;')}</b>. Shows on the map and the punchlist until it's marked fixed. Never counts toward totals.</div>
     <div>
-      <label style="${_LABEL_STYLE}">Label</label>
-      <input type="text" id="_mt-label" maxlength="60" value="" placeholder="e.g. damaged silt fence" style="${_INPUT_STYLE}width:100%;box-sizing:border-box">
+      <label style="${_LABEL_STYLE}">What's wrong</label>
+      <input type="text" id="_rf-label" maxlength="60" value="${existing?String(existing.tempLabel||'').replace(/"/g,'&quot;'):''}" placeholder="e.g. blown-out section, undercut, torn fabric" style="${_INPUT_STYLE}width:100%;box-sizing:border-box">
     </div>
     <div>
-      <label style="${_LABEL_STYLE}">Type</label>
-      <select id="_mt-type" style="${_INPUT_STYLE}width:100%;box-sizing:border-box">
-        <option value="maintenance" selected>Maintenance / needs attention</option>
-        <option value="note">Note</option>
-      </select>
+      <label style="${_LABEL_STYLE}">Details (optional)</label>
+      <textarea id="_rf-notes" rows="2" placeholder="Anything the crew needs to know…" style="${_INPUT_STYLE}width:100%;box-sizing:border-box;resize:vertical">${existing?String(existing.notes||'').replace(/</g,'&lt;'):''}</textarea>
+    </div>
+    <div>
+      <label style="${_LABEL_STYLE}">Field photo</label>
+      <div id="_rf-photo-strip" style="display:flex;gap:6px;overflow-x:auto;padding:2px 0;min-height:8px"></div>
+      <div style="display:flex;gap:8px;margin-top:6px">
+        <button id="_rf-take" style="flex:1;padding:10px 4px;border-radius:8px;font-family:var(--mono);font-size:12px;background:rgba(201,168,76,0.15);border:1px solid var(--amber,#C9A84C);color:var(--amber,#C9A84C);cursor:pointer">📷 Take photo</button>
+        <button id="_rf-attach" style="flex:1;padding:10px 4px;border-radius:8px;font-family:var(--mono);font-size:12px;background:var(--s1);border:1px solid var(--border);color:var(--muted);cursor:pointer">🖼 Attach existing</button>
+      </div>
+      <input type="file" id="_rf-file" accept="image/*" capture="environment" style="display:none">
     </div>
     <div style="display:flex;gap:8px">
-      <button class="modal-cancel" id="_mt-cancel" style="flex:1">Cancel</button>
-      <button class="modal-confirm" id="_mt-save" style="flex:1">Draw area →</button>
+      <button class="modal-cancel" id="_rf-cancel" style="flex:1">Cancel</button>
+      <button class="modal-confirm" id="_rf-save" style="flex:1">${existing?'Save changes':'🚩 Pin flag'}</button>
     </div>
   </div>`;
   document.body.appendChild(ov);
-  const close=()=>ov.remove();
-  ov.querySelector('#_mt-cancel').onclick=close;
-  ov.addEventListener('click',ev=>{ if(ev.target===ov) close(); });
-  ov.querySelector('#_mt-save').onclick=()=>{
-    const label=ov.querySelector('#_mt-label').value.trim();
-    const type=ov.querySelector('#_mt-type').value||'maintenance';
-    close();
-    // Arm the next drawn overlay as temporary, link it to this drawing, and enter
-    // the normal snap/anchor draw flow on the parent's category (mirrors Activate).
-    _pendingTemporary={label,type};
-    _activePlannedEntryId=id;
-    _drawEntryType='installed';
-    const catId=e.categoryId||e.category;
-    if(!_drawMode) mapActivateDrawMode(catId);
-    else _updateActivePlanIndicator();
-    if(typeof showCloudBanner==='function') showCloudBanner('⏱ Draw the affected area — snap works. Finish to save it as a temporary item.');
+  const done=()=>{ ov.remove(); _placingFlagParentId=null; _pendingPhotoIds=[]; };
+  ov.querySelector('#_rf-cancel').onclick=done;
+  ov.addEventListener('click',ev=>{ if(ev.target===ov) done(); });
+  _rfRefreshStrip();
+  // Take photo — straight into the camera on mobile, routed through the normal
+  // photo pipeline (EXIF, thumb, Storage), then auto-linked to this flag.
+  ov.querySelector('#_rf-take').onclick=()=>ov.querySelector('#_rf-file').click();
+  ov.querySelector('#_rf-file').addEventListener('change',async ev=>{
+    const files=ev.target.files;
+    if(!files||!files.length) return;
+    const before=new Set((window._phPhotos||[]).map(p=>p.id));
+    const btn=ov.querySelector('#_rf-take');
+    btn.textContent='⏳ Saving…'; btn.disabled=true;
+    try{ await phHandleFiles(files); }catch(err){ console.warn('flag photo:',err); }
+    (window._phPhotos||[]).forEach(p=>{ if(!before.has(p.id)&&!_pendingPhotoIds.includes(p.id)) _pendingPhotoIds.push(p.id); });
+    btn.textContent='📷 Take photo'; btn.disabled=false;
+    _rfRefreshStrip();
+  });
+  ov.querySelector('#_rf-attach').onclick=()=>mapShowEntryPhotoPicker();
+  ov.querySelector('#_rf-save').onclick=()=>{
+    const label=ov.querySelector('#_rf-label').value.trim();
+    const notes=ov.querySelector('#_rf-notes').value.trim();
+    if(!label){ ov.querySelector('#_rf-label').focus(); return; }
+    _saveRepairFlag(parentId,lngLat,existing,label,notes,[..._pendingPhotoIds]);
+    done();
   };
 }
-window.mapDrawTemporary=mapDrawTemporary;
+// The flag sheet's photo strip (thumbs + remove). The attach picker's Done
+// button calls mapRefreshEntryPhotoStrip(), which also refreshes this strip.
+function _rfRefreshStrip(){
+  const strip=document.getElementById('_rf-photo-strip');
+  if(!strip) return;
+  const photos=_pendingPhotoIds.map(id=>(window._phPhotos||[]).find(p=>p.id===id)).filter(Boolean);
+  strip.innerHTML=photos.map(p=>`
+    <div style="position:relative;flex-shrink:0">
+      <img src="${p.thumb}" style="width:64px;height:48px;object-fit:cover;border-radius:4px;display:block;border:2px solid var(--amber,#C9A84C)">
+      <button onclick="mapRemoveEntryPhoto('${p.id}');_rfRefreshStrip&&_rfRefreshStrip()" style="position:absolute;top:-5px;right:-5px;background:#c0392b;border:none;border-radius:50%;width:16px;height:16px;font-size:9px;color:#fff;cursor:pointer;padding:0;display:flex;align-items:center;justify-content:center">✕</button>
+    </div>`).join('');
+}
+window._rfRefreshStrip=_rfRefreshStrip;
 
+// Step 3 — save: the flag is a real tracker entry (Point geometry, temporary
+// lifecycle) so photos, sharing, cloud sync, and resolve all come for free.
+function _saveRepairFlag(parentId,lngLat,existing,label,notes,photoIds){
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const parent=(typeof trGetEntry==='function')?trGetEntry(parentId,pid):null;
+  const today=document.getElementById('reportDate')?.value||new Date().toLocaleDateString('en-CA');
+  const entry=existing?{...existing}:{
+    date:today,
+    categoryId:(parent&&(parent.categoryId||parent.category))||null,
+    categoryName:(parent&&parent.categoryName)||null,
+    measurementType:null,
+    geometry:{type:'Point',coordinates:lngLat},
+    centroidLng:lngLat[0], centroidLat:lngLat[1],
+    acres:null, measurementValue:null, measurementUnit:null,
+    location:null, phase:null, method:null, status:null, contractor:null,
+    fields:{}, seedMix:null, showDateLabel:false, labelText:null, labelColor:null,
+    entryType:'installed', parentId:parentId, state:null,
+    temporary:true, tempStatus:'open', tempType:'repair',
+  };
+  entry.tempLabel=label.slice(0,60);
+  entry.notes=notes||null;
+  entry.photoIds=photoIds;
+  const saved=(typeof trSaveEntry==='function')?trSaveEntry(entry,pid):null;
+  mapRenderTrackerLayers();
+  if(typeof clRenderTrackerCard==='function') clRenderTrackerCard();
+  if(typeof showCloudBanner==='function') showCloudBanner(existing?'🚩 Flag updated.':'🚩 Flag pinned — it\'s on the punchlist until fixed.');
+  return saved;
+}
+
+// Resolve = "fixed" — timestamp + optional note into the punchlist history;
+// the flag leaves the live map but stays in the record (never deleted).
 function mapResolveTemporary(id){
   if(typeof trResolveTemporary!=='function') return;
-  _confirmModal('Mark this temporary item resolved? It leaves the live map but is kept in the project record (never deleted).',function(){
-    trResolveTemporary(id);
+  document.getElementById('_rfr-ov')?.remove();
+  const ov=document.createElement('div');
+  ov.className='modal-overlay'; ov.id='_rfr-ov';
+  ov.style.cssText='z-index:9000';
+  ov.innerHTML=`<div class="modal-box" style="max-width:320px;width:88%">
+    <div class="modal-title" style="margin-bottom:8px">✓ Mark fixed</div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.5">It leaves the live map but stays in the punchlist history (never deleted).</div>
+    <label style="${_LABEL_STYLE}">What was done (optional)</label>
+    <textarea id="_rfr-note" rows="2" placeholder="e.g. section replaced, re-trenched and staked" style="${_INPUT_STYLE}width:100%;box-sizing:border-box;resize:vertical;margin-bottom:14px"></textarea>
+    <div class="modal-btns">
+      <button class="modal-confirm" id="_rfr-ok">✓ Fixed</button>
+      <button class="modal-cancel" id="_rfr-cancel">Cancel</button>
+    </div>
+  </div>`;
+  document.body.appendChild(ov);
+  ov.querySelector('#_rfr-cancel').onclick=()=>ov.remove();
+  ov.addEventListener('click',ev=>{ if(ev.target===ov) ov.remove(); });
+  ov.querySelector('#_rfr-ok').onclick=()=>{
+    const note=ov.querySelector('#_rfr-note').value.trim();
+    ov.remove();
+    trResolveTemporary(id,undefined,note);
     if(_trackerPopup){_trackerPopup.remove();_trackerPopup=null;}
     if(typeof mapRenderTrackerLayers==='function') mapRenderTrackerLayers();
     if(typeof clRender==='function') clRender();
-    if(typeof showCloudBanner==='function') showCloudBanner('✓ Resolved — filed in the record.');
-  },'Resolve item','Resolve');
+    if(typeof showCloudBanner==='function') showCloudBanner('✓ Fixed — filed in the punchlist history.');
+  };
 }
 window.mapResolveTemporary=mapResolveTemporary;
 
@@ -4527,6 +4766,13 @@ function mapEditTrackerEntry(entryId){
   const entry=(typeof trGetEntry==='function')?trGetEntry(entryId,pid):null;
   if(!entry) return;
   if(_trackerPopup){_trackerPopup.remove();_trackerPopup=null;}
+  // Repair flags are simple point markers — edit through their own slim sheet,
+  // not the full drawing modal (which expects a drawn shape + measurements).
+  if(entry.temporary&&entry.geometry&&(typeof entry.geometry==='string'?entry.geometry.includes('"Point"'):entry.geometry.type==='Point')){
+    const g=typeof entry.geometry==='string'?JSON.parse(entry.geometry):entry.geometry;
+    _showRepairFlagSheet(entry.parentId,g.coordinates,entry);
+    return;
+  }
   _editingEntryId=entryId;
   _pendingDrawFeature={geometry:entry.geometry};
   _drawCategory=entry.categoryId||entry.category;
@@ -4780,6 +5026,9 @@ function mapToggleEntryPhoto(photoId, el){
   }
 }
 function mapRefreshEntryPhotoStrip(){
+  // The repair-flag sheet shares _pendingPhotoIds + the attach picker — keep its
+  // strip in sync too (no-ops when the sheet isn't open).
+  if(typeof _rfRefreshStrip==='function') _rfRefreshStrip();
   const strip=document.getElementById('map-tr-photo-strip');
   if(!strip) return;
   const photos=_pendingPhotoIds.map(id=>(window._phPhotos||[]).find(p=>p.id===id)).filter(Boolean);

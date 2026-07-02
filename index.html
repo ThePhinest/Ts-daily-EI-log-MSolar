@@ -2251,6 +2251,7 @@ Anticipated rain — AM weather monitoring expected"></textarea>
       <div class="map-fab-row"><span class="map-fab-lbl">Measure</span><button class="map-fab-btn" id="map-fab-measure-btn" onclick="mapFabMeasure()" title="Measure area / distance">📏</button></div>
       <div class="map-fab-row"><span class="map-fab-lbl">Tracker</span><button class="map-fab-btn" id="map-fab-tracker-btn" onclick="mapShowTrackerSheet()" title="Manage tracker categories">☰</button></div>
       <div class="map-fab-row"><span class="map-fab-lbl">Capture</span><button class="map-fab-btn" id="map-fab-capture-btn" onclick="mapCaptureMapView()" title="Capture the map view as a photo">📷</button></div>
+      <div class="map-fab-row"><span class="map-fab-lbl">Flags</span><button class="map-fab-btn" id="map-fab-flags-btn" onclick="mapToggleRepairFlags()" title="Show / hide repair flags on the map">🚩</button></div>
     </div>
 
     <!-- Draw mode indicator bar -->
@@ -2615,6 +2616,7 @@ Anticipated rain — AM weather monitoring expected"></textarea>
   </div>
 
   <!-- Today's Tracker Activity card (populated by clRenderTrackerCard) -->
+  <div id="cl-punchlist-card" style="display:none;margin-bottom:12px"></div>
   <div id="cl-tracker-card" style="display:none;margin-bottom:12px"></div>
 
   <!-- Auto-detect banner (shown when daily log has unlogged issues) -->
@@ -3589,8 +3591,11 @@ function showPage(name){
   if(name==='academy'){ if(typeof glRenderAcademyPage==='function') glRenderAcademyPage(); }
   if(name==='docs'){ if(typeof glRenderDocsPage==='function') glRenderDocsPage(); }
   // Leaving the map clears any active highlight (its chip is fixed-position and the
-  // pulse animation should stop when you're not looking at the map).
+  // pulse animation should stop when you're not looking at the map). Same for an
+  // in-progress repair-flag placement — its chip + armed click handler must not
+  // outlive the map page.
   if(name!=='map' && typeof mapClearHighlight==='function') mapClearHighlight();
+  if(name!=='map' && typeof mapCancelFlagPlacement==='function') mapCancelFlagPlacement();
   // Always land at the top of a freshly-opened page — #scroll-root keeps its scroll
   // position across page swaps, so without this Photos (and others) could open
   // mid-page or at the bottom.
