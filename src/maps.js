@@ -3482,10 +3482,17 @@ function _addCategoryFillLayer(srcId,cat){
 function _addCategoryLineLayer(srcId,cat){
   const color=cat.color||'#888';
   const lw=cat.lineWidth||2;
-  const dashArr=_TC_DASH_ARRAYS[cat.lineStyle||'solid']||null;
   const lineColor=['coalesce',['get','stateColor'],color];
   const paint={'line-color':lineColor,'line-width':['case',['get','faint'],Math.max(1,lw-0.5),lw],'line-opacity':['case',['get','faint'],0.45,0.9]};
-  if(dashArr) paint['line-dasharray']=dashArr;
+  // Per-STATE line style (ties the schema editor's state Style dropdown to the map;
+  // GL JS v3 line-dasharray is data-driven). Each feature carries `stateStyle`
+  // (state's style, falling back to the category-level lineStyle) — solid renders
+  // as a huge dash (expressions can't emit "no dasharray").
+  paint['line-dasharray']=['match',['get','stateStyle'],
+    'dashed',['literal',_TC_DASH_ARRAYS.dashed],
+    'dotted',['literal',_TC_DASH_ARRAYS.dotted],
+    'dash-dot',['literal',_TC_DASH_ARRAYS['dash-dot']],
+    ['literal',[1,0]]];
   _mapInstance.addLayer({id:srcId+'-line',type:'line',source:srcId,
     filter:['any',['==',['geometry-type'],'Polygon'],['==',['geometry-type'],'LineString']],paint});
 }
@@ -4258,10 +4265,13 @@ function mapRenderTrackerLayers(){
       const st=(typeof tcEntryState==='function')?tcEntryState(e,cat,_rtPid):null;
       const faint=_openTemp?false:(st?!!st.isPlanned:(e.entryType==='planned'));
       const stateColor=_openTemp?'#C9A84C':((st&&/^#[0-9A-Fa-f]{6}$/.test(st.color))?st.color:color);
+      // Per-state line style for the data-driven dasharray (schema editor's Style
+      // dropdown); falls back to the category-level lineStyle.
+      const stateStyle=_openTemp?'solid':((st&&st.style)||cat.lineStyle||'solid');
       return {
         type:'Feature',
         id:e.id,
-        properties:{id:e.id,categoryId:e.categoryId||e.category,categoryName:e.categoryName||e.category,date:e.date,acres:e.acres,measurementValue:e.measurementValue??null,measurementUnit:e.measurementUnit||null,notes:e.notes,location:e.location,phase:e.phase||null,method:e.method||null,status:e.status||null,contractor:e.contractor||null,entryType:e.entryType||'installed',state:e.state||null,stateColor,faint,temporary:!!(e.temporary&&e.tempStatus!=='resolved')},
+        properties:{id:e.id,categoryId:e.categoryId||e.category,categoryName:e.categoryName||e.category,date:e.date,acres:e.acres,measurementValue:e.measurementValue??null,measurementUnit:e.measurementUnit||null,notes:e.notes,location:e.location,phase:e.phase||null,method:e.method||null,status:e.status||null,contractor:e.contractor||null,entryType:e.entryType||'installed',state:e.state||null,stateColor,stateStyle,faint,temporary:!!(e.temporary&&e.tempStatus!=='resolved')},
         geometry:e.geometry
       };
     })};
