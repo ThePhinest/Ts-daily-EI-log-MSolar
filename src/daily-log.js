@@ -393,16 +393,21 @@ function _classifySoil(soilTempF, soilMoisture, hadSnowCode){
   return 'Dry';
 }
 
+// WMO weather codes (Open-Meteo): 51-55 drizzle, 56-57 freezing drizzle,
+// 61-65 rain, 66-67 freezing rain, 68-69 rain/snow, 71-77 snow, 80-82 rain
+// showers, 85-86 snow showers, 95+ thunder. The old buckets lumped plain rain
+// (61-65) in with freezing rain / mix — July storms displayed "Freezing Rain".
 function _wmoToSkyId(code){
   if(code === 0) return 'sky-clear';
   if(code <= 2) return 'sky-partly';
   if(code === 3) return 'sky-overcast';
   if(code <= 49) return 'sky-fog';
-  if(code <= 59) return 'sky-rain';
-  if(code <= 69) return 'sky-mix';
+  if(code === 56 || code === 57 || code === 66 || code === 67) return 'sky-mix'; // freezing drizzle/rain
+  if(code <= 65) return 'sky-rain';   // drizzle + rain
+  if(code <= 69) return 'sky-mix';    // rain/snow mixed
   if(code <= 79) return 'sky-snow';
-  if(code <= 84) return 'sky-rain';
-  if(code <= 94) return 'sky-mix';
+  if(code <= 84) return 'sky-rain';   // rain showers
+  if(code <= 86) return 'sky-snow';   // snow showers
   return 'sky-overcast';  // thunder
 }
 
@@ -545,11 +550,14 @@ function _wmoToDesc(code){
   if(code<=2) return 'Partly Cloudy';
   if(code===3) return 'Overcast';
   if(code<=49) return 'Fog';
-  if(code<=59) return 'Rain / Drizzle';
-  if(code<=69) return 'Freezing Rain';
+  if(code===56||code===57) return 'Freezing Drizzle';
+  if(code<=59) return 'Drizzle';
+  if(code===66||code===67) return 'Freezing Rain';
+  if(code<=65) return 'Rain';
+  if(code<=69) return 'Rain / Snow Mix';
   if(code<=79) return 'Snow';
   if(code<=84) return 'Rain Showers';
-  if(code<=94) return 'Snow Showers';
+  if(code<=86) return 'Snow Showers';
   return 'Thunderstorms';
 }
 

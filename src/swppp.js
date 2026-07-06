@@ -191,6 +191,17 @@ function swpppNewInspection(){
     photos: [], photoMeta: {},
     cert: { signedName: cfg.certification ? (cfg.certification.qiName||'') : '', signedDate: '' }
   };
+  // Auto-attach SWPPP-tagged field photos taken since the last inspection
+  // (7-day window when there's no previous report). Adjustable via the picker.
+  const sinceDate = prev ? prev.date : new Date(Date.now()-7*86400000).toLocaleDateString('en-CA');
+  const sinceTs = prev ? (prev.createdAt||0) : 0;
+  const autoPhotos = (window._phPhotos||[])
+    .filter(p=>!p.deletedAt && p.swppp && p.type!=='map_capture' && (!p.projectId || p.projectId===pid))
+    .filter(p=>(p.date||'') > sinceDate || ((p.date||'')===sinceDate && (p.uploadedAt||0) > sinceTs) || (!prev && (p.date||'') >= sinceDate))
+    .sort((a,b)=>(a.uploadedAt||0)-(b.uploadedAt||0))
+    .slice(0,24);
+  insp.photos = autoPhotos.map(p=>p.id);
+  autoPhotos.forEach(p=>{ insp.photoMeta[p.id] = { subject: p.caption||'', loc:'' }; });
   if(!_swInsp[pid]) _swInsp[pid]=[];
   _swInsp[pid].push(insp);
   _swQueueSave(insp);
@@ -262,9 +273,11 @@ function swSeg(groupId, value){
   const leaf = keys[keys.length-1];
   o[leaf] = (o[leaf]===value) ? '' : value;
   _swQueueSave(insp);
-  // DA condition toggles change row structure (deficient reveals the action
-  // input + row tint) — re-render the whole section, not just the segment.
+  // DA / discharge-point condition toggles change row structure (deficient
+  // reveals the notes input + row tint) — re-render the section, not just the
+  // segment (collapse state is preserved by _swRenderSection).
   if(keys[0]==='drainageAreas'){ _swRenderSection('sw-sec-da2'); return; }
+  if(keys[0]==='dischargePoints'){ _swRenderSection('sw-sec-dp'); return; }
   const el = document.getElementById(groupId);
   if(el) el.outerHTML = _swSegHtml(groupId, o[leaf], _swSegOpts[groupId]||[], keys);
 }
@@ -281,6 +294,14 @@ function _swSegHtml(groupId, current, opts, keys){
   return `<span class="sw-seg${ro}" id="${groupId}">${btns}</span>`;
 }
 function _swReadOnly(){ const i=_swGet(_swOpenId); return !!(i && i.status==='completed'); }
+
+// Collapse/expand every section card in the form at once.
+function swpppSetAllSections(collapse){
+  document.querySelectorAll('#swppp-form-wrap .card').forEach(c=>c.classList.toggle('collapsed', collapse));
+  if(!collapse && typeof autoResize==='function'){
+    document.querySelectorAll('#swppp-form-wrap textarea.auto-expand').forEach(t=>autoResize(t));
+  }
+}
 
 // ── Bulk DA actions ──
 function swpppDaAll(cond){
@@ -419,12 +440,21 @@ function _swRenderReportsInner(host, pid){
     <div style="margin-top:10px;text-align:right"><button class="btn btn-outline" style="font-size:10px;padding:4px 10px" onclick="swpppShowSetup()">⚙ Edit configuration</button></div>`;
 }
 
-// Section re-render (keeps text-input focus intact elsewhere).
+// Section re-render (keeps text-input focus intact elsewhere). The section
+// templates hardcode a default collapsed class — preserve the CURRENT state
+// across re-renders so tapping a chip never folds the card shut under you.
 function _swRenderSection(secId){
   const el = document.getElementById(secId);
   if(!el) return;
+  const wasCollapsed = el.classList.contains('collapsed');
   const html = _swSectionHtml[secId] ? _swSectionHtml[secId]() : null;
-  if(html!==null) el.outerHTML = html;
+  if(html===null) return;
+  el.outerHTML = html;
+  const ne = document.getElementById(secId);
+  if(ne){
+    ne.classList.toggle('collapsed', wasCollapsed);
+    if(!wasCollapsed && typeof autoResize==='function') ne.querySelectorAll('textarea.auto-expand').forEach(t=>autoResize(t));
+  }
 }
 var _swSectionHtml = {};
 
@@ -530,15 +560,19 @@ function _swRenderForm(){
     </div></div>`;
   };
 
-  // ── §3 discharge points ──
+  // ── §3 discharge points — same Acceptable/Deficient pattern as §2 ──
   _swSectionHtml['sw-sec-dp'] = ()=>{
     const i=_swGet(_swOpenId);
+    let s3=0;
     const rows=(cfg.dischargePoints||[]).map(dp=>{
-      const st=i.dischargePoints[dp.id]||{notes:''};
-      return `<div class="sw-dp-row">
+      const st=i.dischargePoints[dp.id]||{condition:'',notes:''};
+      const gid='sw-dp'+(s3++);
+      const showNotes = st.condition==='deficient';
+      return `<div class="sw-da-row${st.condition==='deficient'?' sw-da-def':''}">
         <div class="sw-da-id">${esc(dp.id)}</div>
         <div class="sw-da-desc">${esc(dp.location)}<br><span style="color:var(--muted)">→ ${esc(dp.receiving)}</span></div>
-        <input type="text" placeholder="Condition / notes…" value="${esc(st.notes||'')}" ${dis} oninput="swInp(event,'dischargePoints','${esc(dp.id)}','notes')">
+        <div>${_swSegHtml(gid, st.condition||'', [{v:'acceptable',l:'✓ Acceptable'},{v:'deficient',l:'⚠ Deficient',cls:'sw-warn'}], ['dischargePoints', dp.id, 'condition'])}</div>
+        ${showNotes?`<input type="text" class="sw-da-action" placeholder="Issue / notes…" value="${esc(st.notes||'')}" ${dis} oninput="swInp(event,'dischargePoints','${esc(dp.id)}','notes')">`:''}
       </div>`;
     }).join('');
     return `<div class="card collapsed" id="sw-sec-dp"><div class="card-head" onclick="toggleSection('sw-sec-dp')"><span class="card-num">3</span><span class="card-title">Points of Discharge</span><span class="card-chevron">▾</span></div><div class="card-body">
@@ -687,7 +721,7 @@ function _swRenderForm(){
       </div>`;
     }).join('');
     return `<div class="card collapsed" id="sw-sec-ph"><div class="card-head" onclick="toggleSection('sw-sec-ph')"><span class="card-num">11</span><span class="card-title">Photographic Documentation</span><span class="card-chevron">▾</span></div><div class="card-body">
-      <p class="sw-static-note">${esc(cfg.photosNote||'')} Tip: tag field photos as SWPPP (Photos page or map) and they sort first here.</p>
+      <p class="sw-static-note">${esc(cfg.photosNote||'')} 🌊 SWPPP-tagged photos taken since the last inspection attach automatically when the report is created; adjust with the picker.</p>
       ${rows}
       ${ro?'':`<button class="btn btn-outline" style="font-size:11px" onclick="swpppPickPhotos('photos')">📷 Select photos (${(i.photos||[]).length})</button>`}
     </div></div>`;
@@ -717,6 +751,10 @@ function _swRenderForm(){
       <button class="btn" style="margin-left:auto;font-size:11px" onclick="swpppExport('${insp.id}')">⬇ Export DOCX</button>
     </div>
     ${statusBar}
+    <div class="sw-tools">
+      <button class="btn btn-outline" onclick="swpppSetAllSections(false)">⌵ Expand all</button>
+      <button class="btn btn-outline" onclick="swpppSetAllSections(true)">︿ Collapse all</button>
+    </div>
     ${order.map(id=>_swSectionHtml[id]()).join('')}
     <div style="height:120px"></div>`;
   wrap.querySelectorAll('textarea.auto-expand').forEach(t=>{ if(typeof autoResize==='function') autoResize(t); });
@@ -844,10 +882,11 @@ async function swpppBuildDocx(insp,cfg){
   });
 
   // §3 Discharge points
-  const dpRows=[new TableRow({children:[hcell('Discharge Point ID',14),hcell('Location Description',38),hcell('Receiving Water',28),hcell('Condition / Notes',20)]})];
+  const dpRows=[new TableRow({children:[hcell('Discharge Point ID',14),hcell('Location Description',36),hcell('Receiving Water',26),hcell('Condition / Notes',24)]})];
   (cfg.dischargePoints||[]).forEach(dp=>{
     const st=(insp.dischargePoints||{})[dp.id]||{};
-    dpRows.push(new TableRow({children:[cell(dp.id,{bold:true,size:16}),cell(dp.location,{size:16,i:true}),cell(dp.receiving,{size:16,i:true}),cell(st.notes||'',{size:16})]}));
+    const cond=CB(st.condition==='acceptable')+'Acceptable   '+CB(st.condition==='deficient')+'Deficient'+(st.notes?` — ${st.notes}`:'');
+    dpRows.push(new TableRow({children:[cell(dp.id,{bold:true,size:16}),cell(dp.location,{size:16,i:true}),cell(dp.receiving,{size:16,i:true}),cell(cond,{size:16})]}));
   });
 
   // §4 Waterbodies
@@ -964,7 +1003,7 @@ async function swpppBuildDocx(insp,cfg){
       infoRow('Role / Credential:',C.roleCredential||''),
       infoRow('SWT #:',`${C.swtNumber||''}   |   Expires: ${C.swtExpires||''}`),
       infoRow('Organization:',C.organization||''),
-      infoRow('Signature:',(insp.cert&&insp.cert.signedName)?`/s/ ${insp.cert.signedName}`:''),
+      infoRow('Signature:',(insp.cert&&insp.cert.signedName)||''),
       infoRow('Date:',(insp.cert&&insp.cert.signedDate)||''),
       infoRow('Supervising QI / QP:',C.supervisingQi||''),
       infoRow('QP Signature:','')
@@ -1024,6 +1063,8 @@ async function swpppBuildDocx(insp,cfg){
   .sw-back{background:none;border:none;color:var(--text);font-size:26px;line-height:1;cursor:pointer;padding:4px 10px 4px 0}
   .sw-lockbar{display:flex;align-items:center;gap:10px;font-size:12px;padding:8px 12px;border-radius:8px;margin-bottom:12px;background:rgba(39,174,96,.12);border:1px solid #27AE60}
   .sw-lockbar-draft{background:rgba(230,160,30,.10);border-color:var(--amber)}
+  .sw-tools{display:flex;gap:8px;justify-content:flex-end;margin-bottom:10px}
+  .sw-tools .btn{font-size:10px;padding:4px 12px}
   .sw-static-note{font-size:10.5px;color:var(--muted);font-style:italic;margin:4px 0 10px;line-height:1.45}
   .sw-total-row{font-size:13px;padding:8px 10px;margin:6px 0 10px;background:rgba(230,160,30,.10);border:1px solid var(--amber);border-radius:8px}
   .sw-seg{display:inline-flex;flex-wrap:wrap;gap:5px}
@@ -1078,6 +1119,7 @@ window.swSeg = swSeg;
 window.swCaInp = swCaInp;
 window.swMetaInp = swMetaInp;
 window.swpppDaAll = swpppDaAll;
+window.swpppSetAllSections = swpppSetAllSections;
 window.swpppAddCorrective = swpppAddCorrective;
 window.swpppRemoveCorrective = swpppRemoveCorrective;
 window.swpppPickPhotos = swpppPickPhotos;
