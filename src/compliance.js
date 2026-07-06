@@ -228,6 +228,36 @@ function clSubmitForm(){
   clRender();
 }
 
+// ── Programmatic API — SWPPP QI report tie-in (swppp.js) ──
+// Open items feed the next inspection's §8 Corrective Actions; a completed
+// inspection's deficiencies land back here as normal compliance entries.
+function clGetOpenEntries(){
+  if(!_clEntries.length) clLoadLocal();
+  const pid = _activeProjectId();
+  return _clEntries.filter(e => e.status!=='Resolved' && (!e.projectId || e.projectId===pid)).slice();
+}
+function clAddEntries(items){
+  if(!Array.isArray(items) || !items.length) return 0;
+  if(!_clEntries.length) clLoadLocal();
+  items.forEach(it => {
+    _clEntries.push({
+      id: clGenId(),
+      date: it.date || new Date().toLocaleDateString('en-CA'),
+      level: it.level || 2,
+      location: it.location || '',
+      corrective: it.corrective || '',
+      status: 'Open', dateResolved: '',
+      sourceReport: it.sourceReport || '',
+      sourceInspection: it.sourceInspection || '',
+      addedBy: 'swppp-qi',
+      projectId: _activeProjectId()
+    });
+  });
+  clSave();
+  if(document.getElementById('page-compliance')?.classList.contains('active')) clRender();
+  return items.length;
+}
+
 // ── Delete with confirm modal ──
 function clConfirmDelete(id){
   const e = _clEntries.find(x=>x.id===id);
@@ -2282,6 +2312,8 @@ async function clInit(){
 
 // ── Expose to window for HTML onclick handlers and cross-module calls ──
 window._runningTotals = _runningTotals;   // shared math — swppp.js QI report reads the same net-open engine
+window.clGetOpenEntries = clGetOpenEntries;
+window.clAddEntries = clAddEntries;
 window.clInit = clInit;
 window.clRender = clRender;
 window.clAutoDetect = clAutoDetect;

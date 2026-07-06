@@ -1,9 +1,12 @@
 // ═══════════════════════════════════════════
 // GEO — net-area engine for mutually-exclusive state categories (SWPPP disturbance)
 // ═══════════════════════════════════════════
-// States are ordered; a LATER state WINS any overlap. Stabilizing an active area (drawing
-// a stabilization state on top) moves that ground OUT of "active" and INTO the stabilized
-// state — so per-state areas are the *current* (net) area in each state, never double-counted.
+// Precedence is CHRONOLOGICAL — the LAST-DRAWN entry WINS any overlap (report date,
+// then createdAt). The most recent observation of a piece of ground is its current
+// state, in ANY direction: stabilize active ground (temp over active), stabilize in
+// any order (temp over inactive), or RE-DISTURB stabilized ground (active drawn back
+// over final) — no fixed state ladder. (Was state-list order pre-2026-07-06, which
+// silently ignored re-disturbance; Tim: "there's no set order.")
 //
 // Non-destructive: drawings are NEVER mutated — net areas are computed from the drawn
 // geometry on demand (turf). The full set of drawings stays "on the record."
@@ -56,49 +59,55 @@ function _safeDiff(a, b){
   try{ return difference(featureCollection([a, b])); }catch{ return a; }
 }
 
+// Chronological sort key: report date (the day the ground condition was observed),
+// then createdAt for same-day ordering. Entries without a date sort first.
+function _chronoSort(a, b){
+  return String(a.e.date||'').localeCompare(String(b.e.date||''))
+    || (a.e.createdAt||0) - (b.e.createdAt||0);
+}
+
 // entries        : installed entries for ONE category (caller pre-filters planned/temporary/deleted)
-// orderedStates  : non-planned child states in order — precedence = index, LATER wins
+// orderedStates  : non-planned child states (defines the known state ids + output order)
+// Precedence     : chronological — each drawing minus everything drawn AFTER it.
 // Returns { netM2:{stateId:m²}, totalM2 } or null if no usable polygon geometry exists.
 function glStateNetAreasM2(entries, orderedStates){
   if(!Array.isArray(entries) || !Array.isArray(orderedStates) || !orderedStates.length) return null;
-  const byState = {}; let any = false;
-  orderedStates.forEach(s => { byState[s.id] = []; });
-  entries.forEach(e => {
-    const f = _parseGeom(e); if(!f) return;
-    const sid = e.state;
-    if(byState[sid]) { byState[sid].push(f); any = true; }
-    else { byState[orderedStates[0].id].push(f); any = true; } // unstated → first state
-  });
-  if(!any) return null;
+  const known = {}; orderedStates.forEach(s => { known[s.id] = true; });
+  const parsed = entries.map(e => ({ e, f: _parseGeom(e) })).filter(x => x.f);
+  if(!parsed.length) return null;
+  parsed.sort(_chronoSort);
 
-  const unions = orderedStates.map(s => _unionAll(byState[s.id]));
-  const netM2 = {};
-  orderedStates.forEach((s, i) => {
-    let g = unions[i];
-    if(g){
-      const later = _unionAll(unions.slice(i + 1)); // everything that wins over this state
-      if(later) g = _safeDiff(g, later);
-    }
-    netM2[s.id] = _safeArea(g);
+  const stateFeats = {}; orderedStates.forEach(s => { stateFeats[s.id] = []; });
+  parsed.forEach((x, i) => {
+    // Legacy unstated entries belong to the first state; an entry with a set-but-
+    // UNKNOWN state id is skipped (mis-attributing it to Active would corrupt the
+    // open total silently).
+    let sid = x.e.state;
+    if(!sid) sid = orderedStates[0].id;
+    else if(!known[sid]){ console.warn('glStateNetAreasM2: unknown state id on entry', x.e.id, sid); return; }
+    const later = _unionAll(parsed.slice(i + 1).map(y => y.f));
+    let g = x.f;
+    if(later) g = _safeDiff(g, later);
+    if(g) stateFeats[sid].push(g);
   });
-  const totalM2 = _safeArea(_unionAll(unions));
+  const netM2 = {};
+  orderedStates.forEach(s => { netM2[s.id] = _safeArea(_unionAll(stateFeats[s.id])); });
+  const totalM2 = _safeArea(_unionAll(parsed.map(x => x.f)));
   return { netM2, totalM2 };
 }
 
-// Per-ENTRY net area (m²): each drawing's geometry minus the union of all LATER-state
-// drawings (later state wins). So a list of drawings shows each one's CURRENT contribution
-// after stabilization is drawn on top — not the misleading gross drawn size. Returns
-// { entryId: m² } or null. (For one-drawing-per-state this equals the per-state net.)
+// Per-ENTRY net area (m²): each drawing's geometry minus the union of everything
+// drawn AFTER it (chronological — later drawing wins, matching glStateNetAreasM2).
+// So a list of drawings shows each one's CURRENT contribution after later work is
+// drawn on top — not the misleading gross drawn size. Returns { entryId: m² } or null.
 function glEntryNetAreasM2(entries, orderedStates){
   if(!Array.isArray(entries) || !Array.isArray(orderedStates) || !orderedStates.length) return null;
-  const prec = {}; orderedStates.forEach((s, i) => { prec[s.id] = i; });
-  const parsed = entries
-    .map(e => ({ e, f: _parseGeom(e), p: (prec[e.state] != null ? prec[e.state] : 0) }))
-    .filter(x => x.f);
+  const parsed = entries.map(e => ({ e, f: _parseGeom(e) })).filter(x => x.f);
   if(!parsed.length) return null;
+  parsed.sort(_chronoSort);
   const out = {};
-  parsed.forEach(x => {
-    const later = _unionAll(parsed.filter(y => y.p > x.p).map(y => y.f));
+  parsed.forEach((x, i) => {
+    const later = _unionAll(parsed.slice(i + 1).map(y => y.f));
     let g = x.f;
     if(later) g = _safeDiff(g, later);
     out[x.e.id] = _safeArea(g);

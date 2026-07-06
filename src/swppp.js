@@ -191,6 +191,20 @@ function swpppNewInspection(){
     photos: [], photoMeta: {},
     cert: { signedName: cfg.certification ? (cfg.certification.qiName||'') : '', signedDate: '' }
   };
+  // §8 prefill — open Compliance-log items carry forward onto every new
+  // inspection until they're resolved (a deficiency found Tuesday shows on
+  // Friday's report automatically). Rows are tagged so completing this
+  // inspection never round-trips them back into the compliance log.
+  try{
+    const openCl = (typeof clGetOpenEntries==='function') ? clGetOpenEntries() : [];
+    insp.corrective = openCl.map(e=>({
+      dateId: e.date || today,
+      location: e.location || '',
+      desc: 'Open compliance item' + (e.level?` (Level ${e.level})`:'') + ' — carried from the Compliance log',
+      action: e.corrective || '',
+      fromComplianceId: e.id
+    }));
+  }catch(err){ console.warn('swppp §8 prefill failed:', err.message); }
   // Auto-attach SWPPP-tagged field photos taken since the last inspection
   // (7-day window when there's no previous report). Adjustable via the picker.
   const sinceDate = prev ? prev.date : new Date(Date.now()-7*86400000).toLocaleDateString('en-CA');
@@ -220,6 +234,32 @@ function swpppRefreshDaSummary(){
   if(fresh){ insp.daSummary = fresh; _swQueueSave(insp); _swRenderSection('sw-sec-das'); }
 }
 
+// Everything the inspection flagged as a problem, shaped as compliance-log rows.
+// §8 rows that were PREFILLED from the compliance log are skipped (already there).
+function _swCollectDeficiencies(insp){
+  const out=[]; const date=insp.date;
+  Object.entries(insp.drainageAreas||{}).forEach(([id,st])=>{
+    if(st && st.condition==='deficient') out.push({date, level:2, location:'Drainage area '+id, corrective:st.action||'', sourceReport:date, sourceInspection:insp.id});
+  });
+  Object.entries(insp.dischargePoints||{}).forEach(([id,st])=>{
+    if(st && st.condition==='deficient') out.push({date, level:2, location:'Discharge point '+id, corrective:st.notes||'', sourceReport:date, sourceInspection:insp.id});
+  });
+  Object.entries(insp.bmps||{}).forEach(([name,st])=>{
+    if(!st) return;
+    const bad = st.condition==='deficient' || st.condition==='attention' || st.corrective==='action' || st.maintenance==='y';
+    if(bad) out.push({
+      date, level: st.condition==='deficient'?3:2,
+      location: name + (st.status?` — ${st.status}`:''),
+      corrective: st.corrective==='action' ? 'Corrective action required' : (st.maintenance==='y' ? 'Maintenance needed' : 'Needs attention'),
+      sourceReport:date, sourceInspection:insp.id
+    });
+  });
+  (insp.corrective||[]).forEach(c=>{
+    if(c && !c.fromComplianceId) out.push({date:c.dateId||date, level:2, location:c.location||c.desc||'', corrective:[c.desc,c.action].filter(Boolean).join(' — '), sourceReport:date, sourceInspection:insp.id});
+  });
+  return out;
+}
+
 function swpppComplete(){
   const insp = _swGet(_swOpenId); if(!insp) return;
   _confirmModal('Mark this inspection as Completed? It will lock as a record — reopening for edits will require confirmation.', ()=>{
@@ -229,6 +269,15 @@ function swpppComplete(){
     }
     _swQueueSave(insp); _swSaveCloud(insp.id,_swPid());
     _swRenderForm();
+    // Report → Compliance: offer to log this inspection's deficiencies so they
+    // live on the compliance page (and carry onto the NEXT report's §8).
+    const defs = _swCollectDeficiencies(insp);
+    if(defs.length && typeof clAddEntries==='function'){
+      _confirmModal(`This inspection flagged ${defs.length} item${defs.length>1?'s':''} (deficient / needs attention / corrective actions). Add ${defs.length>1?'them':'it'} to the Compliance log so they track until resolved?`, ()=>{
+        const n = clAddEntries(defs);
+        if(typeof showCloudBanner==='function') showCloudBanner(`✓ ${n} item${n>1?'s':''} added to the Compliance log.`);
+      }, 'Log Deficiencies', 'Add to Compliance');
+    }
   }, 'Complete Inspection', 'Complete');
 }
 function swpppReopen(){
@@ -303,16 +352,17 @@ function swpppSetAllSections(collapse){
   }
 }
 
-// ── Bulk DA actions ──
-function swpppDaAll(cond){
+// ── Bulk condition set for row sections (§2 drainage areas, §3 discharge points) ──
+function swpppRowsAll(which, cond){
   const insp = _swGet(_swOpenId); if(!insp || insp.status==='completed') return;
   const cfg = _swCfg[_swPid()]; if(!cfg) return;
-  (cfg.drainageAreas||[]).forEach(da=>{
-    if(!insp.drainageAreas[da.id]) insp.drainageAreas[da.id]={condition:'',action:''};
-    insp.drainageAreas[da.id].condition = cond;
+  const list = which==='dischargePoints' ? (cfg.dischargePoints||[]) : (cfg.drainageAreas||[]);
+  list.forEach(r=>{
+    if(!insp[which][r.id]) insp[which][r.id]={condition:''};
+    insp[which][r.id].condition = cond;
   });
   _swQueueSave(insp);
-  _swRenderSection('sw-sec-da2');
+  _swRenderSection(which==='dischargePoints' ? 'sw-sec-dp' : 'sw-sec-da2');
 }
 
 // ── Corrective actions rows ──
@@ -388,6 +438,33 @@ function swMetaInp(ev, metaKey, id, field){
   _swQueueSave(insp);
 }
 
+// ── Daily Reports archive (the versioned cache every Generate Report writes) ──
+var _swDaily = null;
+async function _swLoadDailyReports(){
+  if(!(db && _fbReady && typeof _udb==='function')){ _swDaily=[]; return; }
+  try{
+    const snap = await _udb().collection('reports').orderBy('updatedAtMs','desc').limit(30).get();
+    _swDaily = snap.docs.map(d=>d.data()).filter(r=>r.reportDate);
+  }catch(e){ console.warn('daily-report archive load failed:', e.message); _swDaily=[]; }
+}
+// Re-export a generated daily report from its cached snapshot — same DOCX,
+// no API call (mirrors the Generate Report cache-hit path).
+async function swpppExportDaily(reportDate){
+  const btns=document.querySelectorAll(`[onclick="swpppExportDaily('${reportDate}')"]`);
+  btns.forEach(b=>{ b.dataset.oldTxt=b.textContent; b.textContent='…'; b.disabled=true; });
+  try{
+    const snap=await _udb().collection('reports').doc(reportDate).collection('versions').orderBy('version','desc').limit(1).get();
+    if(snap.empty) throw new Error('No cached version for this date.');
+    const v=snap.docs[0].data();
+    const blob=await rptBuildDocx(v.inputSnapshot.logData, v.polished, v.inputSnapshot.photoRefs||[]);
+    const [y,m,d]=reportDate.split('-');
+    const projName=(document.getElementById('cfg-projectName')?.value?.trim())||'GroundLog';
+    const slug=projName.replace(/[^a-zA-Z0-9]+/g,'_').replace(/^_+|_+$/g,'')||'GroundLog';
+    await saveFileNative(blob,`${m}-${d}-${y}_${slug}-Daily_Inspection_Report.docx`,'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+  }catch(e){ console.error('daily re-export failed:',e); alert('Export failed: '+e.message); }
+  finally{ btns.forEach(b=>{ b.textContent=b.dataset.oldTxt||'⬇'; b.disabled=false; }); }
+}
+
 // ═══════════════════════════════════════════
 // RENDERING
 // ═══════════════════════════════════════════
@@ -395,7 +472,7 @@ function glRenderReportsPage(){
   const pid = _swPid();
   const host = document.getElementById('reports-page-body');
   if(!host) return;
-  _swLoadAll(pid).then(()=>{ _swRenderReportsInner(host, pid); });
+  Promise.all([_swLoadAll(pid), _swLoadDailyReports()]).then(()=>{ _swRenderReportsInner(host, pid); });
   _swRenderReportsInner(host, pid);   // instant paint from cache; reload repaints
 }
 function _swRenderReportsInner(host, pid){
@@ -437,7 +514,24 @@ function _swRenderReportsInner(host, pid){
       <button class="btn" onclick="swpppNewInspection()">＋ New Inspection</button>
     </div>
     ${rows || '<p style="color:var(--muted);font-size:12px;padding:10px 2px">No inspections yet — start your first one.</p>'}
-    <div style="margin-top:10px;text-align:right"><button class="btn btn-outline" style="font-size:10px;padding:4px 10px" onclick="swpppShowSetup()">⚙ Edit configuration</button></div>`;
+    <div style="margin-top:10px;text-align:right"><button class="btn btn-outline" style="font-size:10px;padding:4px 10px" onclick="swpppShowSetup()">⚙ Edit configuration</button></div>
+    <div class="sw-divider"></div>
+    <div class="sw-head-row">
+      <div>
+        <div style="font-weight:700">Daily Reports</div>
+        <div style="font-size:11px;color:var(--muted)">Generated daily-report archive — re-export any date, no AI call</div>
+      </div>
+      <button class="btn btn-outline" onclick="showPage('log')">📋 Generate today's</button>
+    </div>
+    ${_swDaily===null
+      ? '<p style="color:var(--muted);font-size:12px;padding:6px 2px">Loading archive…</p>'
+      : ((_swDaily.map(r=>`<div class="sw-list-row">
+          <div class="sw-list-main" style="cursor:default">
+            <span class="sw-list-date">${r.reportDate}</span>
+            <span class="sw-list-type">v${r.latestVersion||1}</span>
+          </div>
+          <button class="sw-list-btn" title="Re-export DOCX" onclick="swpppExportDaily('${r.reportDate}')">⬇</button>
+        </div>`).join('')) || '<p style="color:var(--muted);font-size:12px;padding:6px 2px">No generated reports yet — they archive here automatically when you Generate Report on the Daily Log.</p>')}`;
 }
 
 // Section re-render (keeps text-input focus intact elsewhere). The section
@@ -552,8 +646,8 @@ function _swRenderForm(){
     return `<div class="card collapsed" id="sw-sec-da2"><div class="card-head" onclick="toggleSection('sw-sec-da2')"><span class="card-num">2</span><span class="card-title">Drainage Areas Inspected</span><span class="card-chevron">▾</span></div><div class="card-body">
       <p class="sw-static-note">${esc(cfg.drainageAreasNote||'')}</p>
       ${ro?'':`<div style="display:flex;gap:8px;margin-bottom:8px">
-        <button class="btn btn-outline" style="font-size:11px" onclick="swpppDaAll('acceptable')">✓ Mark all Acceptable</button>
-        <button class="btn btn-outline" style="font-size:11px" onclick="swpppDaAll('')">Clear all</button>
+        <button class="btn btn-outline" style="font-size:11px" onclick="swpppRowsAll('drainageAreas','acceptable')">✓ Mark all Acceptable</button>
+        <button class="btn btn-outline" style="font-size:11px" onclick="swpppRowsAll('drainageAreas','')">Clear all</button>
       </div>`}
       ${field('Grouped note (inactive / undisturbed DAs)', ta(i.daBulkNote,['daBulkNote'],'e.g. All DAs without active grading — no ESC controls installed, no disturbance; inspected representative areas.'))}
       ${rows}
@@ -577,6 +671,10 @@ function _swRenderForm(){
     }).join('');
     return `<div class="card collapsed" id="sw-sec-dp"><div class="card-head" onclick="toggleSection('sw-sec-dp')"><span class="card-num">3</span><span class="card-title">Points of Discharge</span><span class="card-chevron">▾</span></div><div class="card-body">
       <p class="sw-static-note">${esc(cfg.dischargePointsNote||'')}</p>
+      ${ro?'':`<div style="display:flex;gap:8px;margin-bottom:8px">
+        <button class="btn btn-outline" style="font-size:11px" onclick="swpppRowsAll('dischargePoints','acceptable')">✓ Mark all Acceptable</button>
+        <button class="btn btn-outline" style="font-size:11px" onclick="swpppRowsAll('dischargePoints','')">Clear all</button>
+      </div>`}
       ${rows}
     </div></div>`;
   };
@@ -610,7 +708,7 @@ function _swRenderForm(){
         <input type="text" placeholder="Status / notes…" value="${esc(st.status||'')}" ${dis} oninput="swInp(event,'bmps','${esc(b.name)}','status')">
       </div>`;
     }).join('');
-    return `<div class="card collapsed" id="sw-sec-bmp"><div class="card-head" onclick="toggleSection('sw-sec-bmp')"><span class="card-num">5</span><span class="card-title">ESC Practice Inspection</span><span class="card-chevron">▾</span></div><div class="card-body">
+    return `<div class="card collapsed" id="sw-sec-bmp"><div class="card-head" onclick="toggleSection('sw-sec-bmp')"><span class="card-num">5</span><span class="card-title">E&amp;SC / BMP Inspection</span><span class="card-chevron">▾</span></div><div class="card-body">
       ${field(esc(cfg.escCondition4||'Condition 4 — ESC verified installed prior to disturbance'), seg([{v:'verified',l:'✓ Verified'},{v:'na',l:'N/A this inspection'}], i.escVerified, ['escVerified']))}
       <p class="sw-static-note">${esc(cfg.escNote||'')}</p>
       ${rows}
@@ -662,6 +760,7 @@ function _swRenderForm(){
   _swSectionHtml['sw-sec-ca'] = ()=>{
     const i=_swGet(_swOpenId);
     const rows=(i.corrective||[]).map((c,idx)=>`<div class="sw-ca-row">
+      ${c.fromComplianceId?'<div class="sw-ca-src">↩ carried from the Compliance log (still open)</div>':''}
       <div class="g g2">
         <div class="field"><label>Date identified</label><input type="date" value="${esc(c.dateId)}" ${dis} oninput="swCaInp(event,${idx},'dateId')"></div>
         <div class="field"><label>Location / BMP</label><input type="text" value="${esc(c.location)}" ${dis} oninput="swCaInp(event,${idx},'location')"></div>
@@ -1030,7 +1129,7 @@ async function swpppBuildDocx(insp,cfg){
     h1('3.  Points of Discharge'),note(cfg.dischargePointsNote||''),fullTable(dpRows),spacer(80),
     h1('4.  Receiving Waterbodies'),note(cfg.waterbodiesNote||''),fullTable(wbRows),
     ...(insp.waterbodyNotes?[body('Notes: '+insp.waterbodyNotes)]:[]),spacer(80),
-    h1('5.  ESC Practice Inspection'),cond4Line,note(cfg.escNote||''),fullTable(bmpRows),spacer(80),
+    h1('5.  E&SC / BMP Inspection'),cond4Line,note(cfg.escNote||''),fullTable(bmpRows),spacer(80),
     h1('6.  Pollution Prevention Measures'),note(cfg.pollutionNote||''),fullTable(ppRows),spacer(80),
     h1('7.  Post-Construction Stormwater Management Practices'),note(cfg.smpNote||''),fullTable(smpRows),spacer(80),
     h1('8.  Corrective Actions Summary'),note(cfg.correctiveNote||''),fullTable(caRows),spacer(80),
@@ -1051,6 +1150,7 @@ async function swpppBuildDocx(insp,cfg){
 (function(){
   const css=`
   .sw-head-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px}
+  .sw-divider{border-top:1px solid var(--s1);margin:18px 0 14px}
   .sw-list-row{display:flex;align-items:center;gap:8px;padding:10px 4px;border-bottom:1px solid var(--s1)}
   .sw-list-main{display:flex;align-items:center;gap:10px;flex:1;min-width:0;cursor:pointer}
   .sw-list-date{font-family:var(--mono);font-size:12px}
@@ -1089,6 +1189,7 @@ async function swpppBuildDocx(insp,cfg){
   .sw-pp-row{display:flex;flex-direction:column;gap:6px;padding:10px 2px;border-bottom:1px solid var(--s1)}
   .sw-pp-row input{width:100%;box-sizing:border-box}
   .sw-ca-row{border:1px solid var(--s1);border-radius:8px;padding:10px;margin-bottom:10px}
+  .sw-ca-src{font-family:var(--mono);font-size:9px;color:var(--amber);margin-bottom:6px}
   .sw-ca-del{font-size:10px;padding:4px 10px}
   .sw-att-row{display:flex;gap:10px;align-items:flex-start;padding:8px 0;border-bottom:1px solid var(--s1)}
   .sw-att-thumb{width:84px;height:64px;object-fit:cover;border-radius:6px;flex-shrink:0}
@@ -1118,10 +1219,11 @@ window.swInp = swInp;
 window.swSeg = swSeg;
 window.swCaInp = swCaInp;
 window.swMetaInp = swMetaInp;
-window.swpppDaAll = swpppDaAll;
+window.swpppRowsAll = swpppRowsAll;
 window.swpppSetAllSections = swpppSetAllSections;
 window.swpppAddCorrective = swpppAddCorrective;
 window.swpppRemoveCorrective = swpppRemoveCorrective;
 window.swpppPickPhotos = swpppPickPhotos;
 window.swpppPickDone = swpppPickDone;
 window.swpppExport = swpppExport;
+window.swpppExportDaily = swpppExportDaily;

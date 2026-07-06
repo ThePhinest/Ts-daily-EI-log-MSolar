@@ -930,6 +930,7 @@ async function rptClearReportLogo(){
 }
 
 window.generateReport = generateReport;
+window.rptBuildDocx = rptBuildDocx;   // Reports-page archive re-export (swppp.js)
 window.rptSaveReportLogo = rptSaveReportLogo;
 window.rptClearReportLogo = rptClearReportLogo;
 window.rptLoadReportLogoUI = rptLoadReportLogoUI;
