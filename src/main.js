@@ -88,6 +88,7 @@ import './promptAssembly.js'
 import './promptStorage.js'
 import './aiBrandingEditor.js'
 import './report.js'
+import './swppp.js'
 
 window.firebase = firebase
 window.mapboxgl = mapboxgl

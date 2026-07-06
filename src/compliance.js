@@ -2281,6 +2281,7 @@ async function clInit(){
 }
 
 // ── Expose to window for HTML onclick handlers and cross-module calls ──
+window._runningTotals = _runningTotals;   // shared math — swppp.js QI report reads the same net-open engine
 window.clInit = clInit;
 window.clRender = clRender;
 window.clAutoDetect = clAutoDetect;

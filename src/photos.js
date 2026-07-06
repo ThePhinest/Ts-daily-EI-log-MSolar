@@ -258,6 +258,7 @@ async function phSaveCloud(){
       if(p.software) doc.software = p.software;
       if(p.projectId) doc.projectId = p.projectId;
       if(p.type) doc.type = p.type;
+      if(p.swppp) doc.swppp = true;
       if(p.published !== undefined){ doc.published = p.published; doc.publishedAt = p.publishedAt || null; }
       // merge:true so a device that hasn't seen a delete yet can't strip
       // deletedAt off the cloud doc and resurrect a deleted photo
@@ -491,6 +492,7 @@ function phRender(){
         ${grouped[date].map(p=>`
           <div class="ph-thumb" onclick="phOpenLightbox('${p.id}')">
             <img src="${p.thumb}" alt="${p.caption||''}" loading="lazy">
+            ${p.swppp?'<span class="ph-thumb-swppp">🌊 SWPPP</span>':''}
             <div class="ph-thumb-caption">${p.caption||'Tap to add caption'}</div>
             <button class="ph-thumb-del" onclick="event.stopPropagation();phConfirmDelete('${p.id}')">✕</button>
           </div>
@@ -585,6 +587,14 @@ async function _phLbShow(index){
     share.style.display = inProject ? '' : 'none';
     share.textContent = p.published ? '🌐 Shared ✓ — tap to unshare' : '📤 Share to project';
   }
+  // SWPPP tag toggle — own photos only. Tagged photos sort first in the QI
+  // inspection report's photo picker (swppp.js §11).
+  const swBtn = document.getElementById('ph-lb-swppp');
+  if(swBtn){
+    swBtn.style.display = own ? '' : 'none';
+    swBtn.textContent = p.swppp ? '🌊 SWPPP ✓ — tap to untag' : '🌊 Tag as SWPPP';
+    swBtn.classList.toggle('ph-swppp-on', !!p.swppp);
+  }
   if(cap) cap.readOnly = !own;
   _phLbUpdateNav();
   const full = await phGetFull(id);
@@ -652,6 +662,24 @@ async function phShareCurrent(){
     showCloudBanner(target ? '✓ Photo shared — project members can see it now.'
       : 'Photo unshared — members lose access on their next refresh.');
   }
+}
+
+// ── Lightbox SWPPP tag toggle (own photos) ──
+// Marks a photo as SWPPP documentation: it sorts first in the QI inspection
+// report's §11 photo picker (swppp.js) and gets a 🌊 badge in the library.
+async function phToggleSwpppCurrent(){
+  if(!_phLbId) return;
+  const p = window._phPhotos.find(x=>x.id===_phLbId);
+  if(!p) return;
+  p.swppp = !p.swppp;
+  phSave();
+  phRender();
+  const btn = document.getElementById('ph-lb-swppp');
+  if(btn){
+    btn.textContent = p.swppp ? '🌊 SWPPP ✓ — tap to untag' : '🌊 Tag as SWPPP';
+    btn.classList.toggle('ph-swppp-on', !!p.swppp);
+  }
+  try{ await phSaveCloudOne(p); }catch(e){}
 }
 
 // ── Delete with confirm (soft delete — 30-day undo window) ──
@@ -857,6 +885,7 @@ async function phSaveCloudOne(p){
     if(p.software) doc.software=p.software;
     if(p.projectId) doc.projectId=p.projectId;
     if(p.type) doc.type=p.type;
+    if(p.swppp) doc.swppp=true;
     if(p.published!==undefined){ doc.published=p.published; doc.publishedAt=p.publishedAt||null; }
     await _udb().collection('photos').doc(p.id).set(doc,{merge:true});
   }catch(e){ console.warn('phSaveCloudOne failed:', e.message); }
@@ -877,6 +906,7 @@ window.phLbNext = phLbNext;
 window.phLbPrev = phLbPrev;
 window.phSaveCaption = phSaveCaption;
 window.phShareCurrent = phShareCurrent;
+window.phToggleSwpppCurrent = phToggleSwpppCurrent;
 window.phSetPublished = phSetPublished;
 window.phLoadShared = phLoadShared;
 window._phById = _phById;

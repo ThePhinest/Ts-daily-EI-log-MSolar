@@ -147,6 +147,39 @@ describe('field (Boots) — works in the project, own records only', () => {
   });
 });
 
+describe('swpppInspections — QI inspection records (work product)', () => {
+  it('owner creates self-attributed inspection and reads own draft', async () => {
+    await assertSucceeds(setDoc(doc(as('tim'), `projects/${PID}/swpppInspections/qi1`),
+      { ownerUid: 'tim', published: false, date: '2026-07-07', status: 'draft' }));
+    await assertSucceeds(getDoc(doc(as('tim'), `projects/${PID}/swpppInspections/qi1`)));
+  });
+  it('cannot forge ownerUid on create', () =>
+    assertFails(setDoc(doc(as('tim'), `projects/${PID}/swpppInspections/qiforged`),
+      { ownerUid: 'boots', published: false })));
+  it('reviewer cannot read an unpublished inspection or write any', async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), `projects/${PID}/swpppInspections/qidraft`),
+        { ownerUid: 'tim', published: false, status: 'draft' });
+    });
+    await assertFails(getDoc(doc(as('forest'), `projects/${PID}/swpppInspections/qidraft`)));
+    await assertFails(setDoc(doc(as('forest'), `projects/${PID}/swpppInspections/qievil`),
+      { ownerUid: 'forest', published: true }));
+  });
+  it('field member cannot edit another member\'s inspection; lead can', async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      const db = ctx.firestore();
+      await setDoc(doc(db, `projects/${PID}/swpppInspections/qitim`),
+        { ownerUid: 'tim', published: false, status: 'draft' });
+      await setDoc(doc(db, `projects/${PID}/swpppInspections/qiboots`),
+        { ownerUid: 'boots', published: false, status: 'draft' });
+    });
+    await assertFails(updateDoc(doc(as('boots'), `projects/${PID}/swpppInspections/qitim`),
+      { status: 'completed' }));
+    await assertSucceeds(updateDoc(doc(as('tim'), `projects/${PID}/swpppInspections/qiboots`),
+      { status: 'completed' }));
+  });
+});
+
 describe('publish mirrors — photos + field markers (explicit publish, keep your original)', () => {
   beforeEach(async () => {
     await env.withSecurityRulesDisabled(async (ctx) => {

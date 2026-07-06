@@ -178,6 +178,11 @@ service cloud.firestore {
         allow create: if workCreateOk();
         allow update, delete: if workEditOk();
       }
+      match /swpppInspections/{id} {   // QI inspection records (Reports page)
+        allow read: if canSeeWorkDoc();
+        allow create: if workCreateOk();
+        allow update, delete: if workEditOk();
+      }
 
       // ── Submissions (close-day snapshots; immutable except status) ──
       match /submissions/{sid} {

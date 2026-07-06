@@ -613,6 +613,8 @@ button:disabled,button[disabled]{opacity:.45;cursor:not-allowed}
 .ph-thumb-caption{position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.65);color:#fff;font-family:var(--mono);font-size:9.5px;padding:4px 7px;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ph-thumb-del{position:absolute;top:4px;right:4px;background:rgba(0,0,0,.6);border:none;color:#fff;border-radius:50%;width:22px;height:22px;font-size:13px;cursor:pointer;display:none;align-items:center;justify-content:center;line-height:1}
 .ph-thumb:hover .ph-thumb-del{display:flex}
+.ph-thumb-swppp{position:absolute;top:4px;left:4px;background:rgba(30,120,200,.9);color:#fff;font-family:var(--mono);font-size:8px;padding:1px 6px;border-radius:8px;pointer-events:none}
+.ph-swppp-on{border-color:#1e78c8 !important;color:#4da3e8 !important}
 .ph-loading{font-family:var(--mono);font-size:11px;color:var(--muted);text-align:center;padding:20px}
 .ph-empty{font-family:var(--mono);font-size:12px;color:var(--muted);text-align:center;padding:40px 20px}
 /* ── Branded empty states (Polish #9) + Academy ── */
@@ -2092,20 +2094,16 @@ Anticipated rain — AM weather monitoring expected"></textarea>
 
 </div></div>
 
-<!-- REPORTS PAGE (placeholder) -->
+<!-- REPORTS PAGE -->
 <div class="page" id="page-reports"><div class="wrap">
   <div class="card"><div class="card-head"><span class="card-num">📄</span><span class="card-title">Reports</span></div>
   <div class="card-body">
-    <div class="gl-empty-state">
-      <div class="gl-es-icon">📄</div>
-      <div class="gl-es-title">Dynamic reports — coming soon</div>
-      <div class="gl-es-body">Spill reports and other regulatory forms — upload your existing forms or describe the fields you want, and GroundLog builds the report page for you. Today's daily report lives on the Daily Log page.</div>
-      <div class="gl-es-actions">
-        <button class="gl-es-btn gl-es-btn-primary" onclick="showPage('log')">📋 Go to Daily Log</button>
-      </div>
-    </div>
+    <div id="reports-page-body"></div>
   </div></div>
 </div></div>
+
+<!-- SWPPP QI INSPECTION FORM (subpage of Reports) -->
+<div class="page subpage" id="page-swpppForm"><div class="wrap" id="swppp-form-wrap"></div></div>
 
 <!-- ══════════════════════════════════
      MAP PAGE
@@ -2591,6 +2589,7 @@ Anticipated rain — AM weather monitoring expected"></textarea>
     <textarea class="ph-lb-caption" id="ph-lb-caption" placeholder="Add a caption…" rows="2"></textarea>
     <div class="ph-lb-row">
       <button class="btn btn-outline" id="ph-lb-share" style="font-size:11px;padding:6px 14px;margin-right:auto;display:none" onclick="phShareCurrent()">📤 Share to project</button>
+      <button class="btn btn-outline" id="ph-lb-swppp" style="font-size:11px;padding:6px 14px;display:none" onclick="phToggleSwpppCurrent()">🌊 Tag as SWPPP</button>
       <button class="btn btn-outline" style="font-size:11px;padding:6px 14px" onclick="phCloseLightbox()">Close</button>
       <button class="btn btn-amber" style="font-size:11px;padding:6px 14px" onclick="phSaveCaption()">Save Caption</button>
     </div>
@@ -3590,6 +3589,7 @@ function showPage(name){
   if(name==='projectSpace'){ if(typeof glRenderProjectSpacePage==='function') glRenderProjectSpacePage(); }
   if(name==='academy'){ if(typeof glRenderAcademyPage==='function') glRenderAcademyPage(); }
   if(name==='docs'){ if(typeof glRenderDocsPage==='function') glRenderDocsPage(); }
+  if(name==='reports'){ if(typeof glRenderReportsPage==='function') glRenderReportsPage(); }
   // Leaving the map clears any active highlight (its chip is fixed-position and the
   // pulse animation should stop when you're not looking at the map). Same for an
   // in-progress repair-flag placement — its chip + armed click handler must not
