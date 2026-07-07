@@ -806,6 +806,10 @@ async function mapImportKml(input){
 // the prop is missing. _paletteIdx is also stamped on each feature by
 // kmlImport.js so unstyled features still pick from the 11-color rotation
 // (vs the previous all-gold).
+// Every Mapbox sublayer a KML import renders as — any code that removes,
+// hides, shows, or reorders a KML layer must walk this exact list.
+const KML_SUBLAYER_TYPES = ['fill','line','pt','label'];
+
 function mapReaddKmlLayer(layer, features){
   if(!_mapInstance || !features || !features.length) return;
   if(_mapInstance.getSource(layer.id)) return;
@@ -860,6 +864,40 @@ function mapReaddKmlLayer(layer, features){
     },
     filter: ['==', ['geometry-type'], 'Point']
   });
+  // Point names as map labels. Mapbox's default collision handling declutters:
+  // labels appear as you zoom in, so dense imports stay readable.
+  _mapInstance.addLayer({
+    id: layer.id + '-label',
+    type: 'symbol',
+    source: layer.id,
+    filter: ['==', ['geometry-type'], 'Point'],
+    layout: {'text-field':['get','name'],'text-size':11,'text-anchor':'top','text-offset':[0,0.9]},
+    paint: {'text-color':'#ffffff','text-halo-color':'rgba(0,0,0,0.8)','text-halo-width':1.3}
+  });
+  _kmlWirePointPopup(layer.id);
+}
+
+// Tap popup for imported KML points — shows the placemark's name + description
+// (house dark-popup style). Handlers are delegated by layer id, which survives
+// layer remove/re-add, so wire each id exactly once.
+const _kmlPopupWired = new Set();
+function _kmlWirePointPopup(layerId){
+  if(_kmlPopupWired.has(layerId) || !_mapInstance) return;
+  _kmlPopupWired.add(layerId);
+  const esc = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  _mapInstance.on('click', layerId + '-pt', (e)=>{
+    const f = e.features && e.features[0];
+    if(!f) return;
+    const nm = esc(f.properties.name) || 'Imported point';
+    const ds = esc(f.properties.desc);
+    new mapboxgl.Popup({ offset:12, maxWidth:'280px', closeButton:true, className:'gl-field-popup' })
+      .setLngLat(f.geometry.coordinates)
+      .setHTML(`<div style="font-weight:700;font-size:13px;margin-bottom:4px;padding-right:20px">${nm}</div>`
+        + (ds ? `<div style="font-size:12px;line-height:1.5;color:#cfcfcf">${ds}</div>` : ''))
+      .addTo(_mapInstance);
+  });
+  _mapInstance.on('mouseenter', layerId + '-pt', ()=>{ _mapInstance.getCanvas().style.cursor = 'pointer'; });
+  _mapInstance.on('mouseleave', layerId + '-pt', ()=>{ _mapInstance.getCanvas().style.cursor = ''; });
 }
 
 // B2 Stage 1.4 — project-scoped layer metadata storage. Features stay in
@@ -934,18 +972,19 @@ function kmlParseLayerById(kmlText, layerName){
   const features = [];
   node.querySelectorAll('Placemark').forEach(pm=>{
     const name = getName(pm);
+    const desc = pm.querySelector('description')?.textContent?.trim() || '';
     const poly = pm.querySelector('Polygon outerBoundaryIs coordinates') || pm.querySelector('Polygon coordinates');
     const line = pm.querySelector('LineString coordinates');
     const pt   = pm.querySelector('Point coordinates');
     if(poly){
       const c = poly.textContent.trim().split(/\s+/).map(s=>s.split(',').map(Number).slice(0,2));
-      features.push({type:'Feature',properties:{name},geometry:{type:'Polygon',coordinates:[c]}});
+      features.push({type:'Feature',properties:{name,desc},geometry:{type:'Polygon',coordinates:[c]}});
     } else if(line){
       const c = line.textContent.trim().split(/\s+/).map(s=>s.split(',').map(Number).slice(0,2));
-      features.push({type:'Feature',properties:{name},geometry:{type:'LineString',coordinates:c}});
+      features.push({type:'Feature',properties:{name,desc},geometry:{type:'LineString',coordinates:c}});
     } else if(pt){
       const [lng,lat] = pt.textContent.trim().split(',').map(Number);
-      features.push({type:'Feature',properties:{name},geometry:{type:'Point',coordinates:[lng,lat]}});
+      features.push({type:'Feature',properties:{name,desc},geometry:{type:'Point',coordinates:[lng,lat]}});
     }
   });
   return features;
@@ -1058,7 +1097,7 @@ async function mapBulkDeleteSelected(){
   const ids = new Set(_mapKmlSelected);
   // Tear down map state for all selected
   for(const layer of _mapKmlLayers.filter(l => ids.has(l.id))){
-    ['fill','line','pt'].forEach(t=>{ if(_mapInstance.getLayer(layer.id+'-'+t)) _mapInstance.removeLayer(layer.id+'-'+t); });
+    KML_SUBLAYER_TYPES.forEach(t=>{ if(_mapInstance.getLayer(layer.id+'-'+t)) _mapInstance.removeLayer(layer.id+'-'+t); });
     if(_mapInstance.getSource(layer.id)) _mapInstance.removeSource(layer.id);
   }
   // Remove from registry (back-to-front to preserve indices during splice)
@@ -1472,7 +1511,7 @@ async function kmlToggleFolderVisibility(folderName, visible){
   for(const layer of layers){
     layer.visible = visible;
     if(!visible){
-      ['fill','line','pt'].forEach(t=>{ if(_mapInstance.getLayer(layer.id+'-'+t)) _mapInstance.removeLayer(layer.id+'-'+t); });
+      KML_SUBLAYER_TYPES.forEach(t=>{ if(_mapInstance.getLayer(layer.id+'-'+t)) _mapInstance.removeLayer(layer.id+'-'+t); });
       if(_mapInstance.getSource(layer.id)) _mapInstance.removeSource(layer.id);
     } else {
       if(!_mapInstance.getSource(layer.id)){
@@ -1499,7 +1538,7 @@ async function mapToggleKmlLayer(i, visible){
 
   if(!visible){
     // Remove from map entirely — free memory
-    ['fill','line'].forEach(t=>{
+    KML_SUBLAYER_TYPES.forEach(t=>{
       if(_mapInstance.getLayer(layer.id+'-'+t)) _mapInstance.removeLayer(layer.id+'-'+t);
     });
     if(_mapInstance.getSource(layer.id)) _mapInstance.removeSource(layer.id);
@@ -1517,7 +1556,7 @@ async function mapToggleKmlLayer(i, visible){
         }catch(err){ console.warn('mapToggleKmlLayer fetch failed:', err.message); }
       }
     } else {
-      ['fill','line'].forEach(t=>{
+      KML_SUBLAYER_TYPES.forEach(t=>{
         if(_mapInstance.getLayer(layer.id+'-'+t)) _mapInstance.setLayoutProperty(layer.id+'-'+t,'visibility','visible');
       });
     }
@@ -1527,7 +1566,7 @@ async function mapToggleKmlLayer(i, visible){
 
 function mapRemoveKmlLayer(i){
   const layer = _mapKmlLayers[i];
-  ['fill','line','pt'].forEach(t=>{ if(_mapInstance.getLayer(layer.id+'-'+t)) _mapInstance.removeLayer(layer.id+'-'+t); });
+  KML_SUBLAYER_TYPES.forEach(t=>{ if(_mapInstance.getLayer(layer.id+'-'+t)) _mapInstance.removeLayer(layer.id+'-'+t); });
   if(_mapInstance.getSource(layer.id)) _mapInstance.removeSource(layer.id);
   _mapKmlLayers.splice(i,1);
   kmlSaveLayers();
@@ -1537,7 +1576,7 @@ function mapRemoveKmlLayerById(id){
   const idx = _mapKmlLayers.findIndex(l=>l.id===id);
   if(idx===-1) return;
   const layer = _mapKmlLayers[idx];
-  ['fill','line','pt'].forEach(t=>{ if(_mapInstance.getLayer(layer.id+'-'+t)) _mapInstance.removeLayer(layer.id+'-'+t); });
+  KML_SUBLAYER_TYPES.forEach(t=>{ if(_mapInstance.getLayer(layer.id+'-'+t)) _mapInstance.removeLayer(layer.id+'-'+t); });
   if(_mapInstance.getSource(layer.id)) _mapInstance.removeSource(layer.id);
   _mapKmlLayers.splice(idx,1);
   kmlSaveLayers();
@@ -1548,7 +1587,7 @@ async function mapToggleKmlLayerById(id, visible){
   if(!layer) return;
   layer.visible = visible;
   if(!visible){
-    ['fill','line','pt'].forEach(t=>{ if(_mapInstance.getLayer(layer.id+'-'+t)) _mapInstance.removeLayer(layer.id+'-'+t); });
+    KML_SUBLAYER_TYPES.forEach(t=>{ if(_mapInstance.getLayer(layer.id+'-'+t)) _mapInstance.removeLayer(layer.id+'-'+t); });
     if(_mapInstance.getSource(layer.id)) _mapInstance.removeSource(layer.id);
   } else {
     if(!_mapInstance.getSource(layer.id)){
@@ -1672,7 +1711,7 @@ window.mapPromoteKmlLayer=mapPromoteKmlLayer;
 function mapClearKmlLayers(){
   if(_mapInstance){
     _mapKmlLayers.forEach(layer => {
-      ['fill','line','pt'].forEach(t => {
+      KML_SUBLAYER_TYPES.forEach(t => {
         if(_mapInstance.getLayer(layer.id + '-' + t)) _mapInstance.removeLayer(layer.id + '-' + t);
       });
       if(_mapInstance.getSource(layer.id)) _mapInstance.removeSource(layer.id);
@@ -1897,7 +1936,7 @@ function _applyKmlFolderMapOrder(){
                 ...folderNames.filter(f=>!order.includes(f))];
   sorted.forEach(folderName=>{
     _mapKmlLayers.filter(l=>l.folderName===folderName&&l.visible).forEach(layer=>{
-      ['fill','line','pt'].forEach(t=>{
+      KML_SUBLAYER_TYPES.forEach(t=>{
         if(_mapInstance.getLayer(layer.id+'-'+t)) try{_mapInstance.moveLayer(layer.id+'-'+t);}catch(e){}
       });
     });
