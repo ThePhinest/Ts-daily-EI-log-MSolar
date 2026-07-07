@@ -885,19 +885,97 @@ function _kmlWirePointPopup(layerId){
   if(_kmlPopupWired.has(layerId) || !_mapInstance) return;
   _kmlPopupWired.add(layerId);
   const esc = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-  _mapInstance.on('click', layerId + '-pt', (e)=>{
-    const f = e.features && e.features[0];
-    if(!f) return;
-    const nm = esc(f.properties.name) || 'Imported point';
+  const showPopup = (lngLat, f)=>{
+    const nm = esc(f.properties.name) || 'Imported feature';
     const ds = esc(f.properties.desc);
-    new mapboxgl.Popup({ offset:12, maxWidth:'280px', closeButton:true, className:'gl-field-popup' })
-      .setLngLat(f.geometry.coordinates)
+    const popup = new mapboxgl.Popup({ offset:12, maxWidth:'280px', closeButton:true, className:'gl-field-popup' })
+      .setLngLat(lngLat)
       .setHTML(`<div style="font-weight:700;font-size:13px;margin-bottom:4px;padding-right:20px">${nm}</div>`
         + (ds ? `<div style="font-size:12px;line-height:1.5;color:#cfcfcf">${ds}</div>` : ''))
       .addTo(_mapInstance);
+    popup.on('close', _kmlGlowClear);
+    return popup;
+  };
+  _mapInstance.on('click', layerId + '-pt', (e)=>{
+    const f = e.features && e.features[0];
+    if(!f) return;
+    showPopup(f.geometry.coordinates, f);
+    _kmlGlowNearestLine(f.geometry.coordinates);
+  });
+  _mapInstance.on('click', layerId + '-line', (e)=>{
+    // if a point sits under the tap, its handler owns this click
+    const pts = _mapInstance.queryRenderedFeatures(e.point, { layers: [layerId + '-pt'] });
+    if(pts && pts.length) return;
+    const f = e.features && e.features[0];
+    if(!f || !f.geometry || f.geometry.type !== 'LineString') return;
+    showPopup([e.lngLat.lng, e.lngLat.lat], f);
+    _kmlGlowFeature(_kmlSourceFeatureFor(f) || { type:'Feature', geometry:f.geometry, properties:{} });
   });
   _mapInstance.on('mouseenter', layerId + '-pt', ()=>{ _mapInstance.getCanvas().style.cursor = 'pointer'; });
   _mapInstance.on('mouseleave', layerId + '-pt', ()=>{ _mapInstance.getCanvas().style.cursor = ''; });
+}
+
+// ── KML tap-glow ─────────────────────────────────────────────────────────────
+// Tapping an imported point glows the boundary line it belongs to (nearest
+// visible KML LineString — imported tags are snapped onto their line, so
+// nearest = its own run). Tapping a line glows that line. Cleared on popup
+// close. Static glow, separate source from the tracker ✨ highlight.
+function _kmlEnsureGlowLayers(){
+  if(!_mapInstance || _mapInstance.getSource('kml-glow')) return;
+  _mapInstance.addSource('kml-glow', { type:'geojson', data:{ type:'FeatureCollection', features:[] } });
+  _mapInstance.addLayer({ id:'kml-glow-halo', type:'line', source:'kml-glow',
+    paint:{ 'line-color':'#FFE680', 'line-width':13, 'line-opacity':0.45, 'line-blur':5 } });
+  _mapInstance.addLayer({ id:'kml-glow-core', type:'line', source:'kml-glow',
+    paint:{ 'line-color':'#FFD23F', 'line-width':3.5 } });
+}
+function _kmlGlowClear(){
+  if(_mapInstance && _mapInstance.getSource('kml-glow')){
+    try{ _mapInstance.getSource('kml-glow').setData({ type:'FeatureCollection', features:[] }); }catch(e){}
+  }
+}
+function _kmlGlowFeature(f){
+  _kmlEnsureGlowLayers();
+  if(!_mapInstance.getSource('kml-glow')) return;
+  _mapInstance.getSource('kml-glow').setData({ type:'FeatureCollection', features:[f] });
+  ['kml-glow-halo','kml-glow-core'].forEach(id=>{ try{ _mapInstance.moveLayer(id); }catch(e){} });
+}
+// Rendered features come back tile-clipped; recover the full-length original
+// from the in-memory layer cache by matching name + first coordinate proximity.
+function _kmlSourceFeatureFor(rendered){
+  const nm = rendered.properties && rendered.properties.name;
+  for(const l of _mapKmlLayers){
+    if(!l.features) continue;
+    for(const f of l.features){
+      if(f.geometry && f.geometry.type === 'LineString' && (f.properties||{}).name === nm){
+        return f;
+      }
+    }
+  }
+  return null;
+}
+function _kmlGlowNearestLine(lngLat){
+  const px = lngLat[0], py = lngLat[1];
+  const cosLat = Math.cos(py * Math.PI / 180);
+  let best = null;
+  _mapKmlLayers.forEach(l=>{
+    if(!l.visible || !l.features) return;
+    l.features.forEach(f=>{
+      if(!f.geometry || f.geometry.type !== 'LineString') return;
+      const c = f.geometry.coordinates;
+      for(let i=0; i<c.length-1; i++){
+        const ax=(c[i][0]-px)*cosLat, ay=c[i][1]-py;
+        const bx=(c[i+1][0]-px)*cosLat, by=c[i+1][1]-py;
+        const dx=bx-ax, dy=by-ay;
+        const L2=dx*dx+dy*dy;
+        let t = L2 ? -(ax*dx+ay*dy)/L2 : 0;
+        t = Math.max(0, Math.min(1, t));
+        const qx=ax+t*dx, qy=ay+t*dy;
+        const d=qx*qx+qy*qy;
+        if(best===null || d<best.d) best={ d, f };
+      }
+    });
+  });
+  if(best) _kmlGlowFeature(best.f);
 }
 
 // B2 Stage 1.4 — project-scoped layer metadata storage. Features stay in
@@ -1709,6 +1787,7 @@ window.mapPromoteKmlLayer=mapPromoteKmlLayer;
 // Tears down all KML sources/layers + clears in-memory state, then triggers
 // kmlLoadLayers() to rehydrate from the new project's per-project cache.
 function mapClearKmlLayers(){
+  _kmlGlowClear();
   if(_mapInstance){
     _mapKmlLayers.forEach(layer => {
       KML_SUBLAYER_TYPES.forEach(t => {
