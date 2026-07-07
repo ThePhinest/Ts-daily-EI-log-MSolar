@@ -234,6 +234,25 @@ function swpppRefreshDaSummary(){
   if(fresh){ insp.daSummary = fresh; _swQueueSave(insp); _swRenderSection('sw-sec-das'); }
 }
 
+// Fresh-weather sync: called by daily-log after every weather fetch, and by the
+// §1 refresh button. Updates the fetched fields of a DRAFT inspection for that
+// date; Site Access / General Conditions (hand-typed) are never touched, and
+// completed reports never change.
+async function swpppSyncWeather(dateStr){
+  const pid = _swPid();
+  if(!_swInsp[pid]) await _swLoadAll(pid);   // weather can be fetched before Reports is ever opened
+  const insp = (_swInsp[pid]||[]).find(x=>x.date===dateStr && x.status!=='completed');
+  if(!insp) return;
+  const w = _swPrefillWeather();
+  ['sky','temp','precip','wind','soil'].forEach(k=>{ if(w[k]) insp.weather[k]=w[k]; });
+  _swQueueSave(insp);
+  if(_swOpenId===insp.id && document.getElementById('sw-sec-wx')) _swRenderSection('sw-sec-wx');
+}
+function swpppRefreshWeather(){
+  const insp = _swGet(_swOpenId); if(!insp || insp.status==='completed') return;
+  swpppSyncWeather(insp.date);
+}
+
 // Everything the inspection flagged as a problem, shaped as compliance-log rows.
 // §8 rows that were PREFILLED from the compliance log are skipped (already there).
 function _swCollectDeficiencies(insp){
@@ -506,23 +525,12 @@ function _swRenderReportsInner(host, pid){
     </div>`;
   }).join('');
   host.innerHTML = `
-    <div class="sw-head-row">
-      <div>
-        <div style="font-weight:700">SWPPP QI Inspections</div>
-        <div style="font-size:11px;color:var(--muted)">SPDES GP-0-25-001 — Qualified Inspector stormwater inspection reports</div>
-      </div>
-      <button class="btn" onclick="swpppNewInspection()">＋ New Inspection</button>
-    </div>
+    <div class="sw-sec-label">SWPPP QI Inspections<span class="sw-sec-line"></span><button class="btn" onclick="swpppNewInspection()">＋ New Inspection</button></div>
+    <div class="sw-sec-sub">SPDES GP-0-25-001 — Qualified Inspector stormwater inspection reports</div>
     ${rows || '<p style="color:var(--muted);font-size:12px;padding:10px 2px">No inspections yet — start your first one.</p>'}
     <div style="margin-top:10px;text-align:right"><button class="btn btn-outline" style="font-size:10px;padding:4px 10px" onclick="swpppShowSetup()">⚙ Edit configuration</button></div>
-    <div class="sw-divider"></div>
-    <div class="sw-head-row">
-      <div>
-        <div style="font-weight:700">Daily Reports</div>
-        <div style="font-size:11px;color:var(--muted)">Generated daily-report archive — re-export any date, no AI call</div>
-      </div>
-      <button class="btn btn-outline" onclick="showPage('log')">📋 Generate today's</button>
-    </div>
+    <div class="sw-sec-label sw-sec-next">Daily Reports<span class="sw-sec-line"></span><button class="btn btn-outline" onclick="showPage('log')">📋 Generate today's</button></div>
+    <div class="sw-sec-sub">Generated daily-report archive — re-export any date, no AI call</div>
     ${_swDaily===null
       ? '<p style="color:var(--muted);font-size:12px;padding:6px 2px">Loading archive…</p>'
       : ((_swDaily.map(r=>`<div class="sw-list-row">
@@ -625,6 +633,8 @@ function _swRenderForm(){
         ${field('Site Access', txt(w.access,['weather','access']))}
       </div>
       ${field('General Site Conditions', ta(w.general,['weather','general']))}
+      ${ro?'':`<button class="btn btn-outline" style="font-size:11px" onclick="swpppRefreshWeather()">↻ Refresh from daily log</button>
+      <span class="sw-static-note" style="margin-left:8px">also auto-updates whenever you fetch weather (drafts only)</span>`}
     </div></div>`;
   };
 
@@ -1150,7 +1160,12 @@ async function swpppBuildDocx(insp,cfg){
 (function(){
   const css=`
   .sw-head-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px}
-  .sw-divider{border-top:1px solid var(--s1);margin:18px 0 14px}
+  .sw-sec-label{display:flex;align-items:center;gap:9px;font-family:var(--cond);font-size:15px;letter-spacing:.14em;text-transform:uppercase;color:var(--text);font-weight:600;padding:7px 0;margin-bottom:2px}
+  .sw-sec-label::before{content:'';width:4px;height:16px;border-radius:2px;background:linear-gradient(180deg,var(--amber2),var(--amber));flex:none}
+  .sw-sec-line{flex:1 1 12px;min-width:12px;height:1px;background:linear-gradient(90deg,rgba(201,168,76,.5),rgba(201,168,76,.08) 70%,transparent)}
+  .sw-sec-label .btn{font-size:11px;letter-spacing:normal;text-transform:none;flex:none}
+  .sw-sec-sub{font-size:11px;color:var(--muted);margin:0 0 10px 13px}
+  .sw-sec-next{margin-top:26px}
   .sw-list-row{display:flex;align-items:center;gap:8px;padding:10px 4px;border-bottom:1px solid var(--s1)}
   .sw-list-main{display:flex;align-items:center;gap:10px;flex:1;min-width:0;cursor:pointer}
   .sw-list-date{font-family:var(--mono);font-size:12px}
@@ -1212,6 +1227,8 @@ window.swpppSaveSetup = swpppSaveSetup;
 window.swpppNewInspection = swpppNewInspection;
 window.swpppOpenInspection = swpppOpenInspection;
 window.swpppRefreshDaSummary = swpppRefreshDaSummary;
+window.swpppSyncWeather = swpppSyncWeather;
+window.swpppRefreshWeather = swpppRefreshWeather;
 window.swpppComplete = swpppComplete;
 window.swpppReopen = swpppReopen;
 window.swSet = swSet;

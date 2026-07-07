@@ -524,7 +524,7 @@ function _applyWeatherData(data,forecastOffset){
     _applySkyCheckboxes([d.weathercode[TODAY]]);
   }
 
-  // ── Forecast: tomorrow with gusts ──
+  // ── Forecast: next selected day with gusts ──
   if(TMR < d.time.length){
     const tmrHi = Math.round(d.temperature_2m_max[TMR]);
     const tmrLo = Math.round(d.temperature_2m_min[TMR]);
@@ -533,12 +533,28 @@ function _applyWeatherData(data,forecastOffset){
     const tmrGusts = Math.round(d.windgusts_10m_max?.[TMR] || 0);
     const tmrDesc = _wmoToDesc(tmrWmo);
     const gustTail = tmrGusts > 0 ? ` (gusts ${tmrGusts})` : '';
-    const fcastStr = `Tomorrow: ${tmrDesc}, High ${tmrHi}°F / Low ${tmrLo}°F, Winds up to ${tmrWspd} mph${gustTail}`;
+    // Label with the real weekday when the forecast isn't literally tomorrow
+    // (Friday's "use Monday" pick should say "Monday:", not "Tomorrow:").
+    const fcastLabel = (forecastOffset||1) === 1 ? 'Tomorrow'
+      : new Date(d.time[TMR]+'T12:00:00').toLocaleDateString('en-US',{weekday:'long'});
+    const fcastStr = `${fcastLabel}: ${tmrDesc}, High ${tmrHi}°F / Low ${tmrLo}°F, Winds up to ${tmrWspd} mph${gustTail}`;
     const fcastEl = document.getElementById('upcomingWeather');
     if(fcastEl) fcastEl.value = fcastStr;
-    // Push forecast to look-ahead if empty
+    // Push forecast to look-ahead when empty OR still the previous auto-filled
+    // line (re-fetch updates it; a user-edited value is never clobbered).
     const lookaheadEl = document.getElementById('lookaheadWeather');
-    if(lookaheadEl && !lookaheadEl.value.trim()) lookaheadEl.value = fcastStr;
+    if(lookaheadEl){
+      const cur = lookaheadEl.value.trim();
+      const looksAuto = /^(Tomorrow|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday): .*mph/.test(cur);
+      if(!cur || looksAuto) lookaheadEl.value = fcastStr;
+    }
+  }
+
+  // Any DRAFT QI inspection for this report date picks up the fresh weather
+  // (completed/locked reports never change).
+  if(typeof swpppSyncWeather === 'function'){
+    const rd = document.getElementById('reportDate')?.value || todayStr;
+    try{ swpppSyncWeather(rd); }catch(e){}
   }
 
   // Trigger autosave
