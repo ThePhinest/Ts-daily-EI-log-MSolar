@@ -899,9 +899,12 @@ async function swpppBuildDocx(insp,cfg){
   const noBorders={top:noBdr,bottom:noBdr,left:noBdr,right:noBdr};
   const CB=(on)=>on?'☒ ':'☐ ';
   const spacer=(pts=80)=>new Paragraph({spacing:{before:0,after:pts}});
-  const h1=(text)=>new Paragraph({children:[new TextRun({text,bold:true,color:WHITE,font:'Arial',size:24})],shading:{fill:BLUE,type:ShadingType.CLEAR},spacing:{before:200,after:100}});
+  // keepNext chains a section header (+ its note) to the content below it —
+  // Word slides the whole group to the next page rather than stranding a
+  // header at the bottom of a page. Sections that fit are left alone.
+  const h1=(text)=>new Paragraph({keepNext:true,children:[new TextRun({text,bold:true,color:WHITE,font:'Arial',size:24})],shading:{fill:BLUE,type:ShadingType.CLEAR},spacing:{before:200,after:100}});
   const body=(text,opts)=>new Paragraph({children:[new TextRun(Object.assign({text,font:'Arial',size:20},opts||{}))],spacing:{before:40,after:40}});
-  const note=(text)=>new Paragraph({children:[new TextRun({text,font:'Arial',size:16,italics:true,color:'555555'})],spacing:{before:20,after:60}});
+  const note=(text)=>new Paragraph({keepNext:true,children:[new TextRun({text,font:'Arial',size:16,italics:true,color:'555555'})],spacing:{before:20,after:60}});
   const cell=(text,o)=>{
     o=o||{};
     return new TableCell({borders,shading:o.fill?{fill:o.fill,type:ShadingType.CLEAR}:undefined,width:o.w?{size:o.w,type:WidthType.PERCENTAGE}:undefined,margins:{top:50,bottom:50,left:80,right:80},
@@ -1039,7 +1042,8 @@ async function swpppBuildDocx(insp,cfg){
   if(!caList.length) caRows.push(new TableRow({children:[cell('—',{size:16}),cell('None identified this inspection',{size:16}),cell('',{size:16}),cell('',{size:16})]}));
 
   // §10 / §11 — images with preserved aspect (createImageBitmap), thumb fallback.
-  async function imgFor(pId,maxW){
+  async function imgFor(pId,maxW,maxH){
+    maxH=maxH||700;
     const p=(window._phPhotos||[]).find(x=>x.id===pId);
     if(!p) return null;
     try{
@@ -1048,11 +1052,10 @@ async function swpppBuildDocx(insp,cfg){
       if(!blob&&p.thumb){ const raw=p.thumb, b64=raw.includes(',')?raw.split(',')[1]:raw; const bin=atob(b64); const arr=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++)arr[i]=bin.charCodeAt(i); blob=new Blob([arr]); }
       if(!blob) return null;
       let w=maxW,h=Math.round(maxW*0.72);
-      try{ const bmp=await createImageBitmap(blob); const sc=maxW/bmp.width; w=maxW; h=Math.round(bmp.height*sc); if(h>700){ h=700; w=Math.round(bmp.width*(700/bmp.height)); } bmp.close&&bmp.close(); }catch(e){}
+      try{ const bmp=await createImageBitmap(blob); const sc=maxW/bmp.width; w=maxW; h=Math.round(bmp.height*sc); if(h>maxH){ h=maxH; w=Math.round(bmp.width*(maxH/bmp.height)); } bmp.close&&bmp.close(); }catch(e){}
       return {data:await blob.arrayBuffer(),w,h,p};
     }catch(e){ return null; }
   }
-  const skParas=[];
   const skMetaRows=[new TableRow({children:[hcell('Sketch #',12),hcell('Area / DA',28),hcell('Date',16),hcell('Status / Description',44)]})];
   let skN=0;
   for(const pId of (insp.sketches||[])){
@@ -1060,15 +1063,27 @@ async function swpppBuildDocx(insp,cfg){
     const m=(insp.sketchMeta||{})[pId]||{};
     skMetaRows.push(new TableRow({children:[cell(String(skN),{size:16}),cell(m.area||'',{size:16}),cell(m.date||'',{size:16}),cell(m.desc||'',{size:16})]}));
   }
-  skN=0;
-  for(const pId of (insp.sketches||[])){
-    skN++;
-    const im=await imgFor(pId,620);
-    if(im){
-      skParas.push(new Paragraph({alignment:AlignmentType.CENTER,children:[new ImageRun({data:im.data,transformation:{width:im.w,height:im.h}})],spacing:{before:120,after:20}}));
-      const m=(insp.sketchMeta||{})[pId]||{};
-      skParas.push(new Paragraph({alignment:AlignmentType.CENTER,children:[new TextRun({text:`Sketch ${skN} — ${[m.area,m.desc].filter(Boolean).join(' · ')}`,font:'Arial',size:16,italics:true})],spacing:{before:0,after:80}}));
+  // Sketches render 2-up (like the photo log, sized between photos and full
+  // width) so multiple captures don't each eat a page.
+  const skRows=[];
+  const skIds=(insp.sketches||[]);
+  for(let i=0;i<skIds.length;i+=2){
+    const rowCells=[];
+    for(let j=i;j<Math.min(i+2,skIds.length);j++){
+      const im=await imgFor(skIds[j],340,500);
+      const m=(insp.sketchMeta||{})[skIds[j]]||{};
+      const capText=`Sketch ${j+1} — ${[m.area,m.desc].filter(Boolean).join(' · ')}`;
+      if(im){
+        rowCells.push(new TableCell({borders:noBorders,width:{size:50,type:WidthType.PERCENTAGE},margins:{top:40,bottom:40,left:40,right:40},children:[
+          new Paragraph({alignment:AlignmentType.CENTER,children:[new ImageRun({data:im.data,transformation:{width:im.w,height:im.h}})]}),
+          new Paragraph({alignment:AlignmentType.CENTER,children:[new TextRun({text:capText,font:'Arial',size:16,italics:true})],spacing:{before:40,after:60}})
+        ]}));
+      }else{
+        rowCells.push(new TableCell({borders:noBorders,width:{size:50,type:WidthType.PERCENTAGE},children:[new Paragraph({children:[new TextRun({text:capText,font:'Arial',size:16})]})]}));
+      }
     }
+    if(rowCells.length===1) rowCells.push(new TableCell({borders:noBorders,width:{size:50,type:WidthType.PERCENTAGE},children:[new Paragraph({children:[]})]}));
+    skRows.push(new TableRow({children:rowCells}));
   }
   const phMetaRows=[new TableRow({children:[hcell('Photo #',12),hcell('Date / Time',20),hcell('Location / DA',26),hcell('Subject / Description',42)]})];
   let phN=0;
@@ -1085,7 +1100,7 @@ async function swpppBuildDocx(insp,cfg){
   for(let i=0;i<phIds.length;i+=2){
     const rowCells=[];
     for(let j=i;j<Math.min(i+2,phIds.length);j++){
-      const im=await imgFor(phIds[j],300);
+      const im=await imgFor(phIds[j],300,440);
       const m=(insp.photoMeta||{})[phIds[j]]||{};
       if(im){
         rowCells.push(new TableCell({borders:noBorders,width:{size:50,type:WidthType.PERCENTAGE},margins:{top:40,bottom:40,left:40,right:40},children:[
@@ -1146,7 +1161,7 @@ async function swpppBuildDocx(insp,cfg){
     h1('9.  General Notes / Additional Observations'),body(insp.notes||'None.'),spacer(80),
     h1('10.  Disturbance Sketches'),note(cfg.sketchesNote||''),
     ...(skMetaRows.length>1?[fullTable(skMetaRows)]:[body('No sketches attached.')]),
-    ...skParas,spacer(80),
+    ...(skRows.length?[spacer(60),new Table({borders:noBorders,width:{size:100,type:WidthType.PERCENTAGE},rows:skRows})]:[]),spacer(80),
     h1('11.  Photographic Documentation'),note(cfg.photosNote||''),
     ...(phMetaRows.length>1?[fullTable(phMetaRows)]:[body('No photographs attached.')]),
     ...(phRows.length?[spacer(60),new Table({borders:noBorders,width:{size:100,type:WidthType.PERCENTAGE},rows:phRows})]:[]),
