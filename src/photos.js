@@ -259,6 +259,7 @@ async function phSaveCloud(){
       if(p.projectId) doc.projectId = p.projectId;
       if(p.type) doc.type = p.type;
       if(p.swppp) doc.swppp = true;
+      if(p.seedTag) doc.seedTag = true;
       if(p.published !== undefined){ doc.published = p.published; doc.publishedAt = p.publishedAt || null; }
       // merge:true so a device that hasn't seen a delete yet can't strip
       // deletedAt off the cloud doc and resurrect a deleted photo
@@ -493,6 +494,7 @@ function phRender(){
           <div class="ph-thumb" onclick="phOpenLightbox('${p.id}')">
             <img src="${p.thumb}" alt="${p.caption||''}" loading="lazy">
             ${p.swppp?'<span class="ph-thumb-swppp">🌊 SWPPP</span>':''}
+            ${p.seedTag?`<span class="ph-thumb-seed"${p.swppp?' style="top:24px"':''}>🌱 SEED</span>`:''}
             <div class="ph-thumb-caption">${p.caption||'Tap to add caption'}</div>
             <button class="ph-thumb-del" onclick="event.stopPropagation();phConfirmDelete('${p.id}')">✕</button>
           </div>
@@ -587,13 +589,19 @@ async function _phLbShow(index){
     share.style.display = inProject ? '' : 'none';
     share.textContent = p.published ? '🌐 Shared ✓ — tap to unshare' : '📤 Share to project';
   }
-  // SWPPP tag toggle — own photos only. Tagged photos sort first in the QI
-  // inspection report's photo picker (swppp.js §11).
+  // SWPPP / Seed-Tag toggles — own photos only. SWPPP-tagged photos sort
+  // first in the QI report's photo picker (swppp.js §11).
   const swBtn = document.getElementById('ph-lb-swppp');
   if(swBtn){
     swBtn.style.display = own ? '' : 'none';
-    swBtn.textContent = p.swppp ? '🌊 SWPPP ✓ — tap to untag' : '🌊 Tag as SWPPP';
+    swBtn.textContent = p.swppp ? '🌊 SWPPP ✓' : '🌊 Tag as SWPPP';
     swBtn.classList.toggle('ph-swppp-on', !!p.swppp);
+  }
+  const sdBtn = document.getElementById('ph-lb-seed');
+  if(sdBtn){
+    sdBtn.style.display = own ? '' : 'none';
+    sdBtn.textContent = p.seedTag ? '🌱 Seed Tag ✓' : '🌱 Tag as Seed Tag';
+    sdBtn.classList.toggle('ph-seed-on', !!p.seedTag);
   }
   if(cap) cap.readOnly = !own;
   _phLbUpdateNav();
@@ -676,8 +684,25 @@ async function phToggleSwpppCurrent(){
   phRender();
   const btn = document.getElementById('ph-lb-swppp');
   if(btn){
-    btn.textContent = p.swppp ? '🌊 SWPPP ✓ — tap to untag' : '🌊 Tag as SWPPP';
+    btn.textContent = p.swppp ? '🌊 SWPPP ✓' : '🌊 Tag as SWPPP';
     btn.classList.toggle('ph-swppp-on', !!p.swppp);
+  }
+  try{ await phSaveCloudOne(p); }catch(e){}
+}
+
+// Seed-tag designation on the photo itself (mirrors the SWPPP tag) — pairs
+// with the per-entry material_tag flow on tracker drawings.
+async function phToggleSeedCurrent(){
+  if(!_phLbId) return;
+  const p = window._phPhotos.find(x=>x.id===_phLbId);
+  if(!p) return;
+  p.seedTag = !p.seedTag;
+  phSave();
+  phRender();
+  const btn = document.getElementById('ph-lb-seed');
+  if(btn){
+    btn.textContent = p.seedTag ? '🌱 Seed Tag ✓' : '🌱 Tag as Seed Tag';
+    btn.classList.toggle('ph-seed-on', !!p.seedTag);
   }
   try{ await phSaveCloudOne(p); }catch(e){}
 }
@@ -886,6 +911,7 @@ async function phSaveCloudOne(p){
     if(p.projectId) doc.projectId=p.projectId;
     if(p.type) doc.type=p.type;
     if(p.swppp) doc.swppp=true;
+    if(p.seedTag) doc.seedTag=true;
     if(p.published!==undefined){ doc.published=p.published; doc.publishedAt=p.publishedAt||null; }
     await _udb().collection('photos').doc(p.id).set(doc,{merge:true});
   }catch(e){ console.warn('phSaveCloudOne failed:', e.message); }
@@ -907,6 +933,7 @@ window.phLbPrev = phLbPrev;
 window.phSaveCaption = phSaveCaption;
 window.phShareCurrent = phShareCurrent;
 window.phToggleSwpppCurrent = phToggleSwpppCurrent;
+window.phToggleSeedCurrent = phToggleSeedCurrent;
 window.phSetPublished = phSetPublished;
 window.phLoadShared = phLoadShared;
 window._phById = _phById;

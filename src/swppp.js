@@ -226,6 +226,7 @@ function swpppOpenInspection(id){
   _swOpenId = id;
   showPage('swpppForm');
   _swRenderForm();
+  _swLoadSig().then(()=>{ if(_swOpenId===id && document.getElementById('sw-sec-cert')) _swRenderSection('sw-sec-cert'); });
 }
 
 function swpppRefreshDaSummary(){
@@ -398,6 +399,60 @@ function swpppRemoveCorrective(i){
 function swCaInp(ev, i, field){
   const insp = _swGet(_swOpenId); if(!insp || insp.status==='completed') return;
   if(insp.corrective[i]){ insp.corrective[i][field]=ev.target.value; _swQueueSave(insp); }
+}
+
+// ── Signature (user-level, one-time capture — 6/11 design: draw once, stamp
+// onto rendered forms; stored per-user, reused on every report) ──
+var _swSig = undefined;   // undefined = not loaded; null = none saved; {b64,w,h}
+async function _swLoadSig(){
+  if(_swSig !== undefined) return _swSig;
+  try{ _swSig = (await idbGet('sw_sig')) || null; }catch(e){ _swSig = null; }
+  if(!_swSig && db && _fbReady){
+    try{
+      const d = await _udb().collection('settings').doc('signature').get();
+      if(d.exists){ _swSig = d.data(); idbSet('sw_sig', _swSig); }
+    }catch(e){}
+  }
+  return _swSig;
+}
+function swpppDrawSignature(){
+  const ov=document.createElement('div');
+  ov.className='modal-overlay';
+  ov.innerHTML=`<div class="modal-box" style="max-width:500px">
+    <h3 style="margin:0 0 4px">Draw your signature</h3>
+    <p style="font-size:11px;color:var(--muted);margin:0 0 10px">Saved once to your account and stamped on every report you export. Finger or stylus.</p>
+    <canvas id="sw-sig-canvas" width="460" height="150" style="width:100%;touch-action:none;background:#fff;border-radius:8px;border:1px solid var(--s1);display:block"></canvas>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:12px">
+      <button class="btn btn-outline" onclick="this.closest('.modal-overlay').remove()">Cancel</button>
+      <button class="btn btn-outline" id="sw-sig-clear">Clear</button>
+      <button class="btn" id="sw-sig-save">Save signature</button>
+    </div>
+  </div>`;
+  document.body.appendChild(ov);
+  const cv=ov.querySelector('#sw-sig-canvas');
+  const ctx=cv.getContext('2d');
+  ctx.lineWidth=2.6; ctx.lineCap='round'; ctx.lineJoin='round'; ctx.strokeStyle='#101060';
+  let drawing=false, drew=false;
+  const pos=(ev)=>{ const r=cv.getBoundingClientRect(); return {x:(ev.clientX-r.left)*(cv.width/r.width), y:(ev.clientY-r.top)*(cv.height/r.height)}; };
+  cv.addEventListener('pointerdown',ev=>{ ev.preventDefault(); drawing=true; drew=true; const p=pos(ev); ctx.beginPath(); ctx.moveTo(p.x,p.y); try{cv.setPointerCapture(ev.pointerId);}catch(e){} });
+  cv.addEventListener('pointermove',ev=>{ if(!drawing) return; ev.preventDefault(); const p=pos(ev); ctx.lineTo(p.x,p.y); ctx.stroke(); });
+  cv.addEventListener('pointerup',()=>{ drawing=false; });
+  cv.addEventListener('pointercancel',()=>{ drawing=false; });
+  ov.querySelector('#sw-sig-clear').onclick=()=>{ ctx.clearRect(0,0,cv.width,cv.height); drew=false; };
+  ov.querySelector('#sw-sig-save').onclick=async()=>{
+    if(!drew){ ov.remove(); return; }
+    _swSig={ b64: cv.toDataURL('image/png'), w:460, h:150 };
+    idbSet('sw_sig', _swSig);
+    try{ if(db && _fbReady) await _udb().collection('settings').doc('signature').set(_swSig); }catch(e){ console.warn('signature cloud save failed (kept locally):', e.message); }
+    ov.remove();
+    _swRenderSection('sw-sec-cert');
+  };
+}
+function _swB64ToBuf(b64){
+  const raw = b64.includes(',') ? b64.split(',')[1] : b64;
+  const bin = atob(raw); const arr = new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++) arr[i]=bin.charCodeAt(i);
+  return arr.buffer;
 }
 
 // ── Photo / sketch pickers ──
@@ -839,11 +894,18 @@ function _swRenderForm(){
   // ── certification ──
   _swSectionHtml['sw-sec-cert'] = ()=>{
     const i=_swGet(_swOpenId); const c=cfg.certification||{};
+    const sig = (_swSig && _swSig.b64)
+      ? `<img src="${_swSig.b64}" alt="signature" style="height:46px;background:#fff;border-radius:6px;padding:3px 10px;display:block">`
+      : `<span style="font-size:11px;color:var(--muted)">No signature saved yet — it stamps onto every exported report.</span>`;
     return `<div class="card collapsed" id="sw-sec-cert"><div class="card-head" onclick="toggleSection('sw-sec-cert')"><span class="card-num">✍</span><span class="card-title">Certification</span><span class="card-chevron">▾</span></div><div class="card-body">
       <p class="sw-static-note">${esc(c.text||'')}</p>
       <div class="g g2">
         ${field('Signed (typed name)', txt(i.cert.signedName,['cert','signedName']))}
         ${field('Date', txt(i.cert.signedDate,['cert','signedDate'],'M/D/YY'))}
+      </div>
+      <div class="field"><label>Signature</label>
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">${sig}
+        ${ro?'':`<button class="btn btn-outline" style="font-size:11px" onclick="swpppDrawSignature()">✍ ${(_swSig&&_swSig.b64)?'Replace signature':'Draw signature'}</button>`}</div>
       </div>
       <p class="sw-static-note">Supervising QI/QP: ${esc(c.supervisingQi||'')} — signature on distributed copy.</p>
     </div></div>`;
@@ -1115,8 +1177,16 @@ async function swpppBuildDocx(insp,cfg){
     phRows.push(new TableRow({children:rowCells}));
   }
 
-  // Certification
+  // Certification — drawn signature (user-level capture) stamps in when saved,
+  // typed name is the fallback.
   const C=cfg.certification||{};
+  const sig = await _swLoadSig();
+  const sigRow = (sig && sig.b64)
+    ? new TableRow({children:[
+        new TableCell({borders,width:{size:3200,type:WidthType.DXA},shading:{fill:LT_BLUE,type:ShadingType.CLEAR},margins:{top:70,bottom:70,left:120,right:120},children:[new Paragraph({children:[new TextRun({text:'Signature:',bold:true,font:'Arial',size:20})]})]}),
+        new TableCell({borders,width:{size:6160,type:WidthType.DXA},margins:{top:70,bottom:70,left:120,right:120},children:[new Paragraph({children:[new ImageRun({data:_swB64ToBuf(sig.b64),transformation:{width:170,height:55}})]})]})
+      ]})
+    : infoRow('Signature:',(insp.cert&&insp.cert.signedName)||'');
   const certBlock=[
     spacer(160),
     new Paragraph({children:[new TextRun({text:'Report Certification',bold:true,font:'Arial',size:22,color:MID_BLUE})],border:{bottom:{style:BorderStyle.SINGLE,size:6,color:MID_BLUE,space:1}},spacing:{before:0,after:60}}),
@@ -1127,7 +1197,7 @@ async function swpppBuildDocx(insp,cfg){
       infoRow('Role / Credential:',C.roleCredential||''),
       infoRow('SWT #:',`${C.swtNumber||''}   |   Expires: ${C.swtExpires||''}`),
       infoRow('Organization:',C.organization||''),
-      infoRow('Signature:',(insp.cert&&insp.cert.signedName)||''),
+      sigRow,
       infoRow('Date:',(insp.cert&&insp.cert.signedDate)||''),
       infoRow('Supervising QI / QP:',C.supervisingQi||''),
       infoRow('QP Signature:','')
@@ -1244,6 +1314,7 @@ window.swpppOpenInspection = swpppOpenInspection;
 window.swpppRefreshDaSummary = swpppRefreshDaSummary;
 window.swpppSyncWeather = swpppSyncWeather;
 window.swpppRefreshWeather = swpppRefreshWeather;
+window.swpppDrawSignature = swpppDrawSignature;
 window.swpppComplete = swpppComplete;
 window.swpppReopen = swpppReopen;
 window.swSet = swSet;
