@@ -43,6 +43,11 @@ beforeEach(async () => {
     await setDoc(doc(db, `projects/${PID}/trackerEntries/bootsdraft`),
       { ownerUid: 'boots', published: false, acres: 1.0 });
     await setDoc(doc(db, `projects/${PID}/kmlLayers/lod`), { ownerUid: 'tim', name: 'LOD' });
+    // corners = array of {lng,lat} maps — Firestore rejects nested arrays,
+    // which is exactly why poSaveSheets packs them this way.
+    await setDoc(doc(db, `projects/${PID}/planOverlays/sheets`),
+      { ownerUid: 'tim', data: [{ id: 'po-1', name: 'PV.C04.23',
+        corners: [{lng:0,lat:0},{lng:1,lat:0},{lng:1,lat:1},{lng:0,lat:1}] }] });
     await setDoc(doc(db, `projects/${PID}/docs/plan1`), { ownerUid: 'tim', title: 'PV.C04.20' });
     await setDoc(doc(db, `projects/${PID}/config/main`), { cap: 5 });
     await setDoc(doc(db, `projects/${PID}/submissions/s1`),
@@ -74,8 +79,9 @@ describe('reviewer (Glasses) — sees published, edits nothing', () => {
       where('published', '==', true)))));
   it('cannot list unconstrained work product', () =>
     assertFails(getDocs(collection(as('forest'), `projects/${PID}/trackerEntries`))));
-  it('reads live reference data (KML, docs, config, project meta)', async () => {
+  it('reads live reference data (KML, plan sheets, docs, config, project meta)', async () => {
     await assertSucceeds(getDoc(doc(as('forest'), `projects/${PID}/kmlLayers/lod`)));
+    await assertSucceeds(getDoc(doc(as('forest'), `projects/${PID}/planOverlays/sheets`)));
     await assertSucceeds(getDoc(doc(as('forest'), `projects/${PID}/docs/plan1`)));
     await assertSucceeds(getDoc(doc(as('forest'), `projects/${PID}/config/main`)));
     await assertSucceeds(getDoc(doc(as('forest'), `projects/${PID}`)));
@@ -220,6 +226,28 @@ describe('publish mirrors — photos + field markers (explicit publish, keep you
     assertFails(deleteDoc(doc(as('boots'), `projects/${PID}/fieldMarkers/fm-pub`))));
   it('non-member reads no mirror, even published', () =>
     assertFails(getDoc(doc(as('stranger'), `projects/${PID}/photos/ph-pub`))));
+});
+
+describe('planOverlays — georeferenced plan sheets (live reference data, KML trust model)', () => {
+  it('owner/lead updates the shared sheet set (corner nudge, new import)', () =>
+    assertSucceeds(updateDoc(doc(as('tim'), `projects/${PID}/planOverlays/sheets`),
+      { data: [], _ts: 1 })));
+  it('field member creates a self-attributed sheet set', () =>
+    assertSucceeds(setDoc(doc(as('boots'), `projects/${PID}/planOverlays/boots-sheets`),
+      { ownerUid: 'boots', data: [] })));
+  it('cannot forge ownerUid on create', () =>
+    assertFails(setDoc(doc(as('boots'), `projects/${PID}/planOverlays/forged`),
+      { ownerUid: 'tim', data: [] })));
+  it('field member cannot update the lead\'s sheet set (toggle save stays personal)', () =>
+    assertFails(updateDoc(doc(as('boots'), `projects/${PID}/planOverlays/sheets`),
+      { data: [] })));
+  it('reviewer reads but cannot write', async () => {
+    await assertSucceeds(getDoc(doc(as('forest'), `projects/${PID}/planOverlays/sheets`)));
+    await assertFails(setDoc(doc(as('forest'), `projects/${PID}/planOverlays/evil`),
+      { ownerUid: 'forest', data: [] }));
+  });
+  it('non-member reads nothing', () =>
+    assertFails(getDoc(doc(as('stranger'), `projects/${PID}/planOverlays/sheets`))));
 });
 
 describe('non-member / unauthenticated — nothing', () => {

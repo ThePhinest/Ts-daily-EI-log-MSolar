@@ -591,6 +591,11 @@ async function loadProject(projectId, projDataOverride) {
       // block on Storage fetches.
       kmlLoadLayers().catch(e => console.warn('kmlLoadLayers (project switch):', e.message));
     }
+    // Plan-sheet overlays are project-scoped like KML — tear down, rehydrate.
+    if(typeof window.poClearAll === 'function') window.poClearAll();
+    if(typeof window.poLoadSheets === 'function'){
+      window.poLoadSheets().catch(e => console.warn('poLoadSheets (project switch):', e.message));
+    }
     // Clear old project's tracker layers before loading new project's.
     if(typeof mapClearTrackerLayers === 'function') mapClearTrackerLayers();
     // Load tracker categories first (needed for color/name lookups), then entries.

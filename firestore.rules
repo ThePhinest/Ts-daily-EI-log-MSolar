@@ -146,6 +146,11 @@ service cloud.firestore {
         allow create: if workCreateOk();
         allow update, delete: if workEditOk();
       }
+      match /planOverlays/{id} {         // georeferenced plan-sheet overlays — live reference data, KML trust model
+        allow read: if isMember();
+        allow create: if workCreateOk();
+        allow update, delete: if workEditOk();
+      }
       match /trackerCategories/{id} {   // category definitions / schemas — live
         allow read: if isMember();
         allow create: if workCreateOk();

@@ -238,6 +238,7 @@ function mapSetup(token){
     mapRenderPhotoPins();
     mapRenderFieldMarkers();
     kmlLoadLayers();
+    if(typeof window.poLoadSheets === 'function') window.poLoadSheets();
     mapRenderTrackerLayers();
 // Long press — desktop
 let _lpTimer = null, _lpStartPos = null;
@@ -318,6 +319,8 @@ function mapSetStyle(style){
     if(_mapGpsMarker){_mapGpsMarker.remove();_mapGpsMarker=null;}
     mapAddGPSDot();
     mapRenderFieldMarkers();
+    // Plan-sheet rasters first so they mount BELOW the KML vectors re-added next.
+    if(typeof window.poReaddVisible === 'function') window.poReaddVisible();
     _mapKmlLayers.filter(l=>l.visible).forEach(layer => mapToggleKmlLayerById(layer.id, true));
   });
   _mapInstance.once('idle',()=>{

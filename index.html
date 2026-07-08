@@ -2187,11 +2187,21 @@ Anticipated rain — AM weather monitoring expected"></textarea>
       <button onclick="mapKmlToggleSelectAll()" style="background:none;border:1px dashed var(--border);color:var(--muted2);padding:5px 8px;border-radius:4px;font-family:var(--mono);font-size:10px;cursor:pointer;width:100%;text-transform:uppercase;letter-spacing:.05em;">Select All</button>
     </div>
     <div id="map-kml-layer-list" style="margin-bottom:12px;font-size:11px;color:var(--muted);">No layers imported.</div>
+    <div id="map-po-section" style="display:none;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+        <span style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;flex:1;">Plan Sheets</span>
+      </div>
+      <div id="map-po-list" style="margin-bottom:12px;font-size:11px;color:var(--muted);"></div>
+    </div>
   </div>
   <div style="padding:10px;padding-bottom:95px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:8px;">
     <label style="display:flex;align-items:center;gap:8px;background:var(--s1);padding:8px 10px;border-radius:6px;cursor:pointer;font-family:var(--mono);font-size:11px;color:var(--text);">
       📂 Import KML
       <input type="file" id="map-kml-input" accept=".kml,.kmz" style="display:none;" onchange="mapImportKml(this)">
+    </label>
+    <label style="display:flex;align-items:center;gap:8px;background:var(--s1);padding:8px 10px;border-radius:6px;cursor:pointer;font-family:var(--mono);font-size:11px;color:var(--text);" title="Select the manifest.json together with its sheet images (one multi-select)">
+      📐 Import Plan Sheets
+      <input type="file" id="map-po-input" accept=".json,.png,.jpg,.jpeg,.webp" multiple style="display:none;" onchange="poImportFiles(this)">
     </label>
     <button onclick="mapShowExportModal()" style="background:var(--s1);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:6px;font-family:var(--mono);font-size:11px;cursor:pointer;text-align:left;">⬇️ Export KML</button>
   </div>
