@@ -150,6 +150,7 @@ function poClearAll(){
   _poSheets.forEach(_poRemoveFromMap);
   _poSheets = [];
   _poNudge = null;
+  _poAdjustBindDrag(false);
   const box = document.getElementById('map-po-nudge');
   if(box) box.remove();
   poRenderPanel();
@@ -328,16 +329,105 @@ function poDeleteSheet(id){
   };
 }
 
-// ── Nudge (registration correction) ─────────────────────────────────────────
-// Shifts all 4 corners N/S/E/W by a foot step — live via ImageSource
-// setCoordinates, persisted (shared — a corner fix is a data correction, not
-// view state) on Save. Also the rescue path for REVIEW-flagged sheets.
+// ── Adjust mode (registration correction / manual fit) ──────────────────────
+// Full manual transform for a sheet: DRAG it on the map to move, rotate and
+// scale in stepped increments, arrows for fine translation. Live via
+// ImageSource setCoordinates; persisted (shared — a corner fix is a data
+// correction, not view state) on Save. This is both the rescue path for
+// REVIEW-flagged registrations AND the universal fallback for plan sets that
+// have no surveyed reference to auto-fit against.
+
+const _FT_PER_DEG_LAT = 364567.2;
+function _poFtPerDegLng(lat){ return _FT_PER_DEG_LAT * Math.cos(lat * Math.PI / 180); }
 
 function _poShiftCorners(corners, dxFt, dyFt){
   const latRef = corners[0][1];
-  const dLat = (dyFt * 0.3048) / 111320;
-  const dLng = (dxFt * 0.3048) / (111320 * Math.cos(latRef * Math.PI / 180));
+  const dLat = dyFt / _FT_PER_DEG_LAT;
+  const dLng = dxFt / _poFtPerDegLng(latRef);
   return corners.map(([lng, lat]) => [lng + dLng, lat + dLat]);
+}
+
+// Rotate (deg CCW) and/or scale the corner quad about its centroid, in local
+// ENU-ft so the transform is metric-true regardless of latitude.
+function _poTransformCorners(corners, rotDeg, scale){
+  const clng = corners.reduce((a, c) => a + c[0], 0) / corners.length;
+  const clat = corners.reduce((a, c) => a + c[1], 0) / corners.length;
+  const fLng = _poFtPerDegLng(clat), fLat = _FT_PER_DEG_LAT;
+  const a = rotDeg * Math.PI / 180, cos = Math.cos(a), sin = Math.sin(a);
+  return corners.map(([lng, lat]) => {
+    const x = (lng - clng) * fLng, y = (lat - clat) * fLat;
+    const xr = (x * cos - y * sin) * scale, yr = (x * sin + y * cos) * scale;
+    return [clng + xr / fLng, clat + yr / fLat];
+  });
+}
+
+// Point-in-convex-quad (corners TL,TR,BR,BL) — raster layers aren't
+// queryRenderedFeatures-able, so drag targeting hit-tests the geometry.
+function _poPointInQuad(lngLat, corners){
+  let sign = 0;
+  for(let i = 0; i < 4; i++){
+    const [ax, ay] = corners[i], [bx, by] = corners[(i + 1) % 4];
+    const cross = (bx - ax) * (lngLat.lat - ay) - (by - ay) * (lngLat.lng - ax);
+    if(cross === 0) continue;
+    const s = cross > 0 ? 1 : -1;
+    if(sign === 0) sign = s;
+    else if(s !== sign) return false;
+  }
+  return true;
+}
+
+// step sizes per action, indexed by the S/M/L selector
+const _PO_STEPS = { move: [1, 5, 25], rot: [0.1, 0.5, 2], scale: [0.002, 0.01, 0.05] };
+function _poStepIdx(){ return parseInt(document.getElementById('map-po-adj-step')?.value || '1', 10); }
+
+function _poAdjustSheet(){ return _poNudge ? _poSheets.find(s => s.id === _poNudge.id) : null; }
+
+function _poApplyLive(sheet){
+  const map = _poMap();
+  const src = map && map.getSource('po-' + sheet.id);
+  if(src && src.setCoordinates) src.setCoordinates(sheet.corners);
+}
+
+// Drag-to-move: pointer down inside the sheet quad captures the gesture and
+// suspends map panning; each move applies the lng/lat delta to all corners.
+// Two-finger gestures stay with the map (pinch zoom keeps working mid-adjust).
+let _poDragFrom = null;
+function _poAdjustPointerDown(e){
+  const sheet = _poAdjustSheet();
+  if(!sheet) return;
+  if(e.originalEvent && e.originalEvent.touches && e.originalEvent.touches.length > 1) return;
+  if(!_poPointInQuad(e.lngLat, sheet.corners)) return;
+  e.preventDefault();
+  _poDragFrom = e.lngLat;
+  const map = _poMap();
+  const move = ev => {
+    if(!_poDragFrom) return;
+    const dLng = ev.lngLat.lng - _poDragFrom.lng;
+    const dLat = ev.lngLat.lat - _poDragFrom.lat;
+    _poDragFrom = ev.lngLat;
+    sheet.corners = sheet.corners.map(([lng, lat]) => [lng + dLng, lat + dLat]);
+    _poApplyLive(sheet);
+  };
+  const up = () => {
+    _poDragFrom = null;
+    map.off('mousemove', move); map.off('touchmove', move);
+    map.off('mouseup', up); map.off('touchend', up);
+  };
+  map.on('mousemove', move); map.on('touchmove', move);
+  map.on('mouseup', up); map.on('touchend', up);
+}
+
+function _poAdjustBindDrag(on){
+  const map = _poMap();
+  if(!map) return;
+  if(on){
+    map.on('mousedown', _poAdjustPointerDown);
+    map.on('touchstart', _poAdjustPointerDown);
+  } else {
+    map.off('mousedown', _poAdjustPointerDown);
+    map.off('touchstart', _poAdjustPointerDown);
+    _poDragFrom = null;
+  }
 }
 
 function poNudgeOpen(id){
@@ -349,43 +439,69 @@ function poNudgeOpen(id){
   _poNudge = { id, startCorners: sheet.corners.map(c => [...c]) };
   const box = document.createElement('div');
   box.id = 'map-po-nudge';
-  box.style.cssText = 'position:absolute;bottom:150px;left:50%;transform:translateX(-50%);z-index:40;background:rgba(0,0,0,0.82);border:1px solid var(--border);border-radius:10px;padding:10px 12px;box-shadow:0 4px 20px rgba(0,0,0,.5);';
+  box.style.cssText = 'position:absolute;bottom:150px;left:50%;transform:translateX(-50%);z-index:40;background:rgba(0,0,0,0.85);border:1px solid var(--border);border-radius:10px;padding:10px 12px;box-shadow:0 4px 20px rgba(0,0,0,.5);';
   const btn = 'background:var(--s1);border:1px solid var(--border);color:var(--text);border-radius:6px;font-size:14px;width:34px;height:34px;cursor:pointer;';
   box.innerHTML = `
-    <div style="font-family:var(--mono);font-size:10px;color:var(--amber2);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;text-align:center">🎯 Nudge — ${String(sheet.name).replace(/</g,'&lt;')}</div>
+    <div style="font-family:var(--mono);font-size:10px;color:var(--amber2);text-transform:uppercase;letter-spacing:.06em;margin-bottom:2px;text-align:center">🎯 Adjust — ${String(sheet.name).replace(/</g,'&lt;')}</div>
+    <div style="font-family:var(--mono);font-size:9px;color:var(--muted);margin-bottom:8px;text-align:center">drag the sheet on the map to move it</div>
     <div style="display:flex;align-items:center;gap:10px;">
       <div style="display:grid;grid-template-columns:34px 34px 34px;gap:4px;justify-items:center;">
-        <span></span><button style="${btn}" onclick="poNudgeBy(0,1)">↑</button><span></span>
+        <button style="${btn}" title="rotate counter-clockwise" onclick="poAdjustRotate(1)">↺</button>
+        <button style="${btn}" onclick="poNudgeBy(0,1)">↑</button>
+        <button style="${btn}" title="rotate clockwise" onclick="poAdjustRotate(-1)">↻</button>
         <button style="${btn}" onclick="poNudgeBy(-1,0)">←</button>
-        <select id="map-po-nudge-step" style="background:var(--s1);border:1px solid var(--border);color:var(--text);border-radius:6px;font-family:var(--mono);font-size:10px;width:34px;height:34px;text-align:center;padding:0">
-          <option value="1">1ft</option><option value="5" selected>5ft</option><option value="25">25ft</option>
+        <select id="map-po-adj-step" title="step size" style="background:var(--s1);border:1px solid var(--border);color:var(--text);border-radius:6px;font-family:var(--mono);font-size:10px;width:34px;height:34px;text-align:center;padding:0">
+          <option value="0">S</option><option value="1" selected>M</option><option value="2">L</option>
         </select>
         <button style="${btn}" onclick="poNudgeBy(1,0)">→</button>
-        <span></span><button style="${btn}" onclick="poNudgeBy(0,-1)">↓</button><span></span>
+        <button style="${btn}" title="shrink" onclick="poAdjustScale(-1)">−</button>
+        <button style="${btn}" onclick="poNudgeBy(0,-1)">↓</button>
+        <button style="${btn}" title="enlarge" onclick="poAdjustScale(1)">＋</button>
       </div>
       <div style="display:flex;flex-direction:column;gap:5px;">
         <button style="background:var(--amber);border:none;color:#1a1a1a;border-radius:6px;font-family:var(--mono);font-size:11px;font-weight:700;padding:7px 12px;cursor:pointer;" onclick="poNudgeSave()">✓ Save</button>
-        <button style="background:none;border:1px solid var(--border);color:var(--muted);border-radius:6px;font-family:var(--mono);font-size:11px;padding:6px 12px;cursor:pointer;" onclick="poNudgeCancel()">Cancel</button>
+        <button style="background:none;border:1px solid var(--border);color:var(--muted);border-radius:6px;font-family:var(--mono);font-size:10px;padding:5px 12px;cursor:pointer;" onclick="poAdjustReset()">Reset</button>
+        <button style="background:none;border:1px solid var(--border);color:var(--muted);border-radius:6px;font-family:var(--mono);font-size:10px;padding:5px 12px;cursor:pointer;" onclick="poNudgeCancel()">Cancel</button>
       </div>
     </div>`;
   const host = document.getElementById('map-container') || document.getElementById('page-map') || document.body;
   host.appendChild(box);
+  _poAdjustBindDrag(true);
 }
 
 function poNudgeBy(ex, ny){
-  if(!_poNudge) return;
-  const sheet = _poSheets.find(s => s.id === _poNudge.id);
+  const sheet = _poAdjustSheet();
   if(!sheet) return;
-  const step = parseFloat(document.getElementById('map-po-nudge-step')?.value || '5');
+  const step = _PO_STEPS.move[_poStepIdx()];
   sheet.corners = _poShiftCorners(sheet.corners, ex * step, ny * step);
-  const map = _poMap();
-  const src = map && map.getSource('po-' + sheet.id);
-  if(src && src.setCoordinates) src.setCoordinates(sheet.corners);
+  _poApplyLive(sheet);
+}
+
+function poAdjustRotate(dir){
+  const sheet = _poAdjustSheet();
+  if(!sheet) return;
+  sheet.corners = _poTransformCorners(sheet.corners, dir * _PO_STEPS.rot[_poStepIdx()], 1);
+  _poApplyLive(sheet);
+}
+
+function poAdjustScale(dir){
+  const sheet = _poAdjustSheet();
+  if(!sheet) return;
+  sheet.corners = _poTransformCorners(sheet.corners, 0, 1 + dir * _PO_STEPS.scale[_poStepIdx()]);
+  _poApplyLive(sheet);
+}
+
+function poAdjustReset(){
+  const sheet = _poAdjustSheet();
+  if(!sheet || !_poNudge) return;
+  sheet.corners = _poNudge.startCorners.map(c => [...c]);
+  _poApplyLive(sheet);
 }
 
 function poNudgeSave(){
   if(!_poNudge) return;
   _poNudge = null;
+  _poAdjustBindDrag(false);
   document.getElementById('map-po-nudge')?.remove();
   poSaveSheets();
 }
@@ -395,11 +511,10 @@ function poNudgeCancel(){
   const sheet = _poSheets.find(s => s.id === _poNudge.id);
   if(sheet){
     sheet.corners = _poNudge.startCorners;
-    const map = _poMap();
-    const src = map && map.getSource('po-' + sheet.id);
-    if(src && src.setCoordinates) src.setCoordinates(sheet.corners);
+    _poApplyLive(sheet);
   }
   _poNudge = null;
+  _poAdjustBindDrag(false);
   document.getElementById('map-po-nudge')?.remove();
 }
 
@@ -470,6 +585,10 @@ window.poImportFiles = poImportFiles;
 window.poDeleteSheet = poDeleteSheet;
 window.poNudgeOpen = poNudgeOpen;
 window.poNudgeBy = poNudgeBy;
+window.poAdjustRotate = poAdjustRotate;
+window.poAdjustScale = poAdjustScale;
+window.poAdjustReset = poAdjustReset;
 window.poNudgeSave = poNudgeSave;
 window.poNudgeCancel = poNudgeCancel;
 window.poRenderPanel = poRenderPanel;
+window.poAdjustActive = () => !!_poNudge;   // maps.js long-press suppression

@@ -244,6 +244,7 @@ function mapSetup(token){
 let _lpTimer = null, _lpStartPos = null;
 _mapInstance.on('mousedown', e => {
   if(e.originalEvent.button !== 0) return;
+  if(typeof window.poAdjustActive === 'function' && window.poAdjustActive()) return;  // sheet-adjust drag owns the pointer
   const lngLat = e.lngLat;
   _lpTimer = setTimeout(()=>{ mapShowMarkerModal(lngLat); }, 700);
 });
@@ -253,6 +254,7 @@ _mapInstance.on('dragstart', ()=>{ clearTimeout(_lpTimer); _lpStartPos=null; if(
 // Long press — touch
 _mapInstance.on('touchstart', e => {
   if(e.originalEvent.touches.length !== 1) return;
+  if(typeof window.poAdjustActive === 'function' && window.poAdjustActive()) return;  // sheet-adjust drag owns the pointer
   const t = e.originalEvent.touches[0];
   _lpStartPos = {x:t.clientX, y:t.clientY};
   const lngLat = e.lngLat;
