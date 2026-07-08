@@ -246,11 +246,25 @@ async function poImportFiles(input){
   const entries = Object.entries(manifest).filter(([, m]) => m && m.file && Array.isArray(m.corners) && m.corners.length === 4);
   if(!entries.length){ banner('No sheets with corners found in the manifest.'); return; }
 
-  let done = 0, skipped = 0;
+  let done = 0, skipped = 0, updated = 0;
   for(const [name, meta] of entries){
+    // Re-importing a manifest (with or without images) REFRESHES an existing
+    // sheet's registration in place — corners/rms/quality update, the uploaded
+    // image is reused. This is the delivery path for re-registered manifests:
+    // select just the new manifest.json, no 40 MB re-upload.
+    const existing = _poSheets.find(s => s.name === name);
+    if(existing){
+      const map = _poMap();
+      existing.corners = meta.corners;
+      existing.rmsFt = (typeof meta.rms_ft === 'number') ? meta.rms_ft : existing.rmsFt;
+      existing.quality = meta.quality || existing.quality;
+      const src = map && map.getSource('po-' + existing.id);
+      if(src && src.setCoordinates) src.setCoordinates(existing.corners);
+      updated++;
+      continue;
+    }
     const img = images.get(meta.file);
     if(!img){ skipped++; continue; }
-    if(_poSheets.find(s => s.name === name)){ skipped++; continue; }   // already imported
     banner(`Uploading plan sheet ${done + 1}/${entries.length} — ${name}…`);
     const id = 'po-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 6);
     const storagePath = `planOverlays/${window._currentUser.uid}/${id}-${meta.file}`;
@@ -278,7 +292,11 @@ async function poImportFiles(input){
   _poSheets.sort((a, b) => String(a.name).localeCompare(String(b.name)));
   poSaveSheets();
   poRenderPanel();
-  banner(`Plan sheets imported: ${done}${skipped ? ` (${skipped} skipped)` : ''} — toggle them on in the layer panel.`);
+  const parts = [];
+  if(done) parts.push(`${done} imported`);
+  if(updated) parts.push(`${updated} updated (registration refreshed)`);
+  if(skipped) parts.push(`${skipped} skipped`);
+  banner(`Plan sheets: ${parts.join(', ') || 'nothing to do'}.`);
 }
 
 function poDeleteSheet(id){
