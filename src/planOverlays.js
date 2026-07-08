@@ -153,6 +153,7 @@ function poClearAll(){
   _poAdjustBindDrag(false);
   const box = document.getElementById('map-po-nudge');
   if(box) box.remove();
+  poCropCancel();
   poRenderPanel();
 }
 
@@ -171,7 +172,10 @@ function poSaveSheets(){
   const data = _poSheets.map(s => ({
     id: s.id, name: s.name, file: s.file || '',
     corners: _poPackCorners(s.corners), rmsFt: s.rmsFt ?? null, quality: s.quality || 'good',
-    visible: !!s.visible, storagePath: s.storagePath || '', downloadUrl: s.downloadUrl || ''
+    visible: !!s.visible, storagePath: s.storagePath || '', downloadUrl: s.downloadUrl || '',
+    // ✂ crop state (null when uncropped): rect in ORIGINAL-image fractions +
+    // the pre-crop original file so crops are re-editable and resettable.
+    crop: s.crop || null, origStoragePath: s.origStoragePath || '', origDownloadUrl: s.origDownloadUrl || ''
   }));
   try{ if(window.idbSet) window.idbSet(_poStorageKey(), JSON.stringify({ data, opacity: _poOpacity })); }catch{}
   if(window.db && window._fbReady){
@@ -322,8 +326,12 @@ function poDeleteSheet(id){
     ov.remove();
     _poRemoveFromMap(sheet);
     _poSheets = _poSheets.filter(s => s.id !== id);
-    // Best-effort Storage cleanup — only the owner's rule allows it.
+    // Best-effort Storage cleanup — only the owner's rule allows it. A cropped
+    // sheet has two files (derivative + kept original); remove both.
     if(window.storage && sheet.storagePath){ window.storage.ref(sheet.storagePath).delete().catch(() => {}); }
+    if(window.storage && sheet.origStoragePath && sheet.origStoragePath !== sheet.storagePath){
+      window.storage.ref(sheet.origStoragePath).delete().catch(() => {});
+    }
     poSaveSheets();
     poRenderPanel();
   };
@@ -460,6 +468,7 @@ function poNudgeOpen(id){
       </div>
       <div style="display:flex;flex-direction:column;gap:5px;">
         <button style="background:var(--amber);border:none;color:#1a1a1a;border-radius:6px;font-family:var(--mono);font-size:11px;font-weight:700;padding:7px 12px;cursor:pointer;" onclick="poNudgeSave()">✓ Save</button>
+        <button style="background:none;border:1px solid var(--border);color:var(--text);border-radius:6px;font-family:var(--mono);font-size:10px;padding:5px 12px;cursor:pointer;" onclick="poCropOpen('${sheet.id}')">✂ Crop</button>
         <button style="background:none;border:1px solid var(--border);color:var(--muted);border-radius:6px;font-family:var(--mono);font-size:10px;padding:5px 12px;cursor:pointer;" onclick="poAdjustReset()">Reset</button>
         <button style="background:none;border:1px solid var(--border);color:var(--muted);border-radius:6px;font-family:var(--mono);font-size:10px;padding:5px 12px;cursor:pointer;" onclick="poNudgeCancel()">Cancel</button>
       </div>
@@ -516,6 +525,285 @@ function poNudgeCancel(){
   _poNudge = null;
   _poAdjustBindDrag(false);
   document.getElementById('map-po-nudge')?.remove();
+}
+
+// ── ✂ Crop (clip a sheet to just the region you need) ───────────────────────
+// The crop is a rectangle in ORIGINAL-image space (u/v fractions). Applying it
+// renders the sub-rect to a canvas at native resolution, uploads the cropped
+// PNG, and re-pins the corners by affine interpolation of the sheet quad — so
+// a cropped sheet drops GPU memory AND stops covering its neighbours, and the
+// 🎯 adjust tools keep working on the result. The pre-crop original file is
+// kept so the crop can be re-edited outward or fully reset at any time.
+//
+// Corner math: every quad here is a parallelogram (georef + all adjust ops are
+// affine), so the FULL-image quad is exactly recoverable from the current
+// corners and the stored crop fractions — no original corners need persisting,
+// and crop→adjust→re-crop composes without drift.
+
+let _poCrop = null;   // {id, img, iw, ih, rect:{u0,v0,u1,v1}, drag}
+
+function _poFullQuad(corners, crop){
+  if(!crop) return corners.map(c => [...c]);
+  const [TL, TR, , BL] = corners;
+  const du = Math.max(crop.u1 - crop.u0, 1e-6), dv = Math.max(crop.v1 - crop.v0, 1e-6);
+  const U = [(TR[0] - TL[0]) / du, (TR[1] - TL[1]) / du];   // full left→right vector
+  const V = [(BL[0] - TL[0]) / dv, (BL[1] - TL[1]) / dv];   // full top→bottom vector
+  const fTL = [TL[0] - crop.u0 * U[0] - crop.v0 * V[0], TL[1] - crop.u0 * U[1] - crop.v0 * V[1]];
+  return [
+    fTL,
+    [fTL[0] + U[0], fTL[1] + U[1]],
+    [fTL[0] + U[0] + V[0], fTL[1] + U[1] + V[1]],
+    [fTL[0] + V[0], fTL[1] + V[1]]
+  ];
+}
+
+function _poQuadForCrop(fullQuad, r){
+  const [TL, TR, , BL] = fullQuad;
+  const U = [TR[0] - TL[0], TR[1] - TL[1]];
+  const V = [BL[0] - TL[0], BL[1] - TL[1]];
+  const at = (u, v) => [TL[0] + u * U[0] + v * V[0], TL[1] + u * U[1] + v * V[1]];
+  return [at(r.u0, r.v0), at(r.u1, r.v0), at(r.u1, r.v1), at(r.u0, r.v1)];
+}
+
+async function poCropOpen(id){
+  const sheet = _poSheets.find(s => s.id === id);
+  if(!sheet) return;
+  const banner = m => { if(typeof window.showCloudBanner === 'function') window.showCloudBanner(m); };
+  // The cropped file lives under the importing user's Storage subtree — only
+  // that user can write there, so cropping is owner-only (members see a hint).
+  const uid = window._currentUser && window._currentUser.uid;
+  if(!uid || (sheet.storagePath && !sheet.storagePath.includes('/' + uid + '/'))){
+    banner('Only the member who imported this sheet can crop it.');
+    return;
+  }
+  banner('Loading sheet image…');
+  let img;
+  try{
+    const url = sheet.origDownloadUrl || await _poEnsureUrl(sheet);
+    const blob = await (await fetch(url)).blob();
+    img = await createImageBitmap(blob);
+  }catch(err){
+    console.warn('poCropOpen:', err.message);
+    banner('Couldn\'t load the sheet image — check connection.');
+    return;
+  }
+  document.getElementById('_po-crop-ov')?.remove();
+  _poCrop = {
+    id, img, iw: img.width, ih: img.height,
+    rect: sheet.crop ? { ...sheet.crop } : { u0: 0, v0: 0, u1: 1, v1: 1 },
+    drag: null
+  };
+  const ov = document.createElement('div');
+  ov.id = '_po-crop-ov';
+  ov.style.cssText = 'position:fixed;inset:0;z-index:9500;background:rgba(0,0,0,0.92);display:flex;flex-direction:column;';
+  const small = 'background:none;border:1px solid var(--border);color:var(--muted);border-radius:6px;font-family:var(--mono);font-size:11px;padding:8px 14px;cursor:pointer;';
+  ov.innerHTML = `
+    <div style="padding:calc(env(safe-area-inset-top, 0px) + 10px) 14px 8px;display:flex;align-items:center;gap:8px;">
+      <span style="font-family:var(--mono);font-size:11px;color:var(--amber2);text-transform:uppercase;letter-spacing:.06em;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">✂ Crop — ${String(sheet.name).replace(/</g,'&lt;')}</span>
+      <span style="font-family:var(--mono);font-size:9px;color:var(--muted);">drag edges/corners · drag inside to move</span>
+    </div>
+    <div id="_po-crop-host" style="flex:1;position:relative;overflow:hidden;touch-action:none;">
+      <canvas id="_po-crop-cv" style="position:absolute;"></canvas>
+    </div>
+    <div style="padding:10px 14px calc(env(safe-area-inset-bottom, 0px) + 12px);display:flex;gap:8px;justify-content:center;">
+      <button style="background:var(--amber);border:none;color:#1a1a1a;border-radius:6px;font-family:var(--mono);font-size:12px;font-weight:700;padding:8px 18px;cursor:pointer;" onclick="poCropApply()">✓ Apply crop</button>
+      ${sheet.crop ? `<button style="${small}" onclick="poCropReset()">Reset to full sheet</button>` : ''}
+      <button style="${small}" onclick="poCropCancel()">Cancel</button>
+    </div>`;
+  document.body.appendChild(ov);
+  const cv = ov.querySelector('#_po-crop-cv');
+  cv.addEventListener('pointerdown', _poCropDown);
+  cv.addEventListener('pointermove', _poCropMove);
+  cv.addEventListener('pointerup', _poCropUp);
+  cv.addEventListener('pointercancel', _poCropUp);
+  window.addEventListener('resize', _poCropDraw);
+  requestAnimationFrame(_poCropDraw);
+}
+
+// canvas layout: image letterboxed into the host; _poCrop.fit carries the
+// image→canvas mapping so pointer math stays in image fractions.
+function _poCropDraw(){
+  if(!_poCrop) return;
+  const host = document.getElementById('_po-crop-host');
+  const cv = document.getElementById('_po-crop-cv');
+  if(!host || !cv) return;
+  const W = host.clientWidth, H = host.clientHeight;
+  const dpr = window.devicePixelRatio || 1;
+  cv.width = W * dpr; cv.height = H * dpr;
+  cv.style.width = W + 'px'; cv.style.height = H + 'px';
+  const ctx = cv.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const { img, iw, ih, rect } = _poCrop;
+  const sc = Math.min((W - 20) / iw, (H - 20) / ih);
+  const dw = iw * sc, dh = ih * sc;
+  const ox = (W - dw) / 2, oy = (H - dh) / 2;
+  _poCrop.fit = { sc, ox, oy, dw, dh };
+  ctx.clearRect(0, 0, W, H);
+  ctx.drawImage(img, ox, oy, dw, dh);
+  // dim everything outside the crop rect
+  const x0 = ox + rect.u0 * dw, y0 = oy + rect.v0 * dh;
+  const x1 = ox + rect.u1 * dw, y1 = oy + rect.v1 * dh;
+  ctx.fillStyle = 'rgba(0,0,0,0.62)';
+  ctx.fillRect(ox, oy, dw, y0 - oy);
+  ctx.fillRect(ox, y1, dw, oy + dh - y1);
+  ctx.fillRect(ox, y0, x0 - ox, y1 - y0);
+  ctx.fillRect(x1, y0, ox + dw - x1, y1 - y0);
+  // rect + handles
+  ctx.strokeStyle = '#e8b44d'; ctx.lineWidth = 2;
+  ctx.strokeRect(x0, y0, x1 - x0, y1 - y0);
+  ctx.fillStyle = '#e8b44d';
+  for(const [hx, hy] of _poCropHandles(x0, y0, x1, y1)){
+    ctx.fillRect(hx - 7, hy - 7, 14, 14);
+  }
+}
+
+function _poCropHandles(x0, y0, x1, y1){
+  const mx = (x0 + x1) / 2, my = (y0 + y1) / 2;
+  // order matters — indexes map to the drag modes in _poCropDown
+  return [[x0, y0], [mx, y0], [x1, y0], [x1, my], [x1, y1], [mx, y1], [x0, y1], [x0, my]];
+}
+
+function _poCropDown(e){
+  if(!_poCrop || !_poCrop.fit) return;
+  e.preventDefault();
+  e.target.setPointerCapture(e.pointerId);
+  const { fit, rect } = _poCrop;
+  const px = e.offsetX, py = e.offsetY;
+  const x0 = fit.ox + rect.u0 * fit.dw, y0 = fit.oy + rect.v0 * fit.dh;
+  const x1 = fit.ox + rect.u1 * fit.dw, y1 = fit.oy + rect.v1 * fit.dh;
+  const hs = _poCropHandles(x0, y0, x1, y1);
+  const R = 18; // finger-sized catch radius
+  let mode = null;
+  hs.forEach(([hx, hy], i) => {
+    if(mode === null && Math.abs(px - hx) <= R && Math.abs(py - hy) <= R) mode = i;
+  });
+  if(mode === null && px > x0 && px < x1 && py > y0 && py < y1) mode = 'move';
+  if(mode === null) return;
+  _poCrop.drag = { mode, px, py, rect0: { ...rect } };
+}
+
+function _poCropMove(e){
+  if(!_poCrop || !_poCrop.drag) return;
+  e.preventDefault();
+  const { fit, drag } = _poCrop;
+  const du = (e.offsetX - drag.px) / fit.dw;
+  const dv = (e.offsetY - drag.py) / fit.dh;
+  const r0 = drag.rect0;
+  let r = { ...r0 };
+  const MIN = 0.05; // never collapse below 5% of the sheet
+  if(drag.mode === 'move'){
+    const su = Math.min(Math.max(du, -r0.u0), 1 - r0.u1);
+    const sv = Math.min(Math.max(dv, -r0.v0), 1 - r0.v1);
+    r = { u0: r0.u0 + su, v0: r0.v0 + sv, u1: r0.u1 + su, v1: r0.v1 + sv };
+  } else {
+    const m = drag.mode; // 0 TL,1 T,2 TR,3 R,4 BR,5 B,6 BL,7 L
+    if(m === 0 || m === 6 || m === 7) r.u0 = Math.min(Math.max(0, r0.u0 + du), r0.u1 - MIN);
+    if(m === 2 || m === 3 || m === 4) r.u1 = Math.max(Math.min(1, r0.u1 + du), r0.u0 + MIN);
+    if(m === 0 || m === 1 || m === 2) r.v0 = Math.min(Math.max(0, r0.v0 + dv), r0.v1 - MIN);
+    if(m === 4 || m === 5 || m === 6) r.v1 = Math.max(Math.min(1, r0.v1 + dv), r0.v0 + MIN);
+  }
+  _poCrop.rect = r;
+  requestAnimationFrame(_poCropDraw);
+}
+
+function _poCropUp(){
+  if(_poCrop) _poCrop.drag = null;
+}
+
+function poCropCancel(){
+  document.getElementById('_po-crop-ov')?.remove();
+  window.removeEventListener('resize', _poCropDraw);
+  if(_poCrop && _poCrop.img && _poCrop.img.close) _poCrop.img.close();
+  _poCrop = null;
+}
+
+// A crop commits its own corner change — if a 🎯 adjust session is open on the
+// same sheet, rebase its revert point so adjust-Cancel doesn't undo the crop
+// geometry against the already-swapped image.
+function _poCropSyncNudge(sheet){
+  if(_poNudge && _poNudge.id === sheet.id){
+    _poNudge.startCorners = sheet.corners.map(c => [...c]);
+  }
+}
+
+async function poCropApply(){
+  if(!_poCrop) return;
+  const sheet = _poSheets.find(s => s.id === _poCrop.id);
+  const banner = m => { if(typeof window.showCloudBanner === 'function') window.showCloudBanner(m); };
+  if(!sheet){ poCropCancel(); return; }
+  const { img, iw, ih, rect } = _poCrop;
+  const full = (rect.u0 <= 0.001 && rect.v0 <= 0.001 && rect.u1 >= 0.999 && rect.v1 >= 0.999);
+  if(full){ poCropReset(); return; }
+  banner('Cropping sheet…');
+  const sx = Math.round(rect.u0 * iw), sy = Math.round(rect.v0 * ih);
+  const sw = Math.max(1, Math.round((rect.u1 - rect.u0) * iw));
+  const sh = Math.max(1, Math.round((rect.v1 - rect.v0) * ih));
+  const cv = document.createElement('canvas');
+  cv.width = sw; cv.height = sh;
+  cv.getContext('2d').drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
+  const blob = await new Promise(res => cv.toBlob(res, 'image/png'));
+  if(!blob){ banner('Crop failed — couldn\'t render the image.'); return; }
+  // exact fractions actually rendered (post-rounding), so corners match pixels
+  const r = { u0: sx / iw, v0: sy / ih, u1: (sx + sw) / iw, v1: (sy + sh) / ih };
+  const newPath = `planOverlays/${window._currentUser.uid}/${sheet.id}-crop-${Date.now().toString(36)}.png`;
+  let newUrl;
+  try{
+    const snap = await window.storage.ref(newPath).put(blob);
+    newUrl = await snap.ref.getDownloadURL();
+  }catch(err){
+    console.warn('poCropApply upload:', err.message);
+    if(typeof window._reportError === 'function'){
+      window._reportError({ type:'plan-overlay-crop-error', message: err.message,
+        stack: err.stack || null, sheetId: sheet.id, storagePath: newPath });
+    }
+    banner('Crop upload failed — check connection and try again.');
+    return;
+  }
+  // first crop keeps the original file; later crops replace only the derivative
+  const prevDerivative = sheet.crop ? sheet.storagePath : '';
+  if(!sheet.crop){
+    sheet.origStoragePath = sheet.storagePath;
+    sheet.origDownloadUrl = sheet.downloadUrl;
+  }
+  const fullQuad = _poFullQuad(sheet.corners, sheet.crop);
+  sheet.corners = _poQuadForCrop(fullQuad, r);
+  sheet.crop = r;
+  sheet.storagePath = newPath;
+  sheet.downloadUrl = newUrl;
+  if(prevDerivative && window.storage){ window.storage.ref(prevDerivative).delete().catch(() => {}); }
+  _poCropSyncNudge(sheet);
+  const wasVisible = sheet.visible;
+  _poRemoveFromMap(sheet);
+  if(wasVisible){ await _poAddToMap(sheet).catch(e => console.warn('poCropApply remount:', e.message)); }
+  poSaveSheets();
+  poRenderPanel();
+  poCropCancel();
+  banner('Sheet cropped ✂ — 🎯 adjust still works on the result.');
+}
+
+// Restore the pre-crop original (file + full-extent corners).
+function poCropReset(){
+  if(!_poCrop) return;
+  const sheet = _poSheets.find(s => s.id === _poCrop.id);
+  if(!sheet || !sheet.crop){ poCropCancel(); return; }
+  const derivative = sheet.storagePath;
+  sheet.corners = _poFullQuad(sheet.corners, sheet.crop);
+  sheet.storagePath = sheet.origStoragePath || sheet.storagePath;
+  sheet.downloadUrl = sheet.origDownloadUrl || sheet.downloadUrl;
+  sheet.crop = null;
+  sheet.origStoragePath = '';
+  sheet.origDownloadUrl = '';
+  if(derivative && derivative !== sheet.storagePath && window.storage){
+    window.storage.ref(derivative).delete().catch(() => {});
+  }
+  _poCropSyncNudge(sheet);
+  const wasVisible = sheet.visible;
+  _poRemoveFromMap(sheet);
+  if(wasVisible){ _poAddToMap(sheet).catch(e => console.warn('poCropReset remount:', e.message)); }
+  poSaveSheets();
+  poRenderPanel();
+  poCropCancel();
+  if(typeof window.showCloudBanner === 'function') window.showCloudBanner('Crop removed — full sheet restored.');
 }
 
 // ── Layer panel section ──────────────────────────────────────────────────────
@@ -590,5 +878,9 @@ window.poAdjustScale = poAdjustScale;
 window.poAdjustReset = poAdjustReset;
 window.poNudgeSave = poNudgeSave;
 window.poNudgeCancel = poNudgeCancel;
+window.poCropOpen = poCropOpen;
+window.poCropApply = poCropApply;
+window.poCropReset = poCropReset;
+window.poCropCancel = poCropCancel;
 window.poRenderPanel = poRenderPanel;
 window.poAdjustActive = () => !!_poNudge;   // maps.js long-press suppression
