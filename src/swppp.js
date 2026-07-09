@@ -207,10 +207,15 @@ function swpppNewInspection(){
   }catch(err){ console.warn('swppp §8 prefill failed:', err.message); }
   // Auto-attach SWPPP-tagged field photos taken since the last inspection
   // (7-day window when there's no previous report). Adjustable via the picker.
+  // Photos already attached to ANY earlier report (draft or completed, incl.
+  // test reports) never auto-attach again — each report starts with only
+  // fresh photos; the picker can still add them back deliberately.
+  const usedIds = new Set();
+  (_swInsp[pid]||[]).forEach(x=>{ (x.photos||[]).forEach(id=>usedIds.add(id)); (x.sketches||[]).forEach(id=>usedIds.add(id)); });
   const sinceDate = prev ? prev.date : new Date(Date.now()-7*86400000).toLocaleDateString('en-CA');
   const sinceTs = prev ? (prev.createdAt||0) : 0;
   const autoPhotos = (window._phPhotos||[])
-    .filter(p=>!p.deletedAt && p.swppp && p.type!=='map_capture' && (!p.projectId || p.projectId===pid))
+    .filter(p=>!usedIds.has(p.id) && !p.deletedAt && p.swppp && p.type!=='map_capture' && (!p.projectId || p.projectId===pid))
     .filter(p=>(p.date||'') > sinceDate || ((p.date||'')===sinceDate && (p.uploadedAt||0) > sinceTs) || (!prev && (p.date||'') >= sinceDate))
     .sort((a,b)=>(a.uploadedAt||0)-(b.uploadedAt||0))
     .slice(0,24);
@@ -462,8 +467,12 @@ function swpppPickPhotos(kind){   // kind: 'sketches' | 'photos'
   let pool = (window._phPhotos||[]).filter(p=>!p.deletedAt && (!p.projectId || p.projectId===pid));
   if(kind==='sketches') pool = pool.filter(p=>p.type==='map_capture');
   else pool = pool.filter(p=>p.type!=='map_capture');
-  // SWPPP-tagged first, then newest first.
-  pool.sort((a,b)=> (b.swppp?1:0)-(a.swppp?1:0) || (b.uploadedAt||0)-(a.uploadedAt||0));
+  // Photos already in an earlier report sort last and carry a badge, so the
+  // fresh ones lead and a re-use is a deliberate choice.
+  const used = new Set();
+  (_swInsp[pid]||[]).forEach(x=>{ if(x.id!==insp.id) (x[kind]||[]).forEach(id=>used.add(id)); });
+  // Unused first, then SWPPP-tagged, then newest first.
+  pool.sort((a,b)=> (used.has(a.id)?1:0)-(used.has(b.id)?1:0) || (b.swppp?1:0)-(a.swppp?1:0) || (b.uploadedAt||0)-(a.uploadedAt||0));
   pool = pool.slice(0,120);
   const sel = new Set(insp[kind]||[]);
   const ov = document.createElement('div');
@@ -472,7 +481,7 @@ function swpppPickPhotos(kind){   // kind: 'sketches' | 'photos'
     const on = sel.has(p.id);
     return `<div class="sw-pick${on?' on':''}" data-id="${p.id}" onclick="this.classList.toggle('on')">
       <img src="${p.thumb||''}" loading="lazy">
-      ${p.swppp?'<span class="sw-pick-tag">SWPPP</span>':''}
+      ${used.has(p.id)?'<span class="sw-pick-used">IN PRIOR REPORT</span>':(p.swppp?'<span class="sw-pick-tag">SWPPP</span>':'')}
       <span class="sw-pick-date">${p.date||''}</span>
     </div>`;
   }).join('');
@@ -1118,12 +1127,12 @@ async function swpppBuildDocx(insp,cfg){
       return {data:await blob.arrayBuffer(),w,h,p};
     }catch(e){ return null; }
   }
-  const skMetaRows=[new TableRow({children:[hcell('Sketch #',12),hcell('Area / DA',28),hcell('Date',16),hcell('Status / Description',44)]})];
+  const skMetaRows=[new TableRow({children:[hcell('Sketch #',12),hcell('Date',18),hcell('Status / Description',70)]})];
   let skN=0;
   for(const pId of (insp.sketches||[])){
     skN++;
     const m=(insp.sketchMeta||{})[pId]||{};
-    skMetaRows.push(new TableRow({children:[cell(String(skN),{size:16}),cell(m.area||'',{size:16}),cell(m.date||'',{size:16}),cell(m.desc||'',{size:16})]}));
+    skMetaRows.push(new TableRow({children:[cell(String(skN),{size:16}),cell(m.date||'',{size:16}),cell(m.desc||'',{size:16})]}));
   }
   // Sketches render 2-up (like the photo log, sized between photos and full
   // width) so multiple captures don't each eat a page.
@@ -1147,30 +1156,25 @@ async function swpppBuildDocx(insp,cfg){
     if(rowCells.length===1) rowCells.push(new TableCell({borders:noBorders,width:{size:50,type:WidthType.PERCENTAGE},children:[new Paragraph({children:[]})]}));
     skRows.push(new TableRow({children:rowCells}));
   }
-  const phMetaRows=[new TableRow({children:[hcell('Photo #',12),hcell('Date / Time',20),hcell('Location / DA',26),hcell('Subject / Description',42)]})];
-  let phN=0;
-  const phCells=[];
-  for(const pId of (insp.photos||[])){
-    phN++;
-    const p=(window._phPhotos||[]).find(x=>x.id===pId)||{};
-    const m=(insp.photoMeta||{})[pId]||{};
-    phMetaRows.push(new TableRow({children:[cell(String(phN),{size:16}),cell(p.date||'',{size:16}),cell(m.loc||'',{size:16}),cell(m.subject||'',{size:16})]}));
-  }
-  phN=0;
+  // No §11 meta table — the photos are imprinted with everything needed; the
+  // caption carries the date (plus location/subject when filled in).
+  const mdy=(iso)=>{ const s=String(iso||'').split('-'); return s.length===3?`${parseInt(s[1])}/${parseInt(s[2])}/${s[0].slice(2)}`:(iso||''); };
   const phRows=[];
   const phIds=(insp.photos||[]);
   for(let i=0;i<phIds.length;i+=2){
     const rowCells=[];
     for(let j=i;j<Math.min(i+2,phIds.length);j++){
       const im=await imgFor(phIds[j],300,440);
+      const p=(window._phPhotos||[]).find(x=>x.id===phIds[j])||{};
       const m=(insp.photoMeta||{})[phIds[j]]||{};
+      const capText=`Photo ${j+1} — ${[mdy(p.date),m.loc,m.subject].filter(Boolean).join(' · ')}`;
       if(im){
         rowCells.push(new TableCell({borders:noBorders,width:{size:50,type:WidthType.PERCENTAGE},margins:{top:40,bottom:40,left:40,right:40},children:[
           new Paragraph({alignment:AlignmentType.CENTER,children:[new ImageRun({data:im.data,transformation:{width:im.w,height:im.h}})]}),
-          new Paragraph({alignment:AlignmentType.CENTER,children:[new TextRun({text:`Photo ${j+1} — ${[m.loc,m.subject].filter(Boolean).join(' · ')}`,font:'Arial',size:16,italics:true})],spacing:{before:40,after:60}})
+          new Paragraph({alignment:AlignmentType.CENTER,children:[new TextRun({text:capText,font:'Arial',size:16,italics:true})],spacing:{before:40,after:60}})
         ]}));
       }else{
-        rowCells.push(new TableCell({borders:noBorders,width:{size:50,type:WidthType.PERCENTAGE},children:[new Paragraph({children:[new TextRun({text:`Photo ${j+1}`,font:'Arial',size:16})]})]}));
+        rowCells.push(new TableCell({borders:noBorders,width:{size:50,type:WidthType.PERCENTAGE},children:[new Paragraph({children:[new TextRun({text:capText,font:'Arial',size:16})]})]}));
       }
     }
     if(rowCells.length===1) rowCells.push(new TableCell({borders:noBorders,width:{size:50,type:WidthType.PERCENTAGE},children:[new Paragraph({children:[]})]}));
@@ -1233,8 +1237,7 @@ async function swpppBuildDocx(insp,cfg){
     ...(skMetaRows.length>1?[fullTable(skMetaRows)]:[body('No sketches attached.')]),
     ...(skRows.length?[spacer(60),new Table({borders:noBorders,width:{size:100,type:WidthType.PERCENTAGE},rows:skRows})]:[]),spacer(80),
     h1('11.  Photographic Documentation'),note(cfg.photosNote||''),
-    ...(phMetaRows.length>1?[fullTable(phMetaRows)]:[body('No photographs attached.')]),
-    ...(phRows.length?[spacer(60),new Table({borders:noBorders,width:{size:100,type:WidthType.PERCENTAGE},rows:phRows})]:[]),
+    ...(phRows.length?[spacer(60),new Table({borders:noBorders,width:{size:100,type:WidthType.PERCENTAGE},rows:phRows})]:[body('No photographs attached.')]),
     ...certBlock
   ];
   const doc=new Document({sections:[{properties:{page:{size:{width:12240,height:15840},margin:{top:1700,bottom:1080,left:1080,right:1080},header:{value:720}}},headers:{default:wordHeader},footers:{default:footer},children}]});
@@ -1301,6 +1304,7 @@ async function swpppBuildDocx(insp,cfg){
   .sw-pick.on{border-color:var(--amber)}
   .sw-pick.on::after{content:'✓';position:absolute;top:4px;right:4px;background:var(--amber);color:#000;border-radius:50%;width:18px;height:18px;font-size:12px;display:flex;align-items:center;justify-content:center}
   .sw-pick-tag{position:absolute;top:4px;left:4px;background:rgba(30,120,200,.9);color:#fff;font-family:var(--mono);font-size:8px;padding:1px 5px;border-radius:6px}
+  .sw-pick-used{position:absolute;top:4px;left:4px;background:rgba(120,120,120,.9);color:#fff;font-family:var(--mono);font-size:8px;padding:1px 5px;border-radius:6px}
   .sw-pick-date{position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.55);color:#fff;font-family:var(--mono);font-size:8px;padding:2px 4px}`;
   const st=document.createElement('style'); st.id='sw-css'; st.textContent=css; document.head.appendChild(st);
 })();
