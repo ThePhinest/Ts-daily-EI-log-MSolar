@@ -67,6 +67,25 @@ if(window.visualViewport){
     });
 }
 
+// ── iOS document-scroll restore ──
+// The app shell is locked (body 100dvh, overflow:hidden; #scroll-root owns all
+// scrolling) — but iOS WKWebView scrolls the DOCUMENT itself to keep a focused
+// field visible, ignoring overflow:hidden, and can leave that offset behind
+// after the keyboard closes. The whole chrome then sits shifted up with the
+// app bar clipped (the "page cuts off the top nav bar" reports). Snap the
+// document back to 0 whenever it drifts and the user isn't mid-typing.
+function _glRestoreDocScroll(){
+  const ae = document.activeElement;
+  if(ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.isContentEditable)) return;
+  if(window.scrollY || document.documentElement.scrollTop || document.body.scrollTop){
+    window.scrollTo(0, 0);
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+  }
+}
+window.addEventListener('scroll', function(){ requestAnimationFrame(_glRestoreDocScroll); }, { passive:true });
+document.addEventListener('focusout', function(){ setTimeout(_glRestoreDocScroll, 250); });
+
 function setSyncStatus(s) {
   const el = document.getElementById('sync-dot');
   if (!el) return;
