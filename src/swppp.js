@@ -165,7 +165,7 @@ function swpppNewInspection(){
   const cfg = _swCfg[pid];
   if(!cfg) return;
   const today = new Date().toLocaleDateString('en-CA');
-  const prev = (_swInsp[pid]||[]).slice().sort((a,b)=>(b.date||'').localeCompare(a.date||''))[0] || null;
+  const prev = (_swInsp[pid]||[]).filter(x=>!x.deletedAt).sort((a,b)=>(b.date||'').localeCompare(a.date||''))[0] || null;
   const insp = {
     id: 'qi_'+today+'_'+Date.now().toString(36),
     date: today,
@@ -211,7 +211,7 @@ function swpppNewInspection(){
   // test reports) never auto-attach again — each report starts with only
   // fresh photos; the picker can still add them back deliberately.
   const usedIds = new Set();
-  (_swInsp[pid]||[]).forEach(x=>{ (x.photos||[]).forEach(id=>usedIds.add(id)); (x.sketches||[]).forEach(id=>usedIds.add(id)); });
+  (_swInsp[pid]||[]).forEach(x=>{ if(x.deletedAt) return; (x.photos||[]).forEach(id=>usedIds.add(id)); (x.sketches||[]).forEach(id=>usedIds.add(id)); });
   const sinceDate = prev ? prev.date : new Date(Date.now()-7*86400000).toLocaleDateString('en-CA');
   const sinceTs = prev ? (prev.createdAt||0) : 0;
   const autoPhotos = (window._phPhotos||[])
@@ -247,7 +247,7 @@ function swpppRefreshDaSummary(){
 async function swpppSyncWeather(dateStr){
   const pid = _swPid();
   if(!_swInsp[pid]) await _swLoadAll(pid);   // weather can be fetched before Reports is ever opened
-  const insp = (_swInsp[pid]||[]).find(x=>x.date===dateStr && x.status!=='completed');
+  const insp = (_swInsp[pid]||[]).find(x=>!x.deletedAt && x.date===dateStr && x.status!=='completed');
   if(!insp) return;
   const w = _swPrefillWeather();
   ['sky','temp','precip','wind','soil'].forEach(k=>{ if(w[k]) insp.weather[k]=w[k]; });
@@ -470,7 +470,7 @@ function swpppPickPhotos(kind){   // kind: 'sketches' | 'photos'
   // Photos already in an earlier report sort last and carry a badge, so the
   // fresh ones lead and a re-use is a deliberate choice.
   const used = new Set();
-  (_swInsp[pid]||[]).forEach(x=>{ if(x.id!==insp.id) (x[kind]||[]).forEach(id=>used.add(id)); });
+  (_swInsp[pid]||[]).forEach(x=>{ if(x.id!==insp.id && !x.deletedAt) (x[kind]||[]).forEach(id=>used.add(id)); });
   // Unused first, then SWPPP-tagged, then newest first.
   pool.sort((a,b)=> (used.has(a.id)?1:0)-(used.has(b.id)?1:0) || (b.swppp?1:0)-(a.swppp?1:0) || (b.uploadedAt||0)-(a.uploadedAt||0));
   pool = pool.slice(0,120);
@@ -548,13 +548,50 @@ async function swpppExportDaily(reportDate){
   finally{ btns.forEach(b=>{ b.textContent=b.dataset.oldTxt||'⬇'; b.disabled=false; }); }
 }
 
+// ── Delete / restore (soft delete — QI reports only, never daily reports) ──
+// A deleted report is hidden everywhere (list, carry-forward, photo re-use
+// tracking) but kept recoverable in the Deleted section below the list.
+function swpppDeleteReport(id){
+  const insp = _swGet(id); if(!insp) return;
+  if(insp.ownerUid && insp.ownerUid!==_swUid()) return;
+  _confirmModal(
+    'Delete this '+(insp.status==='completed'?'completed':'draft')+' inspection report ('+(insp.date||'')+')?\n\nIt moves to Deleted reports at the bottom of this page — you can restore it anytime. Its photos become available to new reports again.',
+    function(){
+      insp.deletedAt = Date.now();
+      _swQueueSave(insp);
+      if(_swOpenId===id) _swOpenId=null;
+      const host=document.getElementById('reports-page-body');
+      if(host) _swRenderReportsInner(host, _swPid());
+    }, 'Delete report', 'Delete');
+}
+function swpppRestoreReport(id){
+  const insp = _swGet(id); if(!insp) return;
+  insp.deletedAt = null;   // null (not delete) so the cloud merge clears it too
+  _swQueueSave(insp);
+  const host=document.getElementById('reports-page-body');
+  if(host) _swRenderReportsInner(host, _swPid());
+}
+function swpppToggleTrash(){
+  _swTrashOpen = !_swTrashOpen;
+  const host=document.getElementById('reports-page-body');
+  if(host) _swRenderReportsInner(host, _swPid());
+}
+// "Load more" — each list shows the newest few by default and grows on demand.
+function swpppShowMore(kind){
+  if(kind==='qi') _swQiLimit += 10; else _swDailyLimit += 10;
+  const host=document.getElementById('reports-page-body');
+  if(host) _swRenderReportsInner(host, _swPid());
+}
+
 // ═══════════════════════════════════════════
 // RENDERING
 // ═══════════════════════════════════════════
+var _swQiLimit = 5, _swDailyLimit = 5, _swTrashOpen = false;
 function glRenderReportsPage(){
   const pid = _swPid();
   const host = document.getElementById('reports-page-body');
   if(!host) return;
+  _swQiLimit = 5; _swDailyLimit = 5; _swTrashOpen = false;   // fresh visit, fresh caps
   Promise.all([_swLoadAll(pid), _swLoadDailyReports()]).then(()=>{ _swRenderReportsInner(host, pid); });
   _swRenderReportsInner(host, pid);   // instant paint from cache; reload repaints
 }
@@ -573,37 +610,60 @@ function _swRenderReportsInner(host, pid){
       </div>`;
     return;
   }
-  const list = (_swInsp[pid]||[]).slice().sort((a,b)=>(b.date||'').localeCompare(a.date||'') || (b.createdAt||0)-(a.createdAt||0));
-  const rows = list.map(i=>{
+  const uid = _swUid();
+  const all = (_swInsp[pid]||[]).slice().sort((a,b)=>(b.date||'').localeCompare(a.date||'') || (b.createdAt||0)-(a.createdAt||0));
+  const live = all.filter(i=>!i.deletedAt);
+  const myTrash = all.filter(i=>i.deletedAt && (!i.ownerUid || i.ownerUid===uid));
+  const typeLblOf = (i)=> i.inspType==='post-storm' ? 'Post-Storm' : (i.inspType==='other' ? (i.inspTypeOther||'Other') : 'Routine');
+  const rows = live.slice(0,_swQiLimit).map(i=>{
     const chip = i.status==='completed'
       ? '<span class="sw-chip sw-chip-done">✓ Completed</span>'
       : '<span class="sw-chip sw-chip-draft">Draft</span>';
-    const typeLbl = i.inspType==='post-storm' ? 'Post-Storm' : (i.inspType==='other' ? (i.inspTypeOther||'Other') : 'Routine');
+    const mine = !i.ownerUid || i.ownerUid===uid;
     return `<div class="sw-list-row">
       <div class="sw-list-main" onclick="swpppOpenInspection('${i.id}')">
         <span class="sw-list-date">${i.date||''}</span>
-        <span class="sw-list-type">${typeLbl}</span>
+        <span class="sw-list-type">${typeLblOf(i)}</span>
         ${chip}
       </div>
       <button class="sw-list-btn" title="Export DOCX" onclick="swpppExport('${i.id}')">⬇</button>
+      ${mine?`<button class="sw-list-btn" title="Delete report" onclick="swpppDeleteReport('${i.id}')">🗑</button>`:''}
     </div>`;
   }).join('');
-  host.innerHTML = `
-    <div class="sw-sec-label">SWPPP QI Inspections<span class="sw-sec-line"></span><button class="btn" onclick="swpppNewInspection()">＋ New Inspection</button></div>
-    <div class="sw-sec-sub">SPDES GP-0-25-001 — Qualified Inspector stormwater inspection reports</div>
-    ${rows || '<p style="color:var(--muted);font-size:12px;padding:10px 2px">No inspections yet — start your first one.</p>'}
-    <div style="margin-top:10px;text-align:right"><button class="btn btn-outline" style="font-size:10px;padding:4px 10px" onclick="swpppShowSetup()">⚙ Edit configuration</button></div>
-    <div class="sw-sec-label sw-sec-next">Daily Reports<span class="sw-sec-line"></span><button class="btn btn-outline" onclick="showPage('log')">📋 Generate today's</button></div>
-    <div class="sw-sec-sub">Generated daily-report archive — re-export any date, no AI call</div>
-    ${_swDaily===null
-      ? '<p style="color:var(--muted);font-size:12px;padding:6px 2px">Loading archive…</p>'
-      : ((_swDaily.map(r=>`<div class="sw-list-row">
+  const moreQi = live.length>_swQiLimit
+    ? `<div class="sw-more"><button class="btn btn-outline" onclick="swpppShowMore('qi')">⌄ Show ${live.length-_swQiLimit} more</button></div>` : '';
+  const trashHtml = myTrash.length ? `
+    <div class="sw-trash-head" onclick="swpppToggleTrash()">${_swTrashOpen?'▾':'▸'} 🗑 Deleted reports (${myTrash.length})</div>
+    ${_swTrashOpen ? myTrash.map(i=>`<div class="sw-list-row sw-trash-row">
+      <div class="sw-list-main" style="cursor:default">
+        <span class="sw-list-date">${i.date||''}</span>
+        <span class="sw-list-type">${typeLblOf(i)}</span>
+        <span class="sw-list-type">${i.status==='completed'?'was completed':'was draft'}</span>
+      </div>
+      <button class="sw-list-btn" title="Restore report" onclick="swpppRestoreReport('${i.id}')">↩ Restore</button>
+    </div>`).join('') : ''}` : '';
+  const daily = _swDaily||[];
+  const dailyRows = daily.slice(0,_swDailyLimit).map(r=>`<div class="sw-list-row">
           <div class="sw-list-main" style="cursor:default">
             <span class="sw-list-date">${r.reportDate}</span>
             <span class="sw-list-type">v${r.latestVersion||1}</span>
           </div>
           <button class="sw-list-btn" title="Re-export DOCX" onclick="swpppExportDaily('${r.reportDate}')">⬇</button>
-        </div>`).join('')) || '<p style="color:var(--muted);font-size:12px;padding:6px 2px">No generated reports yet — they archive here automatically when you Generate Report on the Daily Log.</p>')}`;
+        </div>`).join('');
+  const moreDaily = daily.length>_swDailyLimit
+    ? `<div class="sw-more"><button class="btn btn-outline" onclick="swpppShowMore('daily')">⌄ Show ${daily.length-_swDailyLimit} more</button></div>` : '';
+  host.innerHTML = `
+    <div class="sw-sec-label">SWPPP QI Inspections<span class="sw-sec-line"></span><button class="btn" onclick="swpppNewInspection()">＋ New Inspection</button></div>
+    <div class="sw-sec-sub">SPDES GP-0-25-001 — Qualified Inspector stormwater inspection reports</div>
+    ${rows || '<p style="color:var(--muted);font-size:12px;padding:10px 2px">No inspections yet — start your first one.</p>'}
+    ${moreQi}
+    ${trashHtml}
+    <div style="margin-top:10px;text-align:right"><button class="btn btn-outline" style="font-size:10px;padding:4px 10px" onclick="swpppShowSetup()">⚙ Edit configuration</button></div>
+    <div class="sw-sec-label sw-sec-next">Daily Reports<span class="sw-sec-line"></span><button class="btn btn-outline" onclick="showPage('log')">📋 Generate today's</button></div>
+    <div class="sw-sec-sub">Generated daily-report archive — re-export any date, no AI call</div>
+    ${_swDaily===null
+      ? '<p style="color:var(--muted);font-size:12px;padding:6px 2px">Loading archive…</p>'
+      : (dailyRows ? dailyRows+moreDaily : '<p style="color:var(--muted);font-size:12px;padding:6px 2px">No generated reports yet — they archive here automatically when you Generate Report on the Daily Log.</p>')}`;
 }
 
 // Section re-render (keeps text-input focus intact elsewhere). The section
@@ -1305,7 +1365,11 @@ async function swpppBuildDocx(insp,cfg){
   .sw-pick.on::after{content:'✓';position:absolute;top:4px;right:4px;background:var(--amber);color:#000;border-radius:50%;width:18px;height:18px;font-size:12px;display:flex;align-items:center;justify-content:center}
   .sw-pick-tag{position:absolute;top:4px;left:4px;background:rgba(30,120,200,.9);color:#fff;font-family:var(--mono);font-size:8px;padding:1px 5px;border-radius:6px}
   .sw-pick-used{position:absolute;top:4px;left:4px;background:rgba(120,120,120,.9);color:#fff;font-family:var(--mono);font-size:8px;padding:1px 5px;border-radius:6px}
-  .sw-pick-date{position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.55);color:#fff;font-family:var(--mono);font-size:8px;padding:2px 4px}`;
+  .sw-pick-date{position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.55);color:#fff;font-family:var(--mono);font-size:8px;padding:2px 4px}
+  .sw-more{text-align:center;padding:8px 0 2px}
+  .sw-more .btn{font-size:10px;padding:4px 14px}
+  .sw-trash-head{font-size:11px;color:var(--muted);padding:10px 4px 4px;cursor:pointer;user-select:none}
+  .sw-trash-row{opacity:.6}`;
   const st=document.createElement('style'); st.id='sw-css'; st.textContent=css; document.head.appendChild(st);
 })();
 
@@ -1334,3 +1398,7 @@ window.swpppPickPhotos = swpppPickPhotos;
 window.swpppPickDone = swpppPickDone;
 window.swpppExport = swpppExport;
 window.swpppExportDaily = swpppExportDaily;
+window.swpppDeleteReport = swpppDeleteReport;
+window.swpppRestoreReport = swpppRestoreReport;
+window.swpppToggleTrash = swpppToggleTrash;
+window.swpppShowMore = swpppShowMore;
