@@ -533,11 +533,17 @@ function _applyWeatherData(data,forecastOffset){
     const tmrGusts = Math.round(d.windgusts_10m_max?.[TMR] || 0);
     const tmrDesc = _wmoToDesc(tmrWmo);
     const gustTail = tmrGusts > 0 ? ` (gusts ${tmrGusts})` : '';
+    // Expected rainfall for the forecast day (daily precipitation_sum, inches) —
+    // ≥0.5" is the SPDES post-storm inspection trigger, so flag it loudly.
+    const tmrRain = d.precipitation_sum?.[TMR];
+    const rainTail = (typeof tmrRain === 'number')
+      ? `, Expected rain ${tmrRain.toFixed(2)}"${tmrRain >= 0.5 ? ' ⚠ ≥0.5" SWPPP trigger' : ''}`
+      : '';
     // Label with the real weekday when the forecast isn't literally tomorrow
     // (Friday's "use Monday" pick should say "Monday:", not "Tomorrow:").
     const fcastLabel = (forecastOffset||1) === 1 ? 'Tomorrow'
       : new Date(d.time[TMR]+'T12:00:00').toLocaleDateString('en-US',{weekday:'long'});
-    const fcastStr = `${fcastLabel}: ${tmrDesc}, High ${tmrHi}°F / Low ${tmrLo}°F, Winds up to ${tmrWspd} mph${gustTail}`;
+    const fcastStr = `${fcastLabel}: ${tmrDesc}, High ${tmrHi}°F / Low ${tmrLo}°F, Winds up to ${tmrWspd} mph${gustTail}${rainTail}`;
     const fcastEl = document.getElementById('upcomingWeather');
     if(fcastEl) fcastEl.value = fcastStr;
     // Push forecast to look-ahead when empty OR still the previous auto-filled

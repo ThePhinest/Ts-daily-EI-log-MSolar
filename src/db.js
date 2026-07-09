@@ -40,15 +40,8 @@ document.addEventListener('DOMContentLoaded', function _initFirebase() {
   }
 });
 
-// ── Inject sync status indicator into app bar ──
-(function(){
-  const bar = document.querySelector('.app-bar');
-  if(!bar) return;
-  const el = document.createElement('span');
-  el.id = 'sync-dot';
-  el.style.cssText = 'font-family:var(--mono);font-size:10px;letter-spacing:.05em;transition:color .3s;white-space:nowrap;margin-left:2px';
-  bar.appendChild(el);
-})();
+// (The sync indicator #sync-dot lives in index.html's app bar; a duplicate
+// injector here used to append a second same-id span to the bar end — removed.)
 
 // ── iPad/iOS keyboard nav fix — relock bottom nav when keyboard resizes viewport ──
 if(window.visualViewport){
@@ -82,8 +75,10 @@ function setSyncStatus(s) {
   } else if (s === 'synced') {
     el.textContent = '✓ synced'; el.style.color = 'var(--green)'; el.title = '';
   } else if (s === 'offline') {
-    el.textContent = '✗ offline — tap to retry'; el.style.color = 'var(--red)'; el.style.cursor = 'pointer';
-    el.title = 'Click to retry Firebase connection';
+    // Compact — the long "tap to retry" string overflowed the app bar's left
+    // cell and painted over the wordmark on narrow screens (delta 6/25).
+    el.textContent = '✗ offline ↻'; el.style.color = 'var(--red)'; el.style.cursor = 'pointer';
+    el.title = 'Tap to retry connection';
     el.onclick = function() {
             _reconnectFirebase();
     };

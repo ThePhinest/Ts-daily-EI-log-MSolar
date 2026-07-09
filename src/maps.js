@@ -1656,6 +1656,27 @@ function mapRemoveKmlLayer(i){
   mapUpdateKmlLayerList();
 }
 function mapRemoveKmlLayerById(id){
+  const layer = _mapKmlLayers.find(l=>l.id===id);
+  if(!layer) return;
+  // Deleting a layer is destructive for every member — confirm first (delta 7/2).
+  document.getElementById('_kml-del-ov')?.remove();
+  const ov = document.createElement('div');
+  ov.className = 'modal-overlay'; ov.id = '_kml-del-ov';
+  ov.style.cssText = 'z-index:9000';
+  ov.innerHTML = `<div class="modal-box" style="max-width:320px;width:90%">
+    <div class="modal-title" style="margin-bottom:8px">Delete map layer?</div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.5"><b>${String(layer.name).replace(/</g,'&lt;')}</b> is removed from the map for every project member. Tracker drawings adopted or traced from it are NOT affected.</div>
+    <div class="modal-btns">
+      <button class="modal-confirm" id="_kml-del-go" style="background:#3d1414;border:1px solid #6b2020;color:#ff8080">✕ Delete layer</button>
+      <button class="modal-cancel" id="_kml-del-cancel">Cancel</button>
+    </div>
+  </div>`;
+  document.body.appendChild(ov);
+  ov.querySelector('#_kml-del-cancel').onclick = () => ov.remove();
+  ov.addEventListener('click', ev => { if(ev.target === ov) ov.remove(); });
+  ov.querySelector('#_kml-del-go').onclick = () => { ov.remove(); _mapRemoveKmlLayerNow(id); };
+}
+function _mapRemoveKmlLayerNow(id){
   const idx = _mapKmlLayers.findIndex(l=>l.id===id);
   if(idx===-1) return;
   const layer = _mapKmlLayers[idx];
