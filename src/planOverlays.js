@@ -167,6 +167,13 @@ function _poUnpackCorners(corners){
   return (corners || []).map(c => Array.isArray(c) ? c : [c.lng, c.lat]);
 }
 
+// Stamp a sheet whose SHARED content (corners/crop/files/registration) just
+// changed. The per-sheet _mts drives the newest-wins merge in poLoadSheets —
+// it is what protects an edit from being reverted by a stale whole-list write
+// from another device, or by a cloud copy that never received the edit
+// because the WebView reloaded (iOS memory pressure) before the write flushed.
+function _poTouch(sheet){ sheet._mts = Date.now(); }
+
 function poSaveSheets(){
   const pid = _poPid();
   const data = _poSheets.map(s => ({
@@ -175,16 +182,18 @@ function poSaveSheets(){
     visible: !!s.visible, storagePath: s.storagePath || '', downloadUrl: s.downloadUrl || '',
     // ✂ crop state (null when uncropped): rect in ORIGINAL-image fractions +
     // the pre-crop original file so crops are re-editable and resettable.
-    crop: s.crop || null, origStoragePath: s.origStoragePath || '', origDownloadUrl: s.origDownloadUrl || ''
+    crop: s.crop || null, origStoragePath: s.origStoragePath || '', origDownloadUrl: s.origDownloadUrl || '',
+    _mts: s._mts ?? null
   }));
   try{ if(window.idbSet) window.idbSet(_poStorageKey(), JSON.stringify({ data, opacity: _poOpacity })); }catch{}
+  let userWrite = null;
   if(window.db && window._fbReady){
     // Personal copy — per-sheet visibility + opacity are view state, never shared.
     const u = (typeof window._projDataUser === 'function') ? window._projDataUser(pid) : null;
     if(u){
-      u.collection('planOverlays').doc('sheets')
-        .set({ data, opacity: _poOpacity, _ts: Date.now() })
-        .catch(e => console.warn('poSaveSheets:', e.message));
+      userWrite = u.collection('planOverlays').doc('sheets')
+        .set({ data, opacity: _poOpacity, _ts: Date.now() });
+      userWrite.catch(e => console.warn('poSaveSheets:', e.message));
     }
     // Shared mirror — sheet list + corners are live reference data for members.
     // Rules let only owner/lead land this write; silent on purpose.
@@ -194,36 +203,51 @@ function poSaveSheets(){
         .catch(() => {});
     }
   }
+  return userWrite;   // callers that just committed real work await/verify this
 }
 
 async function poLoadSheets(){
   const pid = _poPid();
-  let data = null, opacity = null;
+  let own = null, shared = null, idb = null, opacity = null;
   if(window.db && window._fbReady){
     try{
       const u = (typeof window._projDataUser === 'function') ? window._projDataUser(pid) : null;
       const doc = u ? await u.collection('planOverlays').doc('sheets').get() : null;
-      if(doc && doc.exists){ data = doc.data().data; opacity = doc.data().opacity; }
+      if(doc && doc.exists){ own = doc.data().data; opacity = doc.data().opacity; }
     }catch(e){ console.warn('poLoadSheets cloud:', e.message); }
-    // Shared set is canonical for the sheet LIST + corners; the user's own copy
-    // only overlays per-sheet visibility (personal view state).
     try{
       const sdoc = await window.db.collection('projects').doc(pid).collection('planOverlays').doc('sheets').get();
-      if(sdoc.exists && Array.isArray(sdoc.data().data) && sdoc.data().data.length){
-        const shared = sdoc.data().data;
-        const ownById = new Map((data || []).map(s => [s.id, s]));
-        data = shared.map(s => ownById.has(s.id) ? { ...s, visible: ownById.get(s.id).visible } : s);
-      }
+      if(sdoc.exists && Array.isArray(sdoc.data().data) && sdoc.data().data.length) shared = sdoc.data().data;
     }catch(e){ /* not a member of a shared project — own copy stands */ }
   }
-  if(!data){
-    try{
-      const raw = window.idbGet && window.idbGet(_poStorageKey());
-      if(raw){ const parsed = JSON.parse(raw); data = parsed.data; opacity = parsed.opacity; }
-    }catch{}
-  }
+  try{
+    const raw = window.idbGet && window.idbGet(_poStorageKey());
+    if(raw){ const parsed = JSON.parse(raw); idb = parsed.data; if(typeof opacity !== 'number') opacity = parsed.opacity; }
+  }catch{}
+  // Shared doc is canonical for LIST MEMBERSHIP (never resurrect deletes from
+  // a local cache), but each sheet's CONTENT is newest-wins by per-sheet _mts
+  // across shared / user / device-IDB copies. This is the guard against the
+  // two whole-list-doc loss modes: a stale device writing its old list over a
+  // fresh edit, and a cloud copy that never received the edit because the
+  // WebView reloaded (iOS memory pressure) before the async write flushed —
+  // the device that made the edit still holds it in IDB and heals the cloud.
+  const base = (shared && shared.length) ? shared : ((own && own.length) ? own : (idb || []));
+  const ownBy = new Map((own || []).map(s => [s.id, s]));
+  const idbBy = new Map((idb || []).map(s => [s.id, s]));
+  const sharedBy = new Map((shared || []).map(s => [s.id, s]));
+  let healNeeded = false;
+  const data = base.map(s => {
+    let best = s;
+    for(const cand of [ownBy.get(s.id), idbBy.get(s.id)]){
+      if(cand && (cand._mts || 0) > (best._mts || 0)) best = cand;
+    }
+    if((best._mts || 0) > (((sharedBy.get(s.id)) || {})._mts || 0)) healNeeded = true;
+    const mine = ownBy.get(s.id) || idbBy.get(s.id);
+    return { ...best, visible: mine ? !!mine.visible : !!s.visible };
+  });
   if(typeof opacity === 'number' && opacity >= 0.1 && opacity <= 1) _poOpacity = opacity;
-  _poSheets = (data || []).map(s => ({ ...s, corners: _poUnpackCorners(s.corners) }));
+  _poSheets = data.map(s => ({ ...s, corners: _poUnpackCorners(s.corners) }));
+  if(healNeeded && _poSheets.length) poSaveSheets();   // push the newer local truth back up
   _poSheets.filter(s => s.visible).forEach(s => { _poAddToMap(s).catch(e => console.warn('poLoadSheets mount:', e.message)); });
   poRenderPanel();
 }
@@ -263,8 +287,26 @@ async function poImportFiles(input){
       existing.corners = meta.corners;
       existing.rmsFt = (typeof meta.rms_ft === 'number') ? meta.rms_ft : existing.rmsFt;
       existing.quality = meta.quality || existing.quality;
+      // A registration refresh delivers FULL-extent corners — a crop's corners
+      // and derivative image would no longer match. Restore the original.
+      let remount = false;
+      if(existing.crop){
+        if(window.storage && existing.origStoragePath && existing.storagePath !== existing.origStoragePath){
+          window.storage.ref(existing.storagePath).delete().catch(() => {});
+        }
+        existing.storagePath = existing.origStoragePath || existing.storagePath;
+        existing.downloadUrl = existing.origDownloadUrl || existing.downloadUrl;
+        existing.crop = null; existing.origStoragePath = ''; existing.origDownloadUrl = '';
+        remount = existing.visible;
+      }
+      _poTouch(existing);
       const src = map && map.getSource('po-' + existing.id);
-      if(src && src.setCoordinates) src.setCoordinates(existing.corners);
+      if(remount){
+        _poRemoveFromMap(existing);
+        _poAddToMap(existing).catch(e => console.warn('poImportFiles remount:', e.message));
+      } else if(src && src.setCoordinates){
+        src.setCoordinates(existing.corners);
+      }
       updated++;
       continue;
     }
@@ -282,7 +324,8 @@ async function poImportFiles(input){
         rmsFt: (typeof meta.rms_ft === 'number') ? meta.rms_ft : null,
         quality: meta.quality || 'good',
         visible: false,                      // default OFF — 27 MB GPU each
-        storagePath, downloadUrl
+        storagePath, downloadUrl,
+        _mts: Date.now()
       });
       done++;
     }catch(err){
@@ -509,6 +552,8 @@ function poAdjustReset(){
 
 function poNudgeSave(){
   if(!_poNudge) return;
+  const sheet = _poSheets.find(s => s.id === _poNudge.id);
+  if(sheet) _poTouch(sheet);
   _poNudge = null;
   _poAdjustBindDrag(false);
   document.getElementById('map-po-nudge')?.remove();
@@ -771,14 +816,23 @@ async function poCropApply(){
   sheet.storagePath = newPath;
   sheet.downloadUrl = newUrl;
   if(prevDerivative && window.storage){ window.storage.ref(prevDerivative).delete().catch(() => {}); }
+  _poTouch(sheet);
   _poCropSyncNudge(sheet);
   const wasVisible = sheet.visible;
   _poRemoveFromMap(sheet);
   if(wasVisible){ await _poAddToMap(sheet).catch(e => console.warn('poCropApply remount:', e.message)); }
-  poSaveSheets();
+  const cloudWrite = poSaveSheets();
   poRenderPanel();
   poCropCancel();
   banner('Sheet cropped ✂ — 🎯 adjust still works on the result.');
+  // Verify the cloud actually got it — a crop is committed work, not view
+  // state. If the write hasn't confirmed in 4s, say so honestly (it stays on
+  // this device and heals the cloud on the next load).
+  if(cloudWrite){
+    const ok = await Promise.race([cloudWrite.then(() => true).catch(() => false),
+                                   new Promise(r => setTimeout(() => r(false), 4000))]);
+    if(!ok) banner('Crop saved on this device — cloud sync pending (weak signal?). It syncs automatically when connection improves.');
+  }
 }
 
 // Restore the pre-crop original (file + full-extent corners).
@@ -796,6 +850,7 @@ function poCropReset(){
   if(derivative && derivative !== sheet.storagePath && window.storage){
     window.storage.ref(derivative).delete().catch(() => {});
   }
+  _poTouch(sheet);
   _poCropSyncNudge(sheet);
   const wasVisible = sheet.visible;
   _poRemoveFromMap(sheet);
