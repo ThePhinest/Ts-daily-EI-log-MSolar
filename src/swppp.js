@@ -1010,7 +1010,11 @@ function _swRenderForm(){
 // ═══════════════════════════════════════════
 // DOCX EXPORT — mirrors the QI report template section-for-section
 // ═══════════════════════════════════════════
-async function swpppExport(id){
+// Both exports confirm first — a stray tap must never auto-build a file (Tim 7/11).
+function swpppExport(id){
+  _confirmModal('Build and export this inspection as a DOCX report?',()=>{ _swpppExportNow(id); },'Export report','Export');
+}
+async function _swpppExportNow(id){
   const pid=_swPid();
   await _swLoadAll(pid);
   const insp=(_swInsp[pid]||[]).find(x=>x.id===id);
@@ -1030,7 +1034,10 @@ async function swpppExport(id){
 // ── Photos ZIP — full-res copies of everything attached to the report (§10 sketches
 // + §11 photos), foldered by section, share-sheet save. The DOCX embeds downsized
 // images; this is the full-resolution companion file (the material-tags ZIP pattern).
-async function swpppExportPhotosZip(id){
+function swpppExportPhotosZip(id){
+  _confirmModal('Export a ZIP of all full-resolution photos and captures attached to this report?',()=>{ _swpppExportPhotosZipNow(id); },'Photos ZIP','Export');
+}
+async function _swpppExportPhotosZipNow(id){
   const pid=_swPid();
   await _swLoadAll(pid);
   const insp=(_swInsp[pid]||[]).find(x=>x.id===id);

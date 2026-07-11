@@ -1514,6 +1514,7 @@ function mapUpdateKmlLayerList(){
         <input type="checkbox" ${allVisible?'checked':''} style="accent-color:${cat.color||'#888'};width:14px;height:14px;flex-shrink:0;" id="${fid}-cb">
         <div style="width:10px;height:10px;border-radius:50%;background:${cat.color||'#888'};flex-shrink:0;"></div>
         <span style="font-family:var(--mono);font-size:11px;color:var(--text);font-weight:600;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${cat.name}</span>
+        ${catEntries.some(e=>e.deletedFromMap)?`<span style="font-family:var(--mono);font-size:9px;color:var(--amber);white-space:nowrap;">${catEntries.filter(e=>e.deletedFromMap).length} hidden</span>`:''}
         <span style="font-family:var(--mono);font-size:9px;color:var(--muted);">${catEntries.length}</span>
         <button onclick="event.stopPropagation();mapHighlightCategory('${cat.id}')" title="Highlight this category on the map" style="background:none;border:none;color:var(--amber);cursor:pointer;font-size:12px;padding:0 2px;line-height:1">✨</button>
         <button onclick="event.stopPropagation();mapMoveCatLayerOrder('${cat.id}','up')" title="Bring forward" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px;padding:0 2px;line-height:1">↑</button>
@@ -1521,14 +1522,17 @@ function mapUpdateKmlLayerList(){
       const kids=document.createElement('div');
       kids.id=fid+'-children';
       kids.style.cssText='padding:4px 6px 4px 16px;';
-      catEntries.forEach(e=>{
+      const _trEntryRow=(e)=>{
         const visible=!e.deletedFromMap;
         const row=document.createElement('div');
         row.style.cssText='display:flex;align-items:center;gap:6px;padding:5px 8px;background:var(--s1);border-radius:6px;margin-bottom:4px;';
+        // Richer labels so hidden items are identifiable: planned entries carry a
+        // PLAN tag, and location shows alongside acreage instead of only without it.
         const parts=[];
+        if(e.entryType==='planned') parts.push('PLAN');
         if(e.date){const p=e.date.split('-');parts.push(`${parseInt(p[1])}/${parseInt(p[2])}/${p[0].slice(2)}`);}
         if(e.acres) parts.push(`${e.acres} ac`);
-        else if(e.location) parts.push(e.location);
+        if(e.location) parts.push(e.location);
         const label=parts.join(' · ')||e.id.slice(0,8);
         row.innerHTML=`
           <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-family:var(--mono);font-size:11px;color:${visible?'var(--text)':'var(--muted)'};flex:1;min-width:0;">
@@ -1538,7 +1542,18 @@ function mapUpdateKmlLayerList(){
           <button onclick="mapEditTrackerEntry('${e.id}')" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:11px;padding:0 4px;" title="Edit">✏</button>
           <button onclick="mapDeleteTrackerEntryFromPanel('${e.id}')" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;padding:0;" title="Delete">✕</button>`;
         kids.appendChild(row);
-      });
+      };
+      // Visible drawings first, then hidden ones grouped under their own divider so
+      // re-finding and re-adding hidden items is one glance + one tap (Tim 7/11).
+      catEntries.filter(e=>!e.deletedFromMap).forEach(_trEntryRow);
+      const hiddenEntries=catEntries.filter(e=>e.deletedFromMap);
+      if(hiddenEntries.length){
+        const div=document.createElement('div');
+        div.style.cssText='display:flex;align-items:center;gap:6px;margin:6px 0 4px;font-family:var(--mono);font-size:9px;color:var(--amber);letter-spacing:.06em;text-transform:uppercase;';
+        div.innerHTML=`<span style="flex-shrink:0;">Hidden (${hiddenEntries.length})</span><span style="flex:1;border-top:1px solid var(--border);"></span>`;
+        kids.appendChild(div);
+        hiddenEntries.forEach(_trEntryRow);
+      }
       // Apply remembered collapse state.
       if(_isFolderCollapsed(fid)){
         kids.style.display='none';
@@ -3625,7 +3640,10 @@ function _addCategoryFillLayer(srcId,cat){
 
 function _addCategoryLineLayer(srcId,cat){
   const color=cat.color||'#888';
-  const lw=cat.lineWidth||2;
+  // ESC-status capture framing: boost line widths so silt-fence runs etc. stay
+  // legible in a zoomed-out phone/iPad capture. Layers re-add on every render, so
+  // widths revert automatically when the filter clears.
+  const lw=(cat.lineWidth||2)*(_escCapFilter?1.8:1);
   const lineColor=['coalesce',['get','stateColor'],color];
   const paint={'line-color':lineColor,'line-width':['case',['get','faint'],Math.max(1,lw-0.5),lw],'line-opacity':['case',['get','faint'],0.45,0.9]};
   // Per-STATE line style (ties the schema editor's state Style dropdown to the map;
@@ -3694,7 +3712,8 @@ function mapRefreshDateLabels(){
       if(_escCapFilter){
         if(!_escCapFilter.cids.has(cid)||isOpenTemp) return false;
         const st=(typeof tcEntryState==='function')?tcEntryState(e,cid,pid):null;
-        if(st&&!st.isPlanned&&/remov/i.test(st.label||'')) return false;
+        if(st&&(st.isPlanned||/remov/i.test(st.label||''))) return false;
+        if(!st&&e.entryType==='planned') return false;
       }
       if(!e.showDateLabel&&!isOpenTemp) return false;
       return true;
@@ -4018,9 +4037,8 @@ async function _compositeBrandWordmark(blob, legendCat, pid, scopeEntryId, opts)
     }
     // ESC INSTALLATION STATUS legend — one compact row per selected category × state
     // WITH data (zero-quantity states never print; typical ESC categories = one line
-    // each), plus a shared "faint = planned" footnote instead of per-category plan
-    // swatches. Categories with a plan but nothing installed yet print a 0% row so
-    // the deliverable is honest about what's NOT in yet.
+    // each). Installed quantities ONLY — no plan totals or % (a partially-drawn plan
+    // is a wrong denominator, Tim 7/11) and no plan linework in the image.
     else if(opts&&Array.isArray(opts.escCids)&&opts.escCids.length&&typeof tcGetStates==='function'){
       try{
         const rows=[];
@@ -4030,34 +4048,23 @@ async function _compositeBrandWordmark(blob, legendCat, pid, scopeEntryId, opts)
             const defUnit=(typeof tcGetDefaultUnit==='function')?tcGetDefaultUnit(cid,pid):'ac';
             const sts=tcGetStates(cid,pid).filter(s=>!s.isPlanned&&!/remov/i.test(s.label||''));
             if(!sts.length||typeof trGetEntriesForProject!=='function'||typeof trEntryMeasure!=='function') return;
-            const all=trGetEntriesForProject(pid).filter(e=>((e.categoryId||e.category)===cid)&&!e.deletedAt&&!e.temporary&&!e.deletedFromMap&&!e.archivedFromMap);
-            const plan=all.filter(e=>e.entryType==='planned').reduce((s,e)=>s+(trEntryMeasure(e,defUnit,pid)||0),0);
-            const inst=all.filter(e=>e.entryType!=='planned');
+            const inst=trGetEntriesForProject(pid).filter(e=>((e.categoryId||e.category)===cid)&&!e.deletedAt&&!e.temporary&&!e.deletedFromMap&&!e.archivedFromMap&&e.entryType!=='planned');
             const dcs=(typeof tcDefaultChildState==='function')?tcDefaultChildState(cid,pid):null;
             const fmt=(v)=>(typeof tcFormatMeasurement==='function')?tcFormatMeasurement(v,defUnit):`${(v||0).toFixed(1)} ${defUnit}`;
-            const before=rows.length;
             sts.forEach(s=>{
               const v=inst.filter(e=>(e.state||(dcs?dcs.id:null))===s.id).reduce((sum,e)=>sum+(trEntryMeasure(e,defUnit,pid)||0),0);
               if(v<=0) return;
-              const pct=plan>0?` · ${Math.round(v/plan*100)}%`:'';
               rows.push({color:(s.color&&/^#[0-9A-Fa-f]{6}$/.test(s.color))?s.color:'#888888',
                          label:`${catNm} — ${s.label}`,
-                         val:plan>0?`${fmt(v)} / ${fmt(plan)}${pct}`:fmt(v)});
+                         val:fmt(v)});
             });
-            if(rows.length===before&&plan>0){
-              const s0=sts[0];
-              rows.push({color:(s0.color&&/^#[0-9A-Fa-f]{6}$/.test(s0.color))?s0.color:'#888888',
-                         label:`${catNm} — ${s0.label}`,val:`${fmt(0)} / ${fmt(plan)} · 0%`});
-            }
           }catch{}
         });
         if(rows.length){
           const title=`🛡️ ESC INSTALLATION STATUS · ${_fmtLabelDate(new Date().toLocaleDateString('en-CA'))}`;
-          const foot='faint linework = planned location';
           const LP=Math.max(14,Math.round(c.width*0.011));
           const LF=Math.max(13,Math.round(c.height*0.021));
           const TF=Math.round(LF*1.08);
-          const FF=Math.round(LF*0.85);
           const SW=Math.round(LF*1.15);
           const ROW=Math.round(LF*1.6);
           const GAP=Math.round(LF*1.2);
@@ -4073,10 +4080,8 @@ async function _compositeBrandWordmark(blob, legendCat, pid, scopeEntryId, opts)
           });
           const rowW=SW+Math.round(LF*0.7)+maxLabelW+GAP+maxValW;
           if(rowW>maxW) maxW=rowW;
-          ctx.font=`italic 400 ${FF}px system-ui, sans-serif`;
-          const fw=ctx.measureText(foot).width; if(fw>maxW) maxW=fw;
           const boxW=Math.round(maxW+LP*2);
-          const boxH=Math.round(LP*1.5+ROW+ROW*rows.length+Math.round(ROW*0.8));
+          const boxH=Math.round(LP*1.5+ROW+ROW*rows.length);
           const bx=LP,by=LP,br=Math.round(LF*0.4);
           const valRightX=bx+boxW-LP;
           ctx.fillStyle='rgba(15,31,46,0.82)';
@@ -4109,10 +4114,6 @@ async function _compositeBrandWordmark(blob, legendCat, pid, scopeEntryId, opts)
             ctx.fillText(r.val,valRightX,cy);
             ry+=ROW;
           });
-          ctx.textAlign='left';
-          ctx.font=`italic 400 ${FF}px system-ui, sans-serif`;
-          ctx.fillStyle='rgba(255,255,255,0.55)';
-          ctx.fillText(foot,bx+LP,ry+Math.round(ROW*0.4));
           ctx.restore();
         }
       }catch(e){ console.warn('ESC legend composite failed:',e.message); }
@@ -4281,10 +4282,14 @@ let _escCapFilter=null;   // {cids:Set<string>} — armed only while framing/cap
 function _escCapEntries(list,cat,pid){
   if(!_escCapFilter) return list;
   if(!_escCapFilter.cids.has(cat.id)) return [];
+  // Installed work only (Tim 7/11): plans hidden too — a partially-drawn plan is a
+  // misleading baseline, and unexplained faint linework confused the deliverable.
   return list.filter(e=>{
     if(e.temporary&&e.tempStatus!=='resolved') return false;
     const st=(typeof tcEntryState==='function')?tcEntryState(e,cat,pid):null;
-    if(st&&!st.isPlanned&&/remov/i.test(st.label||'')) return false;
+    const planned=st?!!st.isPlanned:(e.entryType==='planned');
+    if(planned) return false;
+    if(st&&/remov/i.test(st.label||'')) return false;
     return true;
   });
 }
@@ -4324,7 +4329,7 @@ function mapCaptureEscStatus(){
     ov.innerHTML=`
       <div class="modal-box" style="max-width:360px;width:92%">
         <div class="modal-title" style="margin-bottom:4px">🛡️ ESC Status Capture</div>
-        <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-bottom:16px">Pick the controls to show — plan renders faint under the installed work; repair flags and removed sections are hidden</div>
+        <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-bottom:16px">Pick the controls to show — installed work only; plans, repair flags and removed sections are hidden</div>
         <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px;max-height:46dvh;overflow-y:auto">
           ${withData.map(c=>`
             <button class="_esc-cat" data-cid="${c.id}" style="${selected.has(c.id)?rowOn:rowBase}">
