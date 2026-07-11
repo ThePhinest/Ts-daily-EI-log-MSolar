@@ -864,7 +864,7 @@ async function phInit(){
 function phResetAndRender(){ _phDaysShown = 7; phRender(); }
 
 // ── Save a captured map view blob as a photo record ──
-async function phSaveCapturedImage(blob, photoDate, captionOverride){
+async function phSaveCapturedImage(blob, photoDate, captionOverride, opts){
   if(!storage||!_currentUser||!_fbReady) return null;
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
   const today=photoDate||new Date().toLocaleDateString('en-CA');
@@ -887,6 +887,8 @@ async function phSaveCapturedImage(blob, photoDate, captionOverride){
     storageUrl=await snap.ref.getDownloadURL();
   }catch(e){ console.warn('phSaveCapturedImage upload failed:',e.message); return null; }
   const entry={id,date:today,caption,filename:'map-view.png',thumb,storageUrl,uploadedAt:Date.now(),projectId:pid,type:'map_capture'};
+  // Pre-tagged captures (ESC status) flow straight into the QI report's §11 auto-attach.
+  if(opts&&opts.swppp) entry.swppp=true;
   window._phPhotos=(window._phPhotos||[]);
   window._phPhotos.push(entry);
   phSaveLocal();

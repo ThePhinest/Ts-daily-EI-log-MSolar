@@ -214,8 +214,11 @@ function swpppNewInspection(){
   (_swInsp[pid]||[]).forEach(x=>{ if(x.deletedAt) return; (x.photos||[]).forEach(id=>usedIds.add(id)); (x.sketches||[]).forEach(id=>usedIds.add(id)); });
   const sinceDate = prev ? prev.date : new Date(Date.now()-7*86400000).toLocaleDateString('en-CA');
   const sinceTs = prev ? (prev.createdAt||0) : 0;
+  // Map captures are normally §10 material, but a 🌊 SWPPP tag on a capture is a
+  // deliberate "this belongs with the control photos" signal (ESC status captures
+  // arrive pre-tagged), so the tag wins over the type here.
   const autoPhotos = (window._phPhotos||[])
-    .filter(p=>!usedIds.has(p.id) && !p.deletedAt && p.swppp && p.type!=='map_capture' && (!p.projectId || p.projectId===pid))
+    .filter(p=>!usedIds.has(p.id) && !p.deletedAt && p.swppp && (!p.projectId || p.projectId===pid))
     .filter(p=>(p.date||'') > sinceDate || ((p.date||'')===sinceDate && (p.uploadedAt||0) > sinceTs) || (!prev && (p.date||'') >= sinceDate))
     .sort((a,b)=>(a.uploadedAt||0)-(b.uploadedAt||0))
     .slice(0,24);
@@ -466,7 +469,8 @@ function swpppPickPhotos(kind){   // kind: 'sketches' | 'photos'
   const pid = _swPid();
   let pool = (window._phPhotos||[]).filter(p=>!p.deletedAt && (!p.projectId || p.projectId===pid));
   if(kind==='sketches') pool = pool.filter(p=>p.type==='map_capture');
-  else pool = pool.filter(p=>p.type!=='map_capture');
+  // §11: field photos + any capture carrying the 🌊 SWPPP tag (ESC status captures).
+  else pool = pool.filter(p=>p.type!=='map_capture'||p.swppp);
   // Photos already in an earlier report sort last and carry a badge, so the
   // fresh ones lead and a re-use is a deliberate choice.
   const used = new Set();
@@ -988,7 +992,10 @@ function _swRenderForm(){
         <div style="font-weight:700">QI Stormwater Inspection</div>
         <div style="font-size:11px;color:var(--muted)">${esc(cfg.projectTitle||'')} — ${esc(insp.date)}</div>
       </div>
-      <button class="btn" style="margin-left:auto;font-size:11px" onclick="swpppExport('${insp.id}')">⬇ Export DOCX</button>
+      <div style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
+        <button class="btn btn-outline" style="font-size:11px" onclick="swpppExportPhotosZip('${insp.id}')">🖼 Photos ZIP</button>
+        <button class="btn" style="font-size:11px" onclick="swpppExport('${insp.id}')">⬇ Export DOCX</button>
+      </div>
     </div>
     ${statusBar}
     <div class="sw-tools">
@@ -1018,6 +1025,45 @@ async function swpppExport(id){
     await saveFileNative(blob,fname,'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
   }catch(e){ console.error('swppp export failed:',e); alert('Export failed: '+e.message); }
   finally{ btns.forEach(b=>{ b.textContent=b.dataset.oldTxt||'⬇ Export DOCX'; b.disabled=false; }); }
+}
+
+// ── Photos ZIP — full-res copies of everything attached to the report (§10 sketches
+// + §11 photos), foldered by section, share-sheet save. The DOCX embeds downsized
+// images; this is the full-resolution companion file (the material-tags ZIP pattern).
+async function swpppExportPhotosZip(id){
+  const pid=_swPid();
+  await _swLoadAll(pid);
+  const insp=(_swInsp[pid]||[]).find(x=>x.id===id);
+  if(!insp){ alert('Inspection not found.'); return; }
+  if(!(insp.sketches||[]).length&&!(insp.photos||[]).length){ alert('No sketches or photos attached to this report.'); return; }
+  const btns=document.querySelectorAll(`[onclick="swpppExportPhotosZip('${id}')"]`);
+  btns.forEach(b=>{ b.dataset.oldTxt=b.textContent; b.textContent='Zipping…'; b.disabled=true; });
+  try{
+    const {default:JSZip}=await import('jszip');
+    const zip=new JSZip();
+    const safe=s=>String(s||'').replace(/[\\/:*?"<>|]+/g,'').trim().slice(0,80);
+    let added=0;
+    const addOne=async(pId,folder,label)=>{
+      const p=(window._phPhotos||[]).find(x=>x.id===pId);
+      if(!p) return;
+      let blob=null;
+      if(p.storageUrl){ try{ blob=await (await fetch(p.storageUrl)).blob(); }catch(e){} }
+      if(!blob&&p.thumb){ try{ const raw=p.thumb,b64=raw.includes(',')?raw.split(',')[1]:raw; const bin=atob(b64); const arr=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++)arr[i]=bin.charCodeAt(i); blob=new Blob([arr]); }catch(e){} }
+      if(!blob) return;
+      const ext=(p.filename&&p.filename.includes('.'))?p.filename.split('.').pop():(((blob.type||'').includes('png'))?'png':'jpg');
+      zip.folder(folder).file(`${label} — ${safe(p.caption||p.date||pId)}.${ext}`,blob);
+      added++;
+    };
+    let n=0; for(const pId of (insp.sketches||[])){ n++; await addOne(pId,'10 — Sketches & captures',`Sketch ${String(n).padStart(2,'0')}`); }
+    n=0; for(const pId of (insp.photos||[])){ n++; await addOne(pId,'11 — Inspection photos',`Photo ${String(n).padStart(2,'0')}`); }
+    if(!added) throw new Error('no attached photos could be fetched');
+    const buf=await zip.generateAsync({type:'blob'});
+    const [y,m,d]=(insp.date||new Date().toLocaleDateString('en-CA')).split('-');
+    const cfg=_swCfg[pid]||{};
+    const fname=`${(cfg.projectTitle||'Project').replace(/[^\w]+/g,'_')}-QI_Report_Photos_${parseInt(m)}-${parseInt(d)}-${y.slice(2)}.zip`;
+    await saveFileNative(new Blob([buf],{type:'application/zip'}),fname,'application/zip');
+  }catch(e){ console.error('swppp photo zip failed:',e); alert('Photo ZIP failed: '+e.message); }
+  finally{ btns.forEach(b=>{ b.textContent=b.dataset.oldTxt||'🖼 Photos ZIP'; b.disabled=false; }); }
 }
 
 async function swpppBuildDocx(insp,cfg){
@@ -1375,6 +1421,7 @@ async function swpppBuildDocx(insp,cfg){
 
 // ── window exposure (onclick handlers + showPage hook) ──
 window.glRenderReportsPage = glRenderReportsPage;
+window.swpppExportPhotosZip = swpppExportPhotosZip;
 window.swpppShowSetup = swpppShowSetup;
 window.swpppSaveSetup = swpppSaveSetup;
 window.swpppNewInspection = swpppNewInspection;

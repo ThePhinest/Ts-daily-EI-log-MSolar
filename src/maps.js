@@ -3689,6 +3689,13 @@ function mapRefreshDateLabels(){
       if(_tcLayerVisible[cid]===false) return false;
       const isOpenTemp=e.temporary&&e.tempStatus!=='resolved';
       if(isOpenTemp&&!_flagsVisible()) return false; // FAB flag toggle hides these
+      // ESC-status capture framing: labels follow the same filter as the drawings —
+      // selected categories only, no flags, no Removed-state entries.
+      if(_escCapFilter){
+        if(!_escCapFilter.cids.has(cid)||isOpenTemp) return false;
+        const st=(typeof tcEntryState==='function')?tcEntryState(e,cid,pid):null;
+        if(st&&!st.isPlanned&&/remov/i.test(st.label||'')) return false;
+      }
       if(!e.showDateLabel&&!isOpenTemp) return false;
       return true;
     })
@@ -3832,7 +3839,7 @@ window.mapToggleDateLabelEdit=mapToggleDateLabelEdit;
 // bottom-left, then composites "GROUND|LOG" wordmark (white + amber pipe) on top
 // and re-encodes. Fails open — returns the raw blob if anything throws so capture
 // still succeeds without branding.
-async function _compositeBrandWordmark(blob, legendCat, pid, scopeEntryId){
+async function _compositeBrandWordmark(blob, legendCat, pid, scopeEntryId, opts){
   try{
     const bmp=await createImageBitmap(blob);
     const c=document.createElement('canvas');
@@ -3846,7 +3853,9 @@ async function _compositeBrandWordmark(blob, legendCat, pid, scopeEntryId){
     // onto the image at its projected position (anchor 'bottom' = tip at the point),
     // so an end-of-day map capture actually shows where photos were taken.
     try{
-      if(_mapInstance){
+      // ESC-status captures skip the marker overlay — pins/markers are context the
+      // deliverable deliberately excludes (clean installation-status image).
+      if(_mapInstance&&!(opts&&opts.escCids)){
         const cont=_mapInstance.getContainer();
         const sx=cont&&cont.clientWidth?c.width/cont.clientWidth:1;
         const sy=cont&&cont.clientHeight?c.height/cont.clientHeight:1;
@@ -4007,6 +4016,107 @@ async function _compositeBrandWordmark(blob, legendCat, pid, scopeEntryId){
         }
       }catch(e){ console.warn('legend composite failed:',e.message); }
     }
+    // ESC INSTALLATION STATUS legend — one compact row per selected category × state
+    // WITH data (zero-quantity states never print; typical ESC categories = one line
+    // each), plus a shared "faint = planned" footnote instead of per-category plan
+    // swatches. Categories with a plan but nothing installed yet print a 0% row so
+    // the deliverable is honest about what's NOT in yet.
+    else if(opts&&Array.isArray(opts.escCids)&&opts.escCids.length&&typeof tcGetStates==='function'){
+      try{
+        const rows=[];
+        opts.escCids.forEach(cid=>{
+          try{
+            const catNm=(typeof tcGetName==='function')?tcGetName(cid,pid):'Category';
+            const defUnit=(typeof tcGetDefaultUnit==='function')?tcGetDefaultUnit(cid,pid):'ac';
+            const sts=tcGetStates(cid,pid).filter(s=>!s.isPlanned&&!/remov/i.test(s.label||''));
+            if(!sts.length||typeof trGetEntriesForProject!=='function'||typeof trEntryMeasure!=='function') return;
+            const all=trGetEntriesForProject(pid).filter(e=>((e.categoryId||e.category)===cid)&&!e.deletedAt&&!e.temporary&&!e.deletedFromMap&&!e.archivedFromMap);
+            const plan=all.filter(e=>e.entryType==='planned').reduce((s,e)=>s+(trEntryMeasure(e,defUnit,pid)||0),0);
+            const inst=all.filter(e=>e.entryType!=='planned');
+            const dcs=(typeof tcDefaultChildState==='function')?tcDefaultChildState(cid,pid):null;
+            const fmt=(v)=>(typeof tcFormatMeasurement==='function')?tcFormatMeasurement(v,defUnit):`${(v||0).toFixed(1)} ${defUnit}`;
+            const before=rows.length;
+            sts.forEach(s=>{
+              const v=inst.filter(e=>(e.state||(dcs?dcs.id:null))===s.id).reduce((sum,e)=>sum+(trEntryMeasure(e,defUnit,pid)||0),0);
+              if(v<=0) return;
+              const pct=plan>0?` · ${Math.round(v/plan*100)}%`:'';
+              rows.push({color:(s.color&&/^#[0-9A-Fa-f]{6}$/.test(s.color))?s.color:'#888888',
+                         label:`${catNm} — ${s.label}`,
+                         val:plan>0?`${fmt(v)} / ${fmt(plan)}${pct}`:fmt(v)});
+            });
+            if(rows.length===before&&plan>0){
+              const s0=sts[0];
+              rows.push({color:(s0.color&&/^#[0-9A-Fa-f]{6}$/.test(s0.color))?s0.color:'#888888',
+                         label:`${catNm} — ${s0.label}`,val:`${fmt(0)} / ${fmt(plan)} · 0%`});
+            }
+          }catch{}
+        });
+        if(rows.length){
+          const title=`🛡️ ESC INSTALLATION STATUS · ${_fmtLabelDate(new Date().toLocaleDateString('en-CA'))}`;
+          const foot='faint linework = planned location';
+          const LP=Math.max(14,Math.round(c.width*0.011));
+          const LF=Math.max(13,Math.round(c.height*0.021));
+          const TF=Math.round(LF*1.08);
+          const FF=Math.round(LF*0.85);
+          const SW=Math.round(LF*1.15);
+          const ROW=Math.round(LF*1.6);
+          const GAP=Math.round(LF*1.2);
+          ctx.save();
+          ctx.textBaseline='middle';
+          ctx.font=`600 ${TF}px system-ui, sans-serif`;
+          let maxW=ctx.measureText(title).width;
+          ctx.font=`500 ${LF}px system-ui, sans-serif`;
+          let maxLabelW=0,maxValW=0;
+          rows.forEach(r=>{
+            const lw=ctx.measureText(r.label).width; if(lw>maxLabelW) maxLabelW=lw;
+            const vw=ctx.measureText(r.val).width;   if(vw>maxValW)   maxValW=vw;
+          });
+          const rowW=SW+Math.round(LF*0.7)+maxLabelW+GAP+maxValW;
+          if(rowW>maxW) maxW=rowW;
+          ctx.font=`italic 400 ${FF}px system-ui, sans-serif`;
+          const fw=ctx.measureText(foot).width; if(fw>maxW) maxW=fw;
+          const boxW=Math.round(maxW+LP*2);
+          const boxH=Math.round(LP*1.5+ROW+ROW*rows.length+Math.round(ROW*0.8));
+          const bx=LP,by=LP,br=Math.round(LF*0.4);
+          const valRightX=bx+boxW-LP;
+          ctx.fillStyle='rgba(15,31,46,0.82)';
+          ctx.beginPath();
+          ctx.moveTo(bx+br,by);
+          ctx.arcTo(bx+boxW,by,bx+boxW,by+boxH,br);
+          ctx.arcTo(bx+boxW,by+boxH,bx,by+boxH,br);
+          ctx.arcTo(bx,by+boxH,bx,by,br);
+          ctx.arcTo(bx,by,bx+boxW,by,br);
+          ctx.closePath(); ctx.fill();
+          ctx.textAlign='left';
+          ctx.font=`600 ${TF}px system-ui, sans-serif`;
+          ctx.fillStyle='#C9A84C';
+          ctx.fillText(title,bx+LP,by+LP*0.75+TF*0.5);
+          ctx.font=`500 ${LF}px system-ui, sans-serif`;
+          let ry=by+LP*0.75+ROW;
+          rows.forEach(r=>{
+            const cy=ry+ROW*0.5,swx=bx+LP,swy=cy-SW/2,sr=Math.round(SW*0.25);
+            ctx.fillStyle=r.color;
+            ctx.beginPath();
+            ctx.moveTo(swx+sr,swy);
+            ctx.arcTo(swx+SW,swy,swx+SW,swy+SW,sr);
+            ctx.arcTo(swx+SW,swy+SW,swx,swy+SW,sr);
+            ctx.arcTo(swx,swy+SW,swx,swy,sr);
+            ctx.arcTo(swx,swy,swx+SW,swy,sr);
+            ctx.closePath(); ctx.fill();
+            ctx.textAlign='left'; ctx.fillStyle='#ffffff';
+            ctx.fillText(r.label,swx+SW+Math.round(LF*0.7),cy);
+            ctx.textAlign='right'; ctx.fillStyle='#dfe8f0';
+            ctx.fillText(r.val,valRightX,cy);
+            ry+=ROW;
+          });
+          ctx.textAlign='left';
+          ctx.font=`italic 400 ${FF}px system-ui, sans-serif`;
+          ctx.fillStyle='rgba(255,255,255,0.55)';
+          ctx.fillText(foot,bx+LP,ry+Math.round(ROW*0.4));
+          ctx.restore();
+        }
+      }catch(e){ console.warn('ESC legend composite failed:',e.message); }
+    }
     const PAD=Math.max(16,Math.round(c.width*0.012));
     const PILL_H=Math.max(28,Math.round(c.height*0.035));
     const FONT_PX=Math.round(PILL_H*0.50);
@@ -4157,6 +4267,120 @@ async function _doCaptureMapView(){
   if(!photoEntry){ _hideCaptureToast(); console.warn('_doCaptureMapView: save failed'); return; }
   _showCaptureToast('✓ Saved to Photos');
   setTimeout(_hideCaptureToast,1800);
+}
+
+// ── ESC Installation Status capture ──
+// FAB 🛡️ row: pick which tracker categories to show, temporarily filter the map to
+// plan (faint) + active states of just those categories (open 🚩 flags and
+// "Removed"-type states hidden), frame, capture with a compact multi-category
+// legend, save to Photos pre-tagged 🌊 SWPPP (auto-attaches to the next QI
+// report's §11), then restore the view. KML layers / plan-sheet overlays are
+// untouched — the user controls that context via the layers panel.
+let _escCapFilter=null;   // {cids:Set<string>} — armed only while framing/capturing
+
+function _escCapEntries(list,cat,pid){
+  if(!_escCapFilter) return list;
+  if(!_escCapFilter.cids.has(cat.id)) return [];
+  return list.filter(e=>{
+    if(e.temporary&&e.tempStatus!=='resolved') return false;
+    const st=(typeof tcEntryState==='function')?tcEntryState(e,cat,pid):null;
+    if(st&&!st.isPlanned&&/remov/i.test(st.label||'')) return false;
+    return true;
+  });
+}
+
+function _escCapClear(){
+  if(!_escCapFilter) return;
+  _escCapFilter=null;
+  mapRenderTrackerLayers();
+  if(typeof mapRefreshDateLabels==='function') mapRefreshDateLabels();
+}
+
+function mapCaptureEscStatus(){
+  if(!_mapInstance) return;
+  if(typeof mapCloseFab==='function') mapCloseFab();
+  if(_trackerPopup){_trackerPopup.remove();_trackerPopup=null;}
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const cats=_sortCatsByOrder((typeof tcGetCategories==='function')?tcGetCategories(pid):[],pid);
+  const entries=(typeof trGetEntriesForProject==='function')?trGetEntriesForProject(pid).filter(e=>!e.deletedFromMap&&!e.archivedFromMap&&e.geometry):[];
+  const counts={};
+  entries.forEach(e=>{const cid=e.categoryId||e.category; counts[cid]=(counts[cid]||0)+1;});
+  const withData=cats.filter(c=>counts[c.id]);
+  if(!withData.length){ _showCaptureToast('No tracker drawings to capture'); setTimeout(_hideCaptureToast,1800); return; }
+  // Last selection remembered per project (tiny-pref tier); default = linear categories.
+  let lastSel=[];
+  try{ lastSel=JSON.parse(localStorage.getItem('gl_esc_cap_sel::'+pid)||'[]'); }catch{}
+  lastSel=lastSel.filter(id=>withData.some(c=>c.id===id));
+  const selected=new Set(lastSel.length?lastSel:withData.filter(c=>c.measurementType==='linear').map(c=>c.id));
+  if(!selected.size) withData.forEach(c=>selected.add(c.id));
+
+  const ov=document.createElement('div');
+  ov.className='modal-overlay';
+  ov.style.cssText='z-index:9500';
+  const rowBase='display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:12px 14px;border-radius:8px;cursor:pointer;border:2px solid var(--border);background:var(--s1);transition:border-color .15s';
+  const rowOn ='display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:12px 14px;border-radius:8px;cursor:pointer;border:2px solid var(--amber);background:var(--s1);transition:border-color .15s';
+  const render=()=>{
+    const nSel=selected.size;
+    ov.innerHTML=`
+      <div class="modal-box" style="max-width:360px;width:92%">
+        <div class="modal-title" style="margin-bottom:4px">🛡️ ESC Status Capture</div>
+        <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-bottom:16px">Pick the controls to show — plan renders faint under the installed work; repair flags and removed sections are hidden</div>
+        <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px;max-height:46dvh;overflow-y:auto">
+          ${withData.map(c=>`
+            <button class="_esc-cat" data-cid="${c.id}" style="${selected.has(c.id)?rowOn:rowBase}">
+              <span style="font-size:15px;width:18px;flex-shrink:0;text-align:center;color:${selected.has(c.id)?'var(--amber)':'var(--muted)'}">${selected.has(c.id)?'☑':'☐'}</span>
+              <span style="display:flex;flex-direction:column;gap:2px;min-width:0">
+                <span style="font-family:var(--cond);font-weight:700;font-size:14px;letter-spacing:.03em;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${c.name}</span>
+                <span style="font-family:var(--mono);font-size:10px;color:var(--muted)">${c.measurementType==='linear'?'linear':'area'} · ${counts[c.id]} entr${counts[c.id]===1?'y':'ies'}</span>
+              </span>
+            </button>`).join('')}
+        </div>
+        <button id="_esc-go" ${nSel?'':'disabled'} style="width:100%;padding:12px;background:${nSel?'var(--amber)':'var(--s2,#1a2a38)'};color:${nSel?'#000':'var(--muted)'};font-family:var(--cond);font-weight:700;font-size:14px;letter-spacing:.06em;border:none;border-radius:8px;cursor:${nSel?'pointer':'default'};margin-bottom:8px">📷 Frame &amp; capture${nSel?` (${nSel})`:''}</button>
+        <button id="_esc-cancel" style="width:100%;padding:9px;background:none;color:var(--muted);font-family:var(--mono);font-size:11px;border:1px solid var(--border);border-radius:8px;cursor:pointer">Cancel</button>
+      </div>`;
+    ov.querySelectorAll('._esc-cat').forEach(btn=>{
+      btn.onclick=()=>{ const id=btn.dataset.cid; if(selected.has(id)) selected.delete(id); else selected.add(id); render(); };
+    });
+    ov.querySelector('#_esc-cancel').onclick=()=>ov.remove();
+    const goBtn=ov.querySelector('#_esc-go');
+    if(goBtn) goBtn.onclick=()=>{
+      if(!selected.size) return;
+      const sel=[...selected];
+      try{ localStorage.setItem('gl_esc_cap_sel::'+pid,JSON.stringify(sel)); }catch{}
+      ov.remove();
+      _escCapFilter={cids:new Set(sel)};
+      mapRenderTrackerLayers();
+      if(typeof mapRefreshDateLabels==='function') mapRefreshDateLabels();
+      _showCaptureBar(()=>_doCaptureEsc(sel));
+      // The shared capture bar's Cancel must also restore the filtered view.
+      const cb=document.getElementById('_gl-cap-cancel');
+      if(cb) cb.onclick=()=>{ _hideCaptureBar(); _escCapClear(); };
+    };
+  };
+  render();
+  document.body.appendChild(ov);
+}
+window.mapCaptureEscStatus=mapCaptureEscStatus;
+
+async function _doCaptureEsc(cids){
+  if(!_mapInstance){ _escCapClear(); return; }
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  _showCaptureToast('📷 Capturing…');
+  await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
+  const canvas=_mapInstance.getCanvas();
+  const today=new Date().toLocaleDateString('en-CA');
+  const rawBlob=await new Promise(res=>canvas.toBlob(res,'image/png'));
+  if(!rawBlob){ _hideCaptureToast(); _escCapClear(); console.warn('_doCaptureEsc: canvas returned null'); return; }
+  const branded=await _compositeBrandWordmark(rawBlob,null,pid,null,{escCids:cids});
+  if(typeof phSaveCapturedImage!=='function'){ _hideCaptureToast(); _escCapClear(); return; }
+  _showCaptureToast('☁️ Saving…');
+  const prefill=`ESC installation status · ${_fmtLabelDate(today)}`;
+  const photoEntry=await phSaveCapturedImage(branded,today,prefill,{swppp:true});
+  _escCapClear();
+  _hideCaptureToast();
+  if(!photoEntry){ console.warn('_doCaptureEsc: save failed'); return; }
+  _showCaptureToast('✓ Saved to Photos · 🌊 SWPPP-tagged');
+  setTimeout(_hideCaptureToast,2200);
 }
 
 // Standalone caption modal for capture flow — writes directly to entry.photoCaptions
@@ -4402,7 +4626,7 @@ function mapRenderTrackerLayers(){
     const src='tracker-'+cat.id;
     const color=cat.color||'#888';
     const visible=_tcLayerVisible[cat.id]!==false;
-    const geojson={type:'FeatureCollection',features:(visible?byCategory[cat.id]:[]).map(e=>{
+    const geojson={type:'FeatureCollection',features:(visible?_escCapEntries(byCategory[cat.id],cat,_rtPid):[]).map(e=>{
       // Per-state render props: stateColor drives fill/line color; faint = plan baseline.
       // Open repair flags render attention-amber regardless of state colors.
       const _openTemp=!!(e.temporary&&e.tempStatus!=='resolved');
@@ -4455,7 +4679,9 @@ function mapRenderTrackerLayers(){
     Object.entries(orphanByCat).forEach(([cid,group])=>{
       const src='tracker-'+cid;
       const color='#888';
-      const visible=_tcLayerVisible[cid]!==false;
+      // Orphan (not-yet-cached) categories can't appear in the ESC checklist — hide
+      // them while the ESC capture filter is armed.
+      const visible=_tcLayerVisible[cid]!==false&&!_escCapFilter;
       const geojson={type:'FeatureCollection',features:(visible?group.entries:[]).map(e=>({
         type:'Feature',id:e.id,
         properties:{id:e.id,categoryId:e.categoryId||e.category,categoryName:e.categoryName||e.category,date:e.date,acres:e.acres,measurementValue:e.measurementValue??null,measurementUnit:e.measurementUnit||null,notes:e.notes,location:e.location,phase:e.phase||null,method:e.method||null,status:e.status||null,contractor:e.contractor||null,entryType:e.entryType||'installed'},
