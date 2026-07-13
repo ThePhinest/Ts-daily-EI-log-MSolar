@@ -3635,7 +3635,10 @@ function _addCategoryFillLayer(srcId,cat){
   else if(fs==='crosshatch') paint={'fill-pattern':'tr-xhatch-'+cat.id};
   else if(fs==='outline')    paint={'fill-color':fillColor,'fill-opacity':0};
   else                       paint={'fill-color':fillColor,'fill-opacity':['case',['get','faint'],0.07,fo]};
-  _mapInstance.addLayer({id:srcId+'-fill',type:'fill',source:srcId,filter:['==',['geometry-type'],'Polygon'],paint});
+  // _noFill features are outline-only twins from the net-clip render path — their
+  // fill lives on the _netFill twin so overlaps never alpha-blend state colors.
+  _mapInstance.addLayer({id:srcId+'-fill',type:'fill',source:srcId,
+    filter:['all',['==',['geometry-type'],'Polygon'],['!=',['get','_noFill'],true]],paint});
 }
 
 function _addCategoryLineLayer(srcId,cat){
@@ -3655,8 +3658,9 @@ function _addCategoryLineLayer(srcId,cat){
     'dotted',['literal',_TC_DASH_ARRAYS.dotted],
     'dash-dot',['literal',_TC_DASH_ARRAYS['dash-dot']],
     ['literal',[1,0]]];
+  // _netFill twins carry only the clipped fill — outlines come from the base feature.
   _mapInstance.addLayer({id:srcId+'-line',type:'line',source:srcId,
-    filter:['any',['==',['geometry-type'],'Polygon'],['==',['geometry-type'],'LineString']],paint});
+    filter:['all',['any',['==',['geometry-type'],'Polygon'],['==',['geometry-type'],'LineString']],['!=',['get','_netFill'],true]],paint});
 }
 
 function _addCategoryCircleLayer(srcId,cat){
@@ -4631,7 +4635,24 @@ function mapRenderTrackerLayers(){
     const src='tracker-'+cat.id;
     const color=cat.color||'#888';
     const visible=_tcLayerVisible[cat.id]!==false;
-    const geojson={type:'FeatureCollection',features:(visible?_escCapEntries(byCategory[cat.id],cat,_rtPid):[]).map(e=>{
+    const catEntries=visible?_escCapEntries(byCategory[cat.id],cat,_rtPid):[];
+    // Running-mode categories (SWPPP disturbance): later-drawn work covers earlier
+    // work, so stacked translucent fills alpha-blend (yellow over red reads orange —
+    // colliding with a real orange state). Render fills from the NET geometry (each
+    // drawing minus later drawings, same chronological clip as the totals) so every
+    // overlap region shows ONLY the top drawing's color; outlines keep the original
+    // drawn extent for context. Planned entries and open repair flags aren't clipped.
+    const _mode=(typeof tcProgressMode==='function')?tcProgressMode(cat,_rtPid):'';
+    let _netGeoms=null;
+    if((_mode==='running-balance'||_mode==='running-total')&&typeof glEntryNetGeoms==='function'){
+      const clipList=catEntries.filter(e=>{
+        if(e.temporary&&e.tempStatus!=='resolved') return false;
+        const st=(typeof tcEntryState==='function')?tcEntryState(e,cat,_rtPid):null;
+        return !(st?!!st.isPlanned:(e.entryType==='planned'));
+      });
+      try{ _netGeoms=glEntryNetGeoms(clipList); }catch(err){ console.warn('net-geom clip failed, falling back to raw fills:', err); }
+    }
+    const geojson={type:'FeatureCollection',features:catEntries.flatMap(e=>{
       // Per-state render props: stateColor drives fill/line color; faint = plan baseline.
       // Open repair flags render attention-amber regardless of state colors.
       const _openTemp=!!(e.temporary&&e.tempStatus!=='resolved');
@@ -4641,12 +4662,17 @@ function mapRenderTrackerLayers(){
       // Per-state line style for the data-driven dasharray (schema editor's Style
       // dropdown); falls back to the category-level lineStyle.
       const stateStyle=_openTemp?'solid':((st&&st.style)||cat.lineStyle||'solid');
-      return {
-        type:'Feature',
-        id:e.id,
-        properties:{id:e.id,categoryId:e.categoryId||e.category,categoryName:e.categoryName||e.category,date:e.date,acres:e.acres,measurementValue:e.measurementValue??null,measurementUnit:e.measurementUnit||null,notes:e.notes,location:e.location,phase:e.phase||null,method:e.method||null,status:e.status||null,contractor:e.contractor||null,entryType:e.entryType||'installed',state:e.state||null,stateColor,stateStyle,faint,temporary:!!(e.temporary&&e.tempStatus!=='resolved')},
-        geometry:e.geometry
-      };
+      const props={id:e.id,categoryId:e.categoryId||e.category,categoryName:e.categoryName||e.category,date:e.date,acres:e.acres,measurementValue:e.measurementValue??null,measurementUnit:e.measurementUnit||null,notes:e.notes,location:e.location,phase:e.phase||null,method:e.method||null,status:e.status||null,contractor:e.contractor||null,entryType:e.entryType||'installed',state:e.state||null,stateColor,stateStyle,faint,temporary:!!(e.temporary&&e.tempStatus!=='resolved')};
+      const base={type:'Feature',id:e.id,properties:props,geometry:e.geometry};
+      // Net-clipped fill twin: base feature keeps the full outline (line layer),
+      // the twin carries the clipped fill. Fully-covered drawings get no fill.
+      if(_netGeoms&&Object.prototype.hasOwnProperty.call(_netGeoms,e.id)){
+        base.properties=Object.assign({},props,{_noFill:true});
+        const net=_netGeoms[e.id];
+        if(!net) return [base];
+        return [base,{type:'Feature',id:e.id,properties:Object.assign({},props,{_netFill:true}),geometry:net}];
+      }
+      return [base];
     })};
 
     _ensureCategoryPatternImages([cat]);

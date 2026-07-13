@@ -115,6 +115,26 @@ function glEntryNetAreasM2(entries, orderedStates){
   return out;
 }
 
+// Per-ENTRY net GEOMETRY: each drawing minus the union of everything drawn AFTER
+// it (same chronological clip as the area fns above, but returns the clipped shape).
+// Map rendering uses this for running-mode categories so stacked translucent fills
+// never alpha-blend (yellow-over-red read as orange and collided with a real orange
+// state — Tim 7/13). Returns { entryId: geometry|null } — null = fully covered by
+// later drawings (outline-only on the map).
+function glEntryNetGeoms(entries){
+  const parsed = (entries || []).map(e => ({ e, f: _parseGeom(e) })).filter(x => x.f);
+  if(!parsed.length) return null;
+  parsed.sort(_chronoSort);
+  const out = {};
+  parsed.forEach((x, i) => {
+    const later = _unionAll(parsed.slice(i + 1).map(y => y.f));
+    let g = x.f;
+    if(later) g = _safeDiff(g, later);
+    out[x.e.id] = (g && g.geometry) ? g.geometry : null;
+  });
+  return out;
+}
+
 // Line length in FEET for a LineString/MultiLineString geometry (object or JSON
 // string). Used by the KML→planned-category promotion to measure imported lines.
 function glLineLengthFt(geometry){
@@ -130,8 +150,9 @@ function glLineLengthFt(geometry){
 if(typeof window !== 'undefined'){
   window.glStateNetAreasM2 = glStateNetAreasM2;
   window.glEntryNetAreasM2 = glEntryNetAreasM2;
+  window.glEntryNetGeoms   = glEntryNetGeoms;
   window.glAreaConvertM2   = glAreaConvertM2;
   window.glLineLengthFt    = glLineLengthFt;
 }
 
-export { glStateNetAreasM2, glEntryNetAreasM2, glAreaConvertM2, glLineLengthFt };
+export { glStateNetAreasM2, glEntryNetAreasM2, glEntryNetGeoms, glAreaConvertM2, glLineLengthFt };
