@@ -4423,6 +4423,7 @@ function _showCaptureCaptionModal(entryId,photoId,prefill){
     // Also update the photo record's caption so it surfaces in the lightbox
     const photo=(window._phPhotos||[]).find(p=>p.id===photoId);
     if(photo) photo.caption=val||photo.caption||'';
+    if(photo&&typeof phMarkDirty==='function') phMarkDirty(photo.id);
     if(typeof phSaveLocal==='function') phSaveLocal();
     if(typeof phSaveCloud==='function') phSaveCloud();
   };

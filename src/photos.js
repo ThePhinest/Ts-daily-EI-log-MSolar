@@ -182,6 +182,7 @@ async function phHandleFiles(files){
     };
 
     window._phPhotos.push(entry);
+    phMarkDirty(entry.id);
   }
 
   progBar.style.width = '100%';
@@ -241,32 +242,71 @@ async function phMigrateLocalToIdb(){
   if(pairs.length) console.log('phMigrate: moved', pairs.length, 'photos localStorage → IndexedDB');
 }
 
+// ── Dirty-ID cloud sync ──
+// phSaveCloud used to re-batch the ENTIRE library on every change — at 400+
+// photos (thumbs included) that exhausts Firestore's write stream
+// (resource-exhausted) and each retry re-sends megabytes. Worse: if the batch
+// died on a weak field connection, the next phLoadCloud replaced the local
+// list from cloud and the unflushed photo VANISHED (the 7/8 "photos not
+// saving" field report). Now every mutation marks its photo dirty; only dirty
+// docs are written (chunked ≤400/batch, under Firestore's 500-op limit); the
+// pending set persists across reloads (gl_ph_dirty, uid-fenced with the rest
+// of localStorage) and phLoadCloud keeps pending local records instead of
+// dropping them.
+const _phDirtyIds = new Set();
+try{ (JSON.parse(localStorage.getItem('gl_ph_dirty')||'[]')||[]).forEach(id=>_phDirtyIds.add(id)); }catch{}
+function _phPersistDirty(){
+  try{ localStorage.setItem('gl_ph_dirty', JSON.stringify([..._phDirtyIds])); }catch{}
+}
+function phMarkDirty(idOrIds){
+  (Array.isArray(idOrIds) ? idOrIds : [idOrIds]).forEach(id => { if(id) _phDirtyIds.add(id); });
+  _phPersistDirty();
+}
+
+// Per-photo cloud doc shape (shared by the dirty flush + phSaveCloudOne).
+function _phDocFor(p){
+  const doc = {
+    id: p.id, date: p.date, caption: p.caption,
+    filename: p.filename, thumb: p.thumb, uploadedAt: p.uploadedAt
+  };
+  if(p.storageUrl) doc.storageUrl = p.storageUrl;
+  if(p.lat !== undefined){ doc.lat = p.lat; doc.lng = p.lng; }
+  if(p.direction !== undefined) doc.direction = p.direction;
+  if(p.takenAt) doc.takenAt = p.takenAt;
+  if(p.software) doc.software = p.software;
+  if(p.projectId) doc.projectId = p.projectId;
+  if(p.type) doc.type = p.type;
+  if(p.swppp) doc.swppp = true;
+  if(p.seedTag) doc.seedTag = true;
+  if(p.published !== undefined){ doc.published = p.published; doc.publishedAt = p.publishedAt || null; }
+  return doc;
+}
+
 async function phSaveCloud(){
-  if(!db || !_fbReady) return;
-  try{
-    const batch = db.batch();
-    window._phPhotos.forEach(p => {
-      const ref = _udb().collection('photos').doc(p.id);
-      const doc = {
-        id: p.id, date: p.date, caption: p.caption,
-        filename: p.filename, thumb: p.thumb, uploadedAt: p.uploadedAt
-      };
-      if(p.storageUrl) doc.storageUrl = p.storageUrl;
-      if(p.lat !== undefined){ doc.lat = p.lat; doc.lng = p.lng; }
-      if(p.direction !== undefined) doc.direction = p.direction;
-      if(p.takenAt) doc.takenAt = p.takenAt;
-      if(p.software) doc.software = p.software;
-      if(p.projectId) doc.projectId = p.projectId;
-      if(p.type) doc.type = p.type;
-      if(p.swppp) doc.swppp = true;
-      if(p.seedTag) doc.seedTag = true;
-      if(p.published !== undefined){ doc.published = p.published; doc.publishedAt = p.publishedAt || null; }
+  if(!db || !_fbReady || !_phDirtyIds.size) return;
+  const byId = {};
+  (window._phPhotos||[]).forEach(p => { byId[p.id] = p; });
+  const ids = [..._phDirtyIds];
+  for(let i = 0; i < ids.length; i += 400){
+    const slice = ids.slice(i, i + 400);
+    const chunk = slice.filter(id => byId[id]);
+    // ids no longer in the live list (deleted/trashed since): the delete path
+    // writes its own doc update, so there's nothing left to flush here.
+    slice.forEach(id => { if(!byId[id]) _phDirtyIds.delete(id); });
+    if(!chunk.length){ _phPersistDirty(); continue; }
+    try{
+      const batch = db.batch();
       // merge:true so a device that hasn't seen a delete yet can't strip
       // deletedAt off the cloud doc and resurrect a deleted photo
-      batch.set(ref, doc, { merge: true });
-    });
-    await batch.commit();
-  }catch(e){ console.warn('phSaveCloud failed:', e.message); }
+      chunk.forEach(id => batch.set(_udb().collection('photos').doc(id), _phDocFor(byId[id]), { merge:true }));
+      await batch.commit();
+      chunk.forEach(id => _phDirtyIds.delete(id));
+      _phPersistDirty();
+    }catch(e){
+      // Kept dirty — retried on the next phSave / app boot.
+      console.warn('phSaveCloud chunk failed (kept pending for retry):', e.message);
+    }
+  }
 }
 
 async function phLoadCloud(){
@@ -280,9 +320,25 @@ async function phLoadCloud(){
   try{
     const snap = await _udb().collection('photos').get();
     if(!snap.empty){
-      _phPartition(snap.docs.map(d => d.data()));
+      const cloud = snap.docs.map(d => d.data());
+      // Photos with a PENDING cloud write (dirty set) keep their LOCAL record —
+      // the cloud copy is stale or missing (a new upload whose batch died in the
+      // field would otherwise vanish here). They re-flush right after.
+      if(_phDirtyIds.size){
+        const cloudIds = new Set(cloud.map(p => p.id));
+        const localAll = (window._phPhotos||[]).concat(window._phTrash||[]);
+        _phDirtyIds.forEach(id => {
+          const lp = localAll.find(p => p && p.id === id);
+          if(!lp) return;
+          const ci = cloud.findIndex(p => p.id === id);
+          if(ci >= 0) cloud[ci] = Object.assign({}, cloud[ci], lp);
+          else if(!cloudIds.has(id)) cloud.push(lp);
+        });
+      }
+      _phPartition(cloud);
       phSaveLocal();
       _phSweepTrash();
+      if(_phDirtyIds.size) phSaveCloud();
       return true;
     }
   }catch(e){ console.warn('phLoadCloud failed:', e.message); }
@@ -304,6 +360,7 @@ async function phRecoverStorageUrls(){
     try{
       const url = await storage.ref(`photos/${_currentUser.uid}/${p.id}/${p.filename}`).getDownloadURL();
       p.storageUrl = url;
+      phMarkDirty(p.id);
       fixed++;
     }catch(e){}
   }
@@ -644,6 +701,7 @@ function phSaveCaption(){
   const p = window._phPhotos.find(x=>x.id===_phLbId);
   if(p){
     p.caption = cap;
+    phMarkDirty(p.id);
     phSave();
     phRender();
     // Published photo: keep the project mirror's caption current — in the
@@ -680,6 +738,7 @@ async function phToggleSwpppCurrent(){
   const p = window._phPhotos.find(x=>x.id===_phLbId);
   if(!p) return;
   p.swppp = !p.swppp;
+  phMarkDirty(p.id);
   phSave();
   phRender();
   const btn = document.getElementById('ph-lb-swppp');
@@ -697,6 +756,7 @@ async function phToggleSeedCurrent(){
   const p = window._phPhotos.find(x=>x.id===_phLbId);
   if(!p) return;
   p.seedTag = !p.seedTag;
+  phMarkDirty(p.id);
   phSave();
   phRender();
   const btn = document.getElementById('ph-lb-seed');
@@ -834,7 +894,7 @@ async function _glMigratePhaseD() {
   const pid = _activeProjectId();
   if (!pid || pid === 'default') return;
   let changed = false;
-  window._phPhotos.forEach(p => { if (!p.projectId) { p.projectId = pid; changed = true; } });
+  window._phPhotos.forEach(p => { if (!p.projectId) { p.projectId = pid; phMarkDirty(p.id); changed = true; } });
   if (changed) {
     phSaveLocal();
     await phSaveCloud();
@@ -902,25 +962,17 @@ async function phSaveCapturedImage(blob, photoDate, captionOverride, opts){
 // Persist a single photo doc (used by add/capture paths) so we never re-batch the whole
 // library on a one-photo change. Mirrors the per-photo doc shape in phSaveCloud.
 async function phSaveCloudOne(p){
-  if(!db || !_fbReady || !p) return;
-  try{
-    const doc={ id:p.id, date:p.date, caption:p.caption, filename:p.filename, thumb:p.thumb, uploadedAt:p.uploadedAt };
-    if(p.storageUrl) doc.storageUrl=p.storageUrl;
-    if(p.lat!==undefined){ doc.lat=p.lat; doc.lng=p.lng; }
-    if(p.direction!==undefined) doc.direction=p.direction;
-    if(p.takenAt) doc.takenAt=p.takenAt;
-    if(p.software) doc.software=p.software;
-    if(p.projectId) doc.projectId=p.projectId;
-    if(p.type) doc.type=p.type;
-    if(p.swppp) doc.swppp=true;
-    if(p.seedTag) doc.seedTag=true;
-    if(p.published!==undefined){ doc.published=p.published; doc.publishedAt=p.publishedAt||null; }
-    await _udb().collection('photos').doc(p.id).set(doc,{merge:true});
-  }catch(e){ console.warn('phSaveCloudOne failed:', e.message); }
+  if(!p) return;
+  // Route through the dirty flush so a failed write persists as pending
+  // (survives reloads) instead of silently disappearing.
+  phMarkDirty(p.id);
+  if(!db || !_fbReady) return;
+  await phSaveCloud();
 }
 
 // ── Expose to window for HTML onclick handlers and cross-module calls ──
 window.phInit = phInit;
+window.phMarkDirty = phMarkDirty;
 window.phResetAndRender = phResetAndRender;
 window.phHandleFiles = phHandleFiles;
 window.phRender = phRender;
