@@ -50,6 +50,7 @@
     "mapbox-gl": "^3.23.1",
     "mapbox-gl-draw-snap-mode": "^0.5.0",
     "pdfjs-dist": "^6.0.227",
+    "pdfmake": "^0.3.11",
     "qrcode": "^1.5.4"
   }
 }

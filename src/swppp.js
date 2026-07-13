@@ -631,6 +631,7 @@ function _swRenderReportsInner(host, pid){
         ${chip}
       </div>
       <button class="sw-list-btn" title="Export DOCX" onclick="swpppExport('${i.id}')">⬇</button>
+      <button class="sw-list-btn" title="Export PDF" onclick="swpppExportPdf('${i.id}')">PDF</button>
       ${mine?`<button class="sw-list-btn" title="Delete report" onclick="swpppDeleteReport('${i.id}')">🗑</button>`:''}
     </div>`;
   }).join('');
@@ -994,6 +995,7 @@ function _swRenderForm(){
       </div>
       <div style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
         <button class="btn btn-outline" style="font-size:11px" onclick="swpppExportPhotosZip('${insp.id}')">🖼 Photos ZIP</button>
+        <button class="btn btn-outline" style="font-size:11px" onclick="swpppExportPdf('${insp.id}')">⬇ PDF</button>
         <button class="btn" style="font-size:11px" onclick="swpppExport('${insp.id}')">⬇ Export DOCX</button>
       </div>
     </div>
@@ -1014,6 +1016,27 @@ function _swRenderForm(){
 function swpppExport(id){
   _confirmModal('Build and export this inspection as a DOCX report?',()=>{ _swpppExportNow(id); },'Export report','Export');
 }
+// PDF twin of the DOCX export — same document, house pdfmake render
+// (lazy module: pdfmake + fonts never touch the main bundle). The DOCX stays
+// the working/signing format; the PDF is the distributed record (Tim 7/13).
+function swpppExportPdf(id){
+  _confirmModal('Build and export this inspection as a PDF report?',()=>{ _swpppExportPdfNow(id); },'Export PDF','Export');
+}
+async function _swpppExportPdfNow(id){
+  const pid=_swPid();
+  await _swLoadAll(pid);
+  const insp=(_swInsp[pid]||[]).find(x=>x.id===id);
+  const cfg=_swCfg[pid];
+  if(!insp||!cfg){ alert('Inspection or configuration not found.'); return; }
+  const btns=document.querySelectorAll(`[onclick="swpppExportPdf('${id}')"]`);
+  btns.forEach(b=>{ b.dataset.oldTxt=b.textContent; b.textContent='Building…'; b.disabled=true; });
+  try{
+    const [{swpppExportPdfNow},sig]=await Promise.all([import('./swpppPdf.js'),_swLoadSig()]);
+    await swpppExportPdfNow(insp,cfg,sig);
+  }catch(e){ console.error('swppp pdf export failed:',e); alert('PDF export failed: '+e.message); }
+  finally{ btns.forEach(b=>{ b.textContent=b.dataset.oldTxt||'⬇ PDF'; b.disabled=false; }); }
+}
+
 async function _swpppExportNow(id){
   const pid=_swPid();
   await _swLoadAll(pid);
@@ -1451,6 +1474,7 @@ window.swpppRemoveCorrective = swpppRemoveCorrective;
 window.swpppPickPhotos = swpppPickPhotos;
 window.swpppPickDone = swpppPickDone;
 window.swpppExport = swpppExport;
+window.swpppExportPdf = swpppExportPdf;
 window.swpppExportDaily = swpppExportDaily;
 window.swpppDeleteReport = swpppDeleteReport;
 window.swpppRestoreReport = swpppRestoreReport;
