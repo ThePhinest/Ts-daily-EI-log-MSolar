@@ -117,9 +117,15 @@ function _tsMigMirrorToFirestore(v2Entries){
     const udb = (typeof window._udb === 'function') ? window._udb() : null;
     if (!udb) return;
     const col = udb.collection('timesheetEntries_v2');
-    Object.entries(v2Entries).forEach(([key, entry]) => {
-      col.doc(key).set(entry).catch(() => {});
-    });
+    // Chunked batches (≤400/commit) — a re-sweep after a cache wipe used to
+    // fire one queued write PER ENTRY (109 at once on 7/13), piling onto the
+    // shared write stream alongside whatever else is syncing at boot.
+    const items = Object.entries(v2Entries);
+    for (let i = 0; i < items.length; i += 400){
+      const batch = window.db.batch();
+      items.slice(i, i + 400).forEach(([key, entry]) => batch.set(col.doc(key), entry));
+      batch.commit().catch(() => {});
+    }
   } catch {}
 }
 

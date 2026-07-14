@@ -958,10 +958,11 @@ function poFolderMenu(fid){
   if(!f) return;
   const ov = document.createElement('div');
   ov.className = 'modal-overlay';
+  const mi = (icon, label) => `<span style="display:inline-block;width:22px;text-align:center">${icon}</span>${label}`;
   ov.innerHTML = `<div class="modal-box" style="max-width:320px">
     <h3 style="margin:0 0 12px;font-size:15px">📁 ${String(f.name).replace(/</g,'&lt;')}</h3>
-    <button class="btn btn-outline" style="width:100%;text-align:left;margin-bottom:6px" id="po-fm-rn">✏️ Rename folder</button>
-    <button class="btn btn-outline" style="width:100%;text-align:left;margin-bottom:6px" id="po-fm-del">🗑 Delete folder (sheets kept)</button>
+    <button class="btn btn-outline" style="width:100%;text-align:left;margin-bottom:6px" id="po-fm-rn">${mi('✏️','Rename folder')}</button>
+    <button class="btn btn-outline" style="width:100%;text-align:left;margin-bottom:6px" id="po-fm-del">${mi('🗑','Delete folder (sheets kept)')}</button>
     <div style="display:flex;justify-content:flex-end;margin-top:8px">
       <button class="btn btn-outline" onclick="this.closest('.modal-overlay').remove()">Cancel</button>
     </div>
@@ -1035,13 +1036,17 @@ function poSheetMenu(id){
   const ov = document.createElement('div');
   ov.className = 'modal-overlay';
   const esc = t => String(t).replace(/</g,'&lt;');
+  // Fixed-width icon cell keeps every label starting at the same x (emoji
+  // glyph widths differ — 🗑 is narrower than 🎯, which misaligned the rows).
+  const mi = (icon, label) => `<span style="display:inline-block;width:22px;text-align:center">${icon}</span>${label}`;
+  const sub = [esc(s.title ? s.name : ''), typeof s.rmsFt === 'number' ? `±${Math.round(s.rmsFt)}ft` : ''].filter(Boolean).join(' · ');
   ov.innerHTML = `<div class="modal-box" style="max-width:320px">
     <h3 style="margin:0 0 2px;font-size:15px">${esc(s.title || s.name)}</h3>
-    <p style="font-size:11px;color:var(--muted);margin:0 0 12px;font-family:var(--mono)">${esc(s.name)}${typeof s.rmsFt === 'number' ? ` · ±${Math.round(s.rmsFt)}ft` : ''}</p>
-    <button class="btn btn-outline" style="width:100%;text-align:left;margin-bottom:6px" id="po-sm-adj">🎯 Adjust position</button>
-    <button class="btn btn-outline" style="width:100%;text-align:left;margin-bottom:6px" id="po-sm-mv">📁 Move to folder</button>
-    <button class="btn btn-outline" style="width:100%;text-align:left;margin-bottom:6px" id="po-sm-rn">✏️ Rename (display title)</button>
-    <button class="btn btn-outline" style="width:100%;text-align:left;margin-bottom:6px" id="po-sm-del">🗑 Remove from map</button>
+    ${sub ? `<p style="font-size:11px;color:var(--muted);margin:0 0 12px;font-family:var(--mono)">${sub}</p>` : '<div style="height:10px"></div>'}
+    <button class="btn btn-outline" style="width:100%;text-align:left;margin-bottom:6px" id="po-sm-adj">${mi('🎯','Adjust position on map')}</button>
+    <button class="btn btn-outline" style="width:100%;text-align:left;margin-bottom:6px" id="po-sm-mv">${mi('📁','Move to folder')}</button>
+    <button class="btn btn-outline" style="width:100%;text-align:left;margin-bottom:6px" id="po-sm-rn">${mi('✏️','Rename (display title)')}</button>
+    <button class="btn btn-outline" style="width:100%;text-align:left;margin-bottom:6px" id="po-sm-del">${mi('🗑','Remove from map')}</button>
     <div style="display:flex;justify-content:flex-end;margin-top:8px">
       <button class="btn btn-outline" onclick="this.closest('.modal-overlay').remove()">Cancel</button>
     </div>
