@@ -3036,6 +3036,7 @@ function mapTrStateChanged(){
   const mixEl=document.getElementById('map-tr-mix-product');
   if(mixEl && !mixEl.value && st && st.productName) mixEl.value=st.productName;
   if(typeof mapTrackerCalc==='function') mapTrackerCalc();
+  _trSeedSectionSync();   // 🌱 offer/hide seeding details as the state changes
 }
 window.mapTrStateChanged=mapTrStateChanged;
 
@@ -3058,8 +3059,56 @@ function _setEntryFieldVisibility(isPlanned, measType, hasDesc, trackMat, catego
   if(phaseWrap) phaseWrap.style.display=_catMultiState(category,pid)?'none':'';
   if(areaFields) areaFields.style.display=(isPlanned||isLinear||!hasDesc)?'none':'';
   if(linearFields) linearFields.style.display=isLinear?'':'none';
-  if(calcSection) calcSection.style.display=(isPlanned||isLinear||!trackMat)?'none':'';
+  if(calcSection){
+    // base = the category's own rule; the 🌱 seeding opt-in (stabilization
+    // states of running-mode categories) can re-show a base-hidden section.
+    const baseShown=!(isPlanned||isLinear||!trackMat);
+    calcSection.dataset.base=baseShown?'shown':'hidden';
+    calcSection.style.display=baseShown?'':'none';
+  }
+  _trSeedSectionSync();
 }
+
+// ── 🌱 Seeding on stabilization states (7/13) ──
+// Running-mode categories (SWPPP disturbance) don't track material, but a
+// stabilization drawing often IS the seeding event (temp seeding, final
+// seed+amendments). The existing Seed/Material Calc section stays hidden
+// behind an opt-in button on subtract/none states, so stabilizations that
+// aren't seeding (rock, gravel pad, structure footprint) never see it.
+// Entries that already carry seed data open with the section visible.
+function _trSeedStateEligible(){
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const mode=(typeof tcProgressMode==='function')?tcProgressMode(_drawCategory,pid):'';
+  if(mode!=='running-balance'&&mode!=='running-total') return false;
+  // Area categories only — the calc's rate is lbs/ACRE; a linear running
+  // category (ft) would compute nonsense.
+  if(((typeof tcGetMeasurementType==='function')?tcGetMeasurementType(_drawCategory,pid):'')==='linear') return false;
+  const st=_trSelectedState();
+  if(!st) return false;
+  const cat=(typeof tcGetCategory==='function')?tcGetCategory(_drawCategory,pid):null;
+  const kids=(typeof tcGetStates==='function')?tcGetStates(cat,pid).filter(s=>!s.isPlanned):[];
+  const idx=kids.findIndex(s=>s.id===st.id);
+  const cm=st.countMode||((typeof tcStateCountMode==='function')?tcStateCountMode(st,idx,kids,mode):'add');
+  return cm!=='add';   // stabilization = the states that reduce open disturbance
+}
+function _trSeedSectionSync(){
+  const calcSection=document.getElementById('map-tr-calc-section');
+  const btn=document.getElementById('map-tr-seed-btn');
+  if(!calcSection||!btn) return;
+  if(calcSection.dataset.base==='shown'){ btn.style.display='none'; return; }
+  if(_drawEntryType==='planned'||!_trSeedStateEligible()){ btn.style.display='none'; calcSection.style.display='none'; return; }
+  const hasVals=['map-tr-rate','map-tr-actual-amt','map-tr-seed-tags','map-tr-mix-product']
+    .some(id=>{ const el=document.getElementById(id); return el&&el.value; });
+  calcSection.style.display=hasVals?'':'none';
+  btn.style.display=hasVals?'none':'';
+}
+function mapTrSeedOpen(){
+  const c=document.getElementById('map-tr-calc-section');
+  if(c) c.style.display='';
+  const b=document.getElementById('map-tr-seed-btn');
+  if(b) b.style.display='none';
+}
+window.mapTrSeedOpen=mapTrSeedOpen;
 
 function mapCloseTrackerModal(){
   document.getElementById('map-tracker-modal').classList.remove('open');
@@ -5248,6 +5297,7 @@ function mapEditTrackerEntry(entryId){
   if(editSeedTagsEl) editSeedTagsEl.value=entry.fields?.seedTagCount!=null?entry.fields.seedTagCount:'';
   const editMixEl=document.getElementById('map-tr-mix-product');
   if(editMixEl) editMixEl.value=entry.seedMix||'';
+  _trSeedSectionSync();   // values are in — re-run so seed-carrying stab entries open revealed
   const editLabelBtn=document.getElementById('map-tr-date-label-btn');
   const on=!!entry.showDateLabel;
   if(editLabelBtn){

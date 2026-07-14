@@ -1336,7 +1336,13 @@ async function _exportCategoriesDeliverable(cids, entries, pid){
     const mode=(typeof tcProgressMode==='function')?tcProgressMode(cid,pid):'';
     const isRunning=mode==='running-balance'||mode==='running-total';
     const isLinear=((typeof tcGetMeasurementType==='function')?tcGetMeasurementType(cid,pid):'')==='linear';
-    if(isRunning){ allSeeding=false; await _disturbanceSheet(wb, cid, entries, pid); }
+    if(isRunning){
+      allSeeding=false;
+      await _disturbanceSheet(wb, cid, entries, pid);
+      // 🌱 Seeding on stabilization (7/13): stab-state entries that carry seed
+      // data get their own seeding-schedule tab beside the disturbance tab.
+      await _stabSeedingSheet(wb, cid, entries, pid);
+    }
     else if(isLinear){ allSeeding=false; await _linearSheet(wb, cid, entries, pid); }
     else await _seedingSheet(wb, cid, entries, pid);
   }
@@ -1653,6 +1659,71 @@ function _blobToDataURL(blob){ return new Promise((res,rej)=>{ const r=new FileR
 // a net-per-state summary (current area per state, turf-computed), total open vs the cap
 // + % of allowed (with OVER-LIMIT flag), the itemized list of every drawn area, and the
 // attached map captures (legend baked in) embedded so the XLSX is one self-contained file.
+// ── 🌱 Seeding-on-stabilization tab (7/13) ──
+// A stabilization drawing in a running-mode category often IS the seeding
+// event (temp seeding / final seed+amendments). Entries carrying seed data
+// (mix, rate, actual, seed tags) get a seeding-schedule tab beside the
+// disturbance tab so all seed placed on the job exports as one record set.
+// No-ops when no entry carries seed data. Areas are the DRAWN size (what got
+// seeded that day), not net — seed placed on later-re-disturbed ground was
+// still placed.
+async function _stabSeedingSheet(wb, cid, allEntries, pid){
+  const cat=(typeof tcGetCategory==='function')?tcGetCategory(cid,pid):null;
+  if(!cat) return;
+  const hasSeed=(e)=>!!(e.seedMix||e.fields?.appliedRate!=null||e.fields?.seedTagCount!=null||e.fields?.actualAmount!=null);
+  const rows=allEntries.filter(e=>(e.categoryId===cid)&&e.entryType!=='planned'&&!e.temporary&&!e.deletedAt&&hasSeed(e))
+    .sort((a,b)=>String(a.date||'').localeCompare(String(b.date||'')));
+  if(!rows.length) return;
+  const name=(typeof tcGetName==='function')?tcGetName(cid,pid):'Disturbance';
+  const defUnit=(typeof tcGetDefaultUnit==='function')?tcGetDefaultUnit(cid,pid):'ac';
+  const states=(typeof tcGetStates==='function')?tcGetStates(cat,pid):[];
+  const stateLbl=(sid)=>{ const s=states.find(x=>x.id===sid); return s?s.label:(sid||''); };
+  const areaOf=(e)=>e.measurementValue!=null?e.measurementValue:(e.acres!=null?e.acres:null);
+
+  const TEAL='006B75', WHITE='FFFFFF', AMBER_LIGHT='FDF5DC';
+  const NC=9;
+  let base=('Seeding — '+name).replace(/[\\\/\?\*\[\]:]/g,'').slice(0,31);
+  let nm=base, n=2;
+  while(wb.getWorksheet(nm)){ nm=base.slice(0,28)+' '+n; n++; }
+  const ws=wb.addWorksheet(nm);
+  ws.columns=[{width:12},{width:22},{width:12},{width:26},{width:12},{width:13},{width:13},{width:11},{width:40}];
+
+  ws.addRow([name+' — seeding on stabilization']);
+  ws.mergeCells(1,1,1,NC);
+  const tc=ws.getCell('A1');
+  tc.font={name:'Calibri',bold:true,size:14,color:{argb:WHITE}};
+  tc.fill={type:'pattern',pattern:'solid',fgColor:{argb:TEAL}};
+  tc.alignment={vertical:'middle',horizontal:'left',indent:1};
+  ws.getRow(1).height=26;
+  const cfg=JSON.parse(localStorage.getItem('msf_projectconfig')||'{}');
+  [['Project',cfg.projectName||''],['Snapshot date',new Date().toLocaleDateString('en-CA')],['Prepared By',cfg.preparedBy||'']].forEach(([l,v])=>{
+    const r=ws.addRow([l,v]); ws.mergeCells(r.number,2,r.number,NC);
+    r.getCell(1).font={name:'Consolas',size:9,bold:true,color:{argb:'FF'+TEAL}};
+    r.getCell(2).font={name:'Calibri',size:10}; r.height=15;
+  });
+  ws.addRow([]);
+
+  const hd=ws.addRow(['Date','State','Area ('+defUnit+')','Mix / Product','Rate (lbs/ac)','Required','Actual','Seed Tags','Notes / Contractor']);
+  hd.eachCell(c=>{ c.font={bold:true,size:10}; c.fill={type:'pattern',pattern:'solid',fgColor:{argb:AMBER_LIGHT}}; c.border={bottom:{style:'thin'}}; });
+  let areaSum=0, tagSum=0;
+  rows.forEach(e=>{
+    const f=e.fields||{};
+    const area=areaOf(e);
+    if(typeof area==='number') areaSum+=area;
+    if(f.seedTagCount) tagSum+=f.seedTagCount;
+    ws.addRow([
+      e.date||'', stateLbl(e.state), area!=null?area:'',
+      e.seedMix||'', f.appliedRate!=null?f.appliedRate:'',
+      f.requiredAmount!=null?`${f.requiredAmount} ${f.requiredUnit||''}`.trim():'',
+      f.actualAmount!=null?`${f.actualAmount} ${f.actualUnit||''}`.trim():'',
+      f.seedTagCount!=null?f.seedTagCount:'',
+      [e.notes,e.contractor].filter(Boolean).join(' — ')
+    ]);
+  });
+  const tr=ws.addRow(['TOTAL','',Math.round(areaSum*100)/100,'','','','',tagSum||'','']);
+  tr.eachCell(c=>{ c.font={bold:true,size:10}; c.fill={type:'pattern',pattern:'solid',fgColor:{argb:AMBER_LIGHT}}; c.border={top:{style:'thin'}}; });
+}
+
 async function _disturbanceSheet(wb, cid, allEntries, pid){
   const cat=(typeof tcGetCategory==='function')?tcGetCategory(cid,pid):null;
   if(!cat) return;

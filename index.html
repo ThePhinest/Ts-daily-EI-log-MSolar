@@ -2446,6 +2446,9 @@ Anticipated rain — AM weather monitoring expected"></textarea>
         <label style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;display:block;margin-bottom:4px">Notes</label>
         <textarea id="map-tr-notes" rows="2" placeholder="Seed mix, applicator, conditions…" style="width:100%;box-sizing:border-box;background:var(--s1);border:1px solid var(--border);border-radius:6px;padding:7px 9px;color:var(--text);font-family:var(--mono);font-size:12px;resize:vertical"></textarea>
       </div>
+      <!-- 🌱 Seeding on stabilization states — opt-in reveal of the calc section
+           below; offered only on subtract/none states of running-mode categories -->
+      <button id="map-tr-seed-btn" onclick="mapTrSeedOpen()" style="display:none;margin-bottom:14px;width:100%;background:none;border:1px dashed var(--border);color:var(--muted);padding:9px;border-radius:8px;font-family:var(--mono);font-size:11px;cursor:pointer;letter-spacing:.04em">🌱 Add seeding details (mix, rate, seed tags)</button>
       <!-- Seed / material calculator -->
       <div id="map-tr-calc-section" style="margin-bottom:14px;background:var(--s1);border:1px solid var(--border);border-radius:8px;padding:10px 12px">
         <div style="font-family:var(--mono);font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">Seed / Material Calc</div>
