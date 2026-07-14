@@ -121,6 +121,26 @@ function glEntryNetAreasM2(entries, orderedStates){
 // never alpha-blend (yellow-over-red read as orange and collided with a real orange
 // state — Tim 7/13). Returns { entryId: geometry|null } — null = fully covered by
 // later drawings (outline-only on the map).
+// Sliver cleanup for RENDERED clips: two drawings traced along the same edge
+// never match vertex-for-vertex, so difference() leaves needle fragments that
+// read as stray triangles on the map. Fragments under ~4 m² are drawing noise,
+// not ground state — drop them from the DISPLAY geometry only (the acreage
+// fns above keep exact math; the ~m² delta is far below drawing precision).
+const _SLIVER_M2 = 4;
+function _dropSlivers(geometry){
+  if(!geometry) return null;
+  const polyArea = (coords) => _safeArea({ type:'Feature', properties:{}, geometry:{ type:'Polygon', coordinates: coords } });
+  if(geometry.type === 'Polygon'){
+    return polyArea(geometry.coordinates) < _SLIVER_M2 ? null : geometry;
+  }
+  if(geometry.type === 'MultiPolygon'){
+    const kept = geometry.coordinates.filter(coords => polyArea(coords) >= _SLIVER_M2);
+    if(!kept.length) return null;
+    return kept.length === 1 ? { type:'Polygon', coordinates: kept[0] } : { type:'MultiPolygon', coordinates: kept };
+  }
+  return geometry;
+}
+
 function glEntryNetGeoms(entries){
   const parsed = (entries || []).map(e => ({ e, f: _parseGeom(e) })).filter(x => x.f);
   if(!parsed.length) return null;
@@ -130,7 +150,7 @@ function glEntryNetGeoms(entries){
     const later = _unionAll(parsed.slice(i + 1).map(y => y.f));
     let g = x.f;
     if(later) g = _safeDiff(g, later);
-    out[x.e.id] = (g && g.geometry) ? g.geometry : null;
+    out[x.e.id] = (g && g.geometry) ? _dropSlivers(g.geometry) : null;
   });
   return out;
 }
