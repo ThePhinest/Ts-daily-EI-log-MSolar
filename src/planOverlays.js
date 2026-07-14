@@ -179,7 +179,7 @@ function _poTouch(sheet){ sheet._mts = Date.now(); }
 function poSaveSheets(){
   const pid = _poPid();
   const data = _poSheets.map(s => ({
-    id: s.id, name: s.name, file: s.file || '',
+    id: s.id, name: s.name, title: s.title || '', file: s.file || '',
     corners: _poPackCorners(s.corners), rmsFt: s.rmsFt ?? null, quality: s.quality || 'good',
     visible: !!s.visible, folderId: s.folderId || null,
     storagePath: s.storagePath || '', downloadUrl: s.downloadUrl || '',
@@ -953,6 +953,24 @@ function poFolderDelete(fid){
       doDelete, 'Delete folder', 'Delete');
   } else doDelete();
 }
+function poFolderMenu(fid){
+  const f = _poFolders.find(x => x.id === fid);
+  if(!f) return;
+  const ov = document.createElement('div');
+  ov.className = 'modal-overlay';
+  ov.innerHTML = `<div class="modal-box" style="max-width:320px">
+    <h3 style="margin:0 0 12px;font-size:15px">📁 ${String(f.name).replace(/</g,'&lt;')}</h3>
+    <button class="btn btn-outline" style="width:100%;text-align:left;margin-bottom:6px" id="po-fm-rn">✏️ Rename folder</button>
+    <button class="btn btn-outline" style="width:100%;text-align:left;margin-bottom:6px" id="po-fm-del">🗑 Delete folder (sheets kept)</button>
+    <div style="display:flex;justify-content:flex-end;margin-top:8px">
+      <button class="btn btn-outline" onclick="this.closest('.modal-overlay').remove()">Cancel</button>
+    </div>
+  </div>`;
+  document.body.appendChild(ov);
+  ov.querySelector('#po-fm-rn').onclick = () => { ov.remove(); poFolderRename(fid); };
+  ov.querySelector('#po-fm-del').onclick = () => { ov.remove(); poFolderDelete(fid); };
+}
+
 function poFolderToggle(fid, visible){
   // Batched like poToggleAll: one save + one render for the whole folder.
   const sheets = _poSheets.filter(s => (s.folderId || null) === fid);
@@ -1009,20 +1027,63 @@ function poSheetSetFolder(id){
   };
 }
 
+// Sheet ⋯ menu — one overflow button instead of three inline (Procore-style
+// row: identity gets the width, actions collapse). Also home of ✏️ Rename.
+function poSheetMenu(id){
+  const s = _poSheets.find(x => x.id === id);
+  if(!s) return;
+  const ov = document.createElement('div');
+  ov.className = 'modal-overlay';
+  const esc = t => String(t).replace(/</g,'&lt;');
+  ov.innerHTML = `<div class="modal-box" style="max-width:320px">
+    <h3 style="margin:0 0 2px;font-size:15px">${esc(s.title || s.name)}</h3>
+    <p style="font-size:11px;color:var(--muted);margin:0 0 12px;font-family:var(--mono)">${esc(s.name)}${typeof s.rmsFt === 'number' ? ` · ±${Math.round(s.rmsFt)}ft` : ''}</p>
+    <button class="btn btn-outline" style="width:100%;text-align:left;margin-bottom:6px" id="po-sm-adj">🎯 Adjust position</button>
+    <button class="btn btn-outline" style="width:100%;text-align:left;margin-bottom:6px" id="po-sm-mv">📁 Move to folder</button>
+    <button class="btn btn-outline" style="width:100%;text-align:left;margin-bottom:6px" id="po-sm-rn">✏️ Rename (display title)</button>
+    <button class="btn btn-outline" style="width:100%;text-align:left;margin-bottom:6px" id="po-sm-del">🗑 Remove from map</button>
+    <div style="display:flex;justify-content:flex-end;margin-top:8px">
+      <button class="btn btn-outline" onclick="this.closest('.modal-overlay').remove()">Cancel</button>
+    </div>
+  </div>`;
+  document.body.appendChild(ov);
+  const go = (fn) => () => { ov.remove(); fn(); };
+  ov.querySelector('#po-sm-adj').onclick = go(() => poNudgeOpen(id));
+  ov.querySelector('#po-sm-mv').onclick = go(() => poSheetSetFolder(id));
+  ov.querySelector('#po-sm-del').onclick = go(() => poDeleteSheet(id));
+  ov.querySelector('#po-sm-rn').onclick = go(() => {
+    _poNameModal('Sheet display title', s.title || '', title => {
+      // Title is a friendly label ("Laydown East"); the sheet NUMBER stays the
+      // record and renders beneath it. Saving the number itself clears the title.
+      s.title = (title === s.name) ? '' : title;
+      _poTouch(s);
+      poSaveSheets();
+      poRenderPanel();
+    });
+  });
+}
+
 function _poSheetRow(s){
   const rms = (typeof s.rmsFt === 'number') ? `±${Math.round(s.rmsFt)}ft` : '';
   const review = s.quality === 'REVIEW'
     ? '<span style="font-family:var(--mono);font-size:8px;color:#ffb44d;border:1px solid #7a5a20;border-radius:3px;padding:1px 4px;letter-spacing:.04em;flex-shrink:0" title="Registration flagged for review — use 🎯 nudge to correct">REVIEW</span>' : '';
+  const esc = t => String(t).replace(/</g,'&lt;');
+  // Two-line identity when a display title is set (title big, number small);
+  // otherwise the number is the name and gets the full row width.
+  const nameHtml = s.title
+    ? `<span style="min-width:0;display:flex;flex-direction:column;line-height:1.25;">
+         <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(s.title)}</span>
+         <span style="font-size:9px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(s.name)}</span>
+       </span>`
+    : `<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(s.name)}</span>`;
   return `<div style="display:flex;align-items:center;gap:6px;padding:5px 8px;background:var(--s1);border-radius:6px;margin-bottom:4px;">
     <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-family:var(--mono);font-size:11px;color:var(--text);flex:1;min-width:0;">
       <input type="checkbox" ${s.visible ? 'checked' : ''} onchange="poToggleSheet('${s.id}',this.checked)">
-      <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${String(s.name).replace(/</g,'&lt;')}</span>
+      ${nameHtml}
     </label>
     <span style="font-family:var(--mono);font-size:9px;color:var(--muted);flex-shrink:0">${rms}</span>
     ${review}
-    <button onclick="poSheetSetFolder('${s.id}')" title="Move to folder" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:12px;padding:0 2px;">📁</button>
-    <button onclick="poNudgeOpen('${s.id}')" title="Nudge this sheet's position (registration correction)" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:12px;padding:0 2px;">🎯</button>
-    <button onclick="poDeleteSheet('${s.id}')" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;padding:0;">✕</button>
+    <button onclick="poSheetMenu('${s.id}')" title="Sheet actions" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:15px;padding:0 4px;flex-shrink:0;">⋯</button>
   </div>`;
 }
 
@@ -1051,8 +1112,7 @@ function poRenderPanel(){
           onclick="event.stopPropagation();poFolderToggle('${f.id}',this.checked)" style="accent-color:var(--amber);flex-shrink:0;">
         <span onclick="poFolderCollapse('${f.id}')" style="cursor:pointer;font-family:var(--mono);font-size:11px;color:var(--text);font-weight:600;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">📁 ${String(f.name).replace(/</g,'&lt;')}</span>
         <span style="font-family:var(--mono);font-size:9px;color:var(--muted);flex-shrink:0">${on}/${sheets.length}</span>
-        <button onclick="poFolderRename('${f.id}')" title="Rename folder" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:11px;padding:0 2px;">✏️</button>
-        <button onclick="poFolderDelete('${f.id}')" title="Delete folder (sheets kept)" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px;padding:0;">✕</button>
+        <button onclick="poFolderMenu('${f.id}')" title="Folder actions" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:15px;padding:0 4px;flex-shrink:0;">⋯</button>
       </div>
       ${isCollapsed ? '' : `<div style="padding:4px 4px 2px 14px;">${sheets.map(_poSheetRow).join('') || '<div style="font-family:var(--mono);font-size:9px;color:var(--muted);padding:2px 8px 6px;">Empty — use 📁 on a sheet to move it here</div>'}</div>`}
     </div>`;
@@ -1116,6 +1176,8 @@ window.poCropReset = poCropReset;
 window.poCropCancel = poCropCancel;
 window.poRenderPanel = poRenderPanel;
 window.poFolderCreate = poFolderCreate;
+window.poFolderMenu = poFolderMenu;
+window.poSheetMenu = poSheetMenu;
 window.poFolderRename = poFolderRename;
 window.poFolderDelete = poFolderDelete;
 window.poFolderToggle = poFolderToggle;
