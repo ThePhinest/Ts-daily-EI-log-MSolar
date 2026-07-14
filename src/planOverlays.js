@@ -18,7 +18,8 @@
 // Files live at planOverlays/{uid}/{sheetId}.png; members fetch via the
 // persisted token downloadUrl (the token IS the capability — photos/KML model).
 
-let _poSheets = [];          // [{id,name,file,corners,rmsFt,quality,visible,storagePath,downloadUrl}]
+let _poSheets = [];          // [{id,name,file,corners,rmsFt,quality,visible,folderId,storagePath,downloadUrl}]
+let _poFolders = [];         // [{id,name,order,_mts,deleted}] — shared organization (7/13); deleted = tombstone
 let _poOpacity = 0.7;        // global raster opacity — personal view state
 let _poCollapsed = false;    // panel section collapse — personal, localStorage
 let _poNudge = null;         // active nudge session {id, startCorners}
@@ -149,6 +150,7 @@ function poReaddVisible(){
 function poClearAll(){
   _poSheets.forEach(_poRemoveFromMap);
   _poSheets = [];
+  _poFolders = [];
   _poNudge = null;
   _poAdjustBindDrag(false);
   const box = document.getElementById('map-po-nudge');
@@ -179,51 +181,71 @@ function poSaveSheets(){
   const data = _poSheets.map(s => ({
     id: s.id, name: s.name, file: s.file || '',
     corners: _poPackCorners(s.corners), rmsFt: s.rmsFt ?? null, quality: s.quality || 'good',
-    visible: !!s.visible, storagePath: s.storagePath || '', downloadUrl: s.downloadUrl || '',
+    visible: !!s.visible, folderId: s.folderId || null,
+    storagePath: s.storagePath || '', downloadUrl: s.downloadUrl || '',
     // ✂ crop state (null when uncropped): rect in ORIGINAL-image fractions +
     // the pre-crop original file so crops are re-editable and resettable.
     crop: s.crop || null, origStoragePath: s.origStoragePath || '', origDownloadUrl: s.origDownloadUrl || '',
     _mts: s._mts ?? null
   }));
-  try{ if(window.idbSet) window.idbSet(_poStorageKey(), JSON.stringify({ data, opacity: _poOpacity })); }catch{}
+  const folders = _poFolders.map(f => ({ id: f.id, name: f.name, order: f.order ?? 0, deleted: !!f.deleted, _mts: f._mts ?? null }));
+  try{ if(window.idbSet) window.idbSet(_poStorageKey(), JSON.stringify({ data, folders, opacity: _poOpacity })); }catch{}
   let userWrite = null;
   if(window.db && window._fbReady){
     // Personal copy — per-sheet visibility + opacity are view state, never shared.
     const u = (typeof window._projDataUser === 'function') ? window._projDataUser(pid) : null;
     if(u){
       userWrite = u.collection('planOverlays').doc('sheets')
-        .set({ data, opacity: _poOpacity, _ts: Date.now() });
+        .set({ data, folders, opacity: _poOpacity, _ts: Date.now() });
       userWrite.catch(e => console.warn('poSaveSheets:', e.message));
     }
     // Shared mirror — sheet list + corners are live reference data for members.
     // Rules let only owner/lead land this write; silent on purpose.
     if(window._currentUser){
       window.db.collection('projects').doc(pid).collection('planOverlays').doc('sheets')
-        .set({ data, ownerUid: window._currentUser.uid, _ts: Date.now() })
+        .set({ data, folders, ownerUid: window._currentUser.uid, _ts: Date.now() })
         .catch(() => {});
     }
   }
   return userWrite;   // callers that just committed real work await/verify this
 }
 
+// Folders merge: union across shared/user/IDB, newest-wins per folder by _mts.
+// Deletion is a TOMBSTONE (deleted:true) — a plain removal would resurrect from
+// any stale cache under the union. Tombstones purge after 45 days.
+function _poMergeFolders(shared, own, idb){
+  const by = new Map();
+  [shared, own, idb].forEach(list => (list || []).forEach(f => {
+    if(!f || !f.id) return;
+    const cur = by.get(f.id);
+    if(!cur || (f._mts || 0) > (cur._mts || 0)) by.set(f.id, f);
+  }));
+  const cutoff = Date.now() - 45 * 86400000;
+  return [...by.values()]
+    .filter(f => !(f.deleted && (f._mts || 0) < cutoff))
+    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+}
+
 async function poLoadSheets(){
   const pid = _poPid();
   let own = null, shared = null, idb = null, opacity = null;
+  let ownF = null, sharedF = null, idbF = null;
   if(window.db && window._fbReady){
     try{
       const u = (typeof window._projDataUser === 'function') ? window._projDataUser(pid) : null;
       const doc = u ? await u.collection('planOverlays').doc('sheets').get() : null;
-      if(doc && doc.exists){ own = doc.data().data; opacity = doc.data().opacity; }
+      if(doc && doc.exists){ own = doc.data().data; ownF = doc.data().folders; opacity = doc.data().opacity; }
     }catch(e){ console.warn('poLoadSheets cloud:', e.message); }
     try{
       const sdoc = await window.db.collection('projects').doc(pid).collection('planOverlays').doc('sheets').get();
-      if(sdoc.exists && Array.isArray(sdoc.data().data) && sdoc.data().data.length) shared = sdoc.data().data;
+      if(sdoc.exists && Array.isArray(sdoc.data().data) && sdoc.data().data.length){ shared = sdoc.data().data; sharedF = sdoc.data().folders; }
     }catch(e){ /* not a member of a shared project — own copy stands */ }
   }
   try{
     const raw = window.idbGet && window.idbGet(_poStorageKey());
-    if(raw){ const parsed = JSON.parse(raw); idb = parsed.data; if(typeof opacity !== 'number') opacity = parsed.opacity; }
+    if(raw){ const parsed = JSON.parse(raw); idb = parsed.data; idbF = parsed.folders; if(typeof opacity !== 'number') opacity = parsed.opacity; }
   }catch{}
+  _poFolders = _poMergeFolders(sharedF, ownF, idbF);
   // Shared doc is canonical for LIST MEMBERSHIP (never resurrect deletes from
   // a local cache), but each sheet's CONTENT is newest-wins by per-sheet _mts
   // across shared / user / device-IDB copies. This is the guard against the
@@ -863,6 +885,147 @@ function poCropReset(){
 
 // ── Layer panel section ──────────────────────────────────────────────────────
 
+// ── Folders (user-created, shared organization — 7/13) ──────────────────────
+// Live (non-tombstoned) folders in display order.
+function _poLiveFolders(){ return _poFolders.filter(f => !f.deleted); }
+function _poFoldCollapseKey(){ return 'gl_po_fold_collapsed::' + _poPid(); }
+function _poFoldCollapsed(){
+  try{ return JSON.parse(localStorage.getItem(_poFoldCollapseKey()) || '{}') || {}; }catch{ return {}; }
+}
+function poFolderCollapse(fid){
+  const m = _poFoldCollapsed();
+  m[fid] = !m[fid];
+  try{ localStorage.setItem(_poFoldCollapseKey(), JSON.stringify(m)); }catch{}
+  poRenderPanel();
+}
+
+// Small self-contained name-input modal (create + rename share it).
+function _poNameModal(title, initial, onOk){
+  const ov = document.createElement('div');
+  ov.className = 'modal-overlay';
+  ov.innerHTML = `<div class="modal-box" style="max-width:340px">
+    <h3 style="margin:0 0 10px;font-size:15px">${title}</h3>
+    <input id="po-fold-name" type="text" value="${String(initial || '').replace(/"/g,'&quot;')}" maxlength="40"
+      style="width:100%;box-sizing:border-box;padding:9px 10px;border-radius:8px;border:1px solid var(--s1);background:var(--s1);color:var(--text);font-size:14px">
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px">
+      <button class="btn btn-outline" onclick="this.closest('.modal-overlay').remove()">Cancel</button>
+      <button class="btn" id="po-fold-ok">Save</button>
+    </div>
+  </div>`;
+  document.body.appendChild(ov);
+  const input = ov.querySelector('#po-fold-name');
+  input.focus(); input.select();
+  const ok = () => { const v = input.value.trim(); if(v){ ov.remove(); onOk(v); } };
+  ov.querySelector('#po-fold-ok').onclick = ok;
+  input.addEventListener('keydown', e => { if(e.key === 'Enter') ok(); });
+}
+
+function poFolderCreate(){
+  _poNameModal('New plan-sheet folder', '', name => {
+    const order = Math.max(0, ..._poLiveFolders().map(f => (f.order ?? 0) + 1));
+    _poFolders.push({ id: 'pf' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5),
+                      name, order, _mts: Date.now() });
+    poSaveSheets();
+    poRenderPanel();
+  });
+}
+function poFolderRename(fid){
+  const f = _poFolders.find(x => x.id === fid);
+  if(!f) return;
+  _poNameModal('Rename folder', f.name, name => {
+    f.name = name; f._mts = Date.now();
+    poSaveSheets();
+    poRenderPanel();
+  });
+}
+function poFolderDelete(fid){
+  const f = _poFolders.find(x => x.id === fid);
+  if(!f) return;
+  const inside = _poSheets.filter(s => s.folderId === fid).length;
+  const doDelete = () => {
+    f.deleted = true; f._mts = Date.now();   // tombstone — a removal would resurrect from stale caches
+    _poSheets.forEach(s => { if(s.folderId === fid){ s.folderId = null; _poTouch(s); } });
+    poSaveSheets();
+    poRenderPanel();
+  };
+  if(typeof window._confirmModal === 'function'){
+    window._confirmModal(`Delete folder "${f.name}"?` + (inside ? ` Its ${inside} sheet${inside > 1 ? 's' : ''} move back to the main list — no sheets are deleted.` : ''),
+      doDelete, 'Delete folder', 'Delete');
+  } else doDelete();
+}
+function poFolderToggle(fid, visible){
+  // Batched like poToggleAll: one save + one render for the whole folder.
+  const sheets = _poSheets.filter(s => (s.folderId || null) === fid);
+  if(visible && sheets.length > 8 && typeof window.showCloudBanner === 'function'){
+    window.showCloudBanner('Heads up — many sheets at once is heavy on phone memory.');
+  }
+  sheets.forEach(s => {
+    s.visible = visible;
+    if(visible) _poAddToMap(s).catch(e => console.warn('poFolderToggle mount:', e.message));
+    else _poRemoveFromMap(s);
+  });
+  poSaveSheets();
+  poRenderPanel();
+}
+// 📁 on a sheet row → pick a destination folder.
+function poSheetSetFolder(id){
+  const sheet = _poSheets.find(s => s.id === id);
+  if(!sheet) return;
+  const ov = document.createElement('div');
+  ov.className = 'modal-overlay';
+  const rows = [
+    `<button class="btn btn-outline" style="width:100%;text-align:left;margin-bottom:6px${!sheet.folderId ? ';border-color:var(--amber)' : ''}" data-fid="">— No folder (main list)</button>`,
+    ..._poLiveFolders().map(f =>
+      `<button class="btn btn-outline" style="width:100%;text-align:left;margin-bottom:6px${sheet.folderId === f.id ? ';border-color:var(--amber)' : ''}" data-fid="${f.id}">📁 ${String(f.name).replace(/</g,'&lt;')}</button>`)
+  ].join('');
+  ov.innerHTML = `<div class="modal-box" style="max-width:340px">
+    <h3 style="margin:0 0 4px;font-size:15px">Move sheet</h3>
+    <p style="font-size:11px;color:var(--muted);margin:0 0 10px;font-family:var(--mono)">${String(sheet.name).replace(/</g,'&lt;')}</p>
+    ${rows}
+    <div style="display:flex;gap:10px;justify-content:space-between;margin-top:10px">
+      <button class="btn btn-outline" id="po-mv-new">＋ New folder</button>
+      <button class="btn btn-outline" onclick="this.closest('.modal-overlay').remove()">Cancel</button>
+    </div>
+  </div>`;
+  document.body.appendChild(ov);
+  ov.querySelectorAll('[data-fid]').forEach(b => b.onclick = () => {
+    sheet.folderId = b.dataset.fid || null;
+    _poTouch(sheet);
+    ov.remove();
+    poSaveSheets();
+    poRenderPanel();
+  });
+  ov.querySelector('#po-mv-new').onclick = () => {
+    ov.remove();
+    _poNameModal('New plan-sheet folder', '', name => {
+      const order = Math.max(0, ..._poLiveFolders().map(f => (f.order ?? 0) + 1));
+      const f = { id: 'pf' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), name, order, _mts: Date.now() };
+      _poFolders.push(f);
+      sheet.folderId = f.id;
+      _poTouch(sheet);
+      poSaveSheets();
+      poRenderPanel();
+    });
+  };
+}
+
+function _poSheetRow(s){
+  const rms = (typeof s.rmsFt === 'number') ? `±${Math.round(s.rmsFt)}ft` : '';
+  const review = s.quality === 'REVIEW'
+    ? '<span style="font-family:var(--mono);font-size:8px;color:#ffb44d;border:1px solid #7a5a20;border-radius:3px;padding:1px 4px;letter-spacing:.04em;flex-shrink:0" title="Registration flagged for review — use 🎯 nudge to correct">REVIEW</span>' : '';
+  return `<div style="display:flex;align-items:center;gap:6px;padding:5px 8px;background:var(--s1);border-radius:6px;margin-bottom:4px;">
+    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-family:var(--mono);font-size:11px;color:var(--text);flex:1;min-width:0;">
+      <input type="checkbox" ${s.visible ? 'checked' : ''} onchange="poToggleSheet('${s.id}',this.checked)">
+      <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${String(s.name).replace(/</g,'&lt;')}</span>
+    </label>
+    <span style="font-family:var(--mono);font-size:9px;color:var(--muted);flex-shrink:0">${rms}</span>
+    ${review}
+    <button onclick="poSheetSetFolder('${s.id}')" title="Move to folder" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:12px;padding:0 2px;">📁</button>
+    <button onclick="poNudgeOpen('${s.id}')" title="Nudge this sheet's position (registration correction)" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:12px;padding:0 2px;">🎯</button>
+    <button onclick="poDeleteSheet('${s.id}')" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;padding:0;">✕</button>
+  </div>`;
+}
+
 function poRenderPanel(){
   const section = document.getElementById('map-po-section');
   const list = document.getElementById('map-po-list');
@@ -871,19 +1034,27 @@ function poRenderPanel(){
   section.style.display = '';
   try{ _poCollapsed = localStorage.getItem('gl_po_collapsed') === '1'; }catch{}
   const allVisible = _poSheets.every(s => s.visible);
-  const rows = _poSheets.map(s => {
-    const rms = (typeof s.rmsFt === 'number') ? `±${Math.round(s.rmsFt)}ft` : '';
-    const review = s.quality === 'REVIEW'
-      ? '<span style="font-family:var(--mono);font-size:8px;color:#ffb44d;border:1px solid #7a5a20;border-radius:3px;padding:1px 4px;letter-spacing:.04em;flex-shrink:0" title="Registration flagged for review — use 🎯 nudge to correct">REVIEW</span>' : '';
-    return `<div style="display:flex;align-items:center;gap:6px;padding:5px 8px;background:var(--s1);border-radius:6px;margin-bottom:4px;">
-      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-family:var(--mono);font-size:11px;color:var(--text);flex:1;min-width:0;">
-        <input type="checkbox" ${s.visible ? 'checked' : ''} onchange="poToggleSheet('${s.id}',this.checked)">
-        <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${String(s.name).replace(/</g,'&lt;')}</span>
-      </label>
-      <span style="font-family:var(--mono);font-size:9px;color:var(--muted);flex-shrink:0">${rms}</span>
-      ${review}
-      <button onclick="poNudgeOpen('${s.id}')" title="Nudge this sheet's position (registration correction)" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:12px;padding:0 2px;">🎯</button>
-      <button onclick="poDeleteSheet('${s.id}')" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;padding:0;">✕</button>
+  const collapsed = _poFoldCollapsed();
+  const folders = _poLiveFolders();
+  const folderIds = new Set(folders.map(f => f.id));
+  // Sheets pointing at a tombstoned/unknown folder render in the main list.
+  const inFolder = (s, f) => s.folderId === f.id;
+  const rootSheets = _poSheets.filter(s => !s.folderId || !folderIds.has(s.folderId));
+  const folderBlocks = folders.map(f => {
+    const sheets = _poSheets.filter(s => inFolder(s, f));
+    const on = sheets.filter(s => s.visible).length;
+    const isCollapsed = !!collapsed[f.id];
+    return `<div style="margin-bottom:4px;border:1px solid var(--s1);border-radius:6px;overflow:hidden;">
+      <div style="display:flex;align-items:center;gap:6px;padding:5px 8px;background:var(--s2);">
+        <span onclick="poFolderCollapse('${f.id}')" style="cursor:pointer;font-size:10px;color:var(--muted2);padding:2px 4px 2px 0;">${isCollapsed ? '▸' : '▾'}</span>
+        <input type="checkbox" ${sheets.length && on === sheets.length ? 'checked' : ''} ${sheets.length ? '' : 'disabled'}
+          onclick="event.stopPropagation();poFolderToggle('${f.id}',this.checked)" style="accent-color:var(--amber);flex-shrink:0;">
+        <span onclick="poFolderCollapse('${f.id}')" style="cursor:pointer;font-family:var(--mono);font-size:11px;color:var(--text);font-weight:600;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">📁 ${String(f.name).replace(/</g,'&lt;')}</span>
+        <span style="font-family:var(--mono);font-size:9px;color:var(--muted);flex-shrink:0">${on}/${sheets.length}</span>
+        <button onclick="poFolderRename('${f.id}')" title="Rename folder" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:11px;padding:0 2px;">✏️</button>
+        <button onclick="poFolderDelete('${f.id}')" title="Delete folder (sheets kept)" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px;padding:0;">✕</button>
+      </div>
+      ${isCollapsed ? '' : `<div style="padding:4px 4px 2px 14px;">${sheets.map(_poSheetRow).join('') || '<div style="font-family:var(--mono);font-size:9px;color:var(--muted);padding:2px 8px 6px;">Empty — use 📁 on a sheet to move it here</div>'}</div>`}
     </div>`;
   }).join('');
   list.innerHTML = `
@@ -893,27 +1064,33 @@ function poRenderPanel(){
         <input type="checkbox" id="map-po-all-cb" ${allVisible ? 'checked' : ''} style="accent-color:var(--amber);width:14px;height:14px;flex-shrink:0;">
         <span style="font-family:var(--mono);font-size:11px;color:var(--amber2);font-weight:600;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">📐 Plan Sheets</span>
         <span style="font-family:var(--mono);font-size:9px;color:var(--muted);flex-shrink:0">${_poSheets.filter(s => s.visible).length}/${_poSheets.length}</span>
+        <button id="map-po-newfold" title="New folder" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:12px;padding:0 2px;flex-shrink:0;">📁+</button>
       </div>
       <div id="map-po-children" style="padding:4px 6px 4px 16px;${_poCollapsed ? 'display:none;' : ''}">
         <div style="display:flex;align-items:center;gap:8px;padding:4px 8px 8px;font-family:var(--mono);font-size:10px;color:var(--muted);">
           🔅 <input type="range" min="10" max="100" value="${Math.round(_poOpacity * 100)}" style="flex:1;accent-color:var(--amber);" oninput="poSetOpacity(this.value)">
           <span id="map-po-opacity-val" style="width:32px;text-align:right">${Math.round(_poOpacity * 100)}%</span>
         </div>
-        ${rows}
+        ${folderBlocks}
+        ${rootSheets.map(_poSheetRow).join('')}
       </div>
     </div>`;
   const head = document.getElementById('map-po-folder-head');
   head.addEventListener('click', function(e){
-    if(e.target.type === 'checkbox') return;
+    if(e.target.type === 'checkbox' || e.target.id === 'map-po-newfold') return;
     const children = document.getElementById('map-po-children');
-    const collapsed = children.style.display === 'none';
-    children.style.display = collapsed ? '' : 'none';
-    document.getElementById('map-po-chev').textContent = collapsed ? '▾' : '▸';
-    try{ localStorage.setItem('gl_po_collapsed', collapsed ? '0' : '1'); }catch{}
+    const collapsed2 = children.style.display === 'none';
+    children.style.display = collapsed2 ? '' : 'none';
+    document.getElementById('map-po-chev').textContent = collapsed2 ? '▾' : '▸';
+    try{ localStorage.setItem('gl_po_collapsed', collapsed2 ? '0' : '1'); }catch{}
   });
   document.getElementById('map-po-all-cb').addEventListener('click', function(e){
     e.stopPropagation();
     poToggleAll(this.checked);
+  });
+  document.getElementById('map-po-newfold').addEventListener('click', function(e){
+    e.stopPropagation();
+    poFolderCreate();
   });
 }
 
@@ -938,4 +1115,10 @@ window.poCropApply = poCropApply;
 window.poCropReset = poCropReset;
 window.poCropCancel = poCropCancel;
 window.poRenderPanel = poRenderPanel;
+window.poFolderCreate = poFolderCreate;
+window.poFolderRename = poFolderRename;
+window.poFolderDelete = poFolderDelete;
+window.poFolderToggle = poFolderToggle;
+window.poFolderCollapse = poFolderCollapse;
+window.poSheetSetFolder = poSheetSetFolder;
 window.poAdjustActive = () => !!_poNudge;   // maps.js long-press suppression
