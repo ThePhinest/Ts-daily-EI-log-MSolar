@@ -9,6 +9,8 @@
 // Branding\stantec-report-logo.jpg - re-upload it to Moraine via Settings ->
 // Report Generation -> Report Logo). No logo = clean text-only title block.
 
+import { exportImageBlob, exportImageParams } from './exportImg.js';
+
 function _b64ToArrayBuffer(b64){
   const bin=atob(b64);
   const buf=new ArrayBuffer(bin.length);
@@ -422,7 +424,7 @@ async function rptBuildDocx(logData,polished,photos){
     for(let j=i;j<Math.min(i+2,dayPhotos.length);j++){
       const p=dayPhotos[j];
       try{
-        let imgData;if(p.storageUrl){const resp=await fetch(p.storageUrl);imgData=await resp.arrayBuffer();}else{const raw=p.thumb;const b64=raw.includes(',')?raw.split(',')[1]:raw;imgData=_b64ToArrayBuffer(b64);}
+        let imgData;if(p.storageUrl){let blob=await (await fetch(p.storageUrl)).blob();const ep=exportImageParams(p);blob=await exportImageBlob(blob,ep.maxPx,ep.quality);imgData=await blob.arrayBuffer();}else{const raw=p.thumb;const b64=raw.includes(',')?raw.split(',')[1]:raw;imgData=_b64ToArrayBuffer(b64);}
         cells.push(new TableCell({borders:noBorders,width:{size:50,type:WidthType.PERCENTAGE},margins:{top:40,bottom:40,left:40,right:40},children:[
           new Paragraph({alignment:AlignmentType.CENTER,children:[new ImageRun({data:imgData,transformation:{width:331,height:248}})]}),
           new Paragraph({alignment:AlignmentType.CENTER,children:[new TextRun({text:`Photo ${j+1} \u2014 ${p.caption||''}`,font:'Arial',size:18,italics:true})],spacing:{before:40,after:60}})

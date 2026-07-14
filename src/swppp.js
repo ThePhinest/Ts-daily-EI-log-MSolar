@@ -18,6 +18,8 @@
 // (window._runningTotals), weather from the daily-log fields, §10 sketches
 // from map captures, §11 photos from SWPPP-tagged project photos.
 
+import { exportImageBlob, exportImageParams } from './exportImg.js';
+
 // ── State ──
 var _swCfg = {};        // pid → config object (or null when checked-and-missing)
 var _swInsp = {};       // pid → array of inspection docs
@@ -1256,8 +1258,9 @@ async function swpppBuildDocx(insp,cfg){
     try{
       let blob=null;
       if(p.storageUrl){ try{ blob=await (await fetch(p.storageUrl)).blob(); }catch(e){} }
-      if(!blob&&p.thumb){ const raw=p.thumb, b64=raw.includes(',')?raw.split(',')[1]:raw; const bin=atob(b64); const arr=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++)arr[i]=bin.charCodeAt(i); blob=new Blob([arr]); }
+      if(!blob&&p.thumb){ const raw=p.thumb, b64=raw.includes(',')?raw.split(',')[1]:raw; const bin=atob(b64); const arr=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++)arr[i]=bin.charCodeAt(i); blob=new Blob([arr],{type:'image/jpeg'}); }
       if(!blob) return null;
+      const ep=exportImageParams(p); blob=await exportImageBlob(blob,ep.maxPx,ep.quality);
       let w=maxW,h=Math.round(maxW*0.72);
       try{ const bmp=await createImageBitmap(blob); const sc=maxW/bmp.width; w=maxW; h=Math.round(bmp.height*sc); if(h>maxH){ h=maxH; w=Math.round(bmp.width*(maxH/bmp.height)); } bmp.close&&bmp.close(); }catch(e){}
       return {data:await blob.arrayBuffer(),w,h,p};
