@@ -1255,10 +1255,18 @@ function _showTlogExportModal(getEntries, pid){
     const mode=(typeof tcProgressMode==='function')?tcProgressMode(cid,pid):'';
     const isRunning=mode==='running-balance'||mode==='running-total';
     const name=e.categoryName||((typeof tcGetName==='function')?tcGetName(cid,pid):'Category');
-    const n=entries.filter(x=>x.categoryId===cid).length;
-    cats.push({cid,name,isRunning,n,
+    const inCat=entries.filter(x=>x.categoryId===cid);
+    cats.push({key:cid,cid,name,n:inCat.length,
       type:isRunning?'SWPPP · net disturbed':'Coverage · vs plan',
       icon:isRunning?'🟧':'🌱'});
+    // A running category whose stabilization entries carry seed data gets a SECOND,
+    // independent row: the seeding side exports on its own (or combined with the seeding
+    // categories into one seed report) — the disturbance sheet no longer drags it along.
+    if(isRunning){
+      const nSeed=inCat.filter(x=>x.entryType!=='planned'&&!x.temporary&&!x.deletedAt&&_seedHasData(x)).length;
+      if(nSeed) cats.push({key:cid+'::seed',cid,seedOnly:true,name:'Seeding on '+name,n:nSeed,
+        type:'Seeding · on stabilization',icon:'🌱'});
+    }
   });
 
   const selected=new Set();
@@ -1276,8 +1284,8 @@ function _showTlogExportModal(getEntries, pid){
         <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-bottom:16px">Select one or more categories — combined into one report</div>
         <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px">
           ${cats.length?cats.map(c=>`
-            <button class="_exp-cat" data-cid="${c.cid}" style="${selected.has(c.cid)?rowOn:rowBase}">
-              <span style="font-size:15px;width:18px;flex-shrink:0;text-align:center;color:${selected.has(c.cid)?'var(--amber)':'var(--muted)'}">${selected.has(c.cid)?'☑':'☐'}</span>
+            <button class="_exp-cat" data-key="${c.key}" style="${selected.has(c.key)?rowOn:rowBase}">
+              <span style="font-size:15px;width:18px;flex-shrink:0;text-align:center;color:${selected.has(c.key)?'var(--amber)':'var(--muted)'}">${selected.has(c.key)?'☑':'☐'}</span>
               <span style="font-size:19px;flex-shrink:0">${c.icon}</span>
               <span style="display:flex;flex-direction:column;gap:2px;min-width:0">
                 <span style="font-family:var(--cond);font-weight:700;font-size:14px;letter-spacing:.03em;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${c.name}</span>
@@ -1291,14 +1299,17 @@ function _showTlogExportModal(getEntries, pid){
         <button id="_exp-cancel" style="width:100%;padding:9px;background:none;color:var(--muted);font-family:var(--mono);font-size:11px;border:1px solid var(--border);border-radius:8px;cursor:pointer">Cancel</button>
       </div>`;
     ov.querySelectorAll('._exp-cat').forEach(btn=>{
-      btn.onclick=()=>{ const id=btn.dataset.cid; if(selected.has(id)) selected.delete(id); else selected.add(id); render(); };
+      btn.onclick=()=>{ const k=btn.dataset.key; if(selected.has(k)) selected.delete(k); else selected.add(k); render(); };
     });
     ov.querySelector('#_exp-cancel').onclick=()=>ov.remove();
     const goBtn=ov.querySelector('#_exp-go');
     if(goBtn) goBtn.onclick=async()=>{
       if(!selected.size) return;
       goBtn.textContent='Building…'; ov.querySelectorAll('button').forEach(b=>b.style.pointerEvents='none');
-      try{ await _exportCategoriesDeliverable([...selected], getEntries(), pid); }
+      try{
+        const sels=[...selected].map(k=>{ const c=cats.find(x=>x.key===k); return {cid:c.cid, seedOnly:!!c.seedOnly}; });
+        await _exportCategoriesDeliverable(sels, getEntries(), pid);
+      }
       catch(err){ console.warn('category export failed',err); }
       ov.remove();
     };
@@ -1322,30 +1333,36 @@ function _tlogLightenHex(hex, t){
   }).join('');
 }
 
-// Build + download ONE report workbook for one OR MORE categories — a tab per category.
-// Each tab branches on progress mode: running-balance/total → SWPPP net-disturbed sheet;
-// everything else → coverage-vs-plan (seeding) sheet. Pick pre-seeding + restoration and
-// the whole seed-tracking picture lands in a single file.
-async function _exportCategoriesDeliverable(cids, entries, pid){
-  if(!Array.isArray(cids) || !cids.length) return;
+// Build + download ONE report workbook for one OR MORE selections — a tab per selection.
+// Selections are {cid, seedOnly}: seedOnly → the gold-standard seeding-on-stabilization
+// tab alone; otherwise the tab branches on progress mode (running → SWPPP net-disturbed
+// sheet ONLY — the seeding side is its own selection; linear → BMP sheet; else the
+// coverage-vs-plan seeding sheet). Pick pre-seeding + restoration + seeding-on-disturbance
+// and the whole seed-tracking picture lands in a single file, fronted by a roll-up tab.
+async function _exportCategoriesDeliverable(sels, entries, pid){
+  if(!Array.isArray(sels) || !sels.length) return;
+  sels=sels.map(s=>typeof s==='string'?{cid:s,seedOnly:false}:s); // back-compat: bare cids
   const {default:ExcelJS}=await import('exceljs');
   const wb=new ExcelJS.Workbook();
   wb.creator='GroundLog'; wb.created=new Date();
-  let allSeeding=true;
-  for(const cid of cids){
-    const mode=(typeof tcProgressMode==='function')?tcProgressMode(cid,pid):'';
+  const meta=sels.map(s=>{
+    const mode=(typeof tcProgressMode==='function')?tcProgressMode(s.cid,pid):'';
     const isRunning=mode==='running-balance'||mode==='running-total';
-    const isLinear=((typeof tcGetMeasurementType==='function')?tcGetMeasurementType(cid,pid):'')==='linear';
-    if(isRunning){
-      allSeeding=false;
-      await _disturbanceSheet(wb, cid, entries, pid);
-      // 🌱 Seeding on stabilization (7/13): stab-state entries that carry seed
-      // data get their own seeding-schedule tab beside the disturbance tab.
-      await _stabSeedingSheet(wb, cid, entries, pid);
-    }
-    else if(isLinear){ allSeeding=false; await _linearSheet(wb, cid, entries, pid); }
-    else await _seedingSheet(wb, cid, entries, pid);
+    const isLinear=((typeof tcGetMeasurementType==='function')?tcGetMeasurementType(s.cid,pid):'')==='linear';
+    return {...s, isRunning, isLinear, isSeeding:s.seedOnly||(!isRunning&&!isLinear)};
+  });
+  // "All Seeding — Summary" front tab: job-wide roll-up when 2+ seed sources combine.
+  // Created FIRST so it's the workbook's opening tab (totals only, no photos — those
+  // stay on the source tabs).
+  const seedSrcs=meta.filter(m=>m.isSeeding);
+  if(seedSrcs.length>=2) _allSeedingSummarySheet(wb, seedSrcs, entries, pid);
+  for(const m of meta){
+    if(m.seedOnly) await _stabSeedingSheet(wb, m.cid, entries, pid);
+    else if(m.isRunning) await _disturbanceSheet(wb, m.cid, entries, pid);
+    else if(m.isLinear) await _linearSheet(wb, m.cid, entries, pid);
+    else await _seedingSheet(wb, m.cid, entries, pid);
   }
+  const allSeeding=meta.every(m=>m.isSeeding);
   // Body font ≥ 12 across the workbook (titles/headline keep their larger size). Skip
   // hidden rows (the collapsed capture-image ranges) so their reserved height holds.
   wb.eachSheet(sheet=>{
@@ -1359,13 +1376,13 @@ async function _exportCategoriesDeliverable(cids, entries, pid){
   const today=new Date().toLocaleDateString('en-CA');
   const safeProj=(cfg.projectName||pid).replace(/[^a-zA-Z0-9 _-]/g,'').trim().replace(/\s+/g,'-');
   let fname;
-  if(cids.length===1){
-    const name=(typeof tcGetName==='function')?tcGetName(cids[0],pid):'category';
-    const mode=(typeof tcProgressMode==='function')?tcProgressMode(cids[0],pid):'';
-    const isRunning=mode==='running-balance'||mode==='running-total';
-    const isLinear=((typeof tcGetMeasurementType==='function')?tcGetMeasurementType(cids[0],pid):'')==='linear';
+  if(meta.length===1){
+    const m=meta[0];
+    const name=(typeof tcGetName==='function')?tcGetName(m.cid,pid):'category';
     const safeCat=String(name).replace(/[^a-zA-Z0-9 _-]/g,'').trim().replace(/\s+/g,'-')||'category';
-    fname=`${isRunning?'disturbance':(isLinear?'bmp':'seeding')}-${safeCat}-${safeProj}-${today}.xlsx`;
+    fname=m.seedOnly
+      ?`seeding-on-${safeCat}-${safeProj}-${today}.xlsx`
+      :`${m.isRunning?'disturbance':(m.isLinear?'bmp':'seeding')}-${safeCat}-${safeProj}-${today}.xlsx`;
   } else {
     fname=`${allSeeding?'seeding':'tracker'}-report-${safeProj}-${today}.xlsx`;
   }
@@ -1659,42 +1676,21 @@ function _blobToDataURL(blob){ return new Promise((res,rej)=>{ const r=new FileR
 // a net-per-state summary (current area per state, turf-computed), total open vs the cap
 // + % of allowed (with OVER-LIMIT flag), the itemized list of every drawn area, and the
 // attached map captures (legend baked in) embedded so the XLSX is one self-contained file.
-// ── 🌱 Seeding-on-stabilization tab (7/13) ──
-// A stabilization drawing in a running-mode category often IS the seeding
-// event (temp seeding / final seed+amendments). Entries carrying seed data
-// (mix, rate, actual, seed tags) get a seeding-schedule tab beside the
-// disturbance tab so all seed placed on the job exports as one record set.
-// No-ops when no entry carries seed data. Areas are the DRAWN size (what got
-// seeded that day), not net — seed placed on later-re-disturbed ground was
-// still placed.
-async function _stabSeedingSheet(wb, cid, allEntries, pid){
-  const cat=(typeof tcGetCategory==='function')?tcGetCategory(cid,pid):null;
-  if(!cat) return;
-  const hasSeed=(e)=>!!(e.seedMix||e.fields?.appliedRate!=null||e.fields?.seedTagCount!=null||e.fields?.actualAmount!=null);
-  const rows=allEntries.filter(e=>(e.categoryId===cid)&&e.entryType!=='planned'&&!e.temporary&&!e.deletedAt&&hasSeed(e))
-    .sort((a,b)=>String(a.date||'').localeCompare(String(b.date||'')));
-  if(!rows.length) return;
-  const name=(typeof tcGetName==='function')?tcGetName(cid,pid):'Disturbance';
-  const defUnit=(typeof tcGetDefaultUnit==='function')?tcGetDefaultUnit(cid,pid):'ac';
-  const states=(typeof tcGetStates==='function')?tcGetStates(cat,pid):[];
-  const stateLbl=(sid)=>{ const s=states.find(x=>x.id===sid); return s?s.label:(sid||''); };
-  const areaOf=(e)=>e.measurementValue!=null?e.measurementValue:(e.acres!=null?e.acres:null);
-
+// ── "All Seeding — Summary" front tab ──
+// Job-wide roll-up when a report combines 2+ seed sources: one line per Source × State ×
+// Mix (mirroring the source tabs' line items) topped off with a grand-total band. Totals
+// only — mixed sources share no plan denominator, so no % / bars — and deliberately NO
+// photos: those live on the source tabs.
+function _allSeedingSummarySheet(wb, srcs, entries, pid){
   const TEAL='006B75', WHITE='FFFFFF', AMBER_LIGHT='FDF5DC';
-  const NC=9;
-  let base=('Seeding — '+name).replace(/[\\\/\?\*\[\]:]/g,'').slice(0,31);
-  let nm=base, n=2;
-  while(wb.getWorksheet(nm)){ nm=base.slice(0,28)+' '+n; n++; }
-  const ws=wb.addWorksheet(nm);
-  ws.columns=[{width:12},{width:22},{width:12},{width:26},{width:12},{width:13},{width:13},{width:11},{width:40}];
-
-  ws.addRow([name+' — seeding on stabilization']);
-  ws.mergeCells(1,1,1,NC);
+  const NC=8;
+  const ws=wb.addWorksheet('All Seeding — Summary');
+  ws.columns=[{width:30},{width:26},{width:14},{width:11},{width:26},{width:16},{width:16},{width:16}];
+  ws.addRow(['All Seeding — Summary']); ws.mergeCells(1,1,1,NC);
   const tc=ws.getCell('A1');
-  tc.font={name:'Calibri',bold:true,size:14,color:{argb:WHITE}};
+  tc.font={name:'Calibri',bold:true,size:18,color:{argb:WHITE}};
   tc.fill={type:'pattern',pattern:'solid',fgColor:{argb:TEAL}};
-  tc.alignment={vertical:'middle',horizontal:'left',indent:1};
-  ws.getRow(1).height=26;
+  tc.alignment={vertical:'middle',horizontal:'left',indent:1}; ws.getRow(1).height=34;
   const cfg=JSON.parse(localStorage.getItem('msf_projectconfig')||'{}');
   [['Project',cfg.projectName||''],['Snapshot date',new Date().toLocaleDateString('en-CA')],['Prepared By',cfg.preparedBy||'']].forEach(([l,v])=>{
     const r=ws.addRow([l,v]); ws.mergeCells(r.number,2,r.number,NC);
@@ -1702,26 +1698,100 @@ async function _stabSeedingSheet(wb, cid, allEntries, pid){
     r.getCell(2).font={name:'Calibri',size:10}; r.height=15;
   });
   ws.addRow([]);
-
-  const hd=ws.addRow(['Date','State','Area ('+defUnit+')','Mix / Product','Rate (lbs/ac)','Required','Actual','Seed Tags','Notes / Contractor']);
-  hd.eachCell(c=>{ c.font={bold:true,size:10}; c.fill={type:'pattern',pattern:'solid',fgColor:{argb:AMBER_LIGHT}}; c.border={bottom:{style:'thin'}}; });
-  let areaSum=0, tagSum=0;
-  rows.forEach(e=>{
-    const f=e.fields||{};
-    const area=areaOf(e);
-    if(typeof area==='number') areaSum+=area;
-    if(f.seedTagCount) tagSum+=f.seedTagCount;
-    ws.addRow([
-      e.date||'', stateLbl(e.state), area!=null?area:'',
-      e.seedMix||'', f.appliedRate!=null?f.appliedRate:'',
-      f.requiredAmount!=null?`${f.requiredAmount} ${f.requiredUnit||''}`.trim():'',
-      f.actualAmount!=null?`${f.actualAmount} ${f.actualUnit||''}`.trim():'',
-      f.seedTagCount!=null?f.seedTagCount:'',
-      [e.notes,e.contractor].filter(Boolean).join(' — ')
-    ]);
+  const hdr=ws.addRow(['Source','State','Coverage','Seed Tags','Mix / Product','Applied Rate','Required','Actual']);
+  hdr.eachCell({includeEmpty:true},c=>{ c.font={bold:true,size:10,color:{argb:WHITE}}; c.fill={type:'pattern',pattern:'solid',fgColor:{argb:TEAL}}; c.alignment={vertical:'middle',wrapText:true}; });
+  hdr.height=20;
+  let grandAc=0, grandTags=0;
+  srcs.forEach(m=>{
+    const cat=(typeof tcGetCategory==='function')?tcGetCategory(m.cid,pid):null; if(!cat) return;
+    const name=(typeof tcGetName==='function')?tcGetName(m.cid,pid):'Category';
+    const srcName=m.seedOnly?'Seeding on '+name:name;
+    const defUnit=(typeof tcGetDefaultUnit==='function')?tcGetDefaultUnit(m.cid,pid):'ac';
+    const states=((typeof tcGetStates==='function')?tcGetStates(cat,pid):[]).filter(s=>!s.isPlanned);
+    const dcs=m.seedOnly?null:((typeof tcDefaultChildState==='function')?tcDefaultChildState(cat,pid):null);
+    const stOf=(e)=>e.state||(dcs?dcs.id:null);
+    let rows=entries.filter(e=>e.categoryId===m.cid&&e.entryType!=='planned'&&!e.temporary&&!e.deletedAt);
+    if(m.seedOnly) rows=rows.filter(_seedHasData);
+    const measure=(e)=>(typeof trEntryMeasure==='function')?trEntryMeasure(e,defUnit,pid):0;
+    const fmt=(v)=>(typeof tcFormatMeasurement==='function')?tcFormatMeasurement(v,defUnit):`${(v||0).toFixed(2)} ${defUnit}`;
+    let first=true;
+    states.forEach(s=>{
+      const es=rows.filter(e=>stOf(e)===s.id); if(!es.length) return;
+      // One line per Mix × Rate within the state (mirrors the source tabs' line items).
+      const map=new Map();
+      es.forEach(e=>{ const f=e.fields||{}; const key=`${e.seedMix||''}__${f.appliedRate!=null?f.appliedRate:''}__${f.requiredUnit||''}`; if(!map.has(key)) map.set(key,[]); map.get(key).push(e); });
+      [...map.values()].forEach(g=>{
+        const f0=g[0].fields||{};
+        const cov=g.reduce((a,e)=>a+measure(e),0);
+        const tags=g.reduce((a,e)=>a+((e.fields&&e.fields.seedTagCount)||0),0);
+        const req=g.reduce((a,e)=>a+((e.fields&&e.fields.requiredAmount)||0),0);
+        const act=g.reduce((a,e)=>a+((e.fields&&e.fields.actualAmount)||0),0);
+        const reqU=(g.find(e=>e.fields&&e.fields.requiredUnit)||{}).fields?.requiredUnit||'';
+        const actU=(g.find(e=>e.fields&&e.fields.actualUnit)||{}).fields?.actualUnit||'';
+        grandAc+=(defUnit==='ac')?cov:((typeof tcConvertMeasurement==='function')?(tcConvertMeasurement(cov,defUnit,'ac')||0):0);
+        grandTags+=tags;
+        const r=ws.addRow([
+          first?srcName:'', s.label, fmt(cov), tags||'',
+          g[0].seedMix||'', f0.appliedRate!=null?(reqU?f0.appliedRate+' '+reqU+'/ac':String(f0.appliedRate)):'',
+          req?req.toLocaleString()+(reqU?' '+reqU:''):'', act?act.toLocaleString()+(actU?' '+actU:''):'',
+        ]);
+        r.eachCell({includeEmpty:true},c=>{ c.font={name:'Calibri',size:11}; c.alignment={vertical:'middle',wrapText:true}; });
+        if(first) r.getCell(1).font={name:'Calibri',size:11,bold:true,color:{argb:'FF006B75'}};
+        const fill=_xlHex(s.color);
+        if(fill){ r.getCell(2).fill={type:'pattern',pattern:'solid',fgColor:{argb:fill}}; r.getCell(2).font={name:'Calibri',size:11,bold:true,color:{argb:_xlContrast(s.color)}}; }
+        r.height=20; first=false;
+      });
+    });
+    ws.addRow([]).height=6;
   });
-  const tr=ws.addRow(['TOTAL','',Math.round(areaSum*100)/100,'','','','',tagSum||'','']);
-  tr.eachCell(c=>{ c.font={bold:true,size:10}; c.fill={type:'pattern',pattern:'solid',fgColor:{argb:AMBER_LIGHT}}; c.border={top:{style:'thin'}}; });
+  // Grand-total band — the headline: all seed placed on the job, every source combined.
+  const gr=ws.addRow(['GRAND TOTAL — all seeding','',(Math.round(grandAc*100)/100)+' ac',grandTags||'','','','','']);
+  gr.getCell(1).font={bold:true,size:16}; gr.getCell(3).font={bold:true,size:16,color:{argb:'FF006B75'}}; gr.getCell(4).font={bold:true,size:14};
+  for(let c=1;c<=NC;c++){
+    gr.getCell(c).fill={type:'pattern',pattern:'solid',fgColor:{argb:AMBER_LIGHT}};
+    gr.getCell(c).border={top:{style:'medium',color:{argb:'FFC9A84C'}},bottom:{style:'medium',color:{argb:'FFC9A84C'}},...(c===1?{left:{style:'medium',color:{argb:'FFC9A84C'}}}:{}),...(c===NC?{right:{style:'medium',color:{argb:'FFC9A84C'}}}:{})};
+  }
+  gr.height=30;
+  const nt=ws.addRow(['↳ every seed source combined — per-source detail & photos on the following tabs']);
+  ws.mergeCells(nt.number,1,nt.number,NC);
+  nt.getCell(1).font={italic:true,size:9,color:{argb:'FF7A6A2E'}};
+  nt.getCell(1).alignment={vertical:'middle',horizontal:'left',indent:1};
+  nt.height=16;
+}
+
+// An entry carries seed data if any seed-calc field was filled (mix, rate, tags, actual).
+// Shared by the export modal (to derive the "Seeding on …" row), the seeding-on-stab tab,
+// and the all-seeding summary.
+function _seedHasData(e){
+  return !!(e.seedMix||e.fields?.appliedRate!=null||e.fields?.seedTagCount!=null||e.fields?.actualAmount!=null);
+}
+
+// ── 🌱 Seeding-on-stabilization tab ──
+// A stabilization drawing in a running-mode category often IS the seeding event (temp
+// seeding / final seed+amendments). Rendered through the SAME gold-standard seeding
+// renderer as the seeding categories (13 client columns, summary line items, inline
+// collapsed photos) so all seed placed on the job reports identically. Selected on its
+// own row in the export modal — the disturbance sheet no longer brings it along.
+// Disturbance has no seeding plan → totals only, no % / bars. Areas are the DRAWN size
+// (what got seeded that day), not net — seed placed on later-re-disturbed ground was
+// still placed.
+async function _stabSeedingSheet(wb, cid, allEntries, pid){
+  const cat=(typeof tcGetCategory==='function')?tcGetCategory(cid,pid):null;
+  if(!cat) return;
+  const rows=allEntries.filter(e=>(e.categoryId===cid)&&e.entryType!=='planned'&&!e.temporary&&!e.deletedAt&&_seedHasData(e))
+    .sort((a,b)=>String(a.date||'').localeCompare(String(b.date||'')));
+  if(!rows.length) return;
+  const name=(typeof tcGetName==='function')?tcGetName(cid,pid):'Disturbance';
+  const defUnit=(typeof tcGetDefaultUnit==='function')?tcGetDefaultUnit(cid,pid):'ac';
+  const states=(typeof tcGetStates==='function')?tcGetStates(cat,pid):[];
+  await _seedingSheetRender(wb,{
+    pid, title:name+' — Seeding on Stabilization', tabBase:'Seeding — '+name, defUnit,
+    childStates:states.filter(s=>!s.isPlanned), installed:rows,
+    planTotal:null, stateOf:(e)=>e.state||null, skipEmptyStates:true,
+    sectionTitle:'Seeding Events (by date)',
+    groups:[{label:'All seeding events', planArea:null, kids:rows, owners:[], sortByDate:true, perRowCaptures:true}],
+    empty:false,
+  });
 }
 
 async function _disturbanceSheet(wb, cid, allEntries, pid){
@@ -2117,28 +2187,63 @@ async function _linearSheet(wb, cid, allEntries, pid){
 
 // Coverage-vs-plan (seeding) deliverable sheet for one per-state-vs-plan category. States
 // STACK on the same ground (lime→fert→seed→mulch) so per-state areas are GROSS sums (turf
-// net is NOT used). Shows a category-wide Coverage Summary (gross per-state ÷ plan, with
-// progress bars) + a By-Drawing breakdown (each planned area's per-state coverage), and the
-// attached map captures (legend, no totals) embedded.
+// net is NOT used). Gathers the category's plan + layers into By-Drawing groups and hands
+// off to the shared gold-standard renderer below.
 async function _seedingSheet(wb, cid, allEntries, pid){
   const cat=(typeof tcGetCategory==='function')?tcGetCategory(cid,pid):null;
   if(!cat) return;
   const name=(typeof tcGetName==='function')?tcGetName(cid,pid):'Seeding';
   const defUnit=(typeof tcGetDefaultUnit==='function')?tcGetDefaultUnit(cid,pid):'ac';
   const states=(typeof tcGetStates==='function')?tcGetStates(cat,pid):[];
-  const childStates=states.filter(s=>!s.isPlanned);
   const dcs=(typeof tcDefaultChildState==='function')?tcDefaultChildState(cat,pid):null;
   const planned=allEntries.filter(e=>(e.categoryId===cid)&&e.entryType==='planned'&&!e.temporary&&!e.deletedAt);
   const installed=allEntries.filter(e=>(e.categoryId===cid)&&e.entryType!=='planned'&&!e.temporary&&!e.deletedAt);
   const measure=(e)=>(typeof trEntryMeasure==='function')?trEntryMeasure(e,defUnit,pid):0;
+  // By-Drawing groups: one per planned area (sorted by location), plus unlinked layers.
+  const planIds=new Set(planned.map(p=>p.id));
+  const groups=[];
+  const sortedPlans=planned.slice().sort((a,b)=>String(a.location||'').localeCompare(String(b.location||'')));
+  sortedPlans.forEach((p,i)=>{
+    // p.name = future per-drawing name field (forward-compat); falls back to notes → Area N.
+    const nm=p.name||p.notes||`Area ${i+1}`;
+    const kids=installed.filter(e=>e.parentId===p.id);
+    groups.push({label:p.location?`${nm} (${p.location})`:nm, planArea:measure(p), kids, owners:[p,...kids]});
+  });
+  const unlinked=installed.filter(e=>!e.parentId||!planIds.has(e.parentId));
+  if(unlinked.length) groups.push({label:'Unlinked drawings', planArea:null, kids:unlinked, owners:unlinked});
+  await _seedingSheetRender(wb,{
+    pid, title:name, tabBase:'Seeding — '+name, defUnit,
+    childStates:states.filter(s=>!s.isPlanned), installed,
+    planTotal:planned.reduce((s,e)=>s+measure(e),0),
+    stateOf:(e)=>e.state||(dcs?dcs.id:null),
+    sectionTitle:'By Drawing (location)', groups,
+    empty:!planned.length&&!installed.length,
+  });
+}
+
+// Shared gold-standard seeding renderer — ONE tab layout for every seed source (seeding
+// categories AND seeding-on-stabilization) so the client columns, summary line items and
+// embedded photos stay identical everywhere. Coverage Summary = per State × Mix × Rate
+// line items with color-coded progress bars when a plan denominator exists; then the
+// per-group breakdown with inline collapsed map captures / seed-tag photos.
+// o.planTotal=null → no plan exists: the '% of Plan' column and data bars are omitted and
+// the headline band shows the total seeded instead of the planned area.
+async function _seedingSheetRender(wb, o){
+  const pid=o.pid;
+  const name=o.title;
+  const defUnit=o.defUnit||'ac';
+  const childStates=o.childStates||[];
+  const installed=o.installed||[];
+  const hasPlan=(typeof o.planTotal==='number');
+  const planTotal=hasPlan?o.planTotal:0;
+  const measure=(e)=>(typeof trEntryMeasure==='function')?trEntryMeasure(e,defUnit,pid):0;
   const fmt=(v)=>(typeof tcFormatMeasurement==='function')?tcFormatMeasurement(v,defUnit):`${(v||0).toFixed(2)} ${defUnit}`;
-  const stOf=(e)=>e.state||(dcs?dcs.id:null);
-  const planTotal=planned.reduce((s,e)=>s+measure(e),0);
+  const stOf=o.stateOf||((e)=>e.state||null);
 
   const TEAL='006B75', WHITE='FFFFFF', AMBER_LIGHT='FDF5DC';
   // Full client-facing column set (the old Tracker Log columns the seed reports need).
   const NC=13;
-  let base=('Seeding — '+name).replace(/[\\\/\?\*\[\]:]/g,'').slice(0,31);
+  let base=String(o.tabBase||'Seeding').replace(/[\\\/\?\*\[\]:]/g,'').slice(0,31);
   let nm=base, n=2;
   while(wb.getWorksheet(nm)){ nm=base.slice(0,28)+' '+n; n++; }
   const ws=wb.addWorksheet(nm);
@@ -2174,8 +2279,9 @@ async function _seedingSheet(wb, cid, allEntries, pid){
   tip.getCell(1).alignment={wrapText:true,vertical:'middle'}; tip.height=24;
   ws.addRow([]);
 
-  // Full client column set + per-state ordering, shared by the Summary + By-Drawing.
-  const COLS=['State','Coverage','% of Plan','Date','Seed Tags','Mix / Product','Applied Rate','Required','Actual','Method','Contractor','Notes','Photos'];
+  // Full client column set + per-state ordering, shared by the Summary + group sections.
+  // No plan → the % column has nothing to compare to; its header goes blank and cells stay empty.
+  const COLS=['State','Coverage',hasPlan?'% of Plan':'','Date','Seed Tags','Mix / Product','Applied Rate','Required','Actual','Method','Contractor','Notes','Photos'];
   const stById={}; childStates.forEach((s,i)=>{ stById[s.id]={...s,_ord:i}; });
   const stOrd=(e)=>{ const s=stById[stOf(e)]; return s?s._ord:99; };
   // Coverage Summary is a materials line-item schedule: one row per State × Mix × Rate.
@@ -2211,14 +2317,17 @@ async function _seedingSheet(wb, cid, allEntries, pid){
   };
 
   // ── Coverage Summary — the headline section: AMBER band, larger, all columns ──
-  const sh=ws.addRow(['COVERAGE SUMMARY — totals vs plan']); ws.mergeCells(sh.number,1,sh.number,NC);
+  const sh=ws.addRow([hasPlan?'COVERAGE SUMMARY — totals vs plan':'SEEDING SUMMARY — totals']); ws.mergeCells(sh.number,1,sh.number,NC);
   sh.getCell(1).font={bold:true,size:15,color:{argb:'FF0F1F2E'}};
   sh.getCell(1).fill={type:'pattern',pattern:'solid',fgColor:{argb:'C9A84C'}};
   sh.getCell(1).alignment={vertical:'middle',horizontal:'left',indent:1}; sh.height=28;
   const hdr=ws.addRow(COLS);
   hdr.eachCell({includeEmpty:true},c=>{ c.font={bold:true,size:10,color:{argb:WHITE}}; c.fill={type:'pattern',pattern:'solid',fgColor:{argb:TEAL}}; c.alignment={vertical:'middle',wrapText:true}; });
   hdr.height=20;
-  childStates.forEach(s=>{
+  // Seeding-on-stab tabs skip states with no seed rows (a disturbance category's non-seed
+  // states would otherwise pad the legend with empty lines).
+  const sumStates=o.skipEmptyStates?childStates.filter(s=>installed.some(e=>stOf(e)===s.id)):childStates;
+  sumStates.forEach(s=>{
     const fill=_xlHex(s.color);
     const rows=materialRows(s.id);
     // A state with no drawings still shows one (empty) line so the legend reads complete.
@@ -2246,8 +2355,10 @@ async function _seedingSheet(wb, cid, allEntries, pid){
       r.height=22;
     });
   });
-  // Planned-area total — the denominator, banded headline.
-  const pr=ws.addRow(['Planned area (total)', fmt(planTotal)]);
+  // Banded headline: the plan denominator when one exists, else the total seed placed.
+  const pr=ws.addRow(hasPlan
+    ?['Planned area (total)', fmt(planTotal)]
+    :['Total seeded (all events)', fmt(installed.reduce((s,e)=>s+measure(e),0))]);
   pr.getCell(1).font={bold:true,size:14}; pr.getCell(2).font={bold:true,size:14,color:{argb:'FF006B75'}};
   // Band the whole row out to the last column (Nick: extend the total-row formatting to col M
   // for consistency) — amber fill across, medium top/bottom rule, closed off left + right.
@@ -2258,18 +2369,19 @@ async function _seedingSheet(wb, cid, allEntries, pid){
   }
   pr.height=26;
   // (Per-row color-coded data bars were added in the loop above.)
-  if(!childStates.length){ const r=ws.addRow(['—','No states defined']); r.getCell(2).font={italic:true,size:10,color:{argb:'FF999999'}}; }
+  if(!sumStates.length){ const r=ws.addRow(['—','No states defined']); r.getCell(2).font={italic:true,size:10,color:{argb:'FF999999'}}; }
   ws.addRow([]);
 
-  // ── By Drawing — one row per drawn layer (full client columns), grouped under each
-  //    planned area; the Coverage Summary above carries the grand per-state totals. ──
-  const bh=ws.addRow(['By Drawing (location)']); ws.mergeCells(bh.number,1,bh.number,NC);
+  // ── Group section — one row per drawn layer (full client columns): grouped under each
+  //    planned area (seeding categories) or one flat date-sorted event list (seeding on
+  //    stab); the summary above carries the grand per-state totals. ──
+  const bh=ws.addRow([o.sectionTitle||'By Drawing (location)']); ws.mergeCells(bh.number,1,bh.number,NC);
   bh.getCell(1).font={bold:true,size:13,color:{argb:WHITE}};
   bh.getCell(1).fill={type:'pattern',pattern:'solid',fgColor:{argb:TEAL}};
   bh.getCell(1).alignment={vertical:'middle',horizontal:'left',indent:1}; bh.height=22;
 
-  const renderGroup=async (label, planArea, kids, owners)=>{
-    // Per-drawing TITLE bar — drawing name + (location), with the plan area on the right.
+  const renderGroup=async ({label, planArea, kids, owners, sortByDate, perRowCaptures})=>{
+    // Per-group TITLE bar — drawing name + (location), with the plan area on the right.
     const dh=ws.addRow([label, planArea!=null?`Plan: ${fmt(planArea)}`:'']);
     ws.mergeCells(dh.number,2,dh.number,NC);
     dh.getCell(1).font={bold:true,size:13,color:{argb:'FF006B75'}};
@@ -2279,9 +2391,12 @@ async function _seedingSheet(wb, cid, allEntries, pid){
     dh.getCell(2).alignment={horizontal:'right'}; dh.height=24;
     const ch=ws.addRow(COLS);
     ch.eachCell({includeEmpty:true},c=>{ c.font={bold:true,size:10,color:{argb:'FF006B75'}}; c.fill={type:'pattern',pattern:'solid',fgColor:{argb:'E8F4F5'}}; c.border={bottom:{style:'thin',color:{argb:'FF006B75'}}}; c.alignment={vertical:'middle',wrapText:true}; }); ch.height=20;
-    const sorted=kids.slice().sort((a,b)=>(stOrd(a)-stOrd(b))||String(a.date||'').localeCompare(String(b.date||'')));
+    // Flat event lists read chronologically; plan groups read state-order then date.
+    const sorted=kids.slice().sort(sortByDate
+      ?(a,b)=>String(a.date||'').localeCompare(String(b.date||''))
+      :(a,b)=>(stOrd(a)-stOrd(b))||String(a.date||'').localeCompare(String(b.date||'')));
     if(!sorted.length){ const r=ws.addRow(['—','No layers drawn yet']); r.getCell(2).font={italic:true,size:9,color:{argb:'FF999999'}}; r.height=20; }
-    sorted.forEach(e=>{
+    for(const e of sorted){
       const s=stById[stOf(e)]||null;
       const f=e.fields||{};
       const rateUnit=f.requiredUnit?f.requiredUnit+'/ac':'';
@@ -2306,25 +2421,16 @@ async function _seedingSheet(wb, cid, allEntries, pid){
       else r.getCell(1).font={name:'Calibri',size:10,bold:true};
       r.getCell(3).font={name:'Calibri',size:10,bold:true}; if(pct!=null) r.getCell(3).numFmt='0"%"';
       r.height=30; // padding so wrapped notes / mix read without expanding the row
-    });
-    // This drawing's map captures, inline + collapsed right under it (no separate list).
-    await _embedCapturesInline(ws, wb, owners, NC);
+      // Flat event lists carry each event's captures/photos right under its own row.
+      if(perRowCaptures) await _embedCapturesInline(ws, wb, [e], NC);
+    }
+    // Plan groups embed the drawing's captures once, after its layer rows (no separate list).
+    if(!perRowCaptures) await _embedCapturesInline(ws, wb, owners, NC);
     ws.addRow([]);
   };
 
-  const planIds=new Set(planned.map(p=>p.id));
-  const sortedPlans=planned.slice().sort((a,b)=>String(a.location||'').localeCompare(String(b.location||'')));
-  for(let i=0;i<sortedPlans.length;i++){
-    const p=sortedPlans[i];
-    // p.name = future per-drawing name field (forward-compat); falls back to notes → Area N.
-    const nm=p.name||p.notes||`Area ${i+1}`;
-    const lbl=p.location?`${nm} (${p.location})`:nm;
-    const kids=installed.filter(e=>e.parentId===p.id);
-    await renderGroup(lbl, measure(p), kids, [p, ...kids]);
-  }
-  const unlinked=installed.filter(e=>!e.parentId||!planIds.has(e.parentId));
-  if(unlinked.length) await renderGroup('Unlinked drawings', null, unlinked, unlinked);
-  if(!planned.length && !installed.length){ const r=ws.addRow(['—','No entries yet']); r.getCell(2).font={italic:true,size:10,color:{argb:'FF999999'}}; }
+  for(const g of (o.groups||[])) await renderGroup(g);
+  if(o.empty){ const r=ws.addRow(['—','No entries yet']); r.getCell(2).font={italic:true,size:10,color:{argb:'FF999999'}}; }
 
   // Min-height pass — skip the hidden capture-image rows so their reserved height holds.
   ws.eachRow((row,rn)=>{ if(rn===1||row.hidden) return; if(!row.height||row.height<18) row.height=18; });
