@@ -38,7 +38,17 @@ async function _getPdfMake(){
 // ── palette + metrics (DOCX constants; sizes are half-points there → pt here) ──
 const BLUE='#1F3864', LT_BLUE='#D9E2F3', MID_BLUE='#2E5496', AMBER='#FFF2CC', HAIR='#AAAAAA';
 const PAGE_W=612, MARG=54, CONTENT_W=PAGE_W-2*MARG;   // Letter, 0.75" side margins
-const pw=(pct)=>Math.floor(CONTENT_W*pct/100);        // %-of-content-width → pt
+// Column widths for a hairLayout table: pdfmake ADDS cell padding (6+6/col) and the
+// 0.5pt hairlines ON TOP of fixed widths, so raw %-of-content columns overpack the
+// table and the trailing '*' column collapses below its min word width → the table
+// bleeds past the right margin. cols(...pcts) budgets the percentages against the
+// width actually available to columns (content − padding − lines) and appends the
+// '*' column, so every table lands flush on both margins like the section headers.
+const cols=(...pcts)=>{
+  const n=pcts.length+1;                              // + the trailing '*' column
+  const usable=CONTENT_W - 12*n - 0.5*(n+1);          // hairLayout: 6+6 padding, 0.5 lines
+  return [...pcts.map(p=>Math.floor(usable*p/100)),'*'];
+};
 
 // Checkbox run — GLSym font carries ☐/☒ (Roboto doesn't)
 const cb=(on)=>({text:(on?'☒':'☐')+' ',font:'GLSym'});
@@ -179,7 +189,7 @@ export async function swpppBuildPdf(insp,cfg,sig){
       {text:[cb(st.condition==='acceptable'),{text:'Acceptable   '},cb(st.condition==='deficient'),{text:'Deficient'}],fontSize:8},
       cell(st.action||'',{size:8})]);
   });
-  const daTbl={table:{headerRows:1,dontBreakRows:true,widths:[pw(18),pw(42),pw(22),'*'],body:daBody},layout:hairLayout,margin:[0,2,0,4]};
+  const daTbl={table:{headerRows:1,dontBreakRows:true,widths:cols(18,42,22),body:daBody},layout:hairLayout,margin:[0,2,0,4]};
 
   // §3 Discharge points
   const dpBody=[[hcell('Discharge Point ID'),hcell('Location Description'),hcell('Receiving Water'),hcell('Condition / Notes')]];
@@ -188,12 +198,12 @@ export async function swpppBuildPdf(insp,cfg,sig){
     dpBody.push([cell(dp.id,{bold:true,size:8}),cell(dp.location,{size:8,i:true}),cell(dp.receiving,{size:8,i:true}),
       {text:[cb(st.condition==='acceptable'),{text:'Acceptable   '},cb(st.condition==='deficient'),{text:'Deficient'+(st.notes?` — ${st.notes}`:'')}],fontSize:8}]);
   });
-  const dpTbl={table:{headerRows:1,dontBreakRows:true,widths:[pw(14),pw(36),pw(26),'*'],body:dpBody},layout:hairLayout,margin:[0,2,0,4]};
+  const dpTbl={table:{headerRows:1,dontBreakRows:true,widths:cols(14,36,26),body:dpBody},layout:hairLayout,margin:[0,2,0,4]};
 
   // §4 Waterbodies
   const wbBody=[[hcell('Waterbody'),hcell('Type'),hcell('Location on Site'),hcell('303(d) Impaired?')]];
   (cfg.waterbodies||[]).forEach(w=>{ wbBody.push([cell(w.name,{size:8,bold:true}),cell(w.type,{size:8}),cell(w.location,{size:8}),cell(w.impaired,{size:8})]); });
-  const wbTbl={table:{headerRows:1,dontBreakRows:true,widths:[pw(28),pw(14),pw(40),'*'],body:wbBody},layout:hairLayout,margin:[0,2,0,4]};
+  const wbTbl={table:{headerRows:1,dontBreakRows:true,widths:cols(28,14,40),body:wbBody},layout:hairLayout,margin:[0,2,0,4]};
 
   // §5 ESC BMPs
   const bmpBody=[[hcell('BMP / Practice'),hcell('Location / Ref'),hcell('Installed'),hcell('Condition'),hcell('Maint. Needed'),hcell('Corrective / Status')]];
@@ -213,7 +223,7 @@ export async function swpppBuildPdf(insp,cfg,sig){
         ...(st.status?[{text:`Status: ${st.status}`,fontSize:8}]:[])]}
     ]);
   });
-  const bmpTbl={table:{headerRows:1,dontBreakRows:true,widths:[pw(18),pw(22),pw(10),pw(20),pw(10),'*'],body:bmpBody},layout:hairLayout,margin:[0,2,0,4]};
+  const bmpTbl={table:{headerRows:1,dontBreakRows:true,widths:cols(18,22,10,20,10),body:bmpBody},layout:hairLayout,margin:[0,2,0,4]};
   const cond4Line=body([cb(insp.escVerified==='verified'),{text:'Verified    '},cb(insp.escVerified==='na'),{text:'N/A this inspection — '+(cfg.escCondition4||'')}],{fontSize:8,italics:true});
 
   // §6 Pollution prevention
@@ -224,7 +234,7 @@ export async function swpppBuildPdf(insp,cfg,sig){
       {text:[cb(st.controls==='y'),{text:'Y  '},cb(st.controls==='n'),{text:'N  '},cb(st.controls==='na'),{text:'N/A'}],fontSize:8},
       cell(st.obs||'',{size:8}),cell(st.action||'',{size:8})]);
   });
-  const ppTbl={table:{headerRows:1,dontBreakRows:true,widths:[pw(34),pw(22),pw(28),'*'],body:ppBody},layout:hairLayout,margin:[0,2,0,4]};
+  const ppTbl={table:{headerRows:1,dontBreakRows:true,widths:cols(34,22,28),body:ppBody},layout:hairLayout,margin:[0,2,0,4]};
 
   // §7 SMPs
   const smpBody=[[hcell('SMP Practice'),hcell('Location'),hcell('Construction Status'),hcell('SWPPP Compliance'),hcell('Notes / Action')]];
@@ -235,14 +245,14 @@ export async function swpppBuildPdf(insp,cfg,sig){
       {text:[cb(st.compliance==='compliant'),{text:'Compliant '},cb(st.compliance==='non'),{text:'Non-Compliant '},cb(st.compliance==='na'),{text:'N/A'}],fontSize:8},
       cell(st.notes||'',{size:8})]);
   });
-  const smpTbl={table:{headerRows:1,dontBreakRows:true,widths:[pw(24),pw(26),pw(20),pw(18),'*'],body:smpBody},layout:hairLayout,margin:[0,2,0,4]};
+  const smpTbl={table:{headerRows:1,dontBreakRows:true,widths:cols(24,26,20,18),body:smpBody},layout:hairLayout,margin:[0,2,0,4]};
 
   // §8 Corrective actions
   const caBody=[[hcell('Date Identified'),hcell('Location / BMP'),hcell('Description of Deficiency'),hcell('Required Action / Deadline / Status')]];
   const caList=(insp.corrective&&insp.corrective.length)?insp.corrective:[];
   caList.forEach(c=>{ caBody.push([cell(c.dateId||'',{size:8}),cell(c.location||'',{size:8}),cell(c.desc||'',{size:8}),cell(c.action||'',{size:8})]); });
   if(!caList.length) caBody.push([cell('—',{size:8}),cell('None identified this inspection',{size:8}),cell('',{size:8}),cell('',{size:8})]);
-  const caTbl={table:{headerRows:1,dontBreakRows:true,widths:[pw(14),pw(22),pw(34),'*'],body:caBody},layout:hairLayout,margin:[0,2,0,4]};
+  const caTbl={table:{headerRows:1,dontBreakRows:true,widths:cols(14,22,34),body:caBody},layout:hairLayout,margin:[0,2,0,4]};
 
   // §10 sketches — meta table + 2-up grid (px caps match the DOCX)
   const skMetaBody=[[hcell('Sketch #'),hcell('Date'),hcell('Status / Description')]];
@@ -276,23 +286,27 @@ export async function swpppBuildPdf(insp,cfg,sig){
   const sigRow=(sig&&sig.b64)
     ? [{text:'Signature:',bold:true,fontSize:10,fillColor:LT_BLUE},{image:sig.b64,width:128,height:41}]
     : infoRow('Signature:',(insp.cert&&insp.cert.signedName)||'');
-  const certBlock=[
-    {text:'Report Certification',bold:true,fontSize:11,color:MID_BLUE,margin:[0,14,0,3],headlineLevel:1,
-     decoration:undefined},
+  // One unbreakable node: the cert never splits across pages, and its last element
+  // carries NO bottom margin — a trailing margin that lands exactly past the page
+  // boundary is what spawned the header/footer-only blank last page.
+  const certTbl=infoTable([
+    infoRow('QI Name:',C.qiName||''),
+    infoRow('Role / Credential:',C.roleCredential||''),
+    infoRow('SWT #:',`${C.swtNumber||''}   |   Expires: ${C.swtExpires||''}`),
+    infoRow('Organization:',C.organization||''),
+    sigRow,
+    infoRow('Date:',(insp.cert&&insp.cert.signedDate)||''),
+    infoRow('Supervising QI / QP:',C.supervisingQi||''),
+    infoRow('QP Signature:','')
+  ]);
+  certTbl.margin=[0,2,0,0];
+  const certBlock=[{unbreakable:true,stack:[
+    {text:'Report Certification',bold:true,fontSize:11,color:MID_BLUE,margin:[0,14,0,3]},
     {canvas:[{type:'line',x1:0,y1:0,x2:CONTENT_W,y2:0,lineWidth:0.8,lineColor:MID_BLUE}],margin:[0,0,0,5]},
     body(C.text||''),
     {text:'',margin:[0,0,0,4]},
-    infoTable([
-      infoRow('QI Name:',C.qiName||''),
-      infoRow('Role / Credential:',C.roleCredential||''),
-      infoRow('SWT #:',`${C.swtNumber||''}   |   Expires: ${C.swtExpires||''}`),
-      infoRow('Organization:',C.organization||''),
-      sigRow,
-      infoRow('Date:',(insp.cert&&insp.cert.signedDate)||''),
-      infoRow('Supervising QI / QP:',C.supervisingQi||''),
-      infoRow('QP Signature:','')
-    ])
-  ];
+    certTbl
+  ]}];
 
   const content=[
     {text:cfg.projectTitle||'',bold:true,fontSize:15,color:BLUE,alignment:'center',margin:[0,4,0,2]},
@@ -313,12 +327,12 @@ export async function swpppBuildPdf(insp,cfg,sig){
     h1('9.  General Notes / Additional Observations'),body(insp.notes||'None.'),
     h1('10.  Disturbance Sketches'),note(cfg.sketchesNote||''),
     ...(skMetaBody.length>1
-      ? [{table:{headerRows:1,dontBreakRows:true,widths:[pw(12),pw(18),'*'],body:skMetaBody},layout:hairLayout,margin:[0,2,0,4]}]
+      ? [{table:{headerRows:1,dontBreakRows:true,widths:cols(12,18),body:skMetaBody},layout:hairLayout,margin:[0,2,0,4]}]
       : [body('No sketches attached.')]),
-    ...(skItems.length?[{table:{widths:['*','*'],body:_imgPairRows(skItems)},layout:imgGridLayout,margin:[0,4,0,4]}]:[]),
+    ...(skItems.length?[{table:{dontBreakRows:true,widths:['*','*'],body:_imgPairRows(skItems)},layout:imgGridLayout,margin:[0,4,0,4]}]:[]),
     h1('11.  Photographic Documentation'),note(cfg.photosNote||''),
     ...(phItems.length
-      ? [{table:{widths:['*','*'],body:_imgPairRows(phItems)},layout:imgGridLayout,margin:[0,4,0,4]}]
+      ? [{table:{dontBreakRows:true,widths:['*','*'],body:_imgPairRows(phItems)},layout:imgGridLayout,margin:[0,4,0,4]}]
       : [body('No photographs attached.')]),
     ...certBlock
   ];

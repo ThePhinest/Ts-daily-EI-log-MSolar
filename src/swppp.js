@@ -1438,8 +1438,8 @@ async function swpppBuildDocx(insp,cfg){
   .sw-att-fields{flex:1;display:flex;flex-direction:column;gap:6px}
   .sw-att-fields input{width:100%;box-sizing:border-box}
   .sw-pick-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(90px,1fr));gap:8px;max-height:46vh;overflow-y:auto}
-  .sw-pick{position:relative;border:2px solid transparent;border-radius:8px;overflow:hidden;cursor:pointer;aspect-ratio:4/3}
-  .sw-pick img{width:100%;height:100%;object-fit:cover;display:block}
+  .sw-pick{position:relative;border:2px solid transparent;border-radius:8px;overflow:hidden;cursor:pointer;height:0;padding-bottom:75%;background:var(--s2,#1a2a38)}
+  .sw-pick img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
   .sw-pick.on{border-color:var(--amber)}
   .sw-pick.on::after{content:'✓';position:absolute;top:4px;right:4px;background:var(--amber);color:#000;border-radius:50%;width:18px;height:18px;font-size:12px;display:flex;align-items:center;justify-content:center}
   .sw-pick-tag{position:absolute;top:4px;left:4px;background:rgba(30,120,200,.9);color:#fff;font-family:var(--mono);font-size:8px;padding:1px 5px;border-radius:6px}
