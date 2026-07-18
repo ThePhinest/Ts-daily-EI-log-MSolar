@@ -2685,31 +2685,6 @@ async function mapTrackerSaveAdd(){
 //     mapbox-gl-draw routes touch taps through onTap, so taps bypassed snapping entirely.
 // Fix: define onTap to first recompute the snap from the tap's own lngLat, then route
 // through the SNAP-aware onClick (base.onClick) — never the inherited base onTap.
-// TEMP tripwire (Bug A: intermittent iOS line-tap offset) — REMOVE after diagnosis.
-// Computes the gap between the real finger position and where mapbox placed the point
-// (finger.clientX/Y vs rect.left/top + point.x/y). Normal taps land dead-on (gap ~0) and
-// are IGNORED — so normal use can't wash out the data. Only ACTUAL offset events (gap
-// > 8px = the bug) are recorded to Firestore _debug/drawoffsets, where they accumulate
-// and wait for us to read whenever it next strikes (no need to pull immediately).
-window._glDrawOffsets = window._glDrawOffsets || [];
-function _glLogDrawTap(e, kind){
-  try{
-    const oe = e && e.originalEvent;
-    const t = oe && ((oe.touches && oe.touches[0]) || (oe.changedTouches && oe.changedTouches[0]));
-    if(!t || !e.point || !_mapInstance) return;
-    const rect = _mapInstance.getContainer().getBoundingClientRect();
-    const dx = Math.round(t.clientX - (rect.left + e.point.x));
-    const dy = Math.round(t.clientY - (rect.top + e.point.y));
-    if(Math.abs(dx) <= 8 && Math.abs(dy) <= 8) return;   // landed where the finger was — normal, ignore
-    window._glDrawOffsets.push({
-      kind, when:new Date().toISOString(), dx, dy,
-      finger:{x:Math.round(t.clientX), y:Math.round(t.clientY)},
-      point:{x:Math.round(e.point.x), y:Math.round(e.point.y)},
-      rect:{top:Math.round(rect.top), left:Math.round(rect.left)},
-    });
-    if(window._udb) window._udb().collection('_debug').doc('drawoffsets').set({events: window._glDrawOffsets.slice(-25), updated: Date.now()}).catch(()=>{});
-  }catch(_){}
-}
 function _snapTouchMode(base,kind){
   const mode={...base};
   const recompute=function(state,e){
@@ -2740,7 +2715,7 @@ function _snapTouchMode(base,kind){
   };
   mode.onClick=function(state,e){ recompute.call(this,state,e); if(tryFinish.call(this,state,e)) return; return base.onClick.call(this,state,e); };
   // Route taps through the snap-aware onClick (NOT base.onTap, which is the non-snap base).
-  mode.onTap=function(state,e){ _glLogDrawTap(e,kind); recompute.call(this,state,e); if(tryFinish.call(this,state,e)) return; return base.onClick.call(this,state,e); };
+  mode.onTap=function(state,e){ recompute.call(this,state,e); if(tryFinish.call(this,state,e)) return; return base.onClick.call(this,state,e); };
   return mode;
 }
 

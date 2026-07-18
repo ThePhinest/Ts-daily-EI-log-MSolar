@@ -72,6 +72,12 @@ function _trCloudOk(pid){
     && typeof _currentUser !== 'undefined' && !!_currentUser;
 }
 
+// Entry ids whose sync push the rules denied this session — a doc we can never
+// land (e.g. legacy entry owned by an old uid) must not re-push on every
+// open/refocus forever. Session-scoped on purpose: a role/rules change should
+// get a fresh chance on next boot.
+const _trPushDenied = new Set();
+
 // Is this entry someone else's record? (Their doc is theirs — our visibility
 // toggles on it are personal view state and must never write to the cloud.)
 function _trForeign(entry){
@@ -399,13 +405,41 @@ async function trLoadFromFirestore(projectId){
       !e.ownerUid || e.ownerUid === uid || remoteIds.has(e.id));
     _trSaveRaw(pid, { entries: merged });
     // Push own local-only/newer entries to Firestore (recovery for silent write
-    // failures). Never push someone else's record back.
-    for(const e of merged){
-      if(e.ownerUid && e.ownerUid !== uid) continue;
+    // failures — offline field edits don't survive a reload, so a day-after boot
+    // can carry many deltas). Never push someone else's record back.
+    // BATCHED + detached: the old per-entry fire-and-forget loop flooded the SDK
+    // write stream on app open (resource-exhausted 7/18) and jammed every other
+    // write behind max backoff. Chunk size is kept small because each doc carries
+    // its full traced geometry as a JSON string — the constraint is request
+    // payload, not the 500-op batch cap.
+    const toPush = merged.filter(e => {
+      if(e.ownerUid && e.ownerUid !== uid) return false;
+      if(_trPushDenied.has(e.id)) return false;   // rules denied it this session — don't re-spam every refocus
       const rem = remote.find(r => r.id === e.id);
-      if(!rem || (e.updatedAt||0) > (rem.updatedAt||0)){
-        ref.doc(e.id).set(_trToFs(_trStamp(e))).catch(err => console.warn('trSync push:', err.message));
-      }
+      return !rem || (e.updatedAt||0) > (rem.updatedAt||0);
+    });
+    if(toPush.length){
+      (async () => {
+        for(let i = 0; i < toPush.length; i += 20){
+          const chunk = toPush.slice(i, i + 20);
+          try{
+            const batch = db.batch();
+            chunk.forEach(e => batch.set(ref.doc(e.id), _trToFs(_trStamp(e))));
+            await batch.commit();
+          }catch(err){
+            // Batch commits are atomic — one denied doc fails its whole chunk.
+            // Retry per-doc (sequential, awaited) so the good ones still land,
+            // and remember denied ids so they never re-fire this session.
+            for(const e of chunk){
+              try{ await ref.doc(e.id).set(_trToFs(_trStamp(e))); }
+              catch(err2){
+                if(err2 && err2.code === 'permission-denied') _trPushDenied.add(e.id);
+                console.warn('trSync push:', e.id, err2.message);
+              }
+            }
+          }
+        }
+      })().catch(err => console.warn('trSync push loop:', err.message));
     }
   } catch(e){
     console.warn('trLoadFromFirestore:', e.message);
