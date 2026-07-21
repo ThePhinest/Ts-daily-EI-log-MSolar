@@ -2690,6 +2690,17 @@ function _snapTouchMode(base,kind){
   const recompute=function(state,e){
     if(e&&e.lngLat&&typeof base.onMouseMove==='function') base.onMouseMove.call(this,state,e);
   };
+  // Stash the live draw state so the bar's ↩ undo button (#38) can pop the last
+  // placed vertex without restarting the drawing. Cleared when the mode stops.
+  mode.onSetup=function(opts){
+    const state=base.onSetup.call(this,opts);
+    _activeDrawRef={state,kind};
+    return state;
+  };
+  mode.onStop=function(state){
+    if(_activeDrawRef&&_activeDrawRef.state===state) _activeDrawRef=null;
+    if(typeof base.onStop==='function') return base.onStop.call(this,state);
+  };
   // A finger tap rarely lands dead-on the tiny vertex hit-target, so mapbox-gl-draw's
   // native "tap first vertex to close / last vertex to finish" never fires on touch — and
   // the snap onClick just drops another vertex (polygons never close, lines never finish).
@@ -2718,6 +2729,33 @@ function _snapTouchMode(base,kind){
   mode.onTap=function(state,e){ recompute.call(this,state,e); if(tryFinish.call(this,state,e)) return; return base.onClick.call(this,state,e); };
   return mode;
 }
+
+// ── ↩ Undo last point (#38) ──
+// Pops the most recent placed vertex of the in-progress polygon/line so a
+// mis-tap doesn't force starting the drawing over. The draw modes keep the
+// placed count in state.currentVertexPosition; the coordinate AT that index is
+// the cursor-follow preview, so the last committed vertex is index n-1.
+let _activeDrawRef=null;
+function mapDrawUndoPoint(){
+  const ref=_activeDrawRef;
+  if(!ref||ref.kind==='point') return;
+  try{
+    const state=ref.state;
+    const feat=ref.kind==='polygon'?state.polygon:state.line;
+    const n=state.currentVertexPosition|0;
+    if(!feat||n<1) return;
+    // Direct splice, NOT feature.removeCoordinate — gl-draw drops a polygon ring
+    // entirely when it shrinks below 3 coords, which would kill an in-progress
+    // shape on an early undo. The ring is [placed..., cursor-follow]; the last
+    // placed vertex is index n-1 and the cursor coord shifts down into its slot.
+    const coords=ref.kind==='polygon'?(feat.coordinates&&feat.coordinates[0]):feat.coordinates;
+    if(!Array.isArray(coords)||coords.length<n) return;
+    coords.splice(n-1,1);
+    state.currentVertexPosition=n-1;
+    feat.changed();
+  }catch(err){ console.warn('mapDrawUndoPoint failed:',err); }
+}
+window.mapDrawUndoPoint=mapDrawUndoPoint;
 
 function mapActivateDrawMode(categoryId){
   mapCloseCategorySheet();
@@ -3682,9 +3720,10 @@ function _addCategoryLineLayer(srcId,cat){
     'dotted',['literal',_TC_DASH_ARRAYS.dotted],
     'dash-dot',['literal',_TC_DASH_ARRAYS['dash-dot']],
     ['literal',[1,0]]];
-  // _netFill twins carry only the clipped fill — outlines come from the base feature.
+  // Net-clipped entries suppress the full-extent base outline (_noLine) — their
+  // border renders from the net twin so it traces only the visible region (#41).
   _mapInstance.addLayer({id:srcId+'-line',type:'line',source:srcId,
-    filter:['all',['any',['==',['geometry-type'],'Polygon'],['==',['geometry-type'],'LineString']],['!=',['get','_netFill'],true]],paint});
+    filter:['all',['any',['==',['geometry-type'],'Polygon'],['==',['geometry-type'],'LineString']],['!=',['get','_noLine'],true]],paint});
 }
 
 function _addCategoryCircleLayer(srcId,cat){
@@ -3734,11 +3773,11 @@ function mapRefreshDateLabels(){
       const cid=e.categoryId||e.category;
       if(_tcLayerVisible[cid]===false) return false;
       const isOpenTemp=e.temporary&&e.tempStatus!=='resolved';
-      if(isOpenTemp&&!_flagsVisible()) return false; // FAB flag toggle hides these
+      if(isOpenTemp&&!_flagsEffVisible()) return false; // FAB toggle (or capture-bar override) hides these
       // ESC-status capture framing: labels follow the same filter as the drawings —
-      // selected categories only, no flags, no Removed-state entries.
+      // selected categories only, flags per the capture toggle, no Removed-state entries.
       if(_escCapFilter){
-        if(!_escCapFilter.cids.has(cid)||isOpenTemp) return false;
+        if(!_escCapFilter.cids.has(cid)||(isOpenTemp&&!_capFlagsShow)) return false;
         const st=(typeof tcEntryState==='function')?tcEntryState(e,cid,pid):null;
         if(st&&(st.isPlanned||/remov/i.test(st.label||''))) return false;
         if(!st&&e.entryType==='planned') return false;
@@ -3947,7 +3986,9 @@ async function _compositeBrandWordmark(blob, legendCat, pid, scopeEntryId, opts)
             if(typeof trGetEntriesForProject==='function'){
               let inst=trGetEntriesForProject(pid).filter(e=>(e.categoryId===legendCat)&&e.entryType!=='planned'&&!e.temporary&&!e.deletedAt);
               // Open repair flags baked into the legend too — the punchlist at a glance.
-              let flags=trGetEntriesForProject(pid).filter(e=>(e.categoryId===legendCat)&&e.temporary&&e.tempStatus!=='resolved'&&!e.deletedAt);
+              // Honors the capture-bar flags toggle (and the FAB pref) so a flags-hidden
+              // shot doesn't carry a 🚩 row its map can't show.
+              let flags=_flagsEffVisible()?trGetEntriesForProject(pid).filter(e=>(e.categoryId===legendCat)&&e.temporary&&e.tempStatus!=='resolved'&&!e.deletedAt):[];
               // Scope to ONE drawing/area when requested: the planned area + its layers.
               if(scopeEntryId && typeof trGetEntry==='function'){
                 const se=trGetEntry(scopeEntryId,pid);
@@ -4235,12 +4276,18 @@ function _showCaptureBar(onGo){
   bar.style.cssText='position:fixed;left:50%;transform:translateX(-50%);bottom:calc(96px + env(safe-area-inset-bottom));z-index:9600;background:rgba(15,31,46,0.96);border:1px solid var(--amber,#C9A84C);border-radius:12px;padding:10px 12px;display:flex;flex-direction:column;gap:8px;box-shadow:0 4px 18px rgba(0,0,0,.55);max-width:90vw';
   bar.innerHTML=`
     <div style="font-family:var(--mono);font-size:11px;color:#dce8f4;text-align:center;line-height:1.4">📸 Frame your shot — pan &amp; zoom the map, then Capture</div>
+    <button id="_gl-cap-flags" style="align-self:center;background:var(--s2,#1a2a38);border:1px solid var(--border,#334);color:var(--muted,#aaa);padding:5px 12px;border-radius:12px;font-family:var(--mono);font-size:11px;cursor:pointer"></button>
     <div style="display:flex;gap:8px">
       <button id="_gl-cap-cancel" style="flex:1;background:var(--s2,#1a2a38);border:1px solid var(--border,#334);color:var(--muted,#aaa);padding:9px;border-radius:8px;font-family:var(--mono);font-size:12px;cursor:pointer">Cancel</button>
       <button id="_gl-cap-go" style="flex:2;background:var(--amber,#C9A84C);border:none;color:#111;padding:9px;border-radius:8px;font-family:var(--mono);font-size:12px;font-weight:700;cursor:pointer">📷 Capture</button>
     </div>`;
   document.body.appendChild(bar);
-  document.getElementById('_gl-cap-cancel').onclick=_hideCaptureBar;
+  _capFlagsArm();
+  _capFlagsPaintBtn();
+  document.getElementById('_gl-cap-flags').onclick=_capFlagsToggle;
+  document.getElementById('_gl-cap-cancel').onclick=()=>{ _hideCaptureBar(); _capFlagsDisarm(); };
+  // Capture fns disarm the flags override themselves AFTER the canvas + legend are
+  // composited, so the shot reflects exactly what was framed.
   document.getElementById('_gl-cap-go').onclick=()=>{ _hideCaptureBar(); (typeof onGo==='function'?onGo:()=>_doCaptureForEntry(_captureEntryId))(); };
 }
 function _hideCaptureBar(){ const b=document.getElementById('_gl-capture-bar'); if(b) b.remove(); }
@@ -4251,15 +4298,16 @@ async function _doCaptureForEntry(entryId, scope){
   if(!_mapInstance) return;
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
   const entry=(typeof trGetEntry==='function')?trGetEntry(entryId,pid):null;
-  if(!entry){ console.warn('_doCaptureForEntry: entry not found',entryId); return; }
+  if(!entry){ _capFlagsDisarm(); console.warn('_doCaptureForEntry: entry not found',entryId); return; }
   _showCaptureToast('📷 Capturing…');
   // Let the toast paint and the popup/bar fully clear before grabbing the canvas.
   await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
   const canvas=_mapInstance.getCanvas();
   const today=new Date().toLocaleDateString('en-CA');
   const rawBlob=await new Promise(res=>canvas.toBlob(res,'image/png'));
-  if(!rawBlob){ _hideCaptureToast(); console.warn('_doCaptureForEntry: canvas returned null'); return; }
+  if(!rawBlob){ _hideCaptureToast(); _capFlagsDisarm(); console.warn('_doCaptureForEntry: canvas returned null'); return; }
   const branded=await _compositeBrandWordmark(rawBlob, entry.categoryId, pid, scope==='drawing'?entryId:null);
+  _capFlagsDisarm();
   if(typeof phSaveCapturedImage!=='function'){ _hideCaptureToast(); return; }
   _showCaptureToast('☁️ Saving…');
   const catName=(typeof tcGetName==='function')?tcGetName(entry.categoryId,pid):(entry.categoryName||'Drawing');
@@ -4287,8 +4335,9 @@ async function _doCaptureMapView(){
   const canvas=_mapInstance.getCanvas();
   const today=new Date().toLocaleDateString('en-CA');
   const rawBlob=await new Promise(res=>canvas.toBlob(res,'image/png'));
-  if(!rawBlob){ _hideCaptureToast(); console.warn('_doCaptureMapView: canvas returned null'); return; }
+  if(!rawBlob){ _hideCaptureToast(); _capFlagsDisarm(); console.warn('_doCaptureMapView: canvas returned null'); return; }
   const branded=await _compositeBrandWordmark(rawBlob);
+  _capFlagsDisarm();
   if(typeof phSaveCapturedImage!=='function'){ _hideCaptureToast(); return; }
   _showCaptureToast('☁️ Saving…');
   const prefill=`Site map · ${_fmtLabelDate(today)}`;
@@ -4307,13 +4356,53 @@ async function _doCaptureMapView(){
 // untouched — the user controls that context via the layers panel.
 let _escCapFilter=null;   // {cids:Set<string>} — armed only while framing/capturing
 
+// ── Flags-in-capture toggle (#36) ──
+// null = no capture in progress (map follows the FAB 🚩 toggle as usual).
+// true/false = a capture bar is up and the user chose to show/hide repair flags
+// in the shot; the map re-renders live so framing is WYSIWYG. Last choice
+// remembered per project; defaults to hidden (Tim: captures shouldn't show flags).
+let _capFlagsShow=null;
+
+function _capFlagsArm(){
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  let v='0';
+  try{ v=localStorage.getItem('gl_cap_flags::'+pid)||'0'; }catch{}
+  _capFlagsShow=(v==='1');
+  _capFlagsRefresh();
+}
+function _capFlagsDisarm(){
+  if(_capFlagsShow===null) return;
+  _capFlagsShow=null;
+  _capFlagsRefresh();
+}
+function _capFlagsToggle(){
+  if(_capFlagsShow===null) return;
+  _capFlagsShow=!_capFlagsShow;
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  try{ localStorage.setItem('gl_cap_flags::'+pid,_capFlagsShow?'1':'0'); }catch{}
+  _capFlagsRefresh();
+  _capFlagsPaintBtn();
+}
+function _capFlagsRefresh(){
+  if(typeof mapRenderTrackerLayers==='function') mapRenderTrackerLayers();
+  if(typeof mapRefreshDateLabels==='function') mapRefreshDateLabels();
+}
+function _capFlagsPaintBtn(){
+  const b=document.getElementById('_gl-cap-flags');
+  if(!b) return;
+  b.textContent=_capFlagsShow?'🚩 Flags: shown':'🚩 Flags: hidden';
+  b.style.background=_capFlagsShow?'rgba(201,168,76,0.25)':'var(--s2,#1a2a38)';
+  b.style.borderColor=_capFlagsShow?'var(--amber,#C9A84C)':'var(--border,#334)';
+  b.style.color=_capFlagsShow?'var(--amber,#C9A84C)':'var(--muted,#aaa)';
+}
+
 function _escCapEntries(list,cat,pid){
   if(!_escCapFilter) return list;
   if(!_escCapFilter.cids.has(cat.id)) return [];
   // Installed work only (Tim 7/11): plans hidden too — a partially-drawn plan is a
   // misleading baseline, and unexplained faint linework confused the deliverable.
   return list.filter(e=>{
-    if(e.temporary&&e.tempStatus!=='resolved') return false;
+    if(e.temporary&&e.tempStatus!=='resolved') return _capFlagsShow===true; // capture-bar flags toggle
     const st=(typeof tcEntryState==='function')?tcEntryState(e,cat,pid):null;
     const planned=st?!!st.isPlanned:(e.entryType==='planned');
     if(planned) return false;
@@ -4387,7 +4476,7 @@ function mapCaptureEscStatus(){
       _showCaptureBar(()=>_doCaptureEsc(sel));
       // The shared capture bar's Cancel must also restore the filtered view.
       const cb=document.getElementById('_gl-cap-cancel');
-      if(cb) cb.onclick=()=>{ _hideCaptureBar(); _escCapClear(); };
+      if(cb) cb.onclick=()=>{ _hideCaptureBar(); _capFlagsShow=null; _escCapClear(); };
     };
   };
   render();
@@ -4403,8 +4492,9 @@ async function _doCaptureEsc(cids){
   const canvas=_mapInstance.getCanvas();
   const today=new Date().toLocaleDateString('en-CA');
   const rawBlob=await new Promise(res=>canvas.toBlob(res,'image/png'));
-  if(!rawBlob){ _hideCaptureToast(); _escCapClear(); console.warn('_doCaptureEsc: canvas returned null'); return; }
+  if(!rawBlob){ _hideCaptureToast(); _capFlagsShow=null; _escCapClear(); console.warn('_doCaptureEsc: canvas returned null'); return; }
   const branded=await _compositeBrandWordmark(rawBlob,null,pid,null,{escCids:cids});
+  _capFlagsShow=null; // _escCapClear's re-render restores the normal view
   if(typeof phSaveCapturedImage!=='function'){ _hideCaptureToast(); _escCapClear(); return; }
   _showCaptureToast('☁️ Saving…');
   const prefill=`ESC installation status · ${_fmtLabelDate(today)}`;
@@ -4641,7 +4731,7 @@ function mapRenderTrackerLayers(){
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
   // Repair flags honor the FAB visibility toggle (open temporaries only — resolved
   // ones are archived and never reach the map anyway).
-  const _flagsOn=_flagsVisible();
+  const _flagsOn=_flagsEffVisible();
   const entries=(typeof trGetEntriesForProject==='function')?trGetEntriesForProject(pid).filter(e=>!e.deletedFromMap&&!e.archivedFromMap&&(_flagsOn||!(e.temporary&&e.tempStatus!=='resolved'))):[];
   const cats=_sortCatsByOrder((typeof tcGetCategories==='function')?tcGetCategories(pid):[],pid);
 
@@ -4663,10 +4753,11 @@ function mapRenderTrackerLayers(){
     const catEntries=visible?_escCapEntries(byCategory[cat.id],cat,_rtPid):[];
     // Running-mode categories (SWPPP disturbance): later-drawn work covers earlier
     // work, so stacked translucent fills alpha-blend (yellow over red reads orange —
-    // colliding with a real orange state). Render fills from the NET geometry (each
-    // drawing minus later drawings, same chronological clip as the totals) so every
-    // overlap region shows ONLY the top drawing's color; outlines keep the original
-    // drawn extent for context. Planned entries and open repair flags aren't clipped.
+    // colliding with a real orange state). Render fills AND outlines from the NET
+    // geometry (each drawing minus later drawings, same chronological clip as the
+    // totals) so every overlap region shows ONLY the top drawing's color and no
+    // covered border cuts through it (#41). Planned entries and open repair flags
+    // aren't clipped.
     const _mode=(typeof tcProgressMode==='function')?tcProgressMode(cat,_rtPid):'';
     let _netGeoms=null;
     if((_mode==='running-balance'||_mode==='running-total')&&typeof glEntryNetGeoms==='function'){
@@ -4689,10 +4780,14 @@ function mapRenderTrackerLayers(){
       const stateStyle=_openTemp?'solid':((st&&st.style)||cat.lineStyle||'solid');
       const props={id:e.id,categoryId:e.categoryId||e.category,categoryName:e.categoryName||e.category,date:e.date,acres:e.acres,measurementValue:e.measurementValue??null,measurementUnit:e.measurementUnit||null,notes:e.notes,location:e.location,phase:e.phase||null,method:e.method||null,status:e.status||null,contractor:e.contractor||null,entryType:e.entryType||'installed',state:e.state||null,stateColor,stateStyle,faint,temporary:!!(e.temporary&&e.tempStatus!=='resolved')};
       const base={type:'Feature',id:e.id,properties:props,geometry:e.geometry};
-      // Net-clipped fill twin: base feature keeps the full outline (line layer),
-      // the twin carries the clipped fill. Fully-covered drawings get no fill.
+      // Net-clipped twin: carries BOTH the clipped fill and the clipped outline
+      // (#41 — Tim: covered stretches of an older drawing's border must not cut
+      // through the top state's fill). The full-extent base feature renders
+      // nothing in running categories; a fully-covered drawing disappears from
+      // the map entirely (still in the tracker log) and the tap target is the
+      // visible region only.
       if(_netGeoms&&Object.prototype.hasOwnProperty.call(_netGeoms,e.id)){
-        base.properties=Object.assign({},props,{_noFill:true});
+        base.properties=Object.assign({},props,{_noFill:true,_noLine:true});
         const net=_netGeoms[e.id];
         if(!net) return [base];
         return [base,{type:'Feature',id:e.id,properties:Object.assign({},props,{_netFill:true}),geometry:net}];
@@ -4965,6 +5060,11 @@ window.mapShareTrackerEntry=mapShareTrackerEntry;
 // tracker drawing (silt fence, disturbance, seeding…).
 
 // FAB visibility toggle for flags — tiny per-project pref, localStorage tier.
+// Effective flag visibility: a live capture bar's flags toggle overrides the
+// FAB preference (WYSIWYG framing); otherwise the FAB toggle governs.
+function _flagsEffVisible(){
+  return _capFlagsShow!==null ? _capFlagsShow : _flagsVisible();
+}
 function _flagsVisible(){
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
   try{ return localStorage.getItem('gl_flags_vis::'+pid)!=='0'; }catch{ return true; }
