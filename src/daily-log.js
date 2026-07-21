@@ -6,13 +6,17 @@
 let _ldPending = null;
 let _dnCurrentDate = null;
 const DN_KEY = 'pei_day_notes';
+// SPDES post-storm inspection trigger (GP-0-25-001) — the number the Rain
+// Outlook strip and forecast-line ⚠ flags key on. One constant so a permit
+// change (e.g. the open 0.25" question) is a one-line flip.
+const SWPPP_RAIN_TRIGGER_IN = 0.5;
 
 // ── Collect all form state (for download/archive) ──
 function collectFormState(){
   // Simple fields
   const fields=['projectName','reportDate','preparedBy','org','activePhase','contractor','reviewedBy',
     'tempAM','tempPM','wind','precip','soilCond','upcomingWeather',
-    'wxSunrise','wxSunset','wxDaylight',
+    'wxSunrise','wxSunset','wxDaylight','wxRainWeek',
     'inspSummary','agencyInsp','landowner','rte','nonCompliance',
     'genComms','lookahead','lookaheadWeather',
     'p-timeIn','p-timeOut','p-break','p-odoStart','p-odoEnd','p-notes'];
@@ -86,6 +90,7 @@ function restoreFormState(state){
     const vEl=document.getElementById(visibleId);
     if(hv && vEl) vEl.textContent=hv;
   });
+  _renderRainWeek(document.getElementById('wxRainWeek')?.value||'');
   requestAnimationFrame(()=>requestAnimationFrame(()=>document.querySelectorAll('textarea.auto-expand').forEach(autoResize)));
   updateReportDateDow();
 }
@@ -221,6 +226,9 @@ function _resetFormCore(){
   document.getElementById('p-hours').textContent='— hrs';
   const pBreakEl=document.getElementById('p-break');if(pBreakEl)pBreakEl.value='0';
   document.getElementById('reportDate').value=localToday();
+  const rwEl=document.getElementById('wxRainWeek');
+  if(rwEl) rwEl.value='';
+  _renderRainWeek('');
   updateReportDateDow();
   applyProjectConfig();
   try{ localStorage.removeItem('msf_autosave'); }catch{}
@@ -317,7 +325,7 @@ async function _doWeatherFetch(forecastOffset){
           `&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,windspeed_10m_max,windgusts_10m_max,winddirection_10m_dominant,weathercode,sunrise,sunset`+
           `&hourly=precipitation,windspeed_10m,weathercode,soil_moisture_0_to_7cm,soil_temperature_0_to_7cm`+
           `&past_days=1&current_weather=true`+
-          `&temperature_unit=fahrenheit&windspeed_unit=mph&precipitation_unit=inch&timezone=auto&forecast_days=4`;
+          `&temperature_unit=fahrenheit&windspeed_unit=mph&precipitation_unit=inch&timezone=auto&forecast_days=8`;
         const res=await fetch(url);
         if(!res.ok) throw new Error('HTTP '+res.status);
         const data=await res.json();
@@ -537,7 +545,7 @@ function _applyWeatherData(data,forecastOffset){
     // ≥0.5" is the SPDES post-storm inspection trigger, so flag it loudly.
     const tmrRain = d.precipitation_sum?.[TMR];
     const rainTail = (typeof tmrRain === 'number')
-      ? `, Expected rain ${tmrRain.toFixed(2)}"${tmrRain >= 0.5 ? ' ⚠ ≥0.5" SWPPP trigger' : ''}`
+      ? `, Expected rain ${tmrRain.toFixed(2)}"${tmrRain >= SWPPP_RAIN_TRIGGER_IN ? ' ⚠ ≥0.5" SWPPP trigger' : ''}`
       : '';
     // Label with the real weekday when the forecast isn't literally tomorrow
     // (Friday's "use Monday" pick should say "Monday:", not "Tomorrow:").
@@ -556,6 +564,20 @@ function _applyWeatherData(data,forecastOffset){
     }
   }
 
+  // ── Rain Outlook: expected rain by day, today + next 6, persisted like the
+  // daylight hidden inputs so an archived day reloads its own snapshot ──
+  if(d.precipitation_sum){
+    const week=[];
+    for(let i=TODAY;i<Math.min(TODAY+7,d.time.length);i++){
+      const v=d.precipitation_sum[i];
+      week.push({d:d.time[i], r:(typeof v==='number')?+v.toFixed(2):null});
+    }
+    const json=JSON.stringify(week);
+    const rwHidden=document.getElementById('wxRainWeek');
+    if(rwHidden) rwHidden.value=json;
+    _renderRainWeek(json);
+  }
+
   // Any DRAFT QI inspection for this report date picks up the fresh weather
   // (completed/locked reports never change).
   if(typeof swpppSyncWeather === 'function'){
@@ -565,6 +587,34 @@ function _applyWeatherData(data,forecastOffset){
 
   // Trigger autosave
   debouncedAutoSave();
+}
+
+// ── Rain Outlook strip: renders 7 day-tiles from the persisted JSON in
+// #wxRainWeek. A day at/over the SPDES trigger gets the amber ⚠ tile; empty
+// or unparseable data hides the whole box (fresh day before any fetch).
+function _renderRainWeek(json){
+  const box=document.getElementById('wx-rainweek-box');
+  const row=document.getElementById('wx-rainweek');
+  if(!box||!row) return;
+  let week=null;
+  try{ week=JSON.parse(json||'null'); }catch(e){}
+  if(!Array.isArray(week)||!week.length){ box.classList.remove('vis'); row.innerHTML=''; return; }
+  const todayStr=localToday();
+  row.innerHTML=week.map(w=>{
+    const dt=new Date(w.d+'T12:00:00');
+    const dow=(w.d===todayStr)?'Today':dt.toLocaleDateString('en-US',{weekday:'short'});
+    const md=(dt.getMonth()+1)+'/'+dt.getDate();
+    const amt=(typeof w.r==='number')?w.r.toFixed(2)+'"':'—';
+    const trig=(typeof w.r==='number')&&w.r>=SWPPP_RAIN_TRIGGER_IN;
+    const dry=!trig&&(!w.r||w.r<0.01);
+    return `<div class="wx-rain-tile${trig?' trig':dry?' dry':''}">`+
+      `<span class="wx-rain-dow">${dow}</span>`+
+      `<span class="wx-rain-date">${md}</span>`+
+      `<span class="wx-rain-amt">${amt}</span>`+
+      (trig?`<span class="wx-rain-flag">⚠ ≥${SWPPP_RAIN_TRIGGER_IN}"</span>`:'')+
+    `</div>`;
+  }).join('');
+  box.classList.add('vis');
 }
 
 function _wmoToDesc(code){

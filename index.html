@@ -606,6 +606,21 @@ button:disabled,button[disabled]{opacity:.45;cursor:not-allowed}
 .ph-day-label.ph-trash::before{background:linear-gradient(180deg,#ff8c80,var(--red))}
 .ph-day-label.ph-trash::after{background:linear-gradient(90deg,rgba(231,76,60,.45),rgba(231,76,60,.08) 70%,transparent)}
 .ph-day-count{color:var(--muted2);font-size:12px;letter-spacing:.08em;font-weight:600}
+/* ── RAIN OUTLOOK — 7-day strip in the weather card (gold-tick + fading-line label = photos-page pattern) ── */
+.wx-rain-box{grid-column:1 / -1;display:none;flex-direction:column;gap:8px;padding:11px 12px;background:rgba(0,107,117,0.06);border:1px solid var(--border2);border-radius:5px}
+.wx-rain-box.vis{display:flex}
+.wx-rain-label{display:flex;align-items:center;gap:8px;font-family:var(--cond);font-size:11.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted2);font-weight:600}
+.wx-rain-label::before{content:'';width:4px;height:13px;border-radius:2px;background:linear-gradient(180deg,var(--amber2),var(--amber));flex:none}
+.wx-rain-label::after{content:'';flex:1 1 12px;min-width:12px;height:1px;background:linear-gradient(90deg,rgba(201,168,76,.5),rgba(201,168,76,.08) 70%,transparent)}
+.wx-rain-row{display:grid;grid-template-columns:repeat(7,1fr);gap:5px}
+.wx-rain-tile{display:flex;flex-direction:column;align-items:center;gap:2px;padding:7px 2px 6px;border:1px solid var(--border2);border-radius:5px;background:var(--s1);min-width:0}
+.wx-rain-dow{font-family:var(--cond);font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted2)}
+.wx-rain-date{font-family:var(--mono);font-size:9px;color:var(--muted)}
+.wx-rain-amt{font-family:var(--mono);font-size:11.5px;color:var(--text);margin-top:2px}
+.wx-rain-tile.dry .wx-rain-amt{color:var(--muted)}
+.wx-rain-tile.trig{border-color:var(--amber);background:var(--amber-bg)}
+.wx-rain-tile.trig .wx-rain-amt{color:var(--amber);font-weight:700}
+.wx-rain-flag{font-size:9px;line-height:1;margin-top:1px}
 .ph-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px}
 @media(max-width:400px){.ph-grid{grid-template-columns:repeat(2,1fr)}}
 .ph-thumb{position:relative;border-radius:var(--r);overflow:hidden;background:var(--s2);border:1px solid var(--border);cursor:pointer;aspect-ratio:4/3}
@@ -1750,6 +1765,11 @@ body.is-native select { font-size: 16px !important; }
           <input type="hidden" id="wxSunrise">
           <input type="hidden" id="wxSunset">
           <input type="hidden" id="wxDaylight">
+        </div>
+        <div class="wx-rain-box" id="wx-rainweek-box">
+          <div class="wx-rain-label">🌧 Rain Outlook — 7 Day</div>
+          <div class="wx-rain-row" id="wx-rainweek"></div>
+          <input type="hidden" id="wxRainWeek">
         </div>
         <div class="field span2">
           <label>Soil Conditions</label>
