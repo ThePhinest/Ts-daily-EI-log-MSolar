@@ -322,7 +322,7 @@ async function _doWeatherFetch(forecastOffset){
       const lon=pos.coords.longitude.toFixed(4);
       try{
         const url=`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}`+
-          `&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,windspeed_10m_max,windgusts_10m_max,winddirection_10m_dominant,weathercode,sunrise,sunset`+
+          `&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,snowfall_sum,windspeed_10m_max,windgusts_10m_max,winddirection_10m_dominant,weathercode,sunrise,sunset`+
           `&hourly=precipitation,windspeed_10m,weathercode,soil_moisture_0_to_7cm,soil_temperature_0_to_7cm`+
           `&past_days=1&current_weather=true`+
           `&temperature_unit=fahrenheit&windspeed_unit=mph&precipitation_unit=inch&timezone=auto&forecast_days=8`;
@@ -570,7 +570,9 @@ function _applyWeatherData(data,forecastOffset){
     const week=[];
     for(let i=TODAY;i<Math.min(TODAY+7,d.time.length);i++){
       const v=d.precipitation_sum[i];
-      week.push({d:d.time[i], r:(typeof v==='number')?+v.toFixed(2):null});
+      const sn=d.snowfall_sum?.[i]; // actual snow inches (precipitation_unit=inch applies)
+      week.push({d:d.time[i], r:(typeof v==='number')?+v.toFixed(2):null,
+        s:(typeof sn==='number'&&sn>0)?+sn.toFixed(1):0});
     }
     const json=JSON.stringify(week);
     const rwHidden=document.getElementById('wxRainWeek');
@@ -604,10 +606,16 @@ function _renderRainWeek(json){
     const dt=new Date(w.d+'T12:00:00');
     const dow=(w.d===todayStr)?'Today':dt.toLocaleDateString('en-US',{weekday:'short'});
     const md=(dt.getMonth()+1)+'/'+dt.getDate();
-    const amt=(typeof w.r==='number')?w.r.toFixed(2)+'"':'—';
+    // Snow day: show ACTUAL forecast snow inches in place of the liquid figure
+    // (Tim: both at once is confusing). The ⚠ trigger stays keyed on liquid
+    // equivalent (w.r) — the SPDES trigger is a rainfall concept, so a heavy
+    // mixed/melt day still flags even while the tile reads as snow.
+    const snow=(typeof w.s==='number')&&w.s>=0.1;
+    const amt=snow?('❄ '+w.s.toFixed(1)+'"')
+      :((typeof w.r==='number')?w.r.toFixed(2)+'"':'—');
     const trig=(typeof w.r==='number')&&w.r>=SWPPP_RAIN_TRIGGER_IN;
-    const dry=!trig&&(!w.r||w.r<0.01);
-    return `<div class="wx-rain-tile${trig?' trig':dry?' dry':''}">`+
+    const dry=!trig&&!snow&&(!w.r||w.r<0.01);
+    return `<div class="wx-rain-tile${trig?' trig':snow?' snow':dry?' dry':''}">`+
       `<span class="wx-rain-dow">${dow}</span>`+
       `<span class="wx-rain-date">${md}</span>`+
       `<span class="wx-rain-amt">${amt}</span>`+
