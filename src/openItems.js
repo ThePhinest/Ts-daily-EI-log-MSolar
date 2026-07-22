@@ -487,6 +487,18 @@ function oiPinFlag(flagId){
   if(typeof window.clRenderPunchlist==='function'){ try{ window.clRenderPunchlist(); }catch{} }
 }
 
+function oiUnpinFlag(flagId){
+  const it=oiFindBySource('flag',flagId);
+  if(!it || it.deleted) return;
+  it.deleted=true;
+  if(_oiExpanded===it.id) _oiExpanded=null;
+  _oiTouch(it);
+  oiRender();
+  _oiNotifSync();
+  window.glHaptic && window.glHaptic.light && window.glHaptic.light();
+  if(typeof window.clRenderPunchlist==='function'){ try{ window.clRenderPunchlist(); }catch{} }
+}
+
 // Idempotent reconcile pass — mirrors follow their sources. Called from
 // oiLoadForProject, clSave, and clRenderPunchlist (the flag-lifecycle choke
 // point). Never tombstones on a missing flag: an empty tracker list may just
@@ -653,6 +665,7 @@ window.oiResolvedForReport = oiResolvedForReport;
 window.oiSettingsInit = oiSettingsInit;
 window.oiDigestChanged = oiDigestChanged;
 window.oiPinFlag = oiPinFlag;
+window.oiUnpinFlag = oiUnpinFlag;
 window.oiFlagPinned = oiFlagPinned;
 window.oiSyncSources = oiSyncSources;
 window.oiRainSync = oiRainSync;
