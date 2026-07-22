@@ -109,6 +109,7 @@ async function oiLoadForProject(){
     oiRender();
     _oiFlush();
   }catch(e){ console.warn('openItems load failed:', e.message); }
+  oiSyncSources();
   _oiNotifSync();
 }
 
@@ -181,7 +182,10 @@ function oiFieldChange(id, field, value){
   else if(field==='dueDate'){ it.dueDate=value||''; }
   else if(field==='remindAt'){ it.remindAt=value||''; }
   _oiTouch(it);
-  oiRender();
+  // NO re-render here — iOS fires `change` on the first tap inside a date /
+  // datetime picker, and re-rendering destroys the input mid-interaction,
+  // slamming the picker shut (Tim, 7/22). The input already shows the new
+  // value; chips/labels catch up on the next render (row close, resolve, sync).
   if(field==='remindAt') _oiNotifSync();
 }
 
@@ -201,6 +205,13 @@ function oiDelete(id){
 function oiResolve(id){
   const it=_oiItems.find(x=>x.id===id);
   if(!it || it.status!=='open') return;
+  // Flag-born items route into the flag's own Fix flow (one source of truth —
+  // its note + history land on the punchlist); the sync pass then resolves
+  // this item automatically off the fixed flag.
+  if(it.source==='flag' && typeof window.mapResolveTemporary==='function'){
+    window.mapResolveTemporary(it.sourceRef);
+    return;
+  }
   const ov=document.createElement('div');
   ov.className='modal-overlay';
   ov.style.cssText='z-index:5000';
@@ -226,6 +237,17 @@ function oiResolve(id){
     ov.remove();
     _oiExpanded=null;
     _oiTouch(it);
+    // Compliance-born: push the resolution back to the Compliance Log entry
+    // so the two never diverge (status + dateResolved only — corrective text
+    // stays the entry's own).
+    if(it.source==='cl' && typeof window.clGetEntries==='function'){
+      const e=window.clGetEntries().find(x=>x.id===it.sourceRef);
+      if(e && e.status!=='Resolved'){
+        e.status='Resolved'; e.dateResolved=_oiToday();
+        if(typeof window.clSave==='function') window.clSave();
+        if(typeof window.clRender==='function'){ try{ window.clRender(); }catch{} }
+      }
+    }
     oiRender();
     _oiNotifSync();
     window.glHaptic && window.glHaptic.success && window.glHaptic.success();
@@ -238,6 +260,20 @@ function oiReopen(id){
   it.status='open';
   it.resolvedDate=''; it.resolvedTs=0; it.resolutionNote=''; it.includeInReport=false;
   _oiTouch(it);
+  // Sourced items reopen their source too — mirrors never diverge.
+  if(it.source==='flag' && typeof window.trReopenTemporary==='function'){
+    window.trReopenTemporary(it.sourceRef);
+    if(typeof window.mapRenderTrackerLayers==='function'){ try{ window.mapRenderTrackerLayers(); }catch{} }
+    if(typeof window.clRenderPunchlist==='function'){ try{ window.clRenderPunchlist(); }catch{} }
+  }
+  if(it.source==='cl' && typeof window.clGetEntries==='function'){
+    const e=window.clGetEntries().find(x=>x.id===it.sourceRef);
+    if(e && e.status==='Resolved'){
+      e.status='Open'; e.dateResolved='';
+      if(typeof window.clSave==='function') window.clSave();
+      if(typeof window.clRender==='function'){ try{ window.clRender(); }catch{} }
+    }
+  }
   oiRender();
   _oiNotifSync();
 }
@@ -270,6 +306,9 @@ function oiRender(){
       const dueOver=it.dueDate && it.dueDate<=today;
       const dueChip=it.dueDate?'<span class="oi-chip'+(dueOver?' over':'')+'">due '+_oiFmtDate(it.dueDate)+(dueOver?' ⚠':'')+'</span>':'';
       const remChip=it.remindAt?'<span class="oi-chip" title="Reminder set">🔔</span>':'';
+      const srcChip=it.source==='flag'
+        ?'<span class="oi-chip" style="cursor:pointer" onclick="event.stopPropagation();clPunchlistGoto(\''+_oiEsc(it.sourceRef)+'\')" title="Repair flag — tap to view on map">🚩</span>'
+        :it.source==='cl'?'<span class="oi-chip" title="Compliance Log entry — resolves both places">§8</span>':'';
       const kindIcon=it.kind==='note'?'📝':'';
       const exp=_oiExpanded===it.id;
       let detail='';
@@ -290,7 +329,7 @@ function oiRender(){
         +'<div class="oi-row-main">'
         +'<button class="oi-check" onclick="oiResolve(\''+it.id+'\')" title="Resolve">'+'</button>'
         +'<div class="oi-text" onclick="oiExpand(\''+it.id+'\')">'+(kindIcon?'<span class="oi-kind">'+kindIcon+'</span> ':'')+_oiEsc(it.text)+'</div>'
-        +'<div class="oi-chips">'+remChip+dueChip+ageChip+'</div>'
+        +'<div class="oi-chips">'+srcChip+remChip+dueChip+ageChip+'</div>'
         +'</div>'+detail+'</div>';
     }).join('');
   }
@@ -384,6 +423,160 @@ function oiDigestChanged(){
   _oiDigestSave({on:!!tog.checked, hour:parseInt(parts[0])||6, min:parseInt(parts[1])||0});
 }
 
+// ── Chunk 2: spine sources — 🚩 flags (opt-in), §8 compliance (auto), 🌧 rain (auto) ──
+function _oiAmberDays(){
+  const h=(typeof window.clAmberHours==='function')?window.clAmberHours():48;
+  return Math.max(1, Math.ceil(h/24));
+}
+function _oiAddDays(dateStr,n){
+  const d=new Date((dateStr||_oiToday())+'T12:00:00');
+  if(isNaN(d.getTime())) return '';
+  d.setDate(d.getDate()+n);
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
+// Any-state lookup — tombstoned/resolved items count, so auto sources never
+// respawn something the user already dealt with or deleted.
+function oiFindBySource(source,ref){
+  return _oiItems.find(x=>x.source===source && x.sourceRef===ref);
+}
+function _oiSpawn(opts,force){
+  const existing=oiFindBySource(opts.source,opts.sourceRef);
+  if(existing){
+    if(force && existing.deleted){ // explicit re-pin un-tombstones
+      existing.deleted=false; existing.status='open';
+      existing.resolvedDate=''; existing.resolvedTs=0; existing.resolutionNote=''; existing.includeInReport=false;
+      _oiTouch(existing); oiRender();
+    }
+    return existing;
+  }
+  const uid=_oiUid();
+  if(!uid) return null;
+  const cd=opts.createdDate||_oiToday();
+  const cts=new Date(cd+'T12:00:00').getTime();
+  const it={
+    id:_oiGenId(), ownerUid:uid, kind:opts.kind||'task', text:opts.text||'',
+    source:opts.source, sourceRef:opts.sourceRef,
+    createdDate:cd, createdTs:isFinite(cts)?cts:Date.now(),
+    dueDate:opts.dueDate||'', remindAt:'',
+    status:'open', resolvedDate:'', resolvedTs:0, resolutionNote:'',
+    includeInReport:false, visibility:'private', deleted:false, _mts:Date.now()
+  };
+  _oiItems.push(it);
+  _oiTouch(it);
+  oiRender();
+  return it;
+}
+
+// 🚩 Flags are OPT-IN (Tim's call 7/22): 📌 button on punchlist rows.
+function oiFlagPinned(flagId){
+  const it=oiFindBySource('flag',flagId);
+  return !!(it && !it.deleted);
+}
+function oiPinFlag(flagId){
+  const pid=_oiPid();
+  const f=((typeof window.trGetOpenTemporary==='function')?window.trGetOpenTemporary(pid):[]).find(x=>x.id===flagId);
+  if(!f) return;
+  const catName=f.categoryName||((typeof window.tcGetName==='function')?window.tcGetName(f.categoryId,pid):'')||'';
+  _oiSpawn({
+    source:'flag', sourceRef:flagId, kind:'task',
+    text:(f.tempLabel||'Repair')+(catName?' · '+catName:''),
+    createdDate:f.date||_oiToday(),
+    dueDate:_oiAddDays(f.date||_oiToday(),_oiAmberDays())
+  }, true);
+  window.glHaptic && window.glHaptic.light && window.glHaptic.light();
+  if(typeof window.clRenderPunchlist==='function'){ try{ window.clRenderPunchlist(); }catch{} }
+}
+
+// Idempotent reconcile pass — mirrors follow their sources. Called from
+// oiLoadForProject, clSave, and clRenderPunchlist (the flag-lifecycle choke
+// point). Never tombstones on a missing flag: an empty tracker list may just
+// mean the tracker hasn't loaded yet.
+var _oiSyncing=false;
+function oiSyncSources(){
+  if(_oiSyncing) return;
+  if(_oiLoadedPid!==_oiPid()) return; // wrong/unloaded project — don't mirror across
+  _oiSyncing=true;
+  try{
+    const pid=_oiPid();
+    let changed=false;
+    const touch=it=>{ it._mts=Date.now(); _oiMarkDirty(it.id); changed=true; };
+    // Pinned flag mirrors ← flag lifecycle
+    const openFlags=(typeof window.trGetOpenTemporary==='function')?window.trGetOpenTemporary(pid):[];
+    const fixedFlags=(typeof window.trGetResolvedTemporary==='function')?window.trGetResolvedTemporary(pid):[];
+    _oiItems.forEach(it=>{
+      if(it.deleted || it.source!=='flag') return;
+      const openF=openFlags.find(f=>f.id===it.sourceRef);
+      const fixedF=fixedFlags.find(f=>f.id===it.sourceRef);
+      if(fixedF && it.status==='open'){
+        it.status='resolved';
+        it.resolvedDate=fixedF.resolvedAt?new Date(fixedF.resolvedAt).toLocaleDateString('en-CA'):_oiToday();
+        it.resolvedTs=fixedF.resolvedAt||Date.now();
+        it.resolutionNote=fixedF.resolveNote||'Fixed on map';
+        touch(it);
+      } else if(openF && it.status==='resolved'){
+        it.status='open'; it.resolvedDate=''; it.resolvedTs=0; it.resolutionNote=''; it.includeInReport=false;
+        touch(it);
+      }
+    });
+    // §8 compliance mirrors ← automatic for open entries; resolution both ways
+    const entries=(typeof window.clGetEntries==='function')?window.clGetEntries():[];
+    const uid=_oiUid();
+    entries.forEach(e=>{
+      if(!e || !e.id) return;
+      if(e.projectId && e.projectId!==pid) return;
+      const it=oiFindBySource('cl',e.id);
+      if(e.status!=='Resolved'){
+        if(!it){
+          if(!uid) return;
+          const cd=e.date||_oiToday();
+          const cts=new Date(cd+'T12:00:00').getTime();
+          _oiItems.push({
+            id:_oiGenId(), ownerUid:uid, kind:'task',
+            text:(e.location||'Compliance entry')+(e.corrective?' — '+e.corrective:''),
+            source:'cl', sourceRef:e.id,
+            createdDate:cd, createdTs:isFinite(cts)?cts:Date.now(),
+            dueDate:_oiAddDays(cd,_oiAmberDays()), remindAt:'',
+            status:'open', resolvedDate:'', resolvedTs:0, resolutionNote:'',
+            includeInReport:false, visibility:'private', deleted:false, _mts:Date.now()
+          });
+          _oiMarkDirty(_oiItems[_oiItems.length-1].id);
+          changed=true;
+        } else if(!it.deleted && it.status==='resolved'){
+          it.status='open'; it.resolvedDate=''; it.resolvedTs=0; it.resolutionNote=''; it.includeInReport=false;
+          touch(it);
+        }
+      } else if(it && !it.deleted && it.status==='open'){
+        it.status='resolved';
+        it.resolvedDate=e.dateResolved||_oiToday();
+        it.resolvedTs=Date.now();
+        it.resolutionNote=e.corrective||'Resolved in Compliance Log';
+        touch(it);
+      }
+    });
+    if(changed){ _oiSaveLocal(); _oiFlush(); oiRender(); _oiNotifSync(); }
+  } finally { _oiSyncing=false; }
+}
+
+// 🌧 Rain auto-items — spawned from the same forecast data as the ⚠ tiles.
+// One per forecast date; a delete or resolve is final (any-state dedupe).
+function oiRainSync(week,trig){
+  if(!Array.isArray(week)) return;
+  if(_oiLoadedPid!==_oiPid()) return;
+  trig=(typeof trig==='number')?trig:0.5;
+  const today=_oiToday();
+  week.forEach(w=>{
+    if(!w || !w.d || w.d<today) return;
+    if(typeof w.r!=='number' || w.r<trig) return;
+    const dt=new Date(w.d+'T12:00:00');
+    const label=dt.toLocaleDateString('en-US',{weekday:'short'})+' '+(dt.getMonth()+1)+'/'+dt.getDate();
+    _oiSpawn({
+      source:'auto', sourceRef:'rain:'+w.d, kind:'task',
+      text:'🌧 Post-storm inspection — '+w.r.toFixed(2)+'" expected '+label+' (inspect within 24 hrs of storm end)',
+      dueDate:_oiAddDays(w.d,1)
+    });
+  });
+}
+
 // ── Scheduled notifications (native only — @capacitor/local-notifications) ──
 function _oiNotifId(id){
   let h=0;
@@ -459,3 +652,7 @@ window.oiNdSummaryHtml = oiNdSummaryHtml;
 window.oiResolvedForReport = oiResolvedForReport;
 window.oiSettingsInit = oiSettingsInit;
 window.oiDigestChanged = oiDigestChanged;
+window.oiPinFlag = oiPinFlag;
+window.oiFlagPinned = oiFlagPinned;
+window.oiSyncSources = oiSyncSources;
+window.oiRainSync = oiRainSync;

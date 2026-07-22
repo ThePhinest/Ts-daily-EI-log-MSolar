@@ -623,6 +623,9 @@ function _renderRainWeek(json){
     `</div>`;
   }).join('');
   box.classList.add('vis');
+  // Open Items spine: ≥trigger forecast days spawn a post-storm inspection item
+  // (openItems.js dedupes per date; past-date snapshots are ignored there).
+  if(typeof window.oiRainSync==='function'){ try{ window.oiRainSync(week,SWPPP_RAIN_TRIGGER_IN); }catch{} }
 }
 
 function _wmoToDesc(code){

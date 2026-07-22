@@ -69,7 +69,16 @@ function clSave(){
   clSaveLocal();
   clSaveCloud();
   window.glHaptic && window.glHaptic.success();  // tactile confirm on compliance entry save
+  // Open Items spine: compliance entries mirror automatically (openItems.js).
+  if(typeof window.oiSyncSources==='function'){ try{ window.oiSyncSources(); }catch{} }
 }
+
+// Read accessor for the Open Items spine (and any future consumer).
+function clGetEntries(){
+  if(!_clEntries.length) clLoadLocal();
+  return _clEntries;
+}
+if(typeof window!=='undefined'){ window.clSave=clSave; window.clGetEntries=clGetEntries; }
 
 // ── Correction-window (48h clock) config — per user, per project ──
 // Default 48h = the 5-acre authorization condition 7 correction window.
@@ -515,8 +524,10 @@ function clRenderPunchlist(){
     const catName=e.categoryName||(typeof tcGetName==='function'?tcGetName(e.categoryId,pid):'')||'—';
     const photos=(e.photoIds||[]).map(id=>(window._phPhotos||[]).find(p=>p.id===id)).filter(Boolean);
     const thumb=photos.length?`<img src="${photos[0].thumb}" onclick="phOpenLightbox('${photos[0].id}',[${photos.map(p=>`'${p.id}'`).join(',')}])" style="width:44px;height:34px;object-fit:cover;border-radius:4px;cursor:pointer;flex-shrink:0;border:1px solid var(--border2)">`:'';
+    const pinned=(typeof window.oiFlagPinned==='function')&&window.oiFlagPinned(e.id);
     const btns=isOpen
       ?`<div style="display:flex;gap:6px;flex-shrink:0">
+          <button onclick="event.stopPropagation();${pinned?'':`oiPinFlag('${e.id}')`}" title="${pinned?'On your Open Items list':'Add to Open Items (due date rides your ⏱ correction window)'}" style="background:${pinned?'var(--amber-bg)':'var(--s1)'};border:1px solid ${pinned?'var(--amber)':'var(--border)'};color:${pinned?'var(--amber)':'var(--muted)'};font-family:var(--mono);font-size:10px;padding:5px 8px;border-radius:5px;cursor:${pinned?'default':'pointer'};opacity:${pinned?'.75':'1'}">📌</button>
           <button onclick="event.stopPropagation();clPunchlistGoto('${e.id}')" style="background:var(--s1);border:1px solid var(--border);color:var(--muted);font-family:var(--mono);font-size:10px;padding:5px 8px;border-radius:5px;cursor:pointer">📍 Map</button>
           <button onclick="event.stopPropagation();mapResolveTemporary('${e.id}')" style="background:rgba(39,174,96,0.15);border:1px solid var(--green,#27AE60);color:var(--green,#27AE60);font-family:var(--mono);font-size:10px;padding:5px 8px;border-radius:5px;cursor:pointer">✓ Fixed</button>
         </div>`
@@ -546,6 +557,9 @@ function clRenderPunchlist(){
     </div>
   </div>`;
   el.style.display='block';
+  // Flag-lifecycle choke point: every fix/reopen re-renders this card, so the
+  // Open Items mirrors reconcile here (openItems.js; reentrancy-guarded).
+  if(typeof window.oiSyncSources==='function'){ try{ window.oiSyncSources(); }catch{} }
 }
 // Jump from a punchlist row to its flag on the map (highlight pulls the eye).
 function clPunchlistGoto(entryId){
