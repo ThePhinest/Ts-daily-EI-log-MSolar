@@ -94,6 +94,16 @@ function clRender(){
   if(el) el.textContent = openCount;
   if(et) et.textContent = _clEntries.length;
 
+  // Compliance Log card: open-count badge + persisted collapse state (#34)
+  const logBadge=document.getElementById('cl-log-badge');
+  if(logBadge){
+    logBadge.textContent=openCount+' open';
+    logBadge.style.display=_clEntries.length?'':'none';
+    logBadge.style.opacity=openCount?'':'0.4';
+  }
+  const logCard=document.getElementById('cl-log-card');
+  if(logCard) logCard.classList.toggle('collapsed',_clCardCollapsed('log'));
+
   clRenderTrackerCard();
   const list = document.getElementById('cl-list');
   if(!list) return;
@@ -349,6 +359,22 @@ async function _glMigrateCompliancePhaseD() {
 // Reads the temporary lifecycle (trGetOpenTemporary / trGetResolvedTemporary).
 // Open rows: what's wrong, where, photo, [Fixed] [Map]. Resolved history stays
 // collapsible — non-destructive record with timestamp + resolution note.
+// ── Collapsible section state (#34) — tiny-pref tier, persisted per device ──
+const _CL_CARDS_KEY='pei_cl_cards';
+function _clCardCollapsed(key){
+  try{ return !!(JSON.parse(localStorage.getItem(_CL_CARDS_KEY)||'{}')[key]); }catch{ return false; }
+}
+function clToggleCard(key){
+  let s={}; try{ s=JSON.parse(localStorage.getItem(_CL_CARDS_KEY)||'{}'); }catch{}
+  s[key]=!s[key];
+  try{ localStorage.setItem(_CL_CARDS_KEY,JSON.stringify(s)); }catch{}
+  const el=key==='log'?document.getElementById('cl-log-card')
+    :key==='punch'?document.getElementById('cl-punchlist-card')?.firstElementChild
+    :document.getElementById('cl-tracker-card')?.firstElementChild;
+  if(el) el.classList.toggle('collapsed',!!s[key]);
+}
+if(typeof window!=='undefined') window.clToggleCard=clToggleCard;
+
 function clRenderPunchlist(){
   const el=document.getElementById('cl-punchlist-card');
   if(!el) return;
@@ -384,8 +410,8 @@ function clRenderPunchlist(){
     </div>
     <div style="display:none">${resolved.map(e=>rowHtml(e,false)).join('')}</div>
   </div>`:'';
-  el.innerHTML=`<div class="card">
-    <div class="card-head"><span class="card-num">🚩</span><span class="card-title">Punchlist</span><span class="card-badge"${open.length?'':' style="opacity:.4"'}>${open.length} open</span></div>
+  el.innerHTML=`<div class="card${_clCardCollapsed('punch')?' collapsed':''}">
+    <div class="card-head" onclick="clToggleCard('punch')"><span class="card-num">🚩</span><span class="card-title">Punchlist</span><span class="head-fade"></span><span class="card-badge"${open.length?'':' style="opacity:.4"'}>${open.length} open</span><span class="card-chevron">▾</span></div>
     <div class="card-body" style="padding-top:4px">
       ${open.length?openRows:`<div style="font-family:var(--mono);font-size:11px;color:var(--muted);padding:8px 4px">Nothing needs attention. Flag repairs from any drawing's popup on the map.</div>`}
       ${resolvedBlock}
@@ -489,7 +515,11 @@ function clRenderTrackerCard(search){
     </div>`;
   }).join('');
 
-  const todaySection=entries.length?`<div style="padding:0 4px 4px">${todayRows}</div>`:'';
+  // "Today" reads as a sub-label only when there actually was activity today —
+  // the card title itself is project-scoped (#102: it always showed project totals).
+  const todaySection=entries.length?`<div style="padding:0 4px 4px">
+    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin:2px 0 4px">Today</div>
+    ${todayRows}</div>`:'';
 
   const _totHasPlan=splitTotals.some(t=>t.plannedValue>0);
   const _totCols=`1fr 34px 72px${_totHasPlan?' 68px':''}`;
@@ -536,8 +566,8 @@ function clRenderTrackerCard(search){
     }).join('')}
   </div>`:'';
 
-  el.innerHTML=`<div class="card">
-    <div class="card-head"><span class="card-num">🗺️</span><span class="card-title">Today's Tracker Activity</span>${entries.length?`<span class="card-badge">${entries.length}</span>`:''}<button onclick="clShowTrackerLog()" style="margin-left:auto;background:none;border:none;color:var(--amber);font-family:var(--mono);font-size:11px;cursor:pointer;padding:2px 4px;letter-spacing:.04em">View All →</button></div>
+  el.innerHTML=`<div class="card${_clCardCollapsed('tracker')?' collapsed':''}">
+    <div class="card-head" onclick="clToggleCard('tracker')"><span class="card-num">🗺️</span><span class="card-title">Project Tracker Activity</span><span class="head-fade"></span>${entries.length?`<span class="card-badge">${entries.length} today</span>`:''}<button onclick="event.stopPropagation();clShowTrackerLog()" style="background:none;border:none;color:var(--amber);font-family:var(--mono);font-size:11px;cursor:pointer;padding:2px 4px;letter-spacing:.04em;flex-shrink:0">View All →</button><span class="card-chevron">▾</span></div>
     <div class="card-body" style="padding-top:4px">${todaySection}${totalsSection}</div>
   </div>`;
   el.style.display='block';

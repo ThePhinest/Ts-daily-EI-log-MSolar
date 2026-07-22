@@ -326,6 +326,12 @@ body.theme-light{
 .card.collapsed .card-chevron{transform:rotate(-90deg)}
 .card.collapsed .card-body{display:none}
 .card.collapsed .card-head{border-bottom:none}
+/* Gold fading divider inside a card head (photos-page date-label pattern) —
+   drop <span class="head-fade"></span> after the title. Reusable app-wide. */
+.card-head .head-fade{flex:1 1 12px;min-width:12px;height:1px;background:linear-gradient(90deg,rgba(201,168,76,.5),rgba(201,168,76,.08) 70%,transparent)}
+/* Compliance page: section titles sized up so the page reads as sections, not a run-on.
+   min-width:0 + ellipsis keeps crowded heads (badge + View All + chevron) on one line on phones. */
+#page-compliance .card-title{font-size:15px;letter-spacing:.14em;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .card-personal.collapsed .card-body{display:none}
 .card-personal.collapsed .card-personal-head{border-bottom:none}
 .card-personal .card-personal-head{cursor:pointer;user-select:none;-webkit-user-select:none}
@@ -2669,33 +2675,39 @@ Anticipated rain — AM weather monitoring expected"></textarea>
     </div>
   </div>
 
-  <!-- Compliance log section separator -->
-  <div style="display:flex;align-items:center;gap:10px;margin:4px 0 12px">
-    <span style="font-family:var(--mono);font-size:9.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;white-space:nowrap">Compliance Log</span>
-    <div style="flex:1;height:1px;background:var(--border)"></div>
-  </div>
+  <!-- Compliance Log — house collapsible card (#34) -->
+  <div class="card" id="cl-log-card">
+    <div class="card-head" onclick="clToggleCard('log')">
+      <span class="card-num">📋</span>
+      <span class="card-title">Compliance Log</span>
+      <span class="head-fade"></span>
+      <span class="card-badge" id="cl-log-badge" style="display:none"></span>
+      <span class="card-chevron">▾</span>
+    </div>
+    <div class="card-body" style="padding-top:10px">
+      <!-- Filter bar -->
+      <div class="cl-filter-bar">
+        <input type="text" id="cl-search" placeholder="🔍 Search entries…" oninput="clRender()">
+        <select id="cl-filter-level" onchange="clRender()">
+          <option value="">All Levels</option>
+          <option value="1">Level 1 — Observation</option>
+          <option value="2">Level 2 — Corrective Action</option>
+          <option value="3">Level 3 — Non-Compliance</option>
+          <option value="4">Level 4 — Stop Work</option>
+        </select>
+        <select id="cl-filter-status" onchange="clRender()">
+          <option value="">All Status</option>
+          <option value="Open">Open</option>
+          <option value="In Progress">In Progress</option>
+          <option value="Resolved">Resolved</option>
+        </select>
+        <button class="btn btn-outline btn-proj-active" id="cl-proj-filter-btn" style="font-size:11px;padding:5px 12px" onclick="_toggleProjectFilter()">🏗️ Active Project</button>
+      </div>
 
-  <!-- Filter bar -->
-  <div class="cl-filter-bar">
-    <input type="text" id="cl-search" placeholder="🔍 Search entries…" oninput="clRender()">
-    <select id="cl-filter-level" onchange="clRender()">
-      <option value="">All Levels</option>
-      <option value="1">Level 1 — Observation</option>
-      <option value="2">Level 2 — Corrective Action</option>
-      <option value="3">Level 3 — Non-Compliance</option>
-      <option value="4">Level 4 — Stop Work</option>
-    </select>
-    <select id="cl-filter-status" onchange="clRender()">
-      <option value="">All Status</option>
-      <option value="Open">Open</option>
-      <option value="In Progress">In Progress</option>
-      <option value="Resolved">Resolved</option>
-    </select>
-    <button class="btn btn-outline btn-proj-active" id="cl-proj-filter-btn" style="font-size:11px;padding:5px 12px" onclick="_toggleProjectFilter()">🏗️ Active Project</button>
+      <!-- Entry list -->
+      <div id="cl-list"></div>
+    </div>
   </div>
-
-  <!-- Entry list -->
-  <div id="cl-list"></div>
 
 </div></div>
 
