@@ -549,6 +549,8 @@ async function _glSharedBoot() {
   // try blocks so a backfill failure never blocks the tracker on existing
   // accounts (their membership already exists).
   _trackerStartupLoad();
+  // Open Items spine — same membership dependency as the tracker loads.
+  if (typeof window.oiBoot === 'function') window.oiBoot();
   try {
     if (typeof glRepairSharedStubs === 'function') glRepairSharedStubs();
     if (typeof _glMigrateWorkProductFlip === 'function') {

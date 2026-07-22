@@ -189,6 +189,21 @@ service cloud.firestore {
         allow update, delete: if workEditOk();
       }
 
+      // ── Open Items — personal carryover notes/tasks (the spine, 2026-07-22) ──
+      // Private-by-default working memory: reads are OWNER-ONLY unless the item
+      // is explicitly visibility:'project' (the future shared/assignable tier).
+      // Unlike work product, a LEAD may NOT edit another member's items — this
+      // is personal memory, not project record, until the owner shares it.
+      // Queries must constrain ownerUid == me (or visibility == 'project').
+      match /openItems/{id} {
+        allow read: if isMember()
+          && (resource.data.ownerUid == request.auth.uid
+              || resource.data.visibility == 'project');
+        allow create: if workCreateOk();
+        allow update, delete: if canFieldWrite()
+          && resource.data.ownerUid == request.auth.uid;
+      }
+
       // ── Submissions (close-day snapshots; immutable except status) ──
       match /submissions/{sid} {
         allow read: if isMember();

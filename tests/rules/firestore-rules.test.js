@@ -186,6 +186,60 @@ describe('swpppInspections — QI inspection records (work product)', () => {
   });
 });
 
+describe('openItems — private carryover notes/tasks (owner-only, even vs lead)', () => {
+  beforeEach(async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      const db = ctx.firestore();
+      await setDoc(doc(db, `projects/${PID}/openItems/oi-tim`),
+        { ownerUid: 'tim', visibility: 'private', kind: 'task',
+          text: 'restake silt fence dw7', status: 'open', _mts: 1 });
+      await setDoc(doc(db, `projects/${PID}/openItems/oi-boots`),
+        { ownerUid: 'boots', visibility: 'private', kind: 'note',
+          text: 'ask about culvert', status: 'open', _mts: 1 });
+      await setDoc(doc(db, `projects/${PID}/openItems/oi-shared`),
+        { ownerUid: 'boots', visibility: 'project', kind: 'task',
+          text: 'shared future-tier item', status: 'open', _mts: 1 });
+    });
+  });
+  it('owner creates a self-attributed private item', () =>
+    assertSucceeds(setDoc(doc(as('tim'), `projects/${PID}/openItems/oi-new`),
+      { ownerUid: 'tim', visibility: 'private', kind: 'task', text: 'x', status: 'open' })));
+  it('cannot forge ownerUid on create', () =>
+    assertFails(setDoc(doc(as('tim'), `projects/${PID}/openItems/oi-forged`),
+      { ownerUid: 'boots', visibility: 'private', kind: 'task', text: 'x' })));
+  it('owner reads + lists own items via ownerUid-constrained query', async () => {
+    await assertSucceeds(getDoc(doc(as('tim'), `projects/${PID}/openItems/oi-tim`)));
+    await assertSucceeds(getDocs(query(
+      collection(as('tim'), `projects/${PID}/openItems`),
+      where('ownerUid', '==', 'tim'))));
+  });
+  it('another member cannot read a private item', () =>
+    assertFails(getDoc(doc(as('boots'), `projects/${PID}/openItems/oi-tim`))));
+  it('LEAD cannot read or edit another member\'s private item (unlike work product)', async () => {
+    await assertFails(getDoc(doc(as('tim'), `projects/${PID}/openItems/oi-boots`)));
+    await assertFails(updateDoc(doc(as('tim'), `projects/${PID}/openItems/oi-boots`),
+      { status: 'resolved' }));
+    await assertFails(deleteDoc(doc(as('tim'), `projects/${PID}/openItems/oi-boots`)));
+  });
+  it('owner resolves / deletes own item', async () => {
+    await assertSucceeds(updateDoc(doc(as('tim'), `projects/${PID}/openItems/oi-tim`),
+      { status: 'resolved', resolutionNote: 'fixed', _mts: 2 }));
+    await assertSucceeds(deleteDoc(doc(as('tim'), `projects/${PID}/openItems/oi-tim`)));
+  });
+  it('project-visible item is readable by other members (future shared tier)', () =>
+    assertSucceeds(getDoc(doc(as('tim'), `projects/${PID}/openItems/oi-shared`))));
+  it('project-visible item still only editable by its owner', () =>
+    assertFails(updateDoc(doc(as('tim'), `projects/${PID}/openItems/oi-shared`),
+      { status: 'resolved' })));
+  it('reviewer cannot create items', () =>
+    assertFails(setDoc(doc(as('forest'), `projects/${PID}/openItems/oi-rev`),
+      { ownerUid: 'forest', visibility: 'private', kind: 'note', text: 'x' })));
+  it('cannot list unconstrained (no reading the whole project\'s items)', () =>
+    assertFails(getDocs(collection(as('boots'), `projects/${PID}/openItems`))));
+  it('non-member reads nothing', () =>
+    assertFails(getDoc(doc(as('stranger'), `projects/${PID}/openItems/oi-shared`))));
+});
+
 describe('publish mirrors — photos + field markers (explicit publish, keep your original)', () => {
   beforeEach(async () => {
     await env.withSecurityRulesDisabled(async (ctx) => {

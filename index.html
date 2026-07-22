@@ -631,6 +631,31 @@ button:disabled,button[disabled]{opacity:.45;cursor:not-allowed}
 .wx-rain-tile.snow .wx-rain-amt{color:#5aa7d0;font-weight:700}
 .wx-rain-tile.trig.snow .wx-rain-amt{color:var(--amber)}
 .wx-rain-flag{font-size:9px;line-height:1;margin-top:1px}
+/* ── 📌 Open Items — carryover notes & tasks ── */
+.oi-empty{font-family:var(--mono);font-size:11px;color:var(--muted);line-height:1.55;padding:10px 4px 12px;text-align:center}
+.oi-row{border:1px solid var(--border);border-radius:7px;background:var(--s1);margin-bottom:7px;overflow:hidden}
+.oi-row.expanded{border-color:var(--border2)}
+.oi-row-main{display:flex;align-items:center;gap:10px;padding:9px 11px;min-height:44px}
+.oi-check{flex:none;width:22px;height:22px;border-radius:50%;border:2px solid var(--muted2);background:transparent;cursor:pointer;padding:0;transition:border-color .15s,background .15s}
+.oi-check:hover{border-color:var(--amber);background:var(--amber-bg)}
+.oi-text{flex:1;font-family:var(--body);font-size:14px;color:var(--text);line-height:1.4;cursor:pointer;word-break:break-word}
+.oi-kind{font-size:12px}
+.oi-chips{display:flex;align-items:center;gap:5px;flex:none}
+.oi-chip{font-family:var(--mono);font-size:9.5px;color:var(--muted);border:1px solid var(--border);border-radius:9px;padding:2px 7px;white-space:nowrap}
+.oi-chip.over{color:var(--amber);border-color:var(--amber);background:var(--amber-bg)}
+.oi-badge-due{color:var(--amber) !important}
+.oi-detail{border-top:1px solid var(--border);padding:11px 12px 12px;display:flex;flex-direction:column;gap:10px;background:rgba(0,107,117,0.04)}
+.oi-detail-row{display:flex;gap:10px}
+.oi-detail-btns{display:flex;gap:8px;align-items:center}
+.oi-add-row{display:flex;gap:8px;align-items:stretch;margin-top:4px}
+.oi-add-row input{flex:1;min-width:0}
+.oi-kind-btn{flex:none;font-family:var(--cond);font-size:10.5px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted2);background:var(--s1);border:1px solid var(--border2);border-radius:5px;padding:0 10px;cursor:pointer;white-space:nowrap}
+.oi-add-btn{flex:none;width:42px;font-size:17px;color:var(--amber);background:var(--amber-bg);border:1px solid var(--amber);border-radius:5px;cursor:pointer;line-height:1}
+.oi-resolved-head{display:flex;align-items:center;font-family:var(--cond);font-size:11px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:var(--muted2);padding:9px 4px 5px;cursor:pointer;margin-top:8px;border-top:1px solid var(--border)}
+.oi-res-row{display:flex;align-items:center;gap:8px;padding:6px 4px;border-bottom:1px dashed var(--border)}
+.oi-res-row:last-child{border-bottom:none}
+.oi-res-text{flex:1;font-family:var(--body);font-size:12.5px;color:var(--muted);text-decoration:line-through;text-decoration-color:rgba(201,160,39,.5);word-break:break-word}
+.oi-reopen{flex:none;background:transparent;border:1px solid var(--border);border-radius:5px;color:var(--muted2);font-size:12px;padding:3px 9px;cursor:pointer}
 .ph-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px}
 @media(max-width:400px){.ph-grid{grid-template-columns:repeat(2,1fr)}}
 .ph-thumb{position:relative;border-radius:var(--r);overflow:hidden;background:var(--s2);border:1px solid var(--border);cursor:pointer;aspect-ratio:4/3}
@@ -1051,6 +1076,8 @@ body.is-native select { font-size: 16px !important; }
         <div style="font-family:var(--mono);font-size:9px;color:var(--muted2);letter-spacing:.08em;text-transform:uppercase;margin-bottom:5px">📝 Note for Today</div>
         <div id="nd-day-note-text"></div>
       </div>
+      <!-- Open Items carryover summary — filled by checkNewDay via oiNdSummaryHtml() -->
+      <div id="nd-open-items" style="display:none;background:rgba(201,168,76,0.08);border:1px solid rgba(201,168,76,0.35);border-radius:6px;padding:10px 12px;margin-bottom:14px;font-family:var(--body);font-size:13px;color:var(--text);line-height:1.5"></div>
       <!-- Next-day submit prompt (submission-sharing-model §Next-day flow) — shown
            only when the previous day is unsubmitted on a project using submissions.
            Reassure, don't alarm: submitting stays optional, nothing is blocked. -->
@@ -1356,13 +1383,36 @@ body.is-native select { font-size: 16px !important; }
           </div>
         </div>
 
+        <!-- Slide: Open Items (carryover notes & tasks) -->
+        <div class="ob-slide ob-slide-feature">
+          <div class="ob-preview-card"><div class="ob-preview-inner">
+            <div style="display:flex;flex-direction:column;height:100%;background:#1a1a1a">
+              <div style="background:#141414;border-bottom:2px solid #C9A027;padding:9px 14px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0"><div style="display:flex;align-items:center;gap:9px"><span style="font-size:18px">☀️</span><div><div style="display:flex;align-items:baseline;letter-spacing:1.5px"><span style="color:#e8e2d8;font-weight:200;font-size:10px;letter-spacing:3px">GROUND</span><span style="color:#C9A027;font-size:15px;font-weight:600;padding:0 3px 0 2px">|</span><span style="color:#006B75;font-weight:900;font-size:12px;letter-spacing:1px">LOG</span><span style="color:#C9A027;font-family:monospace;font-size:9px">.io</span></div></div></div><div style="display:flex;align-items:center;gap:5px;font-size:9px"><span style="color:rgba(255,255,255,.3)">⟳</span><span style="color:#006B75">✓ synced</span></div></div>
+              <div style="flex:1;overflow:hidden;padding:11px">
+                <div style="display:flex;align-items:center;gap:8px;background:#232323;border:1px solid rgba(201,160,39,.35);border-radius:9px;padding:9px 12px;margin-bottom:9px"><span style="font-size:11px">📌</span><span style="color:rgba(240,237,232,.85);font-size:9.5px;font-weight:700;letter-spacing:1.2px;flex:1">OPEN ITEMS</span><span style="color:#C9A027;font-size:8px;font-family:monospace">3 open · 1 due</span><span style="color:rgba(255,255,255,.25);font-size:11px">▾</span></div>
+                <div style="display:flex;align-items:center;gap:8px;background:#232323;border:1px solid rgba(255,255,255,.07);border-radius:8px;padding:8px 10px;margin-bottom:6px"><span style="width:14px;height:14px;border:1.5px solid #006B75;border-radius:50%;flex-shrink:0"></span><span style="color:rgba(255,255,255,.75);font-size:9px;flex:1">Re-stake silt fence at driveway 7</span><span style="color:#C9A027;border:1px solid #C9A027;border-radius:7px;padding:1px 5px;font-size:7px;font-family:monospace">due ⚠</span></div>
+                <div style="display:flex;align-items:center;gap:8px;background:#232323;border:1px solid rgba(255,255,255,.07);border-radius:8px;padding:8px 10px;margin-bottom:6px"><span style="width:14px;height:14px;border:1.5px solid #006B75;border-radius:50%;flex-shrink:0"></span><span style="color:rgba(255,255,255,.75);font-size:9px;flex:1">📝 Ask EOR about culvert detail</span><span style="color:rgba(255,255,255,.35);border:1px solid rgba(255,255,255,.15);border-radius:7px;padding:1px 5px;font-size:7px;font-family:monospace">4d</span></div>
+                <div style="display:flex;align-items:center;gap:8px;background:#232323;border:1px solid rgba(255,255,255,.07);border-radius:8px;padding:8px 10px;margin-bottom:9px"><span style="width:14px;height:14px;border:1.5px solid #006B75;border-radius:50%;flex-shrink:0"></span><span style="color:rgba(255,255,255,.75);font-size:9px;flex:1">Order more seed tags</span><span style="color:rgba(255,255,255,.35);font-size:8px">🔔</span></div>
+                <div style="display:flex;gap:7px;margin-bottom:9px"><span style="flex:none;color:#006B75;border:1px solid rgba(0,107,117,.5);border-radius:6px;padding:5px 8px;font-size:7.5px;font-family:monospace">☑︎ TASK</span><span style="flex:1;background:#1d1d1d;border:1px solid rgba(255,255,255,.08);border-radius:6px;padding:5px 9px;color:rgba(255,255,255,.3);font-size:8px">Add a task or note…</span><span style="flex:none;color:#C9A027;background:rgba(201,160,39,.12);border:1px solid #C9A027;border-radius:6px;padding:5px 9px;font-size:9px">＋</span></div>
+                <div style="background:rgba(201,168,76,.08);border:1px solid rgba(201,168,76,.35);border-radius:8px;padding:8px 10px"><div style="color:#C9A027;font-size:7px;font-family:monospace;letter-spacing:1px;margin-bottom:3px">🔔 DAILY SUMMARY — 6:00 AM</div><div style="color:rgba(255,255,255,.6);font-size:8.5px">3 open items · 1 due today — review before you start the day.</div></div>
+              </div>
+              <div style="display:flex;background:#0e0e0e;border-top:1px solid rgba(255,255,255,.07);flex-shrink:0"><div style="flex:1;display:flex;flex-direction:column;align-items:center;padding:7px 0 8px;gap:3px;color:#C9A027"><span style="font-size:17px">📋</span><span style="font-size:7.5px;font-weight:600;letter-spacing:.5px">DAILY LOG</span></div><div style="flex:1;display:flex;flex-direction:column;align-items:center;padding:7px 0 8px;gap:3px;color:rgba(255,255,255,.3)"><span style="font-size:17px">📅</span><span style="font-size:7.5px;letter-spacing:.5px">CALENDAR</span></div><div style="flex:1;display:flex;flex-direction:column;align-items:center;padding:7px 0 8px;gap:3px;color:rgba(255,255,255,.3)"><span style="font-size:17px">🗺️</span><span style="font-size:7.5px;letter-spacing:.5px">FIELD MAP</span></div><div style="flex:1;display:flex;flex-direction:column;align-items:center;padding:7px 0 8px;gap:3px;color:rgba(255,255,255,.3)"><span style="font-size:17px">···</span><span style="font-size:7.5px;letter-spacing:.5px">MORE</span></div></div>
+            </div>
+          </div></div>
+          <div class="ob-slide-text">
+            <div class="ob-eyebrow">FEATURE 02</div>
+            <div class="ob-slide-title">OPEN ITEMS</div>
+            <div class="ob-slide-desc">Notes and tasks that <span class="ob-hi-amber">carry over day to day</span> until you check them off — with due dates, <span class="ob-hi-teal">scheduled reminders</span>, and resolutions you can stamp into the daily report.</div>
+          </div>
+        </div>
+
         <!-- Slide 3: Field Map -->
         <div class="ob-slide ob-slide-feature">
           <div class="ob-preview-card"><div class="ob-preview-inner" style="overflow:hidden">
             <img src="/ob-map-preview.png" style="width:100%;height:100%;object-fit:cover;object-position:top center;display:block">
           </div></div>
           <div class="ob-slide-text">
-            <div class="ob-eyebrow">FEATURE 02</div>
+            <div class="ob-eyebrow">FEATURE 03</div>
             <div class="ob-slide-title ob-title-teal">FIELD MAP</div>
             <div class="ob-slide-desc">Draw and track site work by category. Overlay <span class="ob-hi-amber">KML &amp; GIS layers</span>, log photos on the map, measure areas, and organize everything in folders — on satellite imagery.</div>
           </div>
@@ -1383,7 +1433,7 @@ body.is-native select { font-size: 16px !important; }
             </div>
           </div></div>
           <div class="ob-slide-text">
-            <div class="ob-eyebrow">FEATURE 03</div>
+            <div class="ob-eyebrow">FEATURE 04</div>
             <div class="ob-slide-title">PHOTO LOG</div>
             <div class="ob-slide-desc">Upload <span class="ob-hi-amber">Solocator-tagged photos</span> directly to your daily log. Auto-compressed, date-stamped, and embedded in your report.</div>
           </div>
@@ -1439,7 +1489,7 @@ body.is-native select { font-size: 16px !important; }
             </div>
           </div></div>
           <div class="ob-slide-text">
-            <div class="ob-eyebrow">FEATURE 04</div>
+            <div class="ob-eyebrow">FEATURE 05</div>
             <div class="ob-slide-title">CALENDAR</div>
             <div class="ob-slide-desc">Every inspection, <span class="ob-hi-amber">calendar-organized</span>. Tap any day to view, edit, or load a prior log — your full inspection history at a glance.</div>
           </div>
@@ -1466,7 +1516,7 @@ body.is-native select { font-size: 16px !important; }
             </div>
           </div></div>
           <div class="ob-slide-text">
-            <div class="ob-eyebrow">FEATURE 05</div>
+            <div class="ob-eyebrow">FEATURE 06</div>
             <div class="ob-slide-title ob-title-teal">INSPECTION SUMMARY</div>
             <div class="ob-slide-desc">Pre-loaded <span class="ob-hi-amber">compliance language</span> for rapid logging. Add agency visits, landowner contacts, and non-compliance observations in seconds.</div>
           </div>
@@ -1488,7 +1538,7 @@ body.is-native select { font-size: 16px !important; }
             </div>
           </div></div>
           <div class="ob-slide-text">
-            <div class="ob-eyebrow">FEATURE 06</div>
+            <div class="ob-eyebrow">FEATURE 07</div>
             <div class="ob-slide-title">SETTINGS</div>
             <div class="ob-slide-desc">Configure your <span class="ob-hi-amber">inspector profile</span>, active project, report preferences, and <span class="ob-hi-teal">sync options</span> — all in one place.</div>
           </div>
@@ -1521,7 +1571,7 @@ body.is-native select { font-size: 16px !important; }
             </div>
           </div></div>
           <div class="ob-slide-text">
-            <div class="ob-eyebrow">FEATURE 07</div>
+            <div class="ob-eyebrow">FEATURE 08</div>
             <div class="ob-slide-title">FIELD TRACKER</div>
             <div class="ob-slide-desc">Draw areas on the map to track <span class="ob-hi-amber">seeding, amendments, and site work</span> by category. Log application phase, method, rate, and contractor — compliance data that builds as you work.</div>
           </div>
@@ -1552,7 +1602,7 @@ body.is-native select { font-size: 16px !important; }
             </div>
           </div></div>
           <div class="ob-slide-text">
-            <div class="ob-eyebrow">FEATURE 08</div>
+            <div class="ob-eyebrow">FEATURE 09</div>
             <div class="ob-slide-title">SHARED PROJECTS</div>
             <div class="ob-slide-desc">Invite your team by <span class="ob-hi-amber">link, code, or QR</span> — a reviewer sees what you publish, <span class="ob-hi-teal">never your private notes</span>. Your work stays yours; you choose what the project sees.</div>
           </div>
@@ -1574,7 +1624,7 @@ body.is-native select { font-size: 16px !important; }
             </div>
           </div></div>
           <div class="ob-slide-text">
-            <div class="ob-eyebrow">FEATURE 09</div>
+            <div class="ob-eyebrow">FEATURE 10</div>
             <div class="ob-slide-title">GROUNDLOG ACADEMY</div>
             <div class="ob-slide-desc">Learn as you go — <span class="ob-hi-amber">short video walkthroughs</span> for every part of the app, a couple of minutes each, <span class="ob-hi-teal">right where you need them</span>.</div>
           </div>
@@ -1810,6 +1860,29 @@ body.is-native select { font-size: 16px !important; }
           <input type="checkbox" name="sky" id="sky-fog" value="Fog"><label for="sky-fog">🌫️ Fog</label>
           <input type="checkbox" name="sky" id="sky-mix" value="Rain / Snow Mix"><label for="sky-mix">🌨️ Mix</label>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 📌 OPEN ITEMS — carryover notes & tasks (persist until resolved; not day-keyed) -->
+  <div class="card" id="sec-oi">
+    <div class="card-head" onclick="toggleSection('sec-oi')">
+      <span class="card-num">📌</span>
+      <span class="card-title" id="ctitle-oi">Open Items</span>
+      <span class="head-fade"></span>
+      <span class="card-badge" id="oi-badge">0 open</span>
+      <span class="card-chevron">▾</span>
+    </div>
+    <div class="card-body">
+      <div id="oi-list"></div>
+      <div class="oi-add-row">
+        <button class="oi-kind-btn" id="oi-new-kind" onclick="oiToggleNewKind()" title="Switch between task and note">☑︎ Task</button>
+        <input type="text" id="oi-new-text" placeholder="Add a task or note — it carries until you check it off…" onkeydown="if(event.key==='Enter'){event.preventDefault();oiAdd()}">
+        <button class="oi-add-btn" onclick="oiAdd()" title="Add">＋</button>
+      </div>
+      <div id="oi-resolved-wrap" style="display:none">
+        <div class="oi-resolved-head" id="oi-resolved-head" onclick="oiToggleResolved()"></div>
+        <div id="oi-resolved-list" style="display:none"></div>
       </div>
     </div>
   </div>
@@ -3150,6 +3223,18 @@ Anticipated rain — AM weather monitoring expected"></textarea>
     </div>
   </div>
 
+<div class="config-section" id="cfg-openitems">
+    <div class="config-head" onclick="toggleSection('cfg-openitems')"><span class="config-title">🔔 Open Items Reminders</span><span class="head-fade"></span><span class="config-sub">Daily summary &amp; item reminders</span><span class="card-chevron">▾</span></div>
+    <div class="config-body">
+      <p class="config-hint">Open Items carry from day to day until you check them off. The daily summary notification tells you how many are open (and due) so you can review them while filling out the basics each morning. Per-item reminders are set on each item in the 📌 card.</p>
+      <label style="display:flex;align-items:center;gap:10px;margin-bottom:14px;cursor:pointer;font-family:var(--mono);font-size:12px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted2)">
+        <input type="checkbox" id="cfg-oi-digest-on" style="width:18px;height:18px;accent-color:var(--amber)" onchange="oiDigestChanged()">Daily summary notification
+      </label>
+      <div class="field" style="max-width:200px;margin-bottom:10px"><label>Summary time</label><input type="time" id="cfg-oi-digest-time" value="06:00" onchange="oiDigestChanged()"></div>
+      <p class="config-hint" style="margin-bottom:0">Scheduled notifications fire on the iOS app (even offline). On the web you'll get the in-app summary when a new day starts.</p>
+    </div>
+  </div>
+
 <div class="config-section" id="cfg-card-labels">
     <div class="config-head" onclick="toggleSection('cfg-card-labels')"><span class="config-title">Card Labels</span><span class="head-fade"></span><span class="config-sub">Rename daily log card headers</span><span class="card-chevron">▾</span></div>
     <div class="config-body">
@@ -3158,6 +3243,7 @@ Anticipated rain — AM weather monitoring expected"></textarea>
         <div class="field"><label>Card 01</label><input type="text" id="cfg-ct-01" placeholder="Project &amp; Report Info"></div>
         <div class="field"><label>Card TS</label><input type="text" id="cfg-ct-ts" placeholder="Daily Timesheet Entry"></div>
         <div class="field"><label>Card 02</label><input type="text" id="cfg-ct-02" placeholder="Weather Conditions"></div>
+        <div class="field"><label>Card 📌</label><input type="text" id="cfg-ct-oi" placeholder="Open Items"></div>
         <div class="field"><label>Card 03</label><input type="text" id="cfg-ct-03" placeholder="Inspection Summary"></div>
         <div class="field"><label>Card 04</label><input type="text" id="cfg-ct-04" placeholder="Contractor Crew Observations"></div>
         <div class="field"><label>Card 05</label><input type="text" id="cfg-ct-05" placeholder="Compliance Checklist"></div>

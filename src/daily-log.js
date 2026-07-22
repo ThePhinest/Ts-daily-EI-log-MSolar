@@ -775,6 +775,14 @@ function checkNewDay(){
   } else if(noteBox){
     noteBox.style.display='none';
   }
+  // Open Items carryover summary (openItems.js) — items persist across days by
+  // design; this just surfaces the count at the day boundary.
+  const oiBox=document.getElementById('nd-open-items');
+  if(oiBox){
+    const html=(typeof window.oiNdSummaryHtml==='function')?window.oiNdSummaryHtml():'';
+    oiBox.innerHTML=html;
+    oiBox.style.display=html?'block':'none';
+  }
   document.getElementById('nd-overlay').style.display='flex';
   // Store the previous date for use in reset handler
   document.getElementById('nd-overlay').dataset.prevDate=savedDate;

@@ -406,6 +406,20 @@ async function rptBuildDocx(logData,polished,photos){
     h2('T&E Species / Unanticipated Discoveries'),
     body(polished.rteObservation||'No rare, threatened, or endangered species were observed. No unanticipated archaeological or cultural resource discoveries were encountered.')
   ];
+  // Open Items resolved today — opt-in per item at resolve time (openItems.js).
+  // Data comes straight from the spine (not AI-polished): the item lifecycle
+  // (opened → resolved, with the resolution note) is the evidence trail.
+  const oiRes=(typeof window.oiResolvedForReport==='function')?window.oiResolvedForReport(logData.reportDate):[];
+  if(oiRes.length){
+    const oiHdrCell=(t,w)=>new TableCell({borders,shading:{fill:BLUE,type:ShadingType.CLEAR},width:w?{size:w,type:WidthType.DXA}:undefined,margins:{top:60,bottom:60,left:80,right:80},children:[new Paragraph({children:[new TextRun({text:t,bold:true,color:WHITE,font:'Arial',size:18})]})]});
+    const oiCell=(t)=>new TableCell({borders,margins:{top:60,bottom:60,left:80,right:80},children:[new Paragraph({children:[new TextRun({text:t||'',font:'Arial',size:18})]})]});
+    const oiFmt=(ds)=>{ if(!ds) return ''; const p=ds.split('-'); return p.length===3?`${parseInt(p[1])}/${parseInt(p[2])}/${p[0].slice(2)}`:ds; };
+    const oiTable=new Table({rows:[
+      new TableRow({children:[oiHdrCell('Item',3600),oiHdrCell('Opened',1200),oiHdrCell('Resolved',1200),oiHdrCell('Resolution',3360)]}),
+      ...oiRes.map(it=>new TableRow({children:[oiCell(it.text),oiCell(oiFmt(it.createdDate)),oiCell(oiFmt(it.resolvedDate)),oiCell(it.resolutionNote||'Resolved')]}))
+    ]});
+    sec3.push(spacer(60),h2('Open Items Resolved'),spacer(40),oiTable);
+  }
   // Section 4: General Comms
   const sec4=[h1('4.  General Communication to Contractors'),spacer(60),body(polished.generalComms||'No general communications to report.')];
   // Section 5: Look Ahead
@@ -580,9 +594,14 @@ function _buildSnapshot(logData, compEntries, skipPolish, photos, effectivePromp
     return ref;
   }).sort((a,b) => String(a.id||'').localeCompare(String(b.id||'')));
   const compRefs = (compEntries||[]).slice().sort((a,b) => String(a.id||'').localeCompare(String(b.id||'')));
+  // Opted-in resolved Open Items render in the DOCX (openItems.js), so they must
+  // be part of the cache key — resolving one after generating must be a cache miss.
+  const oiRefs = ((typeof window.oiResolvedForReport==='function')?window.oiResolvedForReport(logData.reportDate):[])
+    .map(it => ({id:it.id, text:it.text, resolutionNote:it.resolutionNote, createdDate:it.createdDate, resolvedDate:it.resolvedDate}))
+    .sort((a,b) => String(a.id||'').localeCompare(String(b.id||'')));
   // effectivePromptHash (added 2026-05-08, C10) folds the user's assembled prompt
   // into the cache key. Identical inputs but different prompt config = cache miss.
-  return {logData, compEntries: compRefs, skipPolish: !!skipPolish, photoRefs, effectivePromptHash: effectivePromptHash || ''};
+  return {logData, compEntries: compRefs, skipPolish: !!skipPolish, photoRefs, oiRefs, effectivePromptHash: effectivePromptHash || ''};
 }
 
 function _categorizeChanges(prevSnap, currSnap){
@@ -597,6 +616,8 @@ function _categorizeChanges(prevSnap, currSnap){
     if(info.narrative) narrativeFields.push(info.label);
     else mechanicalCount++;
   }
+  // A change in opted-in resolved Open Items is a mechanical (table) change.
+  if(JSON.stringify(prevSnap.oiRefs||[]) !== JSON.stringify(currSnap.oiRefs||[])) mechanicalCount++;
   return {mechanicalCount, narrativeFields};
 }
 

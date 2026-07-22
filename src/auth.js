@@ -4,7 +4,7 @@ import * as Sentry from '@sentry/capacitor'
 
 // ── Module-level state (onboarding carousel) ──
 let _obSlideIndex = 0;
-let _obTotalSlides = 11;
+let _obTotalSlides = 12; // fallback — recomputed from the DOM at carousel init
 
 // ═══════════════════════════════════════════
 // ONBOARDING
@@ -38,6 +38,10 @@ function obStartTour() {
   const car = document.getElementById('ob-carousel');
   car.style.display = 'flex';
   _obSlideIndex = 0;
+  // Count slides from the DOM — a hardcoded total desyncs every time a
+  // feature slide is added (onboarding-grows-with-features rule).
+  const _obSlideEls = document.querySelectorAll('#ob-slides .ob-slide');
+  if (_obSlideEls.length) _obTotalSlides = _obSlideEls.length;
   _obRenderDots();
   _obUpdateSlide();
   _obInitSwipe();

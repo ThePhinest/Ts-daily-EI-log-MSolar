@@ -596,6 +596,8 @@ async function loadProject(projectId, projDataOverride) {
     if(typeof window.poLoadSheets === 'function'){
       window.poLoadSheets().catch(e => console.warn('poLoadSheets (project switch):', e.message));
     }
+    // Open Items are project-scoped — rehydrate the 📌 card for the new project.
+    if(typeof window.oiLoadForProject === 'function') window.oiLoadForProject();
     // Clear old project's tracker layers before loading new project's.
     if(typeof mapClearTrackerLayers === 'function') mapClearTrackerLayers();
     // Load tracker categories first (needed for color/name lookups), then entries.

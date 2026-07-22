@@ -5,6 +5,7 @@ const CARD_REGISTRY = [
   { id:'sec-01',  titleId:'ctitle-01',    cfgSubId:null,       inputId:'cfg-ct-01',    def:'Project & Report Info' },
   { id:'sec-ts',  titleId:'ctitle-ts',    cfgSubId:null,       inputId:'cfg-ct-ts',    def:'Daily Timesheet Entry' },
   { id:'sec-02',  titleId:'ctitle-02',    cfgSubId:null,       inputId:'cfg-ct-02',    def:'Weather Conditions' },
+  { id:'sec-oi',  titleId:'ctitle-oi',    cfgSubId:null,       inputId:'cfg-ct-oi',    def:'Open Items' },
   { id:'sec-03',  titleId:'ctitle-03',    cfgSubId:'csub-03',  inputId:'cfg-ct-03',    def:'Inspection Summary' },
   { id:'sec-04',  titleId:'ctitle-04',    cfgSubId:null,       inputId:'cfg-ct-04',    def:'Contractor Crew Observations' },
   { id:'sec-05',  titleId:'ctitle-05',    cfgSubId:null,       inputId:'cfg-ct-05',    def:'Compliance Checklist' },
