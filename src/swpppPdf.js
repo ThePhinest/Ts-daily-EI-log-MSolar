@@ -373,3 +373,113 @@ export async function swpppExportPdfNow(insp,cfg,sig){
   const fname=`${(cfg.projectTitle||'Project').replace(/[^\w]+/g,'_')}-QI_Stormwater_Inspection_Report_${parseInt(m)}-${parseInt(d)}-${y.slice(2)}.pdf`;
   await saveFileNative(blob,fname,'application/pdf');
 }
+
+// ═══ ESC PUNCHLIST PDF — the cross-category repair-flag deliverable ═══
+// Contractor-facing (ProSeed et al): every open 🚩 flag as a numbered item with
+// flag date, permit-derived due date (correction window), category, coordinates,
+// and the field photos taken at flag time; fixed items as a verification record.
+// Same house chrome as the QI report; photos ride exportImg like every export.
+export async function punchlistBuildPdf(opts){
+  opts=opts||{};
+  const pdfMake=await _getPdfMake();
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const cfg=(typeof loadProjectConfig==='function')?loadProjectConfig():{};
+  const projName=cfg.projectName||'Project';
+  const open=(typeof trGetOpenTemporary==='function')?trGetOpenTemporary(pid):[];
+  const fixed=(opts.includeFixed!==false&&typeof trGetResolvedTemporary==='function')?trGetResolvedTemporary(pid):[];
+  const winHrs=(typeof clAmberHours==='function')?clAmberHours():48;
+  const now=Date.now();
+  const fmtD=ds=>{ if(!ds) return '—'; const p=String(ds).split('-'); return p.length===3?`${parseInt(p[1])}/${parseInt(p[2])}/${p[0].slice(2)}`:String(ds); };
+  const fmtTs=ts=>{ if(!ts) return '—'; const d=new Date(ts); return `${d.getMonth()+1}/${d.getDate()}/${String(d.getFullYear()).slice(2)}`; };
+  const dueOf=e=>{ const t=new Date((e.date||'')+'T00:00:00').getTime(); return isNaN(t)?null:t+winHrs*3600000; };
+  const catName=e=>e.categoryName||((typeof tcGetName==='function')?tcGetName(e.categoryId,pid):'')||'—';
+  const coordsOf=e=>{ const g=e.geometry; return (g&&g.type==='Point'&&Array.isArray(g.coordinates))?`${g.coordinates[1].toFixed(5)}, ${g.coordinates[0].toFixed(5)}`:'—'; };
+  const esc=s=>String(s==null?'':s);
+
+  const sorted=[...open].sort((a,b)=>(a.date||'')<(b.date||'')?-1:1);   // oldest (most overdue) first
+  const overdue=sorted.filter(e=>{ const du=dueOf(e); return du&&now>du; }).length;
+  const today=new Date();
+  const longDate=today.toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});
+
+  const infoRows=[
+    infoRow('Project:',projName),
+    infoRow('Date issued:',longDate),
+    infoRow('Prepared by:',`${cfg.preparedBy||''}${cfg.org?'  |  '+cfg.org:''}`),
+    ...(opts.attention?[infoRow('Attention:',esc(opts.attention))]:[]),
+    infoRow('Correction window:',`${winHrs} hours from identification`),
+    infoRow('Open items:',String(sorted.length)+(overdue?`   —   ${overdue} past the correction window`:'')),
+    ...(fixed.length?[infoRow('Fixed to date:',String(fixed.length))]:[])
+  ];
+
+  const itemBlocks=[];
+  for(let i=0;i<sorted.length;i++){
+    const e=sorted[i];
+    const id='PL-'+String(i+1).padStart(2,'0');
+    const du=dueOf(e), over=du&&now>du;
+    const hot=over?{fill:AMBER,bold:true}:{};
+    const ims=[];
+    for(const pId of (e.photoIds||[])){
+      const im=await _imgFor(pId,250,300);
+      if(im) ims.push({im,cap:`${id} — photographed at flag time`});
+    }
+    itemBlocks.push(
+      {table:{headerRows:1,dontBreakRows:true,widths:cols(12,22,16,16),body:[
+        [hcell('Item'),hcell('BMP / Category'),hcell('Flagged'),hcell('Due'),hcell('Status')],
+        [cell(id,{bold:true}),cell(catName(e)),cell(fmtD(e.date)),cell(du?fmtTs(du):'—',hot),cell(over?'OPEN — OVERDUE':'OPEN',Object.assign({bold:true},hot))]
+      ]},layout:hairLayout,margin:[0,8,0,2]},
+      body([{text:'Deficiency / corrective action:  ',bold:true},{text:esc(e.tempLabel||'Repair needed')}]),
+      body([{text:'GPS:  ',bold:true},{text:coordsOf(e)}],{fontSize:8,color:'#555555',margin:[0,0,0,2]}),
+      ...(ims.length?[{table:{dontBreakRows:true,widths:['*','*'],body:_imgPairRows(ims)},layout:imgGridLayout,margin:[0,3,0,2]}]:[])
+    );
+  }
+
+  const fxSorted=[...fixed].sort((a,b)=>(b.resolvedAt||0)-(a.resolvedAt||0));
+  const fxBody=[[hcell('Deficiency'),hcell('BMP / Category'),hcell('Flagged'),hcell('Fixed'),hcell('Resolution')]];
+  fxSorted.forEach(e=>fxBody.push([cell(esc(e.tempLabel||'Repair')),cell(catName(e)),cell(fmtD(e.date)),cell(fmtTs(e.resolvedAt)),cell(esc(e.resolveNote||'—'))]));
+
+  const content=[
+    infoTable(infoRows),
+    h1('1.  Open Items — Corrective Action Required'),
+    note(`Items are listed oldest first. Photos were taken in the field at the time each item was flagged; GPS coordinates locate the flag on the site map.`),
+    ...(sorted.length?itemBlocks:[body('No open items — nothing currently requires attention.')]),
+    ...(fixed.length?[
+      h1('2.  Fixed — Verification Record'),
+      {table:{headerRows:1,dontBreakRows:true,widths:cols(28,18,10,10),body:fxBody},layout:hairLayout,margin:[0,2,0,4]}
+    ]:[])
+  ];
+
+  const dd={
+    pageSize:'LETTER',
+    pageMargins:[MARG,80,MARG,58],
+    defaultStyle:{font:'Roboto',fontSize:10},
+    header:()=>({
+      margin:[MARG,22,MARG,0],
+      table:{widths:['60%','40%'],body:[[
+        {text:projName.toUpperCase(),bold:true,fontSize:10,color:BLUE,fillColor:LT_BLUE},
+        {text:'ESC Punchlist',fontSize:9,color:MID_BLUE,fillColor:LT_BLUE,alignment:'right'}
+      ]]},
+      layout:{hLineWidth:()=>0.5,vLineWidth:(i,node)=>(i===0||i===node.table.widths.length)?0.5:0,hLineColor:()=>HAIR,vLineColor:()=>HAIR,paddingLeft:()=>6,paddingRight:()=>6,paddingTop:()=>3,paddingBottom:()=>3}
+    }),
+    footer:(currentPage)=>({
+      margin:[MARG,14,MARG,0],
+      stack:[
+        {canvas:[{type:'line',x1:0,y1:0,x2:CONTENT_W,y2:0,lineWidth:0.6,lineColor:HAIR}]},
+        {text:`${projName}  |  ESC Punchlist  |  ${today.getMonth()+1}/${today.getDate()}/${String(today.getFullYear()).slice(2)}  |  Page ${currentPage}`,
+         fontSize:8,color:'#888888',alignment:'center',margin:[0,4,0,0]}
+      ]
+    }),
+    pageBreakBefore:(node,followingNodesOnPage)=>node.headlineLevel===1&&followingNodesOnPage.length===0,
+    content
+  };
+
+  const doc=pdfMake.createPdf(dd);
+  return doc.getBlob();
+}
+
+export async function punchlistExportPdfNow(opts){
+  const blob=await punchlistBuildPdf(opts);
+  const cfg=(typeof loadProjectConfig==='function')?loadProjectConfig():{};
+  const t=new Date();
+  const fname=`${(cfg.projectName||'Project').replace(/[^\w]+/g,'_')}-ESC_Punchlist_${t.getMonth()+1}-${t.getDate()}-${String(t.getFullYear()).slice(2)}.pdf`;
+  await saveFileNative(blob,fname,'application/pdf');
+}

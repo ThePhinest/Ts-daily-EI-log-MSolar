@@ -121,7 +121,47 @@ function clEditAmber(){
     clRender();
   };
 }
-if(typeof window!=='undefined') window.clEditAmber=clEditAmber;
+if(typeof window!=='undefined'){ window.clEditAmber=clEditAmber; window.clAmberHours=clAmberHours; }
+
+// ── 📤 Punchlist PDF export (contractor deliverable — ProSeed et al) ──
+function clExportPunchlist(){
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  let lastAttn=''; try{ lastAttn=localStorage.getItem('gl_pl_attn::'+pid)||''; }catch{}
+  const ov=document.createElement('div');
+  ov.className='modal-overlay';
+  ov.style.cssText='z-index:5000';
+  ov.innerHTML=`<div class="modal-box" style="max-width:340px;width:90%">
+    <div class="modal-title" style="margin-bottom:6px">📤 Export Punchlist</div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);line-height:1.5;margin-bottom:14px">Branded PDF of every open repair flag — dates, due dates, GPS, and the field photos taken at flag time.</div>
+    <div class="field" style="margin-bottom:12px"><label>Attention / recipient (optional)</label><input type="text" id="_pl-attn" placeholder="e.g. ProSeed — ESC crew" value="${lastAttn.replace(/"/g,'&quot;')}"></div>
+    <label style="display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:12px;color:var(--text);margin-bottom:16px;cursor:pointer">
+      <input type="checkbox" id="_pl-fixed" checked> Include fixed-history verification record
+    </label>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-outline" style="flex:1" id="_pl-cancel">Cancel</button>
+      <button class="btn btn-amber" style="flex:2" id="_pl-go">📤 Generate PDF</button>
+    </div>
+  </div>`;
+  document.body.appendChild(ov);
+  ov.querySelector('#_pl-cancel').onclick=()=>ov.remove();
+  ov.querySelector('#_pl-go').onclick=async()=>{
+    const goBtn=ov.querySelector('#_pl-go');
+    const attention=ov.querySelector('#_pl-attn').value.trim();
+    const includeFixed=ov.querySelector('#_pl-fixed').checked;
+    try{ localStorage.setItem('gl_pl_attn::'+pid,attention); }catch{}
+    goBtn.disabled=true; goBtn.textContent='⏳ Building…';
+    try{
+      const m=await import('./swpppPdf.js');
+      await m.punchlistExportPdfNow({attention,includeFixed});
+      ov.remove();
+    }catch(err){
+      console.warn('punchlist export failed:',err);
+      goBtn.disabled=false; goBtn.textContent='📤 Generate PDF';
+      alert('Export failed — try again in a moment.');
+    }
+  };
+}
+if(typeof window!=='undefined') window.clExportPunchlist=clExportPunchlist;
 
 // ── Stat-tile tap filter (Open → unresolved only; Total → clear all) ──
 let _clStatFilter=null;
@@ -499,7 +539,7 @@ function clRenderPunchlist(){
     <div style="display:none">${resolved.map(e=>rowHtml(e,false)).join('')}</div>
   </div>`:'';
   el.innerHTML=`<div class="card${_clCardCollapsed('punch')?' collapsed':''}">
-    <div class="card-head" onclick="clToggleCard('punch')"><span class="card-num">🚩</span><span class="card-title">Punchlist</span><span class="head-fade"></span><span class="card-badge"${open.length?'':' style="opacity:.4"'}>${open.length} open</span><span class="card-chevron">▾</span></div>
+    <div class="card-head" onclick="clToggleCard('punch')"><span class="card-num">🚩</span><span class="card-title">Punchlist</span><span class="head-fade"></span><span class="card-badge"${open.length?'':' style="opacity:.4"'}>${open.length} open</span><button onclick="event.stopPropagation();clExportPunchlist()" title="Export punchlist PDF" style="background:none;border:1px solid var(--border);border-radius:10px;color:var(--muted);font-family:var(--mono);font-size:10px;padding:3px 8px;cursor:pointer;flex-shrink:0">📤 PDF</button><span class="card-chevron">▾</span></div>
     <div class="card-body" style="padding-top:4px">
       ${open.length?openRows:`<div style="font-family:var(--mono);font-size:11px;color:var(--muted);padding:8px 4px">Nothing needs attention. Flag repairs from any drawing's popup on the map.</div>`}
       ${resolvedBlock}
