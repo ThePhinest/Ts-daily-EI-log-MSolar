@@ -71,8 +71,88 @@ function clSave(){
   window.glHaptic && window.glHaptic.success();  // tactile confirm on compliance entry save
 }
 
+// ── Correction-window (48h clock) config — per user, per project ──
+// Default 48h = the 5-acre authorization condition 7 correction window.
+// Stored locally + mirrored to the user's per-project settings doc so it
+// follows the user across devices; hydrated lazily once per session.
+const _CL_AMBER_KEY='gl_cl_amber::';
+const _clAmberHydrated=new Set();
+function clAmberHours(){
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  let v=NaN;
+  try{ v=parseFloat(localStorage.getItem(_CL_AMBER_KEY+pid)); }catch{}
+  return (v>0)?v:48;
+}
+function _clAmberHydrate(){
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  if(_clAmberHydrated.has(pid)) return;
+  if(pid==='default'||typeof _udb!=='function'||!window._fbReady) return;
+  _clAmberHydrated.add(pid);
+  try{
+    _udb().collection('settings').doc(pid).get().then(doc=>{
+      const v=doc.exists?parseFloat(doc.data().clAmberHours):NaN;
+      if(v>0){ try{ localStorage.setItem(_CL_AMBER_KEY+pid,String(v)); }catch{} clRender(); }
+    }).catch(()=>{});
+  }catch{}
+}
+function clEditAmber(){
+  const cur=clAmberHours();
+  const ov=document.createElement('div');
+  ov.className='modal-overlay';
+  ov.style.cssText='z-index:5000';
+  ov.innerHTML=`<div class="modal-box" style="max-width:320px;width:90%">
+    <div class="modal-title" style="margin-bottom:6px">⏱ Correction Window</div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);line-height:1.5;margin-bottom:14px">Open entries turn amber once they've been open longer than this. Your 5-acre authorization (condition 7) sets a 48-hour correction window.</div>
+    <div class="field" style="margin-bottom:16px"><label>Hours</label><input type="number" id="_cl-amber-in" min="1" step="1" value="${cur}"></div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-outline" style="flex:1" id="_cl-amber-cancel">Cancel</button>
+      <button class="btn btn-amber" style="flex:2" id="_cl-amber-save">Save</button>
+    </div>
+  </div>`;
+  document.body.appendChild(ov);
+  ov.querySelector('#_cl-amber-cancel').onclick=()=>ov.remove();
+  ov.querySelector('#_cl-amber-save').onclick=()=>{
+    const v=parseFloat(ov.querySelector('#_cl-amber-in').value);
+    if(!(v>0)){ ov.remove(); return; }
+    const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+    try{ localStorage.setItem(_CL_AMBER_KEY+pid,String(v)); }catch{}
+    try{ if(typeof _udb==='function'&&window._fbReady&&pid!=='default') _udb().collection('settings').doc(pid).set({clAmberHours:v,_ts:Date.now()},{merge:true}).catch(()=>{}); }catch{}
+    ov.remove();
+    clRender();
+  };
+}
+if(typeof window!=='undefined') window.clEditAmber=clEditAmber;
+
+// ── Stat-tile tap filter (Open → unresolved only; Total → clear all) ──
+let _clStatFilter=null;
+function clStatTap(kind){
+  if(kind==='open'){
+    _clStatFilter=(_clStatFilter==='open')?null:'open';
+  } else {
+    _clStatFilter=null;
+    const s=document.getElementById('cl-search'); if(s) s.value='';
+    const fl=document.getElementById('cl-filter-level'); if(fl) fl.value='';
+    const fs=document.getElementById('cl-filter-status'); if(fs) fs.value='';
+  }
+  // Filtering with the log collapsed reads as a dead tap — pop it open.
+  if(_clCardCollapsed('log')) clToggleCard('log');
+  clRender();
+}
+if(typeof window!=='undefined') window.clStatTap=clStatTap;
+
+// Days an entry has been open; amber past the configured correction window.
+function _clAgeInfo(e){
+  if(!e.date||e.status==='Resolved') return null;
+  const start=new Date(e.date+'T00:00:00').getTime();
+  if(isNaN(start)) return null;
+  const hrs=(Date.now()-start)/3600000;
+  const days=Math.floor(hrs/24);
+  return {days, over:hrs>=clAmberHours()};
+}
+
 // ── Render ──
 function clRender(){
+  _clAmberHydrate();
   const search = (document.getElementById('cl-search')?.value||'').toLowerCase();
   const filterLevel = document.getElementById('cl-filter-level')?.value||'';
   const filterStatus = document.getElementById('cl-filter-status')?.value||'';
@@ -80,6 +160,7 @@ function clRender(){
   let entries = [..._clEntries].sort((a,b)=> b.date > a.date ? 1 : -1);
 
   if(_projectFilterActive) entries = entries.filter(e => !e.projectId || e.projectId === _activeProjectId());
+  if(_clStatFilter==='open') entries = entries.filter(e=>e.status!=='Resolved');
   if(filterLevel) entries = entries.filter(e=>String(e.level)===filterLevel);
   if(filterStatus) entries = entries.filter(e=>e.status===filterStatus);
   if(search) entries = entries.filter(e=>
@@ -103,6 +184,10 @@ function clRender(){
   }
   const logCard=document.getElementById('cl-log-card');
   if(logCard) logCard.classList.toggle('collapsed',_clCardCollapsed('log'));
+  const amberBtn=document.getElementById('cl-amber-btn');
+  if(amberBtn) amberBtn.textContent='⏱ '+clAmberHours()+'h';
+  const openTile=document.getElementById('cl-stat-open-tile');
+  if(openTile) openTile.classList.toggle('active',_clStatFilter==='open');
 
   clRenderTrackerCard();
   const list = document.getElementById('cl-list');
@@ -125,12 +210,15 @@ function clRender(){
       ? `<div class="cl-field-val full"><span style="font-family:var(--mono);font-size:9.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em">Resolved</span> <span style="font-size:13px;color:var(--green)">${clFmtDate(e.dateResolved)}</span></div>`
       : '';
     const sourceLabel = e.sourceReport ? `Report: ${clFmtDate(e.sourceReport)}` : (e.addedBy==='auto'?'Auto-captured':'Manual entry');
+    const age=_clAgeInfo(e);
+    const ageChip=age?`<span class="cl-age${age.over?' over':''}" title="Correction window: ${clAmberHours()}h">⏱ ${age.days<1?'<1':age.days}d open${age.over?' ⚠':''}</span>`:'';
     return `
     <div class="cl-entry" id="cle-${e.id}">
       <div class="cl-entry-head">
         <span class="cl-entry-date">${clFmtDate(e.date)}</span>
         <span class="${clLevelClass(e.level)}">${clLevelLabel(e.level)}</span>
         <span class="${clStatusClass(e.status)}">${e.status}</span>
+        ${ageChip}
         <span class="cl-entry-source">${sourceLabel}</span>
       </div>
       <div class="cl-entry-body">

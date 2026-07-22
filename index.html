@@ -326,9 +326,10 @@ body.theme-light{
 .card.collapsed .card-chevron{transform:rotate(-90deg)}
 .card.collapsed .card-body{display:none}
 .card.collapsed .card-head{border-bottom:none}
-/* Gold fading divider inside a card head (photos-page date-label pattern) —
+/* Gold fading divider inside a card/config head (photos-page date-label pattern) —
    drop <span class="head-fade"></span> after the title. Reusable app-wide. */
-.card-head .head-fade{flex:1 1 12px;min-width:12px;height:1px;background:linear-gradient(90deg,rgba(201,168,76,.5),rgba(201,168,76,.08) 70%,transparent)}
+.head-fade{flex:1 1 12px;min-width:12px;height:1px;background:linear-gradient(90deg,rgba(201,168,76,.5),rgba(201,168,76,.08) 70%,transparent)}
+.config-head .head-fade{align-self:center}
 /* Compliance page: section titles sized up so the page reads as sections, not a run-on.
    min-width:0 + ellipsis keeps crowded heads (badge + View All + chevron) on one line on phones. */
 #page-compliance .card-title{font-size:15px;letter-spacing:.14em;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -765,6 +766,11 @@ button:disabled,button[disabled]{opacity:.45;cursor:not-allowed}
 .cl-header-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:10px}
 .cl-stats{display:flex;gap:12px}
 .cl-stat{background:var(--s1);border:1px solid var(--border);border-radius:var(--r);padding:8px 14px;text-align:center;min-width:70px}
+.cl-stat.tappable{cursor:pointer;-webkit-user-select:none;user-select:none;transition:border-color .15s}
+.cl-stat.active{border-color:var(--amber);background:var(--amber-bg)}
+/* 48-hr correction clock chip on open entries */
+.cl-age{font-family:var(--mono);font-size:10px;color:var(--muted);border:1px solid var(--border);border-radius:10px;padding:2px 8px;white-space:nowrap}
+.cl-age.over{color:var(--amber);border-color:var(--amber);background:var(--amber-bg);font-weight:700}
 .cl-stat-num{font-family:var(--cond);font-weight:700;font-size:22px;color:var(--amber2);display:block;line-height:1}
 .cl-stat-lbl{font-family:var(--mono);font-size:9.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
 .cl-stat.open .cl-stat-num{color:var(--red)}
@@ -1699,6 +1705,7 @@ body.is-native select { font-size: 16px !important; }
     <div class="card-head" onclick="toggleSection('sec-ts')">
       <span class="card-num">⏱</span>
       <span class="card-title" id="ctitle-ts">Daily Timesheet Entry</span>
+      <span class="head-fade"></span>
       <span class="card-chevron">▾</span>
     </div>
     <div class="card-body">
@@ -1754,6 +1761,7 @@ body.is-native select { font-size: 16px !important; }
     <div class="card-head" onclick="toggleSection('sec-02')">
       <span class="card-num">02</span>
       <span class="card-title" id="ctitle-02">Weather Conditions</span>
+      <span class="head-fade"></span>
       <button class="btn btn-outline" id="wx-btn" onclick="event.stopPropagation();getMyWeather()" style="font-size:10px;padding:4px 10px;margin-left:auto;margin-right:8px">⛅ Get My Weather</button>
       <span class="card-chevron">▾</span>
     </div>
@@ -1807,7 +1815,7 @@ body.is-native select { font-size: 16px !important; }
 
   <!-- 03 INSPECTION SUMMARY -->
   <div class="card" id="sec-03">
-    <div class="card-head" onclick="toggleSection('sec-03')"><span class="card-num">03</span><span class="card-title" id="ctitle-03">Inspection Summary</span><span class="card-chevron">▾</span></div>
+    <div class="card-head" onclick="toggleSection('sec-03')"><span class="card-num">03</span><span class="card-title" id="ctitle-03">Inspection Summary</span><span class="head-fade"></span><span class="card-chevron">▾</span></div>
     <div class="card-body">
       <div class="g">
         <div class="field">
@@ -1830,6 +1838,7 @@ body.is-native select { font-size: 16px !important; }
     <div class="card-head" onclick="toggleSection('sec-04')">
       <span class="card-num">04</span>
       <span class="card-title" id="ctitle-04">Contractor Crew Observations</span>
+      <span class="head-fade"></span>
       <span class="card-badge" id="crewBadge">0 blocks</span>
       <span class="card-chevron">▾</span>
     </div>
@@ -1841,14 +1850,14 @@ body.is-native select { font-size: 16px !important; }
 
   <!-- 05 COMPLIANCE CHECKLIST -->
   <div class="card" id="sec-05">
-    <div class="card-head" onclick="toggleSection('sec-05')"><span class="card-num">05</span><span class="card-title" id="ctitle-05">Compliance Checklist</span><span class="card-chevron">▾</span></div>
+    <div class="card-head" onclick="toggleSection('sec-05')"><span class="card-num">05</span><span class="card-title" id="ctitle-05">Compliance Checklist</span><span class="head-fade"></span><span class="card-chevron">▾</span></div>
     <div class="card-hint">Checked items with notes will be included in the report</div>
     <div class="card-body" id="checklistBody"></div>
   </div>
 
   <!-- 06 REGULATORY FLAGS -->
   <div class="card" id="sec-06">
-    <div class="card-head" onclick="toggleSection('sec-06')"><span class="card-num">06</span><span class="card-title" id="ctitle-06">Regulatory &amp; Incident Flags</span><span class="card-chevron">▾</span></div>
+    <div class="card-head" onclick="toggleSection('sec-06')"><span class="card-num">06</span><span class="card-title" id="ctitle-06">Regulatory &amp; Incident Flags</span><span class="head-fade"></span><span class="card-chevron">▾</span></div>
     <div class="card-hint-red">Checked items will trigger a report warning — description recommended</div>
     <div class="card-body" id="flagsBody">
     </div>
@@ -1856,7 +1865,7 @@ body.is-native select { font-size: 16px !important; }
 
   <!-- 07 GENERAL COMMS -->
   <div class="card" id="sec-07">
-    <div class="card-head" onclick="toggleSection('sec-07')"><span class="card-num">07</span><span class="card-title" id="ctitle-07">General Communication to Contractors</span><span class="card-chevron">▾</span></div>
+    <div class="card-head" onclick="toggleSection('sec-07')"><span class="card-num">07</span><span class="card-title" id="ctitle-07">General Communication to Contractors</span><span class="head-fade"></span><span class="card-chevron">▾</span></div>
     <div class="card-body">
       <div class="field">
         <label>Directives, communications, and coordination notes</label>
@@ -1868,7 +1877,7 @@ body.is-native select { font-size: 16px !important; }
 
   <!-- 08 24-HR LOOK AHEAD -->
   <div class="card" id="sec-08">
-    <div class="card-head" onclick="toggleSection('sec-08')"><span class="card-num">08</span><span class="card-title" id="ctitle-08">24-Hour Look Ahead</span><span class="card-chevron">▾</span></div>
+    <div class="card-head" onclick="toggleSection('sec-08')"><span class="card-num">08</span><span class="card-title" id="ctitle-08">24-Hour Look Ahead</span><span class="head-fade"></span><span class="card-chevron">▾</span></div>
     <div class="card-body">
       <div class="field" style="margin-bottom:12px">
         <label>Expected Weather Conditions</label>
@@ -2650,11 +2659,11 @@ Anticipated rain — AM weather monitoring expected"></textarea>
   <!-- Header row: stats + add button -->
   <div class="cl-header-row">
     <div class="cl-stats">
-      <div class="cl-stat open">
+      <div class="cl-stat open tappable" id="cl-stat-open-tile" onclick="clStatTap('open')" title="Tap to filter to open items">
         <span class="cl-stat-num" id="cl-stat-open">0</span>
         <span class="cl-stat-lbl">Open</span>
       </div>
-      <div class="cl-stat">
+      <div class="cl-stat tappable" id="cl-stat-total-tile" onclick="clStatTap('all')" title="Tap to clear filters">
         <span class="cl-stat-num" id="cl-stat-total">0</span>
         <span class="cl-stat-lbl">Total</span>
       </div>
@@ -2682,6 +2691,7 @@ Anticipated rain — AM weather monitoring expected"></textarea>
       <span class="card-title">Compliance Log</span>
       <span class="head-fade"></span>
       <span class="card-badge" id="cl-log-badge" style="display:none"></span>
+      <button id="cl-amber-btn" onclick="event.stopPropagation();clEditAmber()" title="Correction window — open entries turn amber past this age" style="background:none;border:1px solid var(--border);border-radius:10px;color:var(--muted);font-family:var(--mono);font-size:10px;padding:3px 8px;cursor:pointer;flex-shrink:0">⏱ 48h</button>
       <span class="card-chevron">▾</span>
     </div>
     <div class="card-body" style="padding-top:10px">
@@ -2834,7 +2844,7 @@ Anticipated rain — AM weather monitoring expected"></textarea>
   </div>
 
   <div class="config-section" id="cfg-nav">
-    <div class="config-head" onclick="toggleSection('cfg-nav')"><span class="config-title">Navigation Layout</span><span class="config-sub">Customize bottom nav slots</span><span class="card-chevron">▾</span></div>
+    <div class="config-head" onclick="toggleSection('cfg-nav')"><span class="config-title">Navigation Layout</span><span class="head-fade"></span><span class="config-sub">Customize bottom nav slots</span><span class="card-chevron">▾</span></div>
     <div class="config-body">
       <p class="config-hint">Choose which pages appear in the 3 customizable nav slots. Slot 4 (More) is always fixed. You can also long-press any nav button to swap it quickly.</p>
       <div class="g g3" style="margin-bottom:12px" id="nav-config-slots"></div>
@@ -2844,7 +2854,7 @@ Anticipated rain — AM weather monitoring expected"></textarea>
   </div>
 
   <div class="config-section" id="cfg-proj">
-    <div class="config-head" onclick="toggleSection('cfg-proj')"><span class="config-title">Project &amp; Report Info</span><span class="config-sub">Project name, contractor, location</span><span class="card-chevron">▾</span></div>
+    <div class="config-head" onclick="toggleSection('cfg-proj')"><span class="config-title">Project &amp; Report Info</span><span class="head-fade"></span><span class="config-sub">Project name, contractor, location</span><span class="card-chevron">▾</span></div>
     <div class="config-body">
       <p class="config-hint">Tap the project name in the app bar to switch projects or create a new one. Edit this project's details below — changes save across all devices. Active Contractor sets the default; you can clear or change it per day directly on the log.</p>
       <div class="g g2" style="margin-bottom:10px">
@@ -2864,7 +2874,7 @@ Anticipated rain — AM weather monitoring expected"></textarea>
   <!-- Project Members — shared-project membership + invites (Phase 4.5 chunk 1).
        Body renders live from projects/{pid}/members on expand (members.js). -->
   <div class="config-section" id="cfg-members">
-    <div class="config-head" onclick="toggleSection('cfg-members');glRenderMembersCard()"><span class="config-title">Project Members</span><span class="config-sub">Who's on this project · invites</span><span class="card-chevron">▾</span></div>
+    <div class="config-head" onclick="toggleSection('cfg-members');glRenderMembersCard()"><span class="config-title">Project Members</span><span class="head-fade"></span><span class="config-sub">Who's on this project · invites</span><span class="card-chevron">▾</span></div>
     <div class="config-body">
       <p class="config-hint">Everyone on the active project. Invite someone with a link, code, or QR — they see what's published to the project, never your personal notes. Roles set what people can do, not what they can see.</p>
       <div id="members-card-body"></div>
@@ -2872,7 +2882,7 @@ Anticipated rain — AM weather monitoring expected"></textarea>
   </div>
 
   <div class="config-section" id="cfg-report">
-    <div class="config-head" onclick="toggleSection('cfg-report')"><span class="config-title">Report Generation</span><span class="config-sub">Anthropic API key</span><span class="card-chevron">▾</span></div>
+    <div class="config-head" onclick="toggleSection('cfg-report')"><span class="config-title">Report Generation</span><span class="head-fade"></span><span class="config-sub">Anthropic API key</span><span class="card-chevron">▾</span></div>
     <div class="config-body">
       <p class="config-hint">Enter your Anthropic API key once to enable one-tap AI report generation. The key is encrypted and stored in Firestore — works across all your devices.</p>
       <div style="margin-bottom:10px">
@@ -2905,7 +2915,7 @@ Anticipated rain — AM weather monitoring expected"></textarea>
   </div>
 
   <div class="config-section" id="cfg-map">
-    <div class="config-head" onclick="toggleSection('cfg-map')"><span class="config-title">Map Settings</span><span class="config-sub">Mapbox token &amp; default style</span><span class="card-chevron">▾</span></div>
+    <div class="config-head" onclick="toggleSection('cfg-map')"><span class="config-title">Map Settings</span><span class="head-fade"></span><span class="config-sub">Mapbox token &amp; default style</span><span class="card-chevron">▾</span></div>
     <div class="config-body">
       <p class="config-hint">Configure the Field Map. Paste your Mapbox public token below to enable the map.</p>
       <div class="field" style="margin-bottom:10px">
@@ -2941,7 +2951,7 @@ Anticipated rain — AM weather monitoring expected"></textarea>
   </div>
 
   <div class="config-section" id="cfg-ts">
-    <div class="config-head" onclick="toggleSection('cfg-ts')"><span class="config-title">Timesheet Settings</span><span class="config-sub">Hours, mileage, per-diem rates</span><span class="card-chevron">▾</span></div>
+    <div class="config-head" onclick="toggleSection('cfg-ts')"><span class="config-title">Timesheet Settings</span><span class="head-fade"></span><span class="config-sub">Hours, mileage, per-diem rates</span><span class="card-chevron">▾</span></div>
     <div class="config-body">
       <p class="config-hint">Configure your timesheet defaults. Values apply to all timesheet calculations and persist through resets.</p>
       <div class="g g2" style="margin-bottom:10px">
@@ -2980,7 +2990,7 @@ Anticipated rain — AM weather monitoring expected"></textarea>
   </div>
 
   <div class="config-section" id="cfg-obs">
-    <div class="config-head" onclick="toggleSection('cfg-obs')"><span class="config-title">Field Observation Presets</span><span class="config-sub" id="csub-03">→ Inspection Summary</span><span class="card-chevron">▾</span></div>
+    <div class="config-head" onclick="toggleSection('cfg-obs')"><span class="config-title">Field Observation Presets</span><span class="head-fade"></span><span class="config-sub" id="csub-03">→ Inspection Summary</span><span class="card-chevron">▾</span></div>
     <div class="config-body">
       <p class="config-hint">Quick-insert observation bullets for the Inspection Summary field.</p>
       <ul class="preset-list" id="list-obs"></ul>
@@ -2994,7 +3004,7 @@ Anticipated rain — AM weather monitoring expected"></textarea>
   </div>
 
   <div class="config-section" id="cfg-act">
-    <div class="config-head" onclick="toggleSection('cfg-act')"><span class="config-title">Contractor Activity Presets</span><span class="config-sub">→ Crew Block: Activities</span><span class="card-chevron">▾</span></div>
+    <div class="config-head" onclick="toggleSection('cfg-act')"><span class="config-title">Contractor Activity Presets</span><span class="head-fade"></span><span class="config-sub">→ Crew Block: Activities</span><span class="card-chevron">▾</span></div>
     <div class="config-body">
       <p class="config-hint">Quick-insert activities for crew block "Activities Observed" fields.</p>
       <ul class="preset-list" id="list-act"></ul>
@@ -3008,7 +3018,7 @@ Anticipated rain — AM weather monitoring expected"></textarea>
   </div>
 
   <div class="config-section" id="cfg-env">
-    <div class="config-head" onclick="toggleSection('cfg-env')"><span class="config-title">Env. Compliance Observation Presets</span><span class="config-sub">→ Crew Block: Env. Compliance</span><span class="card-chevron">▾</span></div>
+    <div class="config-head" onclick="toggleSection('cfg-env')"><span class="config-title">Env. Compliance Observation Presets</span><span class="head-fade"></span><span class="config-sub">→ Crew Block: Env. Compliance</span><span class="card-chevron">▾</span></div>
     <div class="config-body">
       <p class="config-hint">Quick-insert compliance observations for crew block "Env. Compliance" fields.</p>
       <ul class="preset-list" id="list-env"></ul>
@@ -3022,7 +3032,7 @@ Anticipated rain — AM weather monitoring expected"></textarea>
   </div>
 
   <div class="config-section" id="cfg-checklist">
-    <div class="config-head" onclick="toggleSection('cfg-checklist')"><span class="config-title">Compliance Checklist</span><span class="config-sub">Manage checklist items</span><span class="card-chevron">▾</span></div>
+    <div class="config-head" onclick="toggleSection('cfg-checklist')"><span class="config-title">Compliance Checklist</span><span class="head-fade"></span><span class="config-sub">Manage checklist items</span><span class="card-chevron">▾</span></div>
     <div class="config-body">
       <p class="config-hint">Manage items for the Compliance Checklist card. Checked items with notes will be included in the report.</p>
       <div class="field" style="margin-bottom:10px">
@@ -3041,7 +3051,7 @@ Anticipated rain — AM weather monitoring expected"></textarea>
   </div>
 
   <div class="config-section" id="cfg-flags">
-    <div class="config-head" onclick="toggleSection('cfg-flags')"><span class="config-title">Regulatory Flags</span><span class="config-sub">Manage regulatory flag items</span><span class="card-chevron">▾</span></div>
+    <div class="config-head" onclick="toggleSection('cfg-flags')"><span class="config-title">Regulatory Flags</span><span class="head-fade"></span><span class="config-sub">Manage regulatory flag items</span><span class="card-chevron">▾</span></div>
     <div class="config-body">
       <p class="config-hint">Manage items for the Regulatory &amp; Incident Flags card. Checked items trigger a report warning.</p>
       <div class="field" style="margin-bottom:10px">
@@ -3060,7 +3070,7 @@ Anticipated rain — AM weather monitoring expected"></textarea>
   </div>
 
   <div class="config-section" id="cfg-amendment">
-    <div class="config-head" onclick="toggleSection('cfg-amendment')"><span class="config-title">Amendment Tracking</span><span class="config-sub">Configure phases &amp; methods</span><span class="card-chevron">▾</span></div>
+    <div class="config-head" onclick="toggleSection('cfg-amendment')"><span class="config-title">Amendment Tracking</span><span class="head-fade"></span><span class="config-sub">Configure phases &amp; methods</span><span class="card-chevron">▾</span></div>
     <div class="config-body">
       <p class="config-hint">Customize the dropdown options for Application Phase and Application Method. These are project-specific — each project can have its own list.</p>
       <div style="margin-bottom:16px">
@@ -3091,7 +3101,7 @@ Anticipated rain — AM weather monitoring expected"></textarea>
   </div>
 
   <div class="config-section" id="cfg-comms">
-    <div class="config-head" onclick="toggleSection('cfg-comms')"><span class="config-title">General Comms Templates</span><span class="config-sub" id="csub-07">→ General Communication</span><span class="card-chevron">▾</span></div>
+    <div class="config-head" onclick="toggleSection('cfg-comms')"><span class="config-title">General Comms Templates</span><span class="head-fade"></span><span class="config-sub" id="csub-07">→ General Communication</span><span class="card-chevron">▾</span></div>
     <div class="config-body">
       <p class="config-hint">Standard directives, reminders, and communication templates.</p>
       <ul class="preset-list" id="list-comms"></ul>
@@ -3105,7 +3115,7 @@ Anticipated rain — AM weather monitoring expected"></textarea>
   </div>
 
   <div class="config-section" id="cfg-look">
-    <div class="config-head" onclick="toggleSection('cfg-look')"><span class="config-title">Look Ahead Presets</span><span class="config-sub" id="csub-08">→ 24-Hour Look Ahead</span><span class="card-chevron">▾</span></div>
+    <div class="config-head" onclick="toggleSection('cfg-look')"><span class="config-title">Look Ahead Presets</span><span class="head-fade"></span><span class="config-sub" id="csub-08">→ 24-Hour Look Ahead</span><span class="card-chevron">▾</span></div>
     <div class="config-body">
       <p class="config-hint">Common next-day anticipated work items.</p>
       <ul class="preset-list" id="list-look"></ul>
@@ -3119,7 +3129,7 @@ Anticipated rain — AM weather monitoring expected"></textarea>
   </div>
 
   <div class="config-section" id="cfg-phases">
-    <div class="config-head" onclick="toggleSection('cfg-phases')"><span class="config-title">Phases</span><span class="config-sub">Current activity &amp; phase tags</span><span class="card-chevron">▾</span></div>
+    <div class="config-head" onclick="toggleSection('cfg-phases')"><span class="config-title">Phases</span><span class="head-fade"></span><span class="config-sub">Current activity &amp; phase tags</span><span class="card-chevron">▾</span></div>
     <div class="config-body">
       <p class="config-hint">Set the active construction scope, then manage the phase tags available as the project progresses. The current activity appears on daily logs and generated reports; each preset is tagged to one phase.</p>
       <label style="font-family:var(--mono);font-size:13px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted2);display:block;margin-bottom:6px">Current Activity</label>
@@ -3138,7 +3148,7 @@ Anticipated rain — AM weather monitoring expected"></textarea>
   </div>
 
 <div class="config-section" id="cfg-card-labels">
-    <div class="config-head" onclick="toggleSection('cfg-card-labels')"><span class="config-title">Card Labels</span><span class="config-sub">Rename daily log card headers</span><span class="card-chevron">▾</span></div>
+    <div class="config-head" onclick="toggleSection('cfg-card-labels')"><span class="config-title">Card Labels</span><span class="head-fade"></span><span class="config-sub">Rename daily log card headers</span><span class="card-chevron">▾</span></div>
     <div class="config-body">
       <p class="config-hint">Customize the title of each card in the daily log. Changes sync across devices and update the card header and any linked settings section instantly.</p>
       <div class="g g2" style="margin-bottom:10px">
@@ -3443,7 +3453,7 @@ Anticipated rain — AM weather monitoring expected"></textarea>
 
   <!-- Profile -->
   <div class="config-section" id="acct-profile">
-    <div class="config-head"><span class="config-title">Profile</span><span class="config-sub">Display name &amp; email</span></div>
+    <div class="config-head"><span class="config-title">Profile</span><span class="head-fade"></span><span class="config-sub">Display name &amp; email</span></div>
     <div class="config-body">
       <p class="config-hint">Your display name appears on reports and logs. Email is set by your sign-in provider and cannot be changed here.</p>
       <div class="field" style="margin-bottom:10px">
@@ -3465,7 +3475,7 @@ Anticipated rain — AM weather monitoring expected"></textarea>
 
   <!-- Appearance -->
   <div class="config-section" id="acct-appearance">
-    <div class="config-head"><span class="config-title">Appearance</span><span class="config-sub">App theme</span></div>
+    <div class="config-head"><span class="config-title">Appearance</span><span class="head-fade"></span><span class="config-sub">App theme</span></div>
     <div class="config-body">
       <p class="config-hint">Choose your preferred color scheme. System follows your device setting.</p>
       <div style="display:flex;gap:6px;margin-bottom:4px">
@@ -3478,7 +3488,7 @@ Anticipated rain — AM weather monitoring expected"></textarea>
 
   <!-- Security -->
   <div class="config-section" id="acct-security">
-    <div class="config-head"><span class="config-title">Security</span><span class="config-sub">Verification &amp; password</span></div>
+    <div class="config-head"><span class="config-title">Security</span><span class="head-fade"></span><span class="config-sub">Verification &amp; password</span></div>
     <div class="config-body">
       <p class="config-hint">Verify your email address or update your password if you use email sign-in.</p>
       <button class="btn btn-outline" style="font-size:11px;padding:7px 14px;margin-bottom:10px" onclick="acctSendVerificationEmail()">Send Verification Email</button>
@@ -3504,7 +3514,7 @@ Anticipated rain — AM weather monitoring expected"></textarea>
 
   <!-- Linked Accounts -->
   <div class="config-section" id="acct-linked">
-    <div class="config-head"><span class="config-title">Linked Accounts</span><span class="config-sub">Sign-in methods on this account</span></div>
+    <div class="config-head"><span class="config-title">Linked Accounts</span><span class="head-fade"></span><span class="config-sub">Sign-in methods on this account</span></div>
     <div class="config-body">
       <p class="config-hint">You can sign in with any linked method. At least one must stay linked at all times.</p>
       <div id="acct-linked-list" style="margin-bottom:14px"></div>
@@ -3531,7 +3541,7 @@ Anticipated rain — AM weather monitoring expected"></textarea>
 
   <!-- Session -->
   <div class="config-section" id="acct-session">
-    <div class="config-head"><span class="config-title">Session</span><span class="config-sub">Sign out of this device</span></div>
+    <div class="config-head"><span class="config-title">Session</span><span class="head-fade"></span><span class="config-sub">Sign out of this device</span></div>
     <div class="config-body">
       <p class="config-hint">Signing out clears your session on this device. Your data remains saved in GroundLog.</p>
       <button class="btn btn-outline" style="font-size:11px;padding:7px 14px;color:var(--muted)" onclick="glSignOut()">Sign Out</button>
@@ -3540,7 +3550,7 @@ Anticipated rain — AM weather monitoring expected"></textarea>
 
   <!-- Data -->
   <div class="config-section" id="acct-data">
-    <div class="config-head"><span class="config-title">Data</span><span class="config-sub">Account &amp; data removal</span></div>
+    <div class="config-head"><span class="config-title">Data</span><span class="head-fade"></span><span class="config-sub">Account &amp; data removal</span></div>
     <div class="config-body">
       <p class="config-hint">Permanently deletes your GroundLog account and all associated data. This cannot be undone.</p>
       <button class="btn btn-outline" style="font-size:11px;padding:7px 14px;color:#c0392b;border-color:#c0392b" onclick="acctDeleteAccount()">Delete Account</button>
