@@ -800,6 +800,13 @@ button:disabled,button[disabled]{opacity:.45;cursor:not-allowed}
 .cl-stat-lbl{font-family:var(--mono);font-size:9.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
 .cl-stat.open .cl-stat-num{color:var(--red)}
 .cl-filter-bar{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}
+.cl-filter-label{width:100%;display:flex;align-items:center;font-family:var(--cond);font-size:10.5px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--muted2);margin-bottom:-2px}
+.cl-filter-label::after{content:'';flex:1;height:1px;margin-left:8px;background:linear-gradient(90deg,rgba(201,168,76,.4),rgba(201,168,76,.06) 70%,transparent)}
+.cl-pill-row{width:100%;display:flex;gap:6px;flex-wrap:wrap}
+.cl-fpill{font-family:var(--mono);font-size:11px;padding:5px 12px;border-radius:11px;border:1px solid;cursor:pointer;transition:all .12s;line-height:1.2}
+.cl-fpill:not(.on){border-color:var(--border) !important;color:var(--muted) !important;background:var(--s1) !important}
+.cl-fpill.on{font-weight:700}
+.cl-fall.on{border-color:var(--muted2);color:var(--muted2);background:rgba(0,107,117,0.1)}
 .cl-filter-bar input[type=text]{flex:1;min-width:140px;background:var(--bg);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--body);font-size:16px;padding:7px 11px;transition:border-color .15s}
 .cl-filter-bar input:focus{outline:none;border-color:var(--amber)}
 .cl-filter-bar select{background:var(--bg);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--mono);font-size:13px;padding:7px 9px;-webkit-appearance:none;cursor:pointer;transition:border-color .15s}
@@ -2769,22 +2776,23 @@ Anticipated rain — AM weather monitoring expected"></textarea>
       <span class="card-chevron">▾</span>
     </div>
     <div class="card-body" style="padding-top:10px">
-      <!-- Filter bar -->
+      <!-- Filter bar — pill filters (status + level), search below. Default view = Open. -->
       <div class="cl-filter-bar">
+        <div class="cl-filter-label">Filter</div>
+        <div class="cl-pill-row">
+          <button class="cl-fpill cl-status-open" id="cl-fp-s-open" onclick="clPillStatus('Open')">Open</button>
+          <button class="cl-fpill cl-status-prog" id="cl-fp-s-prog" onclick="clPillStatus('In Progress')">In Progress</button>
+          <button class="cl-fpill cl-status-resolved" id="cl-fp-s-res" onclick="clPillStatus('Resolved')">Resolved</button>
+          <button class="cl-fpill cl-fall" id="cl-fp-s-all" onclick="clPillStatus('')">All</button>
+        </div>
+        <div class="cl-pill-row">
+          <button class="cl-fpill cl-level-1" id="cl-fp-l-1" onclick="clPillLevel('1')">L1 Observation</button>
+          <button class="cl-fpill cl-level-2" id="cl-fp-l-2" onclick="clPillLevel('2')">L2 Corrective</button>
+          <button class="cl-fpill cl-level-3" id="cl-fp-l-3" onclick="clPillLevel('3')">L3 Non-Compliance</button>
+          <button class="cl-fpill cl-level-4" id="cl-fp-l-4" onclick="clPillLevel('4')">L4 Stop Work</button>
+          <button class="cl-fpill cl-fall" id="cl-fp-l-all" onclick="clPillLevel('')">All</button>
+        </div>
         <input type="text" id="cl-search" placeholder="🔍 Search entries…" oninput="clRender()">
-        <select id="cl-filter-level" onchange="clRender()">
-          <option value="">All Levels</option>
-          <option value="1">Level 1 — Observation</option>
-          <option value="2">Level 2 — Corrective Action</option>
-          <option value="3">Level 3 — Non-Compliance</option>
-          <option value="4">Level 4 — Stop Work</option>
-        </select>
-        <select id="cl-filter-status" onchange="clRender()">
-          <option value="">All Status</option>
-          <option value="Open">Open</option>
-          <option value="In Progress">In Progress</option>
-          <option value="Resolved">Resolved</option>
-        </select>
         <button class="btn btn-outline btn-proj-active" id="cl-proj-filter-btn" style="font-size:11px;padding:5px 12px" onclick="_toggleProjectFilter()">🏗️ Active Project</button>
       </div>
 

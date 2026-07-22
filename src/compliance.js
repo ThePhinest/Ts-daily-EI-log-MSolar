@@ -172,22 +172,40 @@ function clExportPunchlist(){
 }
 if(typeof window!=='undefined') window.clExportPunchlist=clExportPunchlist;
 
-// ── Stat-tile tap filter (Open → unresolved only; Total → clear all) ──
-let _clStatFilter=null;
+// ── Pill filters (status + level, MULTI-SELECT) + stat-tile taps ──
+// Sets: empty = All. Default view on page open = Open + In Progress (Tim 7/22).
+// The old _clStatFilter overlay is retired — the "open" stat tile now just
+// toggles the default pill set, so there's exactly one filter system.
+let _clFilterStatus=new Set(['Open','In Progress']);
+let _clFilterLevel=new Set();
+function _clOpenDefaultActive(){
+  return _clFilterStatus.size===2 && _clFilterStatus.has('Open') && _clFilterStatus.has('In Progress');
+}
+function clPillStatus(v){
+  if(v==='') _clFilterStatus.clear();
+  else if(_clFilterStatus.has(v)) _clFilterStatus.delete(v);
+  else _clFilterStatus.add(v);
+  clRender();
+}
+function clPillLevel(v){
+  if(v==='') _clFilterLevel.clear();
+  else if(_clFilterLevel.has(v)) _clFilterLevel.delete(v);
+  else _clFilterLevel.add(v);
+  clRender();
+}
 function clStatTap(kind){
   if(kind==='open'){
-    _clStatFilter=(_clStatFilter==='open')?null:'open';
+    _clFilterStatus=_clOpenDefaultActive()?new Set():new Set(['Open','In Progress']);
   } else {
-    _clStatFilter=null;
+    _clFilterStatus=new Set();
+    _clFilterLevel=new Set();
     const s=document.getElementById('cl-search'); if(s) s.value='';
-    const fl=document.getElementById('cl-filter-level'); if(fl) fl.value='';
-    const fs=document.getElementById('cl-filter-status'); if(fs) fs.value='';
   }
   // Filtering with the log collapsed reads as a dead tap — pop it open.
   if(_clCardCollapsed('log')) clToggleCard('log');
   clRender();
 }
-if(typeof window!=='undefined') window.clStatTap=clStatTap;
+if(typeof window!=='undefined'){ window.clStatTap=clStatTap; window.clPillStatus=clPillStatus; window.clPillLevel=clPillLevel; }
 
 // Days an entry has been open; amber past the configured correction window.
 function _clAgeInfo(e){
@@ -203,15 +221,21 @@ function _clAgeInfo(e){
 function clRender(){
   _clAmberHydrate();
   const search = (document.getElementById('cl-search')?.value||'').toLowerCase();
-  const filterLevel = document.getElementById('cl-filter-level')?.value||'';
-  const filterStatus = document.getElementById('cl-filter-status')?.value||'';
 
   let entries = [..._clEntries].sort((a,b)=> b.date > a.date ? 1 : -1);
 
   if(_projectFilterActive) entries = entries.filter(e => !e.projectId || e.projectId === _activeProjectId());
-  if(_clStatFilter==='open') entries = entries.filter(e=>e.status!=='Resolved');
-  if(filterLevel) entries = entries.filter(e=>String(e.level)===filterLevel);
-  if(filterStatus) entries = entries.filter(e=>e.status===filterStatus);
+  if(_clFilterStatus.size) entries = entries.filter(e=>_clFilterStatus.has(e.status));
+  if(_clFilterLevel.size) entries = entries.filter(e=>_clFilterLevel.has(String(e.level)));
+  // Pill highlight sync — active pills wear their badge colors, All lights when its set is empty.
+  [['cl-fp-s-open','Open'],['cl-fp-s-prog','In Progress'],['cl-fp-s-res','Resolved']].forEach(p=>{
+    const b=document.getElementById(p[0]); if(b) b.classList.toggle('on',_clFilterStatus.has(p[1]));
+  });
+  const _sAll=document.getElementById('cl-fp-s-all'); if(_sAll) _sAll.classList.toggle('on',!_clFilterStatus.size);
+  ['1','2','3','4'].forEach(v=>{
+    const b=document.getElementById('cl-fp-l-'+v); if(b) b.classList.toggle('on',_clFilterLevel.has(v));
+  });
+  const _lAll=document.getElementById('cl-fp-l-all'); if(_lAll) _lAll.classList.toggle('on',!_clFilterLevel.size);
   if(search) entries = entries.filter(e=>
     (e.location||'').toLowerCase().includes(search) ||
     (e.corrective||'').toLowerCase().includes(search)
@@ -236,7 +260,7 @@ function clRender(){
   const amberBtn=document.getElementById('cl-amber-btn');
   if(amberBtn) amberBtn.textContent='⏱ '+clAmberHours()+'h';
   const openTile=document.getElementById('cl-stat-open-tile');
-  if(openTile) openTile.classList.toggle('active',_clStatFilter==='open');
+  if(openTile) openTile.classList.toggle('active',_clOpenDefaultActive());
 
   clRenderTrackerCard();
   const list = document.getElementById('cl-list');
