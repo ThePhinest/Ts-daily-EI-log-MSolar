@@ -278,6 +278,7 @@ function _phDocFor(p){
   if(p.type) doc.type = p.type;
   if(p.swppp) doc.swppp = true;
   if(p.seedTag) doc.seedTag = true;
+  if(p.seedCap) doc.seedCap = p.seedCap;
   if(p.published !== undefined){ doc.published = p.published; doc.publishedAt = p.publishedAt || null; }
   return doc;
 }
@@ -949,6 +950,9 @@ async function phSaveCapturedImage(blob, photoDate, captionOverride, opts){
   const entry={id,date:today,caption,filename:'map-view.png',thumb,storageUrl,uploadedAt:Date.now(),projectId:pid,type:'map_capture'};
   // Pre-tagged captures (ESC status) flow straight into the QI report's §11 auto-attach.
   if(opts&&opts.swppp) entry.swppp=true;
+  // Seeding-status captures carry their source keys so the seeding XLSX can route the
+  // latest capture onto the right tab (single source → its tab; multi → summary tab).
+  if(opts&&opts.seedCap) entry.seedCap=opts.seedCap;
   window._phPhotos=(window._phPhotos||[]);
   window._phPhotos.push(entry);
   phSaveLocal();

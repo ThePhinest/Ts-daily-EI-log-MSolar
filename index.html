@@ -1421,7 +1421,7 @@ body.is-native select { font-size: 16px !important; }
           <div class="ob-slide-text">
             <div class="ob-eyebrow">FEATURE 03</div>
             <div class="ob-slide-title ob-title-teal">FIELD MAP</div>
-            <div class="ob-slide-desc">Draw and track site work by category. Overlay <span class="ob-hi-amber">KML &amp; GIS layers</span>, log photos on the map, measure areas, and organize everything in folders — on satellite imagery.</div>
+            <div class="ob-slide-desc">Draw and track site work by category. Overlay <span class="ob-hi-amber">KML &amp; GIS layers</span>, log photos on the map, measure areas, and snap <span class="ob-hi-teal">legend-stamped status captures</span> — ESC installs or seeding progress — that drop straight into your deliverables.</div>
           </div>
         </div>
 
@@ -2382,6 +2382,7 @@ Anticipated rain — AM weather monitoring expected"></textarea>
       <div class="map-fab-row"><span class="map-fab-lbl">Tracker</span><button class="map-fab-btn" id="map-fab-tracker-btn" onclick="mapShowTrackerSheet()" title="Manage tracker categories">☰</button></div>
       <div class="map-fab-row"><span class="map-fab-lbl">Capture</span><button class="map-fab-btn" id="map-fab-capture-btn" onclick="mapCaptureMapView()" title="Capture the map view as a photo">📷</button></div>
       <div class="map-fab-row"><span class="map-fab-lbl">ESC status</span><button class="map-fab-btn" id="map-fab-esc-btn" onclick="mapCaptureEscStatus()" title="Capture ESC installation status with a legend">🛡️</button></div>
+      <div class="map-fab-row"><span class="map-fab-lbl">Seeding</span><button class="map-fab-btn" id="map-fab-seed-btn" onclick="mapCaptureSeedingStatus()" title="Capture seeding status with a legend">🌱</button></div>
       <div class="map-fab-row"><span class="map-fab-lbl">Flags</span><button class="map-fab-btn" id="map-fab-flags-btn" onclick="mapToggleRepairFlags()" title="Show / hide repair flags on the map">🚩</button></div>
     </div>
 
@@ -2541,7 +2542,7 @@ Anticipated rain — AM weather monitoring expected"></textarea>
             <label style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;display:block;margin-bottom:4px">Application Phase</label>
             <select id="map-tr-phase" style="width:100%;box-sizing:border-box;background:var(--s1);border:1px solid var(--border);border-radius:6px;padding:7px 9px;color:var(--text);font-family:var(--mono);font-size:12px"></select>
           </div>
-          <div>
+          <div id="map-tr-method-wrap">
             <label style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;display:block;margin-bottom:4px">Application Method</label>
             <select id="map-tr-method" style="width:100%;box-sizing:border-box;background:var(--s1);border:1px solid var(--border);border-radius:6px;padding:7px 9px;color:var(--text);font-family:var(--mono);font-size:12px"></select>
           </div>

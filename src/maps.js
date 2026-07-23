@@ -3013,8 +3013,12 @@ function _populateEntryDropdowns(category){
   const methods=(typeof tcCategoryMethods==='function')?tcCategoryMethods(category,pid):(window._amendmentMethods||['N/A']);
   const phaseEl=document.getElementById('map-tr-phase');
   const methodEl=document.getElementById('map-tr-method');
+  // Method options fall back to the global seeding list on seed-capable running
+  // categories (disturbance defines methods:[]), so the 🌱 opt-in reveal has a
+  // real list and edit-populate can land a stored method before the reveal runs.
+  const methodOpts=methods.length?methods:(_trSeedCatCapable(category,pid)?(window._amendmentMethods||['N/A']):['N/A']);
   if(phaseEl){ phaseEl.innerHTML=(phases.length?phases:['N/A']).map(p=>`<option value="${p}">${p}</option>`).join(''); }
-  if(methodEl){ methodEl.innerHTML=(methods.length?methods:['N/A']).map(m=>`<option value="${m}">${m}</option>`).join(''); }
+  if(methodEl){ methodEl.innerHTML=(methodOpts.length?methodOpts:['N/A']).map(m=>`<option value="${m}">${m}</option>`).join(''); }
   return {phases,methods};
 }
 
@@ -3070,7 +3074,7 @@ function _setEntryFieldVisibility(isPlanned, measType, hasDesc, trackMat, catego
   const calcSection=document.getElementById('map-tr-calc-section');
   const phaseWrap=document.getElementById('map-tr-phase-wrap');
   if(phaseWrap) phaseWrap.style.display=_catMultiState(category,pid)?'none':'';
-  if(areaFields) areaFields.style.display=(isPlanned||isLinear||!hasDesc)?'none':'';
+  if(areaFields){ areaFields.style.display=(isPlanned||isLinear||!hasDesc)?'none':''; delete areaFields.dataset.seedReveal; }
   if(linearFields) linearFields.style.display=isLinear?'':'none';
   if(calcSection){
     // base = the category's own rule; the 🌱 seeding opt-in (stabilization
@@ -3089,13 +3093,16 @@ function _setEntryFieldVisibility(isPlanned, measType, hasDesc, trackMat, catego
 // behind an opt-in button on subtract/none states, so stabilizations that
 // aren't seeding (rock, gravel pad, structure footprint) never see it.
 // Entries that already carry seed data open with the section visible.
-function _trSeedStateEligible(){
-  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
-  const mode=(typeof tcProgressMode==='function')?tcProgressMode(_drawCategory,pid):'';
+function _trSeedCatCapable(category, pid){
+  const mode=(typeof tcProgressMode==='function')?tcProgressMode(category,pid):'';
   if(mode!=='running-balance'&&mode!=='running-total') return false;
   // Area categories only — the calc's rate is lbs/ACRE; a linear running
   // category (ft) would compute nonsense.
-  if(((typeof tcGetMeasurementType==='function')?tcGetMeasurementType(_drawCategory,pid):'')==='linear') return false;
+  return ((typeof tcGetMeasurementType==='function')?tcGetMeasurementType(category,pid):'')!=='linear';
+}
+function _trSeedStateEligible(){
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  if(!_trSeedCatCapable(_drawCategory,pid)) return false;
   const st=_trSelectedState();
   if(!st) return false;
   const cat=(typeof tcGetCategory==='function')?tcGetCategory(_drawCategory,pid):null;
@@ -3109,17 +3116,36 @@ function _trSeedSectionSync(){
   const btn=document.getElementById('map-tr-seed-btn');
   if(!calcSection||!btn) return;
   if(calcSection.dataset.base==='shown'){ btn.style.display='none'; return; }
-  if(_drawEntryType==='planned'||!_trSeedStateEligible()){ btn.style.display='none'; calcSection.style.display='none'; return; }
+  if(_drawEntryType==='planned'||!_trSeedStateEligible()){ btn.style.display='none'; calcSection.style.display='none'; _trSeedMethodReveal(false); return; }
   const hasVals=['map-tr-rate','map-tr-actual-amt','map-tr-seed-tags','map-tr-mix-product']
     .some(id=>{ const el=document.getElementById(id); return el&&el.value; });
   calcSection.style.display=hasVals?'':'none';
   btn.style.display=hasVals?'none':'';
+  _trSeedMethodReveal(hasVals);
+}
+// The Method dropdown lives in #map-tr-area-fields, which stays hidden for
+// disturbance categories (no phases/methods of their own). A seeding
+// stabilization IS an application, so the 🌱 reveal surfaces Method with it.
+function _trSeedMethodReveal(show){
+  const areaFields=document.getElementById('map-tr-area-fields');
+  if(!areaFields) return;
+  if(show){
+    if(areaFields.style.display==='none'){ areaFields.style.display=''; areaFields.dataset.seedReveal='1'; }
+  } else if(areaFields.dataset.seedReveal==='1'){
+    areaFields.style.display='none';
+    delete areaFields.dataset.seedReveal;
+    // State flipped away from a seeding-eligible one — a lingering method would
+    // silently save on a non-seeding entry.
+    const m=document.getElementById('map-tr-method');
+    if(m) m.value='N/A';
+  }
 }
 function mapTrSeedOpen(){
   const c=document.getElementById('map-tr-calc-section');
   if(c) c.style.display='';
   const b=document.getElementById('map-tr-seed-btn');
   if(b) b.style.display='none';
+  _trSeedMethodReveal(true);
 }
 window.mapTrSeedOpen=mapTrSeedOpen;
 
@@ -3708,7 +3734,7 @@ function _addCategoryLineLayer(srcId,cat){
   // ESC-status capture framing: boost line widths so silt-fence runs etc. stay
   // legible in a zoomed-out phone/iPad capture. Layers re-add on every render, so
   // widths revert automatically when the filter clears.
-  const lw=(cat.lineWidth||2)*(_escCapFilter?1.8:1);
+  const lw=(cat.lineWidth||2)*((_escCapFilter||_seedCapFilter)?1.8:1);
   const lineColor=['coalesce',['get','stateColor'],color];
   const paint={'line-color':lineColor,'line-width':['case',['get','faint'],Math.max(1,lw-0.5),lw],'line-opacity':['case',['get','faint'],0.45,0.9]};
   // Per-STATE line style (ties the schema editor's state Style dropdown to the map;
@@ -3781,6 +3807,18 @@ function mapRefreshDateLabels(){
         const st=(typeof tcEntryState==='function')?tcEntryState(e,cid,pid):null;
         if(st&&(st.isPlanned||/remov/i.test(st.label||''))) return false;
         if(!st&&e.entryType==='planned') return false;
+      }
+      // Seeding-status capture framing: labels follow the seed solo filter — selected
+      // sources only, seed-carrying entries for "Seeding on {cat}" sources, plans per
+      // the picker toggle, flags per the capture toggle.
+      if(_seedCapFilter){
+        const src=_seedCapFilter.srcs.get(cid);
+        if(!src||(isOpenTemp&&!_capFlagsShow)) return false;
+        const st=(typeof tcEntryState==='function')?tcEntryState(e,cid,pid):null;
+        const planned=st?!!st.isPlanned:(e.entryType==='planned');
+        if(planned&&(src.seedOnly||!_seedCapFilter.showPlans)) return false;
+        if(!planned&&src.seedOnly&&!((typeof window._seedHasData==='function')&&window._seedHasData(e))) return false;
+        if(st&&/remov/i.test(st.label||'')) return false;
       }
       if(!e.showDateLabel&&!isOpenTemp) return false;
       return true;
@@ -3920,6 +3958,80 @@ function mapToggleDateLabelEdit(){
 }
 window.mapToggleDateLabelEdit=mapToggleDateLabelEdit;
 
+// Shared canvas legend panel (top-left rounded box) for the multi-source capture
+// legends (ESC status + seeding status). rows:
+//   {color,label,val}        — swatch line (state color · label · area, val right-aligned)
+//   {header:true,label}      — source header line (amber bold, no swatch)
+//   {label,val,bold:true}    — total line (amber bold, no swatch)
+function _drawLegendBox(ctx,c,title,rows){
+  const LP=Math.max(14,Math.round(c.width*0.011));
+  const LF=Math.max(13,Math.round(c.height*0.021));
+  const TF=Math.round(LF*1.08);
+  const SW=Math.round(LF*1.15);
+  const ROW=Math.round(LF*1.6);
+  const GAP=Math.round(LF*1.2);
+  ctx.save();
+  ctx.textBaseline='middle';
+  ctx.font=`600 ${TF}px system-ui, sans-serif`;
+  let maxW=ctx.measureText(title).width;
+  let maxLabelW=0,maxValW=0;
+  rows.forEach(r=>{
+    ctx.font=`${(r.header||r.bold)?'700':'500'} ${LF}px system-ui, sans-serif`;
+    const lw=ctx.measureText(r.label).width; if(lw>maxLabelW) maxLabelW=lw;
+    const vw=r.val?ctx.measureText(r.val).width:0; if(vw>maxValW) maxValW=vw;
+  });
+  const rowW=SW+Math.round(LF*0.7)+maxLabelW+GAP+maxValW;
+  if(rowW>maxW) maxW=rowW;
+  const boxW=Math.round(maxW+LP*2);
+  const boxH=Math.round(LP*1.5+ROW+ROW*rows.length);
+  const bx=LP,by=LP,br=Math.round(LF*0.4);
+  const valRightX=bx+boxW-LP;
+  ctx.fillStyle='rgba(15,31,46,0.82)';
+  ctx.beginPath();
+  ctx.moveTo(bx+br,by);
+  ctx.arcTo(bx+boxW,by,bx+boxW,by+boxH,br);
+  ctx.arcTo(bx+boxW,by+boxH,bx,by+boxH,br);
+  ctx.arcTo(bx,by+boxH,bx,by,br);
+  ctx.arcTo(bx,by,bx+boxW,by,br);
+  ctx.closePath(); ctx.fill();
+  ctx.textAlign='left';
+  ctx.font=`600 ${TF}px system-ui, sans-serif`;
+  ctx.fillStyle='#C9A84C';
+  ctx.fillText(title,bx+LP,by+LP*0.75+TF*0.5);
+  let ry=by+LP*0.75+ROW;
+  rows.forEach(r=>{
+    const cy=ry+ROW*0.5;
+    if(r.header){
+      ctx.textAlign='left'; ctx.fillStyle='#C9A84C';
+      ctx.font=`700 ${LF}px system-ui, sans-serif`;
+      ctx.fillText(r.label,bx+LP,cy);
+      ry+=ROW; return;
+    }
+    let tx=bx+LP;
+    if(r.color){
+      const swx=bx+LP,swy=cy-SW/2,sr=Math.round(SW*0.25);
+      ctx.fillStyle=r.color;
+      ctx.beginPath();
+      ctx.moveTo(swx+sr,swy);
+      ctx.arcTo(swx+SW,swy,swx+SW,swy+SW,sr);
+      ctx.arcTo(swx+SW,swy+SW,swx,swy+SW,sr);
+      ctx.arcTo(swx,swy+SW,swx,swy,sr);
+      ctx.arcTo(swx,swy,swx+SW,swy,sr);
+      ctx.closePath(); ctx.fill();
+      tx=swx+SW+Math.round(LF*0.7);
+    }
+    ctx.textAlign='left'; ctx.fillStyle=r.bold?'#C9A84C':'#ffffff';
+    ctx.font=`${r.bold?'700':'500'} ${LF}px system-ui, sans-serif`;
+    ctx.fillText(r.label,tx,cy);
+    if(r.val){
+      ctx.textAlign='right'; ctx.fillStyle=r.bold?'#C9A84C':'#dfe8f0';
+      ctx.fillText(r.val,valRightX,cy);
+    }
+    ry+=ROW;
+  });
+  ctx.restore();
+}
+
 // ── Brand wordmark composite ──
 // Decodes the captured GL canvas blob, draws a translucent dark pill in the
 // bottom-left, then composites "GROUND|LOG" wordmark (white + amber pipe) on top
@@ -3939,9 +4051,9 @@ async function _compositeBrandWordmark(blob, legendCat, pid, scopeEntryId, opts)
     // onto the image at its projected position (anchor 'bottom' = tip at the point),
     // so an end-of-day map capture actually shows where photos were taken.
     try{
-      // ESC-status captures skip the marker overlay — pins/markers are context the
-      // deliverable deliberately excludes (clean installation-status image).
-      if(_mapInstance&&!(opts&&opts.escCids)){
+      // ESC-status + seeding-status captures skip the marker overlay — pins/markers
+      // are context those deliverables deliberately exclude (clean status image).
+      if(_mapInstance&&!(opts&&(opts.escCids||opts.seedSrcs))){
         const cont=_mapInstance.getContainer();
         const sx=cont&&cont.clientWidth?c.width/cont.clientWidth:1;
         const sy=cont&&cont.clientHeight?c.height/cont.clientHeight:1;
@@ -4130,62 +4242,48 @@ async function _compositeBrandWordmark(blob, legendCat, pid, scopeEntryId, opts)
           }catch{}
         });
         if(rows.length){
-          const title=`🛡️ ESC INSTALLATION STATUS · ${_fmtLabelDate(new Date().toLocaleDateString('en-CA'))}`;
-          const LP=Math.max(14,Math.round(c.width*0.011));
-          const LF=Math.max(13,Math.round(c.height*0.021));
-          const TF=Math.round(LF*1.08);
-          const SW=Math.round(LF*1.15);
-          const ROW=Math.round(LF*1.6);
-          const GAP=Math.round(LF*1.2);
-          ctx.save();
-          ctx.textBaseline='middle';
-          ctx.font=`600 ${TF}px system-ui, sans-serif`;
-          let maxW=ctx.measureText(title).width;
-          ctx.font=`500 ${LF}px system-ui, sans-serif`;
-          let maxLabelW=0,maxValW=0;
-          rows.forEach(r=>{
-            const lw=ctx.measureText(r.label).width; if(lw>maxLabelW) maxLabelW=lw;
-            const vw=ctx.measureText(r.val).width;   if(vw>maxValW)   maxValW=vw;
-          });
-          const rowW=SW+Math.round(LF*0.7)+maxLabelW+GAP+maxValW;
-          if(rowW>maxW) maxW=rowW;
-          const boxW=Math.round(maxW+LP*2);
-          const boxH=Math.round(LP*1.5+ROW+ROW*rows.length);
-          const bx=LP,by=LP,br=Math.round(LF*0.4);
-          const valRightX=bx+boxW-LP;
-          ctx.fillStyle='rgba(15,31,46,0.82)';
-          ctx.beginPath();
-          ctx.moveTo(bx+br,by);
-          ctx.arcTo(bx+boxW,by,bx+boxW,by+boxH,br);
-          ctx.arcTo(bx+boxW,by+boxH,bx,by+boxH,br);
-          ctx.arcTo(bx,by+boxH,bx,by,br);
-          ctx.arcTo(bx,by,bx+boxW,by,br);
-          ctx.closePath(); ctx.fill();
-          ctx.textAlign='left';
-          ctx.font=`600 ${TF}px system-ui, sans-serif`;
-          ctx.fillStyle='#C9A84C';
-          ctx.fillText(title,bx+LP,by+LP*0.75+TF*0.5);
-          ctx.font=`500 ${LF}px system-ui, sans-serif`;
-          let ry=by+LP*0.75+ROW;
-          rows.forEach(r=>{
-            const cy=ry+ROW*0.5,swx=bx+LP,swy=cy-SW/2,sr=Math.round(SW*0.25);
-            ctx.fillStyle=r.color;
-            ctx.beginPath();
-            ctx.moveTo(swx+sr,swy);
-            ctx.arcTo(swx+SW,swy,swx+SW,swy+SW,sr);
-            ctx.arcTo(swx+SW,swy+SW,swx,swy+SW,sr);
-            ctx.arcTo(swx,swy+SW,swx,swy,sr);
-            ctx.arcTo(swx,swy,swx+SW,swy,sr);
-            ctx.closePath(); ctx.fill();
-            ctx.textAlign='left'; ctx.fillStyle='#ffffff';
-            ctx.fillText(r.label,swx+SW+Math.round(LF*0.7),cy);
-            ctx.textAlign='right'; ctx.fillStyle='#dfe8f0';
-            ctx.fillText(r.val,valRightX,cy);
-            ry+=ROW;
-          });
-          ctx.restore();
+          _drawLegendBox(ctx,c,`🛡️ ESC INSTALLATION STATUS · ${_fmtLabelDate(new Date().toLocaleDateString('en-CA'))}`,rows);
         }
       }catch(e){ console.warn('ESC legend composite failed:',e.message); }
+    }
+    // 🌱 SEEDING STATUS legend — one block per selected seed source (header line),
+    // a row per state WITH seeded area, a per-source Total when a source has 2+
+    // state lines, and a grand TOTAL SEEDED across sources when 2+ sources combine.
+    // Areas are GROSS drawn sums (seed placed is seed placed — the seeding-report
+    // rule), acres only (no lbs — data presence is too spotty for a deliverable).
+    else if(opts&&Array.isArray(opts.seedSrcs)&&opts.seedSrcs.length&&typeof tcGetStates==='function'){
+      try{
+        const rows=[]; let grandAc=0, nBlocks=0;
+        opts.seedSrcs.forEach(src=>{
+          try{
+            const catNm=(typeof tcGetName==='function')?tcGetName(src.cid,pid):'Category';
+            const defUnit=(typeof tcGetDefaultUnit==='function')?tcGetDefaultUnit(src.cid,pid):'ac';
+            const fmt=(v)=>(typeof tcFormatMeasurement==='function')?tcFormatMeasurement(v,defUnit):`${(v||0).toFixed(1)} ${defUnit}`;
+            const sts=tcGetStates(src.cid,pid).filter(s=>!s.isPlanned&&!/remov/i.test(s.label||''));
+            if(!sts.length||typeof trGetEntriesForProject!=='function'||typeof trEntryMeasure!=='function') return;
+            let inst=trGetEntriesForProject(pid).filter(e=>((e.categoryId||e.category)===src.cid)&&!e.deletedAt&&!e.temporary&&!e.deletedFromMap&&!e.archivedFromMap&&e.entryType!=='planned');
+            if(src.seedOnly) inst=(typeof window._seedHasData==='function')?inst.filter(window._seedHasData):[];
+            const dcs=(typeof tcDefaultChildState==='function')?tcDefaultChildState(src.cid,pid):null;
+            const stRows=[]; let srcTotal=0;
+            sts.forEach(s=>{
+              const v=inst.filter(e=>(e.state||(dcs?dcs.id:null))===s.id).reduce((sum,e)=>sum+(trEntryMeasure(e,defUnit,pid)||0),0);
+              if(v<=0) return;
+              srcTotal+=v;
+              stRows.push({color:(s.color&&/^#[0-9A-Fa-f]{6}$/.test(s.color))?s.color:'#888888',label:s.label,val:fmt(v)});
+            });
+            if(!stRows.length) return;
+            nBlocks++;
+            rows.push({header:true,label:src.seedOnly?`Seeding on ${catNm}`:catNm});
+            rows.push(...stRows);
+            if(stRows.length>1) rows.push({label:'Total',val:fmt(srcTotal),bold:true});
+            grandAc+=(defUnit==='ac')?srcTotal:((typeof tcConvertMeasurement==='function')?(tcConvertMeasurement(srcTotal,defUnit,'ac')||0):0);
+          }catch{}
+        });
+        if(nBlocks>=2) rows.push({label:'TOTAL SEEDED — all sources',val:`${Math.round(grandAc*100)/100} ac`,bold:true});
+        if(rows.length){
+          _drawLegendBox(ctx,c,`🌱 SEEDING STATUS · ${_fmtLabelDate(new Date().toLocaleDateString('en-CA'))}`,rows);
+        }
+      }catch(e){ console.warn('seeding legend composite failed:',e.message); }
     }
     const PAD=Math.max(16,Math.round(c.width*0.012));
     const PILL_H=Math.max(28,Math.round(c.height*0.035));
@@ -4506,6 +4604,132 @@ async function _doCaptureEsc(cids){
   setTimeout(_hideCaptureToast,2200);
 }
 
+// ── 🌱 Seeding Status capture ──
+// The seeding twin of the ESC capture: the checklist rows are SEED SOURCES — the
+// same source model as the seeding report (window._glSeedSources, compliance.js):
+// seeding categories plus "Seeding on {cat}" for running categories whose
+// stabilization entries carry seed data. Solo-filters the map to seeded work from
+// the selected sources ONLY (active disturbance, BMPs, other categories, flags all
+// hidden — no manual hiding), optional plan outlines, bakes the multi-source
+// legend, and saves with seedCap metadata (source keys + multi flag) so the
+// seeding XLSX embeds the latest capture on the right tab (single source → that
+// source's tab; multi-source overview → the All Seeding summary tab).
+let _seedCapFilter=null;   // {srcs:Map<cid,{seedOnly}>, showPlans:boolean} — armed only while framing
+
+function _seedCapEntries(list,cat,pid){
+  if(!_seedCapFilter) return list;
+  const src=_seedCapFilter.srcs.get(cat.id);
+  if(!src) return [];
+  return (list||[]).filter(e=>{
+    if(e.temporary&&e.tempStatus!=='resolved') return _capFlagsShow===true; // capture-bar flags toggle
+    if(e.temporary) return false;
+    const st=(typeof tcEntryState==='function')?tcEntryState(e,cat,pid):null;
+    const planned=st?!!st.isPlanned:(e.entryType==='planned');
+    // Plan outlines are opt-in (picker toggle); a "Seeding on {cat}" source never
+    // shows the disturbance category's plan — the disturbance side isn't the subject.
+    if(planned) return !src.seedOnly&&_seedCapFilter.showPlans===true;
+    if(src.seedOnly) return (typeof window._seedHasData==='function')&&window._seedHasData(e);
+    if(st&&/remov/i.test(st.label||'')) return false;
+    return true;
+  });
+}
+
+function _seedCapClear(){
+  if(!_seedCapFilter) return;
+  _seedCapFilter=null;
+  mapRenderTrackerLayers();
+  if(typeof mapRefreshDateLabels==='function') mapRefreshDateLabels();
+}
+
+function mapCaptureSeedingStatus(){
+  if(!_mapInstance) return;
+  if(typeof mapCloseFab==='function') mapCloseFab();
+  if(_trackerPopup){_trackerPopup.remove();_trackerPopup=null;}
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const entries=(typeof trGetEntriesForProject==='function')?trGetEntriesForProject(pid).filter(e=>!e.deletedFromMap&&!e.archivedFromMap&&e.geometry):[];
+  const srcs=(typeof window._glSeedSources==='function')?window._glSeedSources(entries,pid):[];
+  if(!srcs.length){ _showCaptureToast('No seeding drawings to capture'); setTimeout(_hideCaptureToast,1800); return; }
+  // Last selection + plan-outlines choice remembered per project (tiny-pref tier).
+  let prefs={};
+  try{ prefs=JSON.parse(localStorage.getItem('gl_seed_cap_sel::'+pid)||'{}')||{}; }catch{}
+  const valid=new Set(srcs.map(s=>s.key));
+  const selected=new Set((Array.isArray(prefs.sel)?prefs.sel:[]).filter(k=>valid.has(k)));
+  if(!selected.size) srcs.forEach(s=>selected.add(s.key));
+  let showPlans=!!prefs.plans;
+
+  const ov=document.createElement('div');
+  ov.className='modal-overlay';
+  ov.style.cssText='z-index:9500';
+  const rowBase='display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:12px 14px;border-radius:8px;cursor:pointer;border:2px solid var(--border);background:var(--s1);transition:border-color .15s';
+  const rowOn ='display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:12px 14px;border-radius:8px;cursor:pointer;border:2px solid var(--amber);background:var(--s1);transition:border-color .15s';
+  const render=()=>{
+    const nSel=selected.size;
+    ov.innerHTML=`
+      <div class="modal-box" style="max-width:360px;width:92%">
+        <div class="modal-title" style="margin-bottom:4px">🌱 Seeding Status Capture</div>
+        <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-bottom:16px">Pick the seed sources to show — everything else (disturbance, BMPs, flags) is hidden for the shot</div>
+        <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:10px;max-height:42dvh;overflow-y:auto">
+          ${srcs.map(s=>`
+            <button class="_seed-src" data-key="${s.key}" style="${selected.has(s.key)?rowOn:rowBase}">
+              <span style="font-size:15px;width:18px;flex-shrink:0;text-align:center;color:${selected.has(s.key)?'var(--amber)':'var(--muted)'}">${selected.has(s.key)?'☑':'☐'}</span>
+              <span style="display:flex;flex-direction:column;gap:2px;min-width:0">
+                <span style="font-family:var(--cond);font-weight:700;font-size:14px;letter-spacing:.03em;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${s.name}</span>
+                <span style="font-family:var(--mono);font-size:10px;color:var(--muted)">${s.seedOnly?'seeding on stabilization':'coverage · vs plan'} · ${s.n} entr${s.n===1?'y':'ies'}</span>
+              </span>
+            </button>`).join('')}
+        </div>
+        <button id="_seed-plans" style="width:100%;margin-bottom:14px;background:${showPlans?'rgba(201,168,76,0.25)':'var(--s1)'};border:1px solid ${showPlans?'var(--amber)':'var(--border)'};color:${showPlans?'var(--amber)':'var(--muted)'};padding:8px;border-radius:8px;font-family:var(--mono);font-size:11px;cursor:pointer">${showPlans?'▦ Plan outlines: shown':'▦ Plan outlines: hidden'}</button>
+        <button id="_seed-go" ${nSel?'':'disabled'} style="width:100%;padding:12px;background:${nSel?'var(--amber)':'var(--s2,#1a2a38)'};color:${nSel?'#000':'var(--muted)'};font-family:var(--cond);font-weight:700;font-size:14px;letter-spacing:.06em;border:none;border-radius:8px;cursor:${nSel?'pointer':'default'};margin-bottom:8px">📷 Frame &amp; capture${nSel?` (${nSel})`:''}</button>
+        <button id="_seed-cancel" style="width:100%;padding:9px;background:none;color:var(--muted);font-family:var(--mono);font-size:11px;border:1px solid var(--border);border-radius:8px;cursor:pointer">Cancel</button>
+      </div>`;
+    ov.querySelectorAll('._seed-src').forEach(btn=>{
+      btn.onclick=()=>{ const k=btn.dataset.key; if(selected.has(k)) selected.delete(k); else selected.add(k); render(); };
+    });
+    ov.querySelector('#_seed-plans').onclick=()=>{ showPlans=!showPlans; render(); };
+    ov.querySelector('#_seed-cancel').onclick=()=>ov.remove();
+    const goBtn=ov.querySelector('#_seed-go');
+    if(goBtn) goBtn.onclick=()=>{
+      if(!selected.size) return;
+      const selSrcs=srcs.filter(s=>selected.has(s.key));
+      try{ localStorage.setItem('gl_seed_cap_sel::'+pid,JSON.stringify({sel:[...selected],plans:showPlans})); }catch{}
+      ov.remove();
+      _seedCapFilter={srcs:new Map(selSrcs.map(s=>[s.cid,{seedOnly:!!s.seedOnly}])),showPlans};
+      mapRenderTrackerLayers();
+      if(typeof mapRefreshDateLabels==='function') mapRefreshDateLabels();
+      _showCaptureBar(()=>_doCaptureSeed(selSrcs));
+      // The shared capture bar's Cancel must also restore the filtered view.
+      const cb=document.getElementById('_gl-cap-cancel');
+      if(cb) cb.onclick=()=>{ _hideCaptureBar(); _capFlagsShow=null; _seedCapClear(); };
+    };
+  };
+  render();
+  document.body.appendChild(ov);
+}
+window.mapCaptureSeedingStatus=mapCaptureSeedingStatus;
+
+async function _doCaptureSeed(selSrcs){
+  if(!_mapInstance){ _seedCapClear(); return; }
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  _showCaptureToast('📷 Capturing…');
+  await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
+  const canvas=_mapInstance.getCanvas();
+  const today=new Date().toLocaleDateString('en-CA');
+  const rawBlob=await new Promise(res=>canvas.toBlob(res,'image/png'));
+  if(!rawBlob){ _hideCaptureToast(); _capFlagsShow=null; _seedCapClear(); console.warn('_doCaptureSeed: canvas returned null'); return; }
+  const branded=await _compositeBrandWordmark(rawBlob,null,pid,null,{seedSrcs:selSrcs});
+  _capFlagsShow=null; // _seedCapClear's re-render restores the normal view
+  if(typeof phSaveCapturedImage!=='function'){ _hideCaptureToast(); _seedCapClear(); return; }
+  _showCaptureToast('☁️ Saving…');
+  const one=selSrcs.length===1?selSrcs[0].name:null;
+  const prefill=`${one||'Seeding status'} · ${_fmtLabelDate(today)}`;
+  const photoEntry=await phSaveCapturedImage(branded,today,prefill,{seedCap:{sources:selSrcs.map(s=>s.key),multi:selSrcs.length>1}});
+  _seedCapClear();
+  _hideCaptureToast();
+  if(!photoEntry){ console.warn('_doCaptureSeed: save failed'); return; }
+  _showCaptureToast('✓ Saved to Photos · 🌱 seeding capture');
+  setTimeout(_hideCaptureToast,2200);
+}
+
 // Standalone caption modal for capture flow — writes directly to entry.photoCaptions
 // (since we're not inside the entry edit modal's pending state).
 function _showCaptureCaptionModal(entryId,photoId,prefill){
@@ -4750,7 +4974,7 @@ function mapRenderTrackerLayers(){
     const src='tracker-'+cat.id;
     const color=cat.color||'#888';
     const visible=_tcLayerVisible[cat.id]!==false;
-    const catEntries=visible?_escCapEntries(byCategory[cat.id],cat,_rtPid):[];
+    const catEntries=visible?_seedCapEntries(_escCapEntries(byCategory[cat.id],cat,_rtPid),cat,_rtPid):[];
     // Running-mode categories (SWPPP disturbance): later-drawn work covers earlier
     // work, so stacked translucent fills alpha-blend (yellow over red reads orange —
     // colliding with a real orange state). Render fills AND outlines from the NET
@@ -4830,9 +5054,9 @@ function mapRenderTrackerLayers(){
     Object.entries(orphanByCat).forEach(([cid,group])=>{
       const src='tracker-'+cid;
       const color='#888';
-      // Orphan (not-yet-cached) categories can't appear in the ESC checklist — hide
-      // them while the ESC capture filter is armed.
-      const visible=_tcLayerVisible[cid]!==false&&!_escCapFilter;
+      // Orphan (not-yet-cached) categories can't appear in the ESC/seeding checklists —
+      // hide them while either capture solo filter is armed.
+      const visible=_tcLayerVisible[cid]!==false&&!_escCapFilter&&!_seedCapFilter;
       const geojson={type:'FeatureCollection',features:(visible?group.entries:[]).map(e=>({
         type:'Feature',id:e.id,
         properties:{id:e.id,categoryId:e.categoryId||e.category,categoryName:e.categoryName||e.category,date:e.date,acres:e.acres,measurementValue:e.measurementValue??null,measurementUnit:e.measurementUnit||null,notes:e.notes,location:e.location,phase:e.phase||null,method:e.method||null,status:e.status||null,contractor:e.contractor||null,entryType:e.entryType||'installed'},

@@ -1551,7 +1551,7 @@ async function _exportCategoriesDeliverable(sels, entries, pid){
   // Created FIRST so it's the workbook's opening tab (totals only, no photos — those
   // stay on the source tabs).
   const seedSrcs=meta.filter(m=>m.isSeeding);
-  if(seedSrcs.length>=2) _allSeedingSummarySheet(wb, seedSrcs, entries, pid);
+  if(seedSrcs.length>=2) await _allSeedingSummarySheet(wb, seedSrcs, entries, pid);
   for(const m of meta){
     if(m.seedOnly) await _stabSeedingSheet(wb, m.cid, entries, pid);
     else if(m.isRunning) await _disturbanceSheet(wb, m.cid, entries, pid);
@@ -1877,11 +1877,12 @@ function _blobToDataURL(blob){ return new Promise((res,rej)=>{ const r=new FileR
 // Mix (mirroring the source tabs' line items) topped off with a grand-total band. Totals
 // only — mixed sources share no plan denominator, so no % / bars — and deliberately NO
 // photos: those live on the source tabs.
-function _allSeedingSummarySheet(wb, srcs, entries, pid){
+async function _allSeedingSummarySheet(wb, srcs, entries, pid){
   const TEAL='006B75', WHITE='FFFFFF', AMBER_LIGHT='FDF5DC';
   const NC=8;
   const ws=wb.addWorksheet('All Seeding — Summary');
-  ws.columns=[{width:30},{width:26},{width:14},{width:11},{width:26},{width:16},{width:16},{width:16}];
+  const COLW=[30,26,14,11,26,16,16,16];
+  ws.columns=COLW.map(w=>({width:w}));
   ws.addRow(['All Seeding — Summary']); ws.mergeCells(1,1,1,NC);
   const tc=ws.getCell('A1');
   tc.font={name:'Calibri',bold:true,size:18,color:{argb:WHITE}};
@@ -1935,7 +1936,7 @@ function _allSeedingSummarySheet(wb, srcs, entries, pid){
         if(first) r.getCell(1).font={name:'Calibri',size:11,bold:true,color:{argb:'FF006B75'}};
         const fill=_xlHex(s.color);
         if(fill){ r.getCell(2).fill={type:'pattern',pattern:'solid',fgColor:{argb:fill}}; r.getCell(2).font={name:'Calibri',size:11,bold:true,color:{argb:_xlContrast(s.color)}}; }
-        r.height=20; first=false;
+        _xlFitRowHeight(r,COLW,11,20); first=false;
       });
     });
     ws.addRow([]).height=6;
@@ -1953,6 +1954,9 @@ function _allSeedingSummarySheet(wb, srcs, entries, pid){
   nt.getCell(1).font={italic:true,size:9,color:{argb:'FF7A6A2E'}};
   nt.getCell(1).alignment={vertical:'middle',horizontal:'left',indent:1};
   nt.height=16;
+  // Latest multi-source 🌱 overview capture — the job-wide seeding picture, visible.
+  ws.addRow([]);
+  await _embedSeedStatusCapture(ws, wb, null, NC);
 }
 
 // An entry carries seed data if any seed-calc field was filled (mix, rate, tags, actual).
@@ -1961,6 +1965,34 @@ function _allSeedingSummarySheet(wb, srcs, entries, pid){
 function _seedHasData(e){
   return !!(e.seedMix||e.fields?.appliedRate!=null||e.fields?.seedTagCount!=null||e.fields?.actualAmount!=null);
 }
+window._seedHasData=_seedHasData;
+
+// Every seed source on the job: coverage categories that track material (seeding
+// template) or carry seed data, plus "Seeding on {cat}" for running categories whose
+// stabilization entries carry seed data. Same source model as the export modal /
+// seeding report — shared with the 🌱 seeding-status capture picker (maps.js) so the
+// capture checklist and the deliverable always agree on what counts as seeding.
+function glSeedSources(entries, pid){
+  const seen=new Set(); const srcs=[];
+  (entries||[]).forEach(e=>{
+    const cid=e.categoryId; if(!cid||seen.has(cid)) return; seen.add(cid);
+    const mode=(typeof tcProgressMode==='function')?tcProgressMode(cid,pid):'';
+    const isRunning=mode==='running-balance'||mode==='running-total';
+    const isLinear=((typeof tcGetMeasurementType==='function')?tcGetMeasurementType(cid,pid):'')==='linear';
+    if(isLinear) return;
+    const name=e.categoryName||((typeof tcGetName==='function')?tcGetName(cid,pid):'Category');
+    const inCat=entries.filter(x=>x.categoryId===cid&&x.entryType!=='planned'&&!x.temporary&&!x.deletedAt);
+    if(isRunning){
+      const nSeed=inCat.filter(_seedHasData).length;
+      if(nSeed) srcs.push({key:cid+'::seed',cid,seedOnly:true,name:'Seeding on '+name,n:nSeed});
+    } else {
+      const mat=(typeof tcTrackMaterial==='function')?tcTrackMaterial(cid,pid):true;
+      if(mat||inCat.some(_seedHasData)) srcs.push({key:cid,cid,seedOnly:false,name,n:inCat.length});
+    }
+  });
+  return srcs;
+}
+window._glSeedSources=glSeedSources;
 
 // ── 🌱 Seeding-on-stabilization tab ──
 // A stabilization drawing in a running-mode category often IS the seeding event (temp
@@ -1981,7 +2013,7 @@ async function _stabSeedingSheet(wb, cid, allEntries, pid){
   const defUnit=(typeof tcGetDefaultUnit==='function')?tcGetDefaultUnit(cid,pid):'ac';
   const states=(typeof tcGetStates==='function')?tcGetStates(cat,pid):[];
   await _seedingSheetRender(wb,{
-    pid, title:name+' — Seeding on Stabilization', tabBase:'Seeding — '+name, defUnit,
+    pid, title:name+' — Seeding on Stabilization', tabBase:'Seeding — '+name, defUnit, srcKey:cid+'::seed',
     childStates:states.filter(s=>!s.isPlanned), installed:rows,
     planTotal:null, stateOf:(e)=>e.state||null, skipEmptyStates:true,
     sectionTitle:'Seeding Events (by date)',
@@ -2012,7 +2044,8 @@ async function _disturbanceSheet(wb, cid, allEntries, pid){
   // Native outline groups for the inline collapsed map captures (see seeding sheet).
   ws.properties.outlineProperties={summaryBelow:false,summaryRight:false};
   ws.properties.outlineLevelRow=1;
-  ws.columns=[{width:30},{width:24},{width:16},{width:28},{width:42},{width:10},{width:26}];
+  const COLW=[30,24,16,28,42,10,26];
+  ws.columns=COLW.map(w=>({width:w}));
 
   // ── Title ── (just the category name — the tab already says "Disturbance —")
   ws.addRow([name]);
@@ -2113,7 +2146,7 @@ async function _disturbanceSheet(wb, cid, allEntries, pid){
     const r=ws.addRow([e.date||'', s?s.label:(e.state||''), meas, e.location||'', e.notes||'', Array.isArray(e.photoIds)?e.photoIds.length:'', e.contractor||'']);
     r.eachCell({includeEmpty:true},c=>{ c.font={name:'Calibri',size:10}; c.alignment={vertical:'top',wrapText:true}; });
     if(s){ const fill=_xlHex(s.color); if(fill){ r.getCell(2).fill={type:'pattern',pattern:'solid',fgColor:{argb:fill}}; r.getCell(2).font={name:'Calibri',size:10,color:{argb:_xlContrast(s.color)}}; } }
-    r.height=15;
+    _xlFitRowHeight(r,COLW,10,15); // long notes/locations grow the row instead of clipping
     // This drawing's map captures, collapsed inline right under it (same as seeding).
     await _embedCapturesInline(ws, wb, [e], NC);
   }
@@ -2228,6 +2261,54 @@ async function _embedCapturesInline(ws, wb, owners, NC, opts){
       ws.addImage(imgId,{ tl:{col:0.08,row:r0+0.03}, br:{col:brCol,row:r0+K-0.03}, editAs:'twoCell' });
     }catch(err){ console.warn('inline capture failed',err); }
   }
+}
+
+// The 🌱 seeding-status capture for a tab — the LATEST capture whose seedCap matches:
+// srcKey given → single-source captures of exactly that source (a source tab's own
+// evidence image); srcKey null → multi-source overview captures (the summary tab).
+// Embedded VISIBLE (not collapsed) right under the summary band — it's the headline
+// evidence; per-drawing photos stay in their collapsed groups. Latest only: captures
+// are dated point-in-time snapshots, and the full set archives in the Photos ZIP.
+async function _embedSeedStatusCapture(ws, wb, srcKey, NC){
+  const caps=(window._phPhotos||[]).filter(p=>p&&p.type==='map_capture'&&p.seedCap&&Array.isArray(p.seedCap.sources)&&p.storageUrl&&(
+    srcKey?(p.seedCap.sources.length===1&&p.seedCap.sources[0]===srcKey):(p.seedCap.sources.length>1)
+  )).sort((a,b)=>String(b.date||'').localeCompare(String(a.date||''))||((b.uploadedAt||0)-(a.uploadedAt||0)));
+  const ph=caps[0];
+  if(!ph) return;
+  const lbl=ws.addRow([`🌱 Seeding status capture · ${ph.date||''}${ph.caption?' — '+ph.caption:''}`]);
+  ws.mergeCells(lbl.number,1,lbl.number,NC);
+  lbl.getCell(1).font={bold:true,size:10,color:{argb:'FF006B75'}};
+  lbl.getCell(1).fill={type:'pattern',pattern:'solid',fgColor:{argb:'EAF5EA'}};
+  lbl.getCell(1).border={top:{style:'thin',color:{argb:'FFC9A84C'}}};
+  lbl.height=18;
+  try{
+    const resp=await fetch(ph.storageUrl); if(!resp.ok) return;
+    const blob=await resp.blob();
+    const bmp=await createImageBitmap(blob);
+    const aspect=bmp.height/bmp.width;
+    const cum=[]; { let a=0; for(let i=1;i<=NC;i++){ a+=Math.round((((ws.getColumn(i).width)||10)*7)+5); cum[i-1]=a; } }
+    const MAXHPX=1100, ROWMAXPT=380;
+    let brCol=NC, rangeW=cum[NC-1];
+    if(Math.round(rangeW*aspect)>MAXHPX){
+      for(let i=0;i<cum.length;i++){ if(Math.round(cum[i]*aspect)<=MAXHPX){ brCol=i+1; rangeW=cum[i]; } }
+    }
+    const totalPt=Math.round(Math.round(rangeW*aspect)*0.75);
+    const K=Math.max(1,Math.ceil(totalPt/ROWMAXPT));
+    const perRowPt=Math.max(18,Math.round(totalPt/K));
+    // Map captures re-encode larger than field photos (1100px vs 720) — the baked
+    // legend text has to stay crisp in the deliverable.
+    const EMB=1100, es=Math.min(1,EMB/Math.max(bmp.width,bmp.height));
+    const cw=Math.max(1,Math.round(bmp.width*es)), chh=Math.max(1,Math.round(bmp.height*es));
+    const cv=document.createElement('canvas'); cv.width=cw; cv.height=chh;
+    cv.getContext('2d').drawImage(bmp,0,0,cw,chh); bmp.close();
+    const jblob=await new Promise(res=>cv.toBlob(res,'image/jpeg',0.8));
+    const dataUrl=await _blobToDataURL(jblob);
+    const raw=dataUrl.substring(dataUrl.indexOf(',')+1);
+    let firstNum=null;
+    for(let k=0;k<K;k++){ const ir=ws.addRow([]); ir.height=perRowPt; if(k===0) firstNum=ir.number; }
+    const imgId=wb.addImage({base64:raw, extension:'jpeg'});
+    ws.addImage(imgId,{ tl:{col:0.08,row:firstNum-1+0.03}, br:{col:brCol,row:firstNum-1+K-0.03}, editAs:'twoCell' });
+  }catch(err){ console.warn('seed status capture embed failed',err); }
 }
 
 // Linear-BMP deliverable sheet (silt fence & friends) — installed ft vs the plan per
@@ -2408,7 +2489,7 @@ async function _seedingSheet(wb, cid, allEntries, pid){
   const unlinked=installed.filter(e=>!e.parentId||!planIds.has(e.parentId));
   if(unlinked.length) groups.push({label:'Unlinked drawings', planArea:null, kids:unlinked, owners:unlinked});
   await _seedingSheetRender(wb,{
-    pid, title:name, tabBase:'Seeding — '+name, defUnit,
+    pid, title:name, tabBase:'Seeding — '+name, defUnit, srcKey:cid,
     childStates:states.filter(s=>!s.isPlanned), installed,
     planTotal:planned.reduce((s,e)=>s+measure(e),0),
     stateOf:(e)=>e.state||(dcs?dcs.id:null),
@@ -2424,6 +2505,22 @@ async function _seedingSheet(wb, cid, allEntries, pid){
 // per-group breakdown with inline collapsed map captures / seed-tag photos.
 // o.planTotal=null → no plan exists: the '% of Plan' column and data bars are omitted and
 // the headline band shows the total seeded instead of the planned area.
+// Wrapped cells + a forced row height = clipped text on open (Excel only auto-fits
+// rows with NO custom height, and the min-height pass below stamps one on every row).
+// Estimate wrapped line count against the column widths and grow the row instead.
+function _xlFitRowHeight(row, widths, fontSize, minH){
+  let lines=1;
+  row.eachCell({includeEmpty:false},(c,col)=>{
+    const txt=(c.value==null)?'':String(c.value);
+    if(!txt) return;
+    // Excel width unit ≈ one '0' at 11pt Calibri; smaller fonts fit proportionally more.
+    const perLine=Math.max(4,Math.floor((widths[col-1]||10)*(11/fontSize)));
+    const l=txt.split('\n').reduce((a,seg)=>a+Math.max(1,Math.ceil(seg.length/perLine)),0);
+    if(l>lines) lines=l;
+  });
+  row.height=Math.max(minH, lines*(fontSize+4)+6);
+}
+
 async function _seedingSheetRender(wb, o){
   const pid=o.pid;
   const name=o.title;
@@ -2452,7 +2549,8 @@ async function _seedingSheetRender(wb, o){
   ws.properties.outlineProperties={summaryBelow:false,summaryRight:false};
   ws.properties.outlineLevelRow=1;
   // State, Coverage, %, Date, Seed Tags, Mix/Product, Applied Rate, Required, Actual, Method, Contractor, Notes, Photos
-  ws.columns=[{width:26},{width:14},{width:10},{width:13},{width:11},{width:24},{width:18},{width:18},{width:18},{width:18},{width:22},{width:40},{width:9}];
+  const COLW=[26,14,10,13,11,24,18,18,18,20,22,40,9];
+  ws.columns=COLW.map(w=>({width:w}));
 
   // ── Title (category name) — top of the hierarchy: biggest + teal ──
   ws.addRow([name]); ws.mergeCells(1,1,1,NC);
@@ -2548,7 +2646,7 @@ async function _seedingSheetRender(wb, o){
         const bc=pct<=50?'FFC0392B':(pct<=90?'FFF1C40F':'FF27AE60');
         ws.addConditionalFormatting({ ref:`C${r.number}`, rules:[{type:'dataBar',cfvo:[{type:'num',value:0},{type:'num',value:100}],color:{argb:bc}}] });
       }
-      r.height=22;
+      _xlFitRowHeight(r,COLW,11,22);
     });
   });
   // Banded headline: the plan denominator when one exists, else the total seed placed.
@@ -2566,6 +2664,8 @@ async function _seedingSheetRender(wb, o){
   pr.height=26;
   // (Per-row color-coded data bars were added in the loop above.)
   if(!sumStates.length){ const r=ws.addRow(['—','No states defined']); r.getCell(2).font={italic:true,size:10,color:{argb:'FF999999'}}; }
+  // Latest 🌱 seeding-status capture for THIS source, visible under the summary band.
+  if(o.srcKey) await _embedSeedStatusCapture(ws, wb, o.srcKey, NC);
   ws.addRow([]);
 
   // ── Group section — one row per drawn layer (full client columns): grouped under each
@@ -2616,7 +2716,7 @@ async function _seedingSheetRender(wb, o){
       if(fill){ r.getCell(1).fill={type:'pattern',pattern:'solid',fgColor:{argb:fill}}; r.getCell(1).font={name:'Calibri',size:10,bold:true,color:{argb:_xlContrast(s.color)}}; }
       else r.getCell(1).font={name:'Calibri',size:10,bold:true};
       r.getCell(3).font={name:'Calibri',size:10,bold:true}; if(pct!=null) r.getCell(3).numFmt='0"%"';
-      r.height=30; // padding so wrapped notes / mix read without expanding the row
+      _xlFitRowHeight(r,COLW,10,30); // grows past the 30px padding when notes/mix/method wrap
       // Flat event lists carry each event's captures/photos right under its own row.
       if(perRowCaptures) await _embedCapturesInline(ws, wb, [e], NC);
     }
@@ -2665,6 +2765,25 @@ async function _tlogExportPhotoZip(entries, pid){
           ?captionSource.replace(/[^a-zA-Z0-9 _-]/g,'').trim().slice(0,50)
           :`${e.date||'photo'}-${catName}-${idx}`;
         folder.file(`${safeName}.${ext}`,blob);
+      }catch{ /* skip failed fetches silently */ }
+    }
+  }
+
+  // 🌱 Seeding-status captures — the full-res archive for people outside the app.
+  // The XLSX embeds only the LATEST capture per tab (display copy); EVERY capture
+  // lands here as its original PNG (legend + date + brand baked in = self-explaining).
+  const seedCaps=(window._phPhotos||[]).filter(p=>p&&p.type==='map_capture'&&p.seedCap&&p.storageUrl&&(!p.projectId||p.projectId===pid))
+    .sort((a,b)=>String(a.date||'').localeCompare(String(b.date||'')));
+  if(seedCaps.length){
+    const folder=zip.folder('Seeding captures');
+    for(const ph of seedCaps){
+      try{
+        const resp=await fetch(ph.storageUrl);
+        if(!resp.ok) continue;
+        const blob=await resp.blob();
+        const ext=(ph.filename||'map-view.png').split('.').pop()||'png';
+        const cap=(ph.caption||'Seeding status').replace(/[^a-zA-Z0-9 _-]/g,'').trim().slice(0,50);
+        folder.file(`${ph.date||'undated'} — ${cap||'Seeding status'}.${ext}`,blob);
       }catch{ /* skip failed fetches silently */ }
     }
   }
