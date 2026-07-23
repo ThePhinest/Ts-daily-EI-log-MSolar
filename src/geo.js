@@ -66,34 +66,69 @@ function _chronoSort(a, b){
     || (a.e.createdAt||0) - (b.e.createdAt||0);
 }
 
+// ── Perf (2026-07-23) — suffix unions + version-keyed memo ──
+// Each net fn needed "union of everything drawn AFTER entry i" — computed as a
+// fresh union of a growing slice per entry (O(n²) union calls), recomputed from
+// scratch on EVERY render and EVERY drawing tap. As field entries accumulated,
+// popups visibly lagged (photo pins, which do no geometry math, stayed instant).
+// Fix 1: one reverse pass accumulates the later-union — n union calls total,
+// identical semantics. Fix 2: results memoize keyed on the entry-id set + a
+// version that any tracker-entry mutation bumps (trackerEntries.js), so repeat
+// taps/renders are pure cache hits.
+let _glGeoVer = 0;
+const _glGeoCache = new Map();
+function glGeoInvalidate(){ _glGeoVer++; _glGeoCache.clear(); }
+function _glMemo(fn, entries, extra, compute){
+  let key = fn + ':' + _glGeoVer + ':' + (extra || '') + ':';
+  for(const e of entries) key += e.id + '|';
+  if(_glGeoCache.has(key)) return _glGeoCache.get(key);
+  const v = compute();
+  if(_glGeoCache.size > 40) _glGeoCache.clear();   // tiny bound; recompute is cheap post-fix-1
+  _glGeoCache.set(key, v);
+  return v;
+}
+// laters[i] = union of parsed[i+1..end] (null when nothing later).
+function _suffixLaters(parsed){
+  const laters = new Array(parsed.length).fill(null);
+  let acc = null;
+  for(let i = parsed.length - 1; i >= 0; i--){
+    laters[i] = acc;
+    acc = acc ? (_unionAll([acc, parsed[i].f]) || acc) : parsed[i].f;
+  }
+  return laters;
+}
+
 // entries        : installed entries for ONE category (caller pre-filters planned/temporary/deleted)
 // orderedStates  : non-planned child states (defines the known state ids + output order)
 // Precedence     : chronological — each drawing minus everything drawn AFTER it.
 // Returns { netM2:{stateId:m²}, totalM2 } or null if no usable polygon geometry exists.
 function glStateNetAreasM2(entries, orderedStates){
   if(!Array.isArray(entries) || !Array.isArray(orderedStates) || !orderedStates.length) return null;
-  const known = {}; orderedStates.forEach(s => { known[s.id] = true; });
-  const parsed = entries.map(e => ({ e, f: _parseGeom(e) })).filter(x => x.f);
-  if(!parsed.length) return null;
-  parsed.sort(_chronoSort);
+  return _glMemo('S', entries, orderedStates.map(s => s.id).join(','), () => {
+    const known = {}; orderedStates.forEach(s => { known[s.id] = true; });
+    const parsed = entries.map(e => ({ e, f: _parseGeom(e) })).filter(x => x.f);
+    if(!parsed.length) return null;
+    parsed.sort(_chronoSort);
 
-  const stateFeats = {}; orderedStates.forEach(s => { stateFeats[s.id] = []; });
-  parsed.forEach((x, i) => {
-    // Legacy unstated entries belong to the first state; an entry with a set-but-
-    // UNKNOWN state id is skipped (mis-attributing it to Active would corrupt the
-    // open total silently).
-    let sid = x.e.state;
-    if(!sid) sid = orderedStates[0].id;
-    else if(!known[sid]){ console.warn('glStateNetAreasM2: unknown state id on entry', x.e.id, sid); return; }
-    const later = _unionAll(parsed.slice(i + 1).map(y => y.f));
-    let g = x.f;
-    if(later) g = _safeDiff(g, later);
-    if(g) stateFeats[sid].push(g);
+    const laters = _suffixLaters(parsed);
+    const stateFeats = {}; orderedStates.forEach(s => { stateFeats[s.id] = []; });
+    parsed.forEach((x, i) => {
+      // Legacy unstated entries belong to the first state; an entry with a set-but-
+      // UNKNOWN state id is skipped (mis-attributing it to Active would corrupt the
+      // open total silently).
+      let sid = x.e.state;
+      if(!sid) sid = orderedStates[0].id;
+      else if(!known[sid]){ console.warn('glStateNetAreasM2: unknown state id on entry', x.e.id, sid); return; }
+      const later = laters[i];
+      let g = x.f;
+      if(later) g = _safeDiff(g, later);
+      if(g) stateFeats[sid].push(g);
+    });
+    const netM2 = {};
+    orderedStates.forEach(s => { netM2[s.id] = _safeArea(_unionAll(stateFeats[s.id])); });
+    const totalM2 = _safeArea(_unionAll(parsed.map(x => x.f)));
+    return { netM2, totalM2 };
   });
-  const netM2 = {};
-  orderedStates.forEach(s => { netM2[s.id] = _safeArea(_unionAll(stateFeats[s.id])); });
-  const totalM2 = _safeArea(_unionAll(parsed.map(x => x.f)));
-  return { netM2, totalM2 };
 }
 
 // Per-ENTRY net area (m²): each drawing's geometry minus the union of everything
@@ -102,17 +137,20 @@ function glStateNetAreasM2(entries, orderedStates){
 // drawn on top — not the misleading gross drawn size. Returns { entryId: m² } or null.
 function glEntryNetAreasM2(entries, orderedStates){
   if(!Array.isArray(entries) || !Array.isArray(orderedStates) || !orderedStates.length) return null;
-  const parsed = entries.map(e => ({ e, f: _parseGeom(e) })).filter(x => x.f);
-  if(!parsed.length) return null;
-  parsed.sort(_chronoSort);
-  const out = {};
-  parsed.forEach((x, i) => {
-    const later = _unionAll(parsed.slice(i + 1).map(y => y.f));
-    let g = x.f;
-    if(later) g = _safeDiff(g, later);
-    out[x.e.id] = _safeArea(g);
+  return _glMemo('E', entries, '', () => {
+    const parsed = entries.map(e => ({ e, f: _parseGeom(e) })).filter(x => x.f);
+    if(!parsed.length) return null;
+    parsed.sort(_chronoSort);
+    const laters = _suffixLaters(parsed);
+    const out = {};
+    parsed.forEach((x, i) => {
+      const later = laters[i];
+      let g = x.f;
+      if(later) g = _safeDiff(g, later);
+      out[x.e.id] = _safeArea(g);
+    });
+    return out;
   });
-  return out;
 }
 
 // Per-ENTRY net GEOMETRY: each drawing minus the union of everything drawn AFTER
@@ -142,17 +180,20 @@ function _dropSlivers(geometry){
 }
 
 function glEntryNetGeoms(entries){
-  const parsed = (entries || []).map(e => ({ e, f: _parseGeom(e) })).filter(x => x.f);
-  if(!parsed.length) return null;
-  parsed.sort(_chronoSort);
-  const out = {};
-  parsed.forEach((x, i) => {
-    const later = _unionAll(parsed.slice(i + 1).map(y => y.f));
-    let g = x.f;
-    if(later) g = _safeDiff(g, later);
-    out[x.e.id] = (g && g.geometry) ? _dropSlivers(g.geometry) : null;
+  return _glMemo('G', entries || [], '', () => {
+    const parsed = (entries || []).map(e => ({ e, f: _parseGeom(e) })).filter(x => x.f);
+    if(!parsed.length) return null;
+    parsed.sort(_chronoSort);
+    const laters = _suffixLaters(parsed);
+    const out = {};
+    parsed.forEach((x, i) => {
+      const later = laters[i];
+      let g = x.f;
+      if(later) g = _safeDiff(g, later);
+      out[x.e.id] = (g && g.geometry) ? _dropSlivers(g.geometry) : null;
+    });
+    return out;
   });
-  return out;
 }
 
 // Line length in FEET for a LineString/MultiLineString geometry (object or JSON
@@ -173,6 +214,7 @@ if(typeof window !== 'undefined'){
   window.glEntryNetGeoms   = glEntryNetGeoms;
   window.glAreaConvertM2   = glAreaConvertM2;
   window.glLineLengthFt    = glLineLengthFt;
+  window.glGeoInvalidate   = glGeoInvalidate;
 }
 
-export { glStateNetAreasM2, glEntryNetAreasM2, glEntryNetGeoms, glAreaConvertM2, glLineLengthFt };
+export { glStateNetAreasM2, glEntryNetAreasM2, glEntryNetGeoms, glAreaConvertM2, glLineLengthFt, glGeoInvalidate };

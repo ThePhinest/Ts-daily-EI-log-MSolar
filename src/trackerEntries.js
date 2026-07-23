@@ -115,6 +115,9 @@ function _trSaveRaw(projectId, data){
   try {
     if(window.idbSet) window.idbSet(_trStorageKey(projectId), JSON.stringify({ entries: data.entries, _ts: Date.now() }));
   } catch(e){ console.warn('trSave idb:', e.message); }
+  // Every entry mutation funnels through here — drop the geo.js net-area memo so
+  // the next render/tap recomputes against the new ground truth.
+  if(typeof window.glGeoInvalidate === 'function') window.glGeoInvalidate();
 }
 
 function trGenId(){
