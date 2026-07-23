@@ -940,14 +940,17 @@ async function phSaveCapturedImage(blob, photoDate, captionOverride, opts){
   tc.getContext('2d').drawImage(bmp,0,0,tc.width,tc.height);
   bmp.close();
   const thumb=tc.toDataURL('image/jpeg',0.72);
-  // Upload to Storage
+  // Upload to Storage — captures are JPEG at the source now (7/23); the PNG branch
+  // only fires if the composite failed open and handed back the raw canvas PNG.
+  const isJpeg=blob&&blob.type==='image/jpeg';
+  const fname=isJpeg?'map-view.jpg':'map-view.png';
   let storageUrl='';
   try{
-    const ref=storage.ref(`photos/${_currentUser.uid}/${id}/map-view.png`);
-    const snap=await ref.put(blob,{contentType:'image/png'});
+    const ref=storage.ref(`photos/${_currentUser.uid}/${id}/${fname}`);
+    const snap=await ref.put(blob,{contentType:isJpeg?'image/jpeg':'image/png'});
     storageUrl=await snap.ref.getDownloadURL();
   }catch(e){ console.warn('phSaveCapturedImage upload failed:',e.message); return null; }
-  const entry={id,date:today,caption,filename:'map-view.png',thumb,storageUrl,uploadedAt:Date.now(),projectId:pid,type:'map_capture'};
+  const entry={id,date:today,caption,filename:fname,thumb,storageUrl,uploadedAt:Date.now(),projectId:pid,type:'map_capture'};
   // Pre-tagged captures (ESC status) flow straight into the QI report's §11 auto-attach.
   if(opts&&opts.swppp) entry.swppp=true;
   // Seeding-status captures carry their source keys so the seeding XLSX can route the

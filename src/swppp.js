@@ -1082,7 +1082,11 @@ async function _swpppExportPhotosZipNow(id){
       if(p.storageUrl){ try{ blob=await (await fetch(p.storageUrl)).blob(); }catch(e){} }
       if(!blob&&p.thumb){ try{ const raw=p.thumb,b64=raw.includes(',')?raw.split(',')[1]:raw; const bin=atob(b64); const arr=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++)arr[i]=bin.charCodeAt(i); blob=new Blob([arr]); }catch(e){} }
       if(!blob) return;
-      const ext=(p.filename&&p.filename.includes('.'))?p.filename.split('.').pop():(((blob.type||'').includes('png'))?'png':'jpg');
+      // Legacy PNG captures re-encode to full-res JPEG (7/23 — archive size); new
+      // captures are already JPEG at the source.
+      if((blob.type||'').includes('png')){ try{ blob=await exportImageBlob(blob,100000,0.9); }catch(e){} }
+      const bt=blob.type||'';
+      const ext=bt.includes('png')?'png':(bt.includes('jpeg')?'jpg':((p.filename&&p.filename.includes('.'))?p.filename.split('.').pop():'jpg'));
       zip.folder(folder).file(`${label} — ${safe(p.caption||p.date||pId)}.${ext}`,blob);
       added++;
     };

@@ -4381,7 +4381,10 @@ async function _compositeBrandWordmark(blob, legendCat, pid, scopeEntryId, opts)
     ctx.fillStyle='#ffffff'; ctx.fillText('GROUND',tx,cy); tx+=wLeft+SPACE;
     ctx.fillStyle='#C9A84C'; ctx.fillText('|',tx,cy); tx+=wPipe+SPACE;
     ctx.fillStyle='#006B75'; ctx.fillText('LOG',tx,cy);
-    return await new Promise(res=>c.toBlob(res,'image/png'));
+    // JPEG at the source (Tim 7/23): the map canvas is opaque, and a lossless PNG
+    // capture is 1–2+ MB vs ~200–400 KB at q0.9 with no visible linework/legend
+    // loss — smaller in Storage, the ZIP archive, and every share path.
+    return await new Promise(res=>c.toBlob(res,'image/jpeg',0.9));
   }catch(e){
     console.warn('_compositeBrandWordmark failed:',e.message);
     return blob;

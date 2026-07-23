@@ -1,3 +1,5 @@
+import { exportImageBlob } from './exportImg.js';
+
 // ═══════════════════════════════════════════
 // COMPLIANCE LOG
 // ═══════════════════════════════════════════
@@ -1514,7 +1516,10 @@ function _showTlogExportModal(getEntries, pid){
     };
     ov.querySelector('._exp-zip').onclick=async()=>{
       ov.querySelectorAll('button').forEach(b=>b.style.pointerEvents='none');
-      try{ await _tlogExportPhotoZip(getEntries(), pid); }
+      // ZIP honors the checked categories (Tim 7/23: a seeding ZIP was dragging in
+      // disturbance captures) — nothing checked = everything, as before.
+      const selKeys=selected.size?[...selected]:null;
+      try{ await _tlogExportPhotoZip(getEntries(), pid, selKeys); }
       catch(err){ console.warn('photo zip failed',err); }
       ov.remove();
     };
@@ -2749,11 +2754,23 @@ async function _seedingSheetRender(wb, o){
 }
 
 // ── Material Tag photo ZIP export ──
-async function _tlogExportPhotoZip(entries, pid){
+// selKeys (optional) = the export modal's checked rows ('cid' / 'cid::seed') — the
+// ZIP scopes to those categories/sources; null = everything (legacy behavior).
+// PNG map captures re-encode to full-res JPEG q0.9 on the way out (legacy captures
+// were lossless PNGs at 1–2+ MB; new captures are already JPEG at the source).
+async function _tlogExportPhotoZip(entries, pid, selKeys){
   const {default:JSZip}=await import('jszip');
   const zip=new JSZip();
   const cfg=JSON.parse(localStorage.getItem('msf_projectconfig')||'{}');
   const today=new Date().toLocaleDateString('en-CA');
+  const selCids=selKeys?new Set(selKeys.map(k=>String(k).split('::')[0])):null;
+  const selKeySet=selKeys?new Set(selKeys):null;
+  const _zipBlob=async(blob)=>{
+    if(blob&&blob.type==='image/png'){ try{ return await exportImageBlob(blob,100000,0.9); }catch{ return blob; } }
+    return blob;
+  };
+  const _zipExt=(blob,fallback)=>blob&&blob.type==='image/jpeg'?'jpg':(fallback||'png');
+  if(selCids) entries=entries.filter(e=>selCids.has(e.categoryId||e.category));
 
   for(const e of entries){
     const types=e.photoTypes||{};
@@ -2773,8 +2790,8 @@ async function _tlogExportPhotoZip(entries, pid){
       try{
         const resp=await fetch(photo.storageUrl);
         if(!resp.ok) continue;
-        const blob=await resp.blob();
-        const ext=(photo.filename||'photo.jpg').split('.').pop()||'jpg';
+        const blob=await _zipBlob(await resp.blob());
+        const ext=_zipExt(blob,(photo.filename||'photo.jpg').split('.').pop()||'jpg');
         const captionSource=(e.photoCaptions||{})[photoId]||photo?.caption||null;
         const idx=includeIds.indexOf(photoId)+1;
         const safeName=captionSource
@@ -2785,10 +2802,11 @@ async function _tlogExportPhotoZip(entries, pid){
     }
   }
 
-  // 🌱 Seeding-status captures — the full-res archive for people outside the app.
-  // The XLSX embeds only the LATEST capture per tab (display copy); EVERY capture
-  // lands here as its original PNG (legend + date + brand baked in = self-explaining).
-  const seedCaps=(window._phPhotos||[]).filter(p=>p&&p.type==='map_capture'&&p.seedCap&&p.storageUrl&&(!p.projectId||p.projectId===pid))
+  // 🌱 Seeding-status captures — the full-res archive for people outside the app
+  // (legend + date + brand baked in = self-explaining). Scoped to the checked seed
+  // sources when a selection exists; legacy PNGs re-encode to full-res JPEG.
+  const seedCaps=(window._phPhotos||[]).filter(p=>p&&p.type==='map_capture'&&p.seedCap&&Array.isArray(p.seedCap.sources)&&p.storageUrl&&(!p.projectId||p.projectId===pid)
+      &&(!selKeySet||p.seedCap.sources.some(k=>selKeySet.has(k))))
     .sort((a,b)=>String(a.date||'').localeCompare(String(b.date||'')));
   if(seedCaps.length){
     const folder=zip.folder('Seeding captures');
@@ -2796,8 +2814,8 @@ async function _tlogExportPhotoZip(entries, pid){
       try{
         const resp=await fetch(ph.storageUrl);
         if(!resp.ok) continue;
-        const blob=await resp.blob();
-        const ext=(ph.filename||'map-view.png').split('.').pop()||'png';
+        const blob=await _zipBlob(await resp.blob());
+        const ext=_zipExt(blob,(ph.filename||'map-view.png').split('.').pop()||'png');
         const cap=(ph.caption||'Seeding status').replace(/[^a-zA-Z0-9 _-]/g,'').trim().slice(0,50);
         folder.file(`${ph.date||'undated'} — ${cap||'Seeding status'}.${ext}`,blob);
       }catch{ /* skip failed fetches silently */ }
