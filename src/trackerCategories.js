@@ -377,6 +377,17 @@ function tcCategoryMethods(catOrId, projectId){
   return (typeof window !== 'undefined' && window._amendmentMethods) ? window._amendmentMethods : [];
 }
 
+// ── 🔒 Category close-out (2026-07-23) ──
+// A finished scope (e.g. Pre-Seeding once active work starts) closes: its drawings
+// lock (no new / edit / delete — repair flags stay allowed), the 🌱 capture picker
+// skips it, and the seeding export pins the capture day recorded at close
+// (`closedCapDay`) so the category's tab reproduces the close-out deliverable
+// exactly, forever — until reopened. Fields: closedAt (ms) + closedCapDay (date).
+function tcIsClosed(catOrId, projectId){
+  const cat = _tcResolve(catOrId, projectId);
+  return !!(cat && cat.closedAt);
+}
+
 // Category identity chip — a small horizontal ramp of the category's state colors,
 // in order. Replaces the old single category-color dot everywhere a category is
 // listed. Self-maintaining: edit a state color and every chip updates. Falls back
@@ -439,6 +450,7 @@ if(typeof window !== 'undefined'){
   window.tcNoPlan               = tcNoPlan;
   window.tcCategoryPhases       = tcCategoryPhases;
   window.tcCategoryMethods      = tcCategoryMethods;
+  window.tcIsClosed             = tcIsClosed;
   window.TC_FILL_STYLES         = TC_FILL_STYLES;
   window.TC_LINE_STYLES         = TC_LINE_STYLES;
   window.TC_TEMPLATES           = TC_TEMPLATES;

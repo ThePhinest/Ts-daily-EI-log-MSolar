@@ -1452,8 +1452,11 @@ function _showTlogExportModal(getEntries, pid){
     const isRunning=mode==='running-balance'||mode==='running-total';
     const name=e.categoryName||((typeof tcGetName==='function')?tcGetName(cid,pid):'Category');
     const inCat=entries.filter(x=>x.categoryId===cid);
+    // 🔒 Closed categories stay exportable (that's the point of closing, not deleting)
+    // — marked so the frozen tab is no surprise.
+    const closed=(typeof tcIsClosed==='function')&&tcIsClosed(cid,pid);
     cats.push({key:cid,cid,name,n:inCat.length,
-      type:isRunning?'SWPPP · net disturbed':'Coverage · vs plan',
+      type:(closed?'🔒 closed · ':'')+(isRunning?'SWPPP · net disturbed':'Coverage · vs plan'),
       icon:isRunning?'🟧':'🌱'});
     // A running category whose stabilization entries carry seed data gets a SECOND,
     // independent row: the seeding side exports on its own (or combined with the seeding
@@ -2015,8 +2018,9 @@ async function _stabSeedingSheet(wb, cid, allEntries, pid){
   const name=(typeof tcGetName==='function')?tcGetName(cid,pid):'Disturbance';
   const defUnit=(typeof tcGetDefaultUnit==='function')?tcGetDefaultUnit(cid,pid):'ac';
   const states=(typeof tcGetStates==='function')?tcGetStates(cat,pid):[];
+  const closedCap=((typeof tcIsClosed==='function')&&tcIsClosed(cid,pid))?(cat.closedCapDay||null):null;
   await _seedingSheetRender(wb,{
-    pid, title:name+' — Seeding on Stabilization', tabBase:'Seeding — '+name, defUnit, srcKey:cid+'::seed',
+    pid, title:name+' — Seeding on Stabilization', tabBase:'Seeding — '+name, defUnit, srcKey:cid+'::seed', capDay:closedCap,
     childStates:states.filter(s=>!s.isPlanned), installed:rows,
     planTotal:null, stateOf:(e)=>e.state||null, skipEmptyStates:true,
     sectionTitle:'Seeding Events (by date)',
@@ -2273,12 +2277,13 @@ async function _embedCapturesInline(ws, wb, owners, NC, opts){
 // zoomed shots, all belong; older sessions don't pile up — full history lives in the
 // Photos ZIP). Collapsed outline groups under the summary band, same as captures
 // everywhere else — a dated toggle row per shot, + in the margin expands it.
-async function _embedSeedStatusCapture(ws, wb, srcKey, NC){
+async function _embedSeedStatusCapture(ws, wb, srcKey, NC, pinDay){
   const all=(window._phPhotos||[]).filter(p=>p&&p.type==='map_capture'&&p.seedCap&&Array.isArray(p.seedCap.sources)&&p.storageUrl&&(
     srcKey?(p.seedCap.sources.length===1&&p.seedCap.sources[0]===srcKey):(p.seedCap.sources.length>1)
   )).sort((a,b)=>String(b.date||'').localeCompare(String(a.date||''))||((b.uploadedAt||0)-(a.uploadedAt||0)));
   if(!all.length) return;
-  const day=all[0].date||'';
+  // 🔒 A closed category pins its close-day capture set (pinDay) so the tab never drifts.
+  const day=pinDay||all[0].date||'';
   // The newest day's full set, in the order they were taken.
   const caps=all.filter(p=>(p.date||'')===day).sort((a,b)=>(a.uploadedAt||0)-(b.uploadedAt||0));
   const cum=[]; { let a=0; for(let i=1;i<=NC;i++){ a+=Math.round((((ws.getColumn(i).width)||10)*7)+5); cum[i-1]=a; } }
@@ -2497,8 +2502,9 @@ async function _seedingSheet(wb, cid, allEntries, pid){
   });
   const unlinked=installed.filter(e=>!e.parentId||!planIds.has(e.parentId));
   if(unlinked.length) groups.push({label:'Unlinked drawings', planArea:null, kids:unlinked, owners:unlinked});
+  const closedCap=((typeof tcIsClosed==='function')&&tcIsClosed(cid,pid))?(cat.closedCapDay||null):null;
   await _seedingSheetRender(wb,{
-    pid, title:name, tabBase:'Seeding — '+name, defUnit, srcKey:cid,
+    pid, title:name, tabBase:'Seeding — '+name, defUnit, srcKey:cid, capDay:closedCap,
     childStates:states.filter(s=>!s.isPlanned), installed,
     planTotal:planned.reduce((s,e)=>s+measure(e),0),
     stateOf:(e)=>e.state||(dcs?dcs.id:null),
@@ -2673,8 +2679,9 @@ async function _seedingSheetRender(wb, o){
   pr.height=26;
   // (Per-row color-coded data bars were added in the loop above.)
   if(!sumStates.length){ const r=ws.addRow(['—','No states defined']); r.getCell(2).font={italic:true,size:10,color:{argb:'FF999999'}}; }
-  // Latest 🌱 seeding-status capture for THIS source, visible under the summary band.
-  if(o.srcKey) await _embedSeedStatusCapture(ws, wb, o.srcKey, NC);
+  // 🌱 seeding-status captures for THIS source under the summary band — pinned to the
+  // close-day set when the category is closed (o.capDay), else the newest capture day.
+  if(o.srcKey) await _embedSeedStatusCapture(ws, wb, o.srcKey, NC, o.capDay||null);
   ws.addRow([]);
 
   // ── Group section — one row per drawn layer (full client columns): grouped under each

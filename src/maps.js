@@ -1983,7 +1983,12 @@ function mapShowCategorySheet(){
   if(!cats.length){
     list.innerHTML=noCatPill+'<div style="font-family:var(--mono);font-size:12px;color:var(--muted);text-align:center;padding:16px 0">No categories yet.<br>Use Tracker to add your first.</div>';
   } else {
-    list.innerHTML=noCatPill+cats.map(c=>`
+    // Closed categories can't take new drawings — dimmed pill, tap explains.
+    list.innerHTML=noCatPill+cats.map(c=>c.closedAt?`
+      <div class="map-cat-pill" onclick="mapTcClosedNotice('${c.id}')" style="opacity:.45">
+        <div class="map-cat-dot" style="background:${c.color||'#888'}"></div>
+        <span>🔒 ${c.name}</span>
+      </div>`:`
       <div class="map-cat-pill" onclick="mapSelectCategoryForDraw('${c.id}')">
         <div class="map-cat-dot" style="background:${c.color||'#888'}"></div>
         <span>${c.name}</span>
@@ -2158,9 +2163,10 @@ function _renderTrackerSheet(){
       ?(c.specification||c.supplier)
       :(c.productName||c.targetRate||(c.amendmentType&&c.amendmentType!=='None'));
     const typeBadge=`<span style="font-family:var(--mono);font-size:11px;color:var(--muted);padding:3px 6px;border:1px solid var(--border);border-radius:3px;white-space:nowrap">${c.measurementType==='linear'?'LN':'AC'}</span>`;
+    const isClosed=!!c.closedAt;
     return `<div class="map-tc-row">
       ${(typeof tcRampChip==='function')?tcRampChip(c,pid,12):`<div class="map-tc-dot" style="background:${c.color||'#888'}"></div>`}
-      <span class="map-tc-name">${c.name}</span>
+      <span class="map-tc-name" ${isClosed?'style="color:var(--muted)" title="Closed — reopen via ⚙"':''}>${isClosed?'🔒 ':''}${c.name}</span>
       ${typeBadge}
       <button class="map-tc-btn ${visible?'':'dim'}" onclick="mapTrackerToggleLayer('${c.id}')" title="${visible?'Hide':'Show'} layer">${visible?'●':'○'}</button>
       <button class="map-tc-btn" onclick="mapTrackerStartEdit('${c.id}')">Edit</button>
@@ -2475,6 +2481,12 @@ function mapShowCategoryDetails(catId){
         <input type="checkbox" id="_cd-trackmat" ${trackMat?'checked':''} onchange="_cdToggleMaterial(this.checked)"> Track material / rate (lbs per acre, etc.)
       </label>
       <div id="_cd-material-fields" style="display:${trackMat?'flex':'none'};flex-direction:column;gap:12px">${materialFields}</div>
+      <div style="border-top:1px solid var(--border);padding-top:14px">
+        <button id="_cd-close-cat" style="width:100%;background:${cat.closedAt?'rgba(201,168,76,0.12)':'none'};border:1px dashed ${cat.closedAt?'var(--amber)':'var(--border)'};color:${cat.closedAt?'var(--amber)':'var(--muted)'};padding:10px;border-radius:8px;font-family:var(--mono);font-size:12px;cursor:pointer;letter-spacing:.03em">${cat.closedAt?'↩ Reopen category':'🔒 Close out category'}</button>
+        <div style="font-family:var(--mono);font-size:10px;color:var(--muted);line-height:1.5;margin-top:6px">${cat.closedAt
+          ?`Closed ${new Date(cat.closedAt).toLocaleDateString()} — drawings are locked and the seeding export keeps the close-day captures. Reopen to make changes.`
+          :'For finished scope (e.g. Pre-Seeding). Locks the drawings and freezes the seeding-export tab exactly as it is today — including today’s captures. Reopen anytime.'}</div>
+      </div>
     </div>
     <div style="display:flex;gap:8px;padding:12px 16px;border-top:1px solid var(--border);flex-shrink:0">
       <button class="modal-cancel" id="_cd-cancel" style="flex:1">Cancel</button>
@@ -2486,7 +2498,57 @@ function mapShowCategoryDetails(catId){
   _cdRenderStates(isLinear);
   document.getElementById('_cd-cancel').onclick=()=>{ _cdStates=null; ov.remove(); };
   document.getElementById('_cd-save').onclick=()=>mapSaveCategoryDetails(catId,ov,isLinear);
+  const closeBtn=document.getElementById('_cd-close-cat');
+  if(closeBtn) closeBtn.onclick=()=>{
+    // One-tap confirm: the button itself flips to a confirm state (no nested modal
+    // over the bottom sheet).
+    if(closeBtn.dataset.confirm==='1'){ mapTcToggleClosed(catId,ov); return; }
+    closeBtn.dataset.confirm='1';
+    closeBtn.textContent=cat.closedAt?'↩ Tap again to reopen':'🔒 Tap again to close out';
+    closeBtn.style.borderStyle='solid';
+    closeBtn.style.color='var(--amber)';
+    closeBtn.style.borderColor='var(--amber)';
+    setTimeout(()=>{ if(closeBtn.isConnected){ closeBtn.dataset.confirm=''; closeBtn.textContent=cat.closedAt?'↩ Reopen category':'🔒 Close out category'; } },3500);
+  };
 }
+
+// ── 🔒 Close out / reopen a category (finished scope, e.g. Pre-Seeding) ──
+// Closing locks the category's drawings (no new/edit/delete; 🚩 flags still allowed),
+// removes it from the 🌱 capture picker, and pins TODAY's newest capture day so the
+// seeding export tab reproduces the close-out deliverable forever. Reopen undoes all.
+function _tcClosedToast(cat){
+  const nm=cat?cat.name:'Category';
+  _showCaptureToast(`🔒 ${nm} is closed — reopen it (⚙) to make changes`);
+  setTimeout(_hideCaptureToast,2600);
+}
+function mapTcClosedNotice(catId){
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  _tcClosedToast((typeof tcGetCategory==='function')?tcGetCategory(catId,pid):null);
+}
+window.mapTcClosedNotice=mapTcClosedNotice;
+async function mapTcToggleClosed(catId, ov){
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const cat=(typeof tcGetCategory==='function')?tcGetCategory(catId,pid):null;
+  if(!cat) return;
+  if(cat.closedAt){
+    cat.closedAt=null;
+    cat.closedCapDay=null;
+  } else {
+    // Pin the newest seeding-status capture day for this source key so the export
+    // keeps exactly the capture set that exists right now.
+    const key=((typeof tcProgressMode==='function')&&/^running/.test(tcProgressMode(cat,pid)||''))?catId+'::seed':catId;
+    const caps=(window._phPhotos||[]).filter(p=>p&&p.type==='map_capture'&&p.seedCap&&Array.isArray(p.seedCap.sources)&&p.seedCap.sources.length===1&&p.seedCap.sources[0]===key)
+      .sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')));
+    cat.closedAt=Date.now();
+    cat.closedCapDay=(caps[0]&&caps[0].date)||null;
+  }
+  if(typeof tcSaveCategory==='function') await tcSaveCategory(cat,pid);
+  if(ov){ _cdStates=null; ov.remove(); }
+  _renderTrackerSheet();
+  _showCaptureToast(cat.closedAt?`🔒 ${cat.name} closed out — export tab is frozen as of today`:`↩ ${cat.name} reopened`);
+  setTimeout(_hideCaptureToast,2600);
+}
+window.mapTcToggleClosed=mapTcToggleClosed;
 
 async function mapSaveCategoryDetails(catId, ov, isLinear){
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
@@ -2759,6 +2821,11 @@ window.mapDrawUndoPoint=mapDrawUndoPoint;
 
 function mapActivateDrawMode(categoryId){
   mapCloseCategorySheet();
+  // 🔒 Closed categories take no new drawings (finished scope — reopen via ⚙).
+  if(categoryId&&typeof tcIsClosed==='function'&&tcIsClosed(categoryId,(typeof _activeProjectId==='function')?_activeProjectId():'default')){
+    mapTcClosedNotice(categoryId);
+    return;
+  }
   _pauseGpsForDraw();
   if(!_mapInstance) return;
   _drawCategory=categoryId;
@@ -4647,7 +4714,10 @@ function mapCaptureSeedingStatus(){
   if(_trackerPopup){_trackerPopup.remove();_trackerPopup=null;}
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
   const entries=(typeof trGetEntriesForProject==='function')?trGetEntriesForProject(pid).filter(e=>!e.deletedFromMap&&!e.archivedFromMap&&e.geometry):[];
-  const srcs=(typeof window._glSeedSources==='function')?window._glSeedSources(entries,pid):[];
+  // 🔒 Closed categories are done capturing — their export tab is pinned to the
+  // close-day captures, so new shots would never surface anyway.
+  const srcs=((typeof window._glSeedSources==='function')?window._glSeedSources(entries,pid):[])
+    .filter(s=>!(typeof tcIsClosed==='function'&&tcIsClosed(s.cid,pid)));
   if(!srcs.length){ _showCaptureToast('No seeding drawings to capture'); setTimeout(_hideCaptureToast,1800); return; }
   // Last selection + plan-outlines choice remembered per project (tiny-pref tier).
   let prefs={};
@@ -5533,6 +5603,9 @@ function mapEditTrackerEntry(entryId){
     _showRepairFlagSheet(entry.parentId,g.coordinates,entry);
     return;
   }
+  // 🔒 Closed category → drawings are locked (repair flags above stay editable).
+  const _ecid=entry.categoryId||entry.category;
+  if(_ecid&&typeof tcIsClosed==='function'&&tcIsClosed(_ecid,pid)){ mapTcClosedNotice(_ecid); return; }
   _editingEntryId=entryId;
   _pendingDrawFeature={geometry:entry.geometry};
   _drawCategory=entry.categoryId||entry.category;
@@ -5733,6 +5806,10 @@ function mapDeleteTrackerEntryFromPanel(entryId){
     mapUpdateKmlLayerList();
   };
   document.getElementById('_trpDel').onclick=()=>{
+    // 🔒 Closed category → the record is frozen; hide/archive stay allowed (view
+    // only), but real deletion needs a reopen first. Repair flags exempt.
+    const _dcid=entry?(entry.categoryId||entry.category):null;
+    if(entry&&!entry.temporary&&_dcid&&typeof tcIsClosed==='function'&&tcIsClosed(_dcid,pid)){ ov.remove(); _closePopup(); mapTcClosedNotice(_dcid); return; }
     ov.remove(); _closePopup();
     if(typeof trDeleteEntry==='function') trDeleteEntry(entryId,pid);
     mapRenderTrackerLayers();
