@@ -1883,6 +1883,9 @@ async function _allSeedingSummarySheet(wb, srcs, entries, pid){
   const ws=wb.addWorksheet('All Seeding — Summary');
   const COLW=[30,26,14,11,26,16,16,16];
   ws.columns=COLW.map(w=>({width:w}));
+  // Collapsed capture groups need the outline config (toggle row above, + expands).
+  ws.properties.outlineProperties={summaryBelow:false,summaryRight:false};
+  ws.properties.outlineLevelRow=1;
   ws.addRow(['All Seeding — Summary']); ws.mergeCells(1,1,1,NC);
   const tc=ws.getCell('A1');
   tc.font={name:'Calibri',bold:true,size:18,color:{argb:WHITE}};
@@ -2263,52 +2266,58 @@ async function _embedCapturesInline(ws, wb, owners, NC, opts){
   }
 }
 
-// The 🌱 seeding-status capture for a tab — the LATEST capture whose seedCap matches:
-// srcKey given → single-source captures of exactly that source (a source tab's own
-// evidence image); srcKey null → multi-source overview captures (the summary tab).
-// Embedded VISIBLE (not collapsed) right under the summary band — it's the headline
-// evidence; per-drawing photos stay in their collapsed groups. Latest only: captures
-// are dated point-in-time snapshots, and the full set archives in the Photos ZIP.
+// The 🌱 seeding-status captures for a tab — srcKey given → single-source captures of
+// exactly that source (a source tab's own evidence images); srcKey null → multi-source
+// overview captures (the summary tab). Embeds EVERY capture from the MOST RECENT
+// capture day for that scope (Tim 7/23: a capture session = an overview + a few
+// zoomed shots, all belong; older sessions don't pile up — full history lives in the
+// Photos ZIP). Collapsed outline groups under the summary band, same as captures
+// everywhere else — a dated toggle row per shot, + in the margin expands it.
 async function _embedSeedStatusCapture(ws, wb, srcKey, NC){
-  const caps=(window._phPhotos||[]).filter(p=>p&&p.type==='map_capture'&&p.seedCap&&Array.isArray(p.seedCap.sources)&&p.storageUrl&&(
+  const all=(window._phPhotos||[]).filter(p=>p&&p.type==='map_capture'&&p.seedCap&&Array.isArray(p.seedCap.sources)&&p.storageUrl&&(
     srcKey?(p.seedCap.sources.length===1&&p.seedCap.sources[0]===srcKey):(p.seedCap.sources.length>1)
   )).sort((a,b)=>String(b.date||'').localeCompare(String(a.date||''))||((b.uploadedAt||0)-(a.uploadedAt||0)));
-  const ph=caps[0];
-  if(!ph) return;
-  const lbl=ws.addRow([`🌱 Seeding status capture · ${ph.date||''}${ph.caption?' — '+ph.caption:''}`]);
-  ws.mergeCells(lbl.number,1,lbl.number,NC);
-  lbl.getCell(1).font={bold:true,size:10,color:{argb:'FF006B75'}};
-  lbl.getCell(1).fill={type:'pattern',pattern:'solid',fgColor:{argb:'EAF5EA'}};
-  lbl.getCell(1).border={top:{style:'thin',color:{argb:'FFC9A84C'}}};
-  lbl.height=18;
-  try{
-    const resp=await fetch(ph.storageUrl); if(!resp.ok) return;
-    const blob=await resp.blob();
-    const bmp=await createImageBitmap(blob);
-    const aspect=bmp.height/bmp.width;
-    const cum=[]; { let a=0; for(let i=1;i<=NC;i++){ a+=Math.round((((ws.getColumn(i).width)||10)*7)+5); cum[i-1]=a; } }
-    const MAXHPX=1100, ROWMAXPT=380;
-    let brCol=NC, rangeW=cum[NC-1];
-    if(Math.round(rangeW*aspect)>MAXHPX){
-      for(let i=0;i<cum.length;i++){ if(Math.round(cum[i]*aspect)<=MAXHPX){ brCol=i+1; rangeW=cum[i]; } }
-    }
-    const totalPt=Math.round(Math.round(rangeW*aspect)*0.75);
-    const K=Math.max(1,Math.ceil(totalPt/ROWMAXPT));
-    const perRowPt=Math.max(18,Math.round(totalPt/K));
-    // Map captures re-encode larger than field photos (1100px vs 720) — the baked
-    // legend text has to stay crisp in the deliverable.
-    const EMB=1100, es=Math.min(1,EMB/Math.max(bmp.width,bmp.height));
-    const cw=Math.max(1,Math.round(bmp.width*es)), chh=Math.max(1,Math.round(bmp.height*es));
-    const cv=document.createElement('canvas'); cv.width=cw; cv.height=chh;
-    cv.getContext('2d').drawImage(bmp,0,0,cw,chh); bmp.close();
-    const jblob=await new Promise(res=>cv.toBlob(res,'image/jpeg',0.8));
-    const dataUrl=await _blobToDataURL(jblob);
-    const raw=dataUrl.substring(dataUrl.indexOf(',')+1);
-    let firstNum=null;
-    for(let k=0;k<K;k++){ const ir=ws.addRow([]); ir.height=perRowPt; if(k===0) firstNum=ir.number; }
-    const imgId=wb.addImage({base64:raw, extension:'jpeg'});
-    ws.addImage(imgId,{ tl:{col:0.08,row:firstNum-1+0.03}, br:{col:brCol,row:firstNum-1+K-0.03}, editAs:'twoCell' });
-  }catch(err){ console.warn('seed status capture embed failed',err); }
+  if(!all.length) return;
+  const day=all[0].date||'';
+  // The newest day's full set, in the order they were taken.
+  const caps=all.filter(p=>(p.date||'')===day).sort((a,b)=>(a.uploadedAt||0)-(b.uploadedAt||0));
+  const cum=[]; { let a=0; for(let i=1;i<=NC;i++){ a+=Math.round((((ws.getColumn(i).width)||10)*7)+5); cum[i-1]=a; } }
+  const MAXHPX=1100, ROWMAXPT=380;
+  for(const ph of caps){
+    const lbl=ws.addRow([`▸ 🌱 Seeding status capture · ${ph.date||''}${ph.caption?' — '+ph.caption:''}   ( click the + in the far-left margin to expand ↓ )`]);
+    ws.mergeCells(lbl.number,1,lbl.number,NC);
+    lbl.getCell(1).font={bold:true,size:10,color:{argb:'FF006B75'}};
+    lbl.getCell(1).fill={type:'pattern',pattern:'solid',fgColor:{argb:'EAF5EA'}};
+    lbl.getCell(1).border={top:{style:'thin',color:{argb:'FFC9A84C'}}};
+    lbl.height=18;
+    try{
+      const resp=await fetch(ph.storageUrl); if(!resp.ok) continue;
+      const blob=await resp.blob();
+      const bmp=await createImageBitmap(blob);
+      const aspect=bmp.height/bmp.width;
+      let brCol=NC, rangeW=cum[NC-1];
+      if(Math.round(rangeW*aspect)>MAXHPX){
+        for(let i=0;i<cum.length;i++){ if(Math.round(cum[i]*aspect)<=MAXHPX){ brCol=i+1; rangeW=cum[i]; } }
+      }
+      const totalPt=Math.round(Math.round(rangeW*aspect)*0.75);
+      const K=Math.max(1,Math.ceil(totalPt/ROWMAXPT));
+      const perRowPt=Math.max(15,Math.round(totalPt/K));
+      // Map captures re-encode larger than field photos (1100px vs 720) — the baked
+      // legend text has to stay crisp in the deliverable.
+      const EMB=1100, es=Math.min(1,EMB/Math.max(bmp.width,bmp.height));
+      const cw=Math.max(1,Math.round(bmp.width*es)), chh=Math.max(1,Math.round(bmp.height*es));
+      const cv=document.createElement('canvas'); cv.width=cw; cv.height=chh;
+      cv.getContext('2d').drawImage(bmp,0,0,cw,chh); bmp.close();
+      const jblob=await new Promise(res=>cv.toBlob(res,'image/jpeg',0.8));
+      const dataUrl=await _blobToDataURL(jblob);
+      const raw=dataUrl.substring(dataUrl.indexOf(',')+1);
+      // K grouped rows, collapsed by default — the capture hides/expands as one unit.
+      let firstNum=null;
+      for(let k=0;k<K;k++){ const ir=ws.addRow([]); ir.height=perRowPt; ir.outlineLevel=1; ir.hidden=true; if(k===0) firstNum=ir.number; }
+      const imgId=wb.addImage({base64:raw, extension:'jpeg'});
+      ws.addImage(imgId,{ tl:{col:0.08,row:firstNum-1+0.03}, br:{col:brCol,row:firstNum-1+K-0.03}, editAs:'twoCell' });
+    }catch(err){ console.warn('seed status capture embed failed',err); }
+  }
 }
 
 // Linear-BMP deliverable sheet (silt fence & friends) — installed ft vs the plan per
