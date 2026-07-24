@@ -3025,7 +3025,7 @@ function mapShowTrackerModal(feat,category){
   const trackMat=(typeof tcTrackMaterial==='function')?tcTrackMaterial(catDetails,pid):true;
   const rateEl=document.getElementById('map-tr-rate');
   const calcEl=document.getElementById('map-tr-calc-result');
-  if(rateEl) rateEl.value=catDetails?.targetRate||'';
+  if(rateEl){ rateEl.value=catDetails?.targetRate||''; rateEl.dataset.auto=rateEl.value; }
   if(calcEl) calcEl.textContent='—';
   const actualAmtEl=document.getElementById('map-tr-actual-amt');
   const actualUnitEl=document.getElementById('map-tr-actual-unit');
@@ -3114,7 +3114,12 @@ function mapTrStateChanged(){
   const st=_trSelectedState();
   const rate=(st&&st.targetRate!=null)?st.targetRate:(cat?.targetRate??'');
   const rateEl=document.getElementById('map-tr-rate');
-  if(rateEl) rateEl.value=rate||'';
+  // Rate follows the state's material only while it's still the auto-filled value —
+  // a user-entered rate must survive a state change (same rule as the Mix prefill).
+  if(rateEl && (!rateEl.value || rateEl.value===rateEl.dataset.auto)){
+    rateEl.value=rate||'';
+    rateEl.dataset.auto=rateEl.value;
+  }
   // Prefill Mix/Product from the state's product (only if the field is empty,
   // so we never clobber what the user already typed).
   const mixEl=document.getElementById('map-tr-mix-product');
@@ -5661,7 +5666,8 @@ function mapEditTrackerEntry(entryId){
   const editTrackMat=(typeof tcTrackMaterial==='function')?tcTrackMaterial(editCat,editPid):true;
   _setEntryFieldVisibility(_drawEntryType==='planned', editMeasType, editHasDesc, editTrackMat, _drawCategory, editPid);
   const rateEl=document.getElementById('map-tr-rate');
-  if(rateEl) rateEl.value=entry.fields?.appliedRate||'';
+  // Stored rate = user data — dataset.auto stays empty so a state tap never clobbers it.
+  if(rateEl){ rateEl.value=entry.fields?.appliedRate||''; rateEl.dataset.auto=''; }
   const calcEl=document.getElementById('map-tr-calc-result');
   if(calcEl) calcEl.textContent='—';
   const editActualAmtEl=document.getElementById('map-tr-actual-amt');
