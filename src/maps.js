@@ -245,6 +245,7 @@ let _lpTimer = null, _lpStartPos = null;
 _mapInstance.on('mousedown', e => {
   if(e.originalEvent.button !== 0) return;
   if(typeof window.poAdjustActive === 'function' && window.poAdjustActive()) return;  // sheet-adjust drag owns the pointer
+  if(typeof window.trShapeEditActive === 'function' && window.trShapeEditActive()) return;  // vertex drag owns the pointer
   const lngLat = e.lngLat;
   _lpTimer = setTimeout(()=>{ mapShowMarkerModal(lngLat); }, 700);
 });
@@ -255,6 +256,7 @@ _mapInstance.on('dragstart', ()=>{ clearTimeout(_lpTimer); _lpStartPos=null; if(
 _mapInstance.on('touchstart', e => {
   if(e.originalEvent.touches.length !== 1) return;
   if(typeof window.poAdjustActive === 'function' && window.poAdjustActive()) return;  // sheet-adjust drag owns the pointer
+  if(typeof window.trShapeEditActive === 'function' && window.trShapeEditActive()) return;  // vertex drag owns the pointer
   const t = e.originalEvent.touches[0];
   _lpStartPos = {x:t.clientX, y:t.clientY};
   const lngLat = e.lngLat;
@@ -2819,6 +2821,31 @@ function mapDrawUndoPoint(){
 }
 window.mapDrawUndoPoint=mapDrawUndoPoint;
 
+// Shared draw-control mount — used by draw mode AND the 📐 reshape session.
+// vertex_edit = stock direct_select with whole-feature dragging locked out, so a
+// reshape moves POINTS only (a stray body-drag would silently relocate a drawing).
+function _ensureDrawInstance(){
+  if(_drawInstance) return _drawInstance;
+  _drawInstance=new MapboxDraw({
+    displayControlsDefault:false,
+    controls:{},
+    modes:{ ...MapboxDraw.modes, vertex_edit:{...MapboxDraw.modes.direct_select,dragFeature(){}}, draw_point:_snapTouchMode(SnapPointMode,'point'), draw_polygon:_snapTouchMode(SnapPolygonMode,'polygon'), draw_line_string:_snapTouchMode(SnapLineMode,'line') },
+    styles:SnapModeDrawStyles,
+    userProperties:true,
+    snap:true,
+    // snapToMidPoints off + low vertex priority → edge-snap dominates, so the
+    // anchor slides ALONG the line instead of jumping between preset points.
+    // snapPx 22 (was 15) — fingers are less precise than a cursor; a slightly wider
+    // catch radius makes tap-to-snap lock on reliably on touch without feeling sticky.
+    snapOptions:{ snapPx:22, snapToMidPoints:false, snapVertexPriorityDistance:0.0009, snapGetFeatures:_snapGetFeatures },
+  });
+  _mapInstance.addControl(_drawInstance,'top-left');
+  _mapInstance.on('draw.create',_onDrawCreate);
+  _mapInstance.on('draw.delete',_onDrawDelete);
+  _mapInstance.on('draw.modechange',_onDrawModeChange);
+  return _drawInstance;
+}
+
 function mapActivateDrawMode(categoryId){
   mapCloseCategorySheet();
   // 🔒 Closed categories take no new drawings (finished scope — reopen via ⚙).
@@ -2826,29 +2853,13 @@ function mapActivateDrawMode(categoryId){
     mapTcClosedNotice(categoryId);
     return;
   }
+  // A reshape session shares the draw instance — close it before a real draw starts.
+  if(_shapeEdit&&typeof mapShapeEditCancel==='function') mapShapeEditCancel();
   _pauseGpsForDraw();
   if(!_mapInstance) return;
   _drawCategory=categoryId;
   _drawMode='draw';
-  if(!_drawInstance){
-    _drawInstance=new MapboxDraw({
-      displayControlsDefault:false,
-      controls:{},
-      modes:{ ...MapboxDraw.modes, draw_point:_snapTouchMode(SnapPointMode,'point'), draw_polygon:_snapTouchMode(SnapPolygonMode,'polygon'), draw_line_string:_snapTouchMode(SnapLineMode,'line') },
-      styles:SnapModeDrawStyles,
-      userProperties:true,
-      snap:true,
-      // snapToMidPoints off + low vertex priority → edge-snap dominates, so the
-      // anchor slides ALONG the line instead of jumping between preset points.
-      // snapPx 22 (was 15) — fingers are less precise than a cursor; a slightly wider
-      // catch radius makes tap-to-snap lock on reliably on touch without feeling sticky.
-      snapOptions:{ snapPx:22, snapToMidPoints:false, snapVertexPriorityDistance:0.0009, snapGetFeatures:_snapGetFeatures },
-    });
-    _mapInstance.addControl(_drawInstance,'top-left');
-    _mapInstance.on('draw.create',_onDrawCreate);
-    _mapInstance.on('draw.delete',_onDrawDelete);
-    _mapInstance.on('draw.modechange',_onDrawModeChange);
-  }
+  _ensureDrawInstance();
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
   const cat=categoryId?((typeof tcGetCategory==='function')?tcGetCategory(categoryId,pid):null):null;
   const isLinear=cat?.measurementType==='linear';
@@ -2930,7 +2941,14 @@ function _onDrawCreate(e){
   mapShowTrackerModal(feat,_drawCategory);
 }
 function _onDrawDelete(){ /* no action needed */ }
-function _onDrawModeChange(){ /* no action needed */ }
+function _onDrawModeChange(e){
+  // Reshape session: gl-draw falls back to simple_select when the user taps off the
+  // shape — re-enter vertex_edit so points stay grabbable for the whole session.
+  if(_shapeEdit&&_drawInstance&&e&&e.mode==='simple_select'){
+    const fid=_shapeEdit.fid;
+    setTimeout(()=>{ if(_shapeEdit&&_shapeEdit.fid===fid&&_drawInstance){ try{_drawInstance.changeMode('vertex_edit',{featureId:fid});}catch{} } },0);
+  }
+}
 
 // ── Geometry helpers ──────────────────────
 function _geoAreaAcres(feat){
@@ -3259,6 +3277,146 @@ function mapClearActivePlan(){
   const sel=document.getElementById('map-tr-link-plan');
   if(sel) sel.value='';
 }
+
+// 📋 Copy shape — new state layer with this exact geometry, no retracing.
+// Hands a clone of the source drawing's geometry to the SAME entry modal a native
+// draw completion uses (_onDrawCreate → mapShowTrackerModal), so the state picker,
+// prefills, plan linkage, and the save path are identical to tracing it by hand.
+function mapCopyEntryShape(entryId){
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const entry=(typeof trGetEntry==='function')?trGetEntry(entryId,pid):null;
+  if(!entry||!entry.geometry) return;
+  const gt=entry.geometry.type;
+  if(gt!=='Polygon'&&gt!=='LineString') return;
+  const catId=entry.categoryId||entry.category;
+  if(catId&&typeof tcIsClosed==='function'&&tcIsClosed(catId,pid)){ if(typeof mapTcClosedNotice==='function') mapTcClosedNotice(catId); return; }
+  if(_trackerPopup){_trackerPopup.remove();_trackerPopup=null;}
+  _drawCategory=catId;
+  _drawEntryType='installed';
+  // Copies stack on the source's plan: a plan copies onto itself; a child onto its parent.
+  _activePlannedEntryId=entry.entryType==='planned'?entry.id:(entry.parentId||null);
+  const feat={type:'Feature',properties:{},geometry:JSON.parse(JSON.stringify(entry.geometry))};
+  _pendingDrawFeature=feat;
+  mapShowTrackerModal(feat,catId);
+}
+window.mapCopyEntryShape=mapCopyEntryShape;
+
+// ── 📐 Reshape (vertex editing) ───────────────────────────────
+// Mounts a finalized drawing's geometry into gl-draw's vertex_edit mode (stock
+// direct_select, body-drag locked) so points can be dragged / midpoints added,
+// then saves through the normal entry path — measurements recompute, the net
+// engine's memo invalidates at _trSaveRaw, exports stay truthful.
+let _shapeEdit=null;   // {id,fid,orig} while a session is active
+window.trShapeEditActive=()=>!!_shapeEdit;
+
+function mapEditEntryShape(entryId){
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const entry=(typeof trGetEntry==='function')?trGetEntry(entryId,pid):null;
+  if(!entry||!entry.geometry) return;
+  const gt=entry.geometry.type;
+  if(gt!=='Polygon'&&gt!=='LineString') return;
+  if(_drawMode){ if(typeof showCloudBanner==='function') showCloudBanner('Finish the current drawing first.'); return; }
+  const catId=entry.categoryId||entry.category;
+  if(catId&&typeof tcIsClosed==='function'&&tcIsClosed(catId,pid)){ if(typeof mapTcClosedNotice==='function') mapTcClosedNotice(catId); return; }
+  if(entry.ownerUid&&window._currentUser&&entry.ownerUid!==_currentUser.uid){ if(typeof showCloudBanner==='function') showCloudBanner('Only the drawing’s owner can reshape it.'); return; }
+  if(_trackerPopup){_trackerPopup.remove();_trackerPopup=null;}
+  _pauseGpsForDraw();
+  const draw=_ensureDrawInstance();
+  const fid='shape-edit-'+entry.id;
+  draw.add({id:fid,type:'Feature',properties:{},geometry:JSON.parse(JSON.stringify(entry.geometry))});
+  _shapeEdit={id:entry.id,fid,orig:JSON.parse(JSON.stringify(entry.geometry))};
+  mapRenderTrackerLayers();   // static twin hides while the session owns the shape
+  if(typeof mapRefreshDateLabels==='function') mapRefreshDateLabels();
+  try{ draw.changeMode('vertex_edit',{featureId:fid}); }catch(e){ console.warn('reshape mode:',e.message); }
+  _showShapeEditBar();
+}
+window.mapEditEntryShape=mapEditEntryShape;
+
+function _showShapeEditBar(){
+  _removeShapeEditBar();
+  const bar=document.createElement('div');
+  bar.id='_gl-shape-bar';
+  bar.style.cssText='position:fixed;left:50%;transform:translateX(-50%);bottom:calc(110px + env(safe-area-inset-bottom));z-index:4800;background:#12202e;border:1px solid var(--amber,#C9A84C);border-radius:10px;padding:10px 12px;font-family:var(--mono);font-size:12px;color:#e8e8e8;box-shadow:0 4px 16px rgba(0,0,0,.45);display:flex;flex-direction:column;gap:8px;max-width:92vw';
+  const btn='padding:10px 8px;border-radius:8px;font-family:var(--mono);font-size:12px;cursor:pointer;flex:1;white-space:nowrap';
+  bar.innerHTML=`<div style="display:flex;align-items:center;gap:8px"><span>📐</span><b>Reshape</b><span style="color:#9fb2c4">— drag points · tap a midpoint to add one</span></div>
+    <div style="display:flex;gap:8px">
+      <button onclick="mapShapeEditSave()" style="${btn};border:none;background:var(--amber,#C9A84C);color:#111;font-weight:700">✓ Save shape</button>
+      <button onclick="mapShapeEditReset()" style="${btn};background:var(--s2,#1a2a38);border:1px solid var(--border,#334);color:#e8e8e8">↺ Reset</button>
+      <button onclick="mapShapeEditCancel()" style="${btn};background:var(--s2,#1a2a38);border:1px solid var(--border,#334);color:var(--muted,#888)">✕ Cancel</button>
+    </div>
+    <div style="color:#9fb2c4;font-size:10px">Area / length recalculates on save.</div>`;
+  document.body.appendChild(bar);
+}
+function _removeShapeEditBar(){ const b=document.getElementById('_gl-shape-bar'); if(b) b.remove(); }
+
+function _endShapeEdit(){
+  const fid=_shapeEdit&&_shapeEdit.fid;
+  _shapeEdit=null;
+  _removeShapeEditBar();
+  if(_drawInstance){
+    try{ _drawInstance.changeMode('simple_select'); }catch{}
+    try{ if(fid) _drawInstance.delete(fid); }catch{}
+    // The session mounted the control itself — tear down unless a real draw owns it.
+    if(!_drawMode){ try{ _mapInstance.removeControl(_drawInstance); }catch{} _drawInstance=null; }
+  }
+  mapRenderTrackerLayers();
+  if(typeof mapRefreshDateLabels==='function') mapRefreshDateLabels();
+}
+
+function mapShapeEditSave(){
+  if(!_shapeEdit) return;
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const entry=(typeof trGetEntry==='function')?trGetEntry(_shapeEdit.id,pid):null;
+  const f=_drawInstance?_drawInstance.get(_shapeEdit.fid):null;
+  const geom=f&&f.geometry;
+  // Degenerate shapes (a polygon collapsed below 3 points) can't be a valid record.
+  const bad=!geom||(geom.type==='Polygon'?(!geom.coordinates[0]||geom.coordinates[0].length<4):(!geom.coordinates||geom.coordinates.length<2));
+  if(!entry||bad){ mapShapeEditCancel(); return; }
+  entry.geometry=geom;
+  const cen=_geoCentroid({geometry:geom});
+  if(cen){ entry.centroidLng=cen.lng; entry.centroidLat=cen.lat; }
+  // Location text refreshes only while it still holds the auto "lat, lng" string —
+  // a user-typed location survives untouched.
+  if(cen&&entry.location&&/^-?\d{1,3}\.\d+,\s*-?\d{1,3}\.\d+$/.test(entry.location)) entry.location=`${cen.lat.toFixed(5)}, ${cen.lng.toFixed(5)}`;
+  const unit=entry.measurementUnit||(geom.type==='LineString'?'ft':'ac');
+  if(geom.type==='LineString'){
+    const rawFt=parseFloat(_geoLengthFt({geometry:geom}));
+    if(rawFt){
+      const v=(typeof tcConvertMeasurement==='function')?tcConvertMeasurement(rawFt,'ft',unit):rawFt;
+      entry.measurementValue=parseFloat(Number(v).toFixed(['ft','yd','m'].includes(unit)?0:2));
+    }
+  } else {
+    const rawAc=parseFloat(_geoAreaAcres({geometry:geom}));
+    if(rawAc){
+      const v=(typeof tcConvertMeasurement==='function')?tcConvertMeasurement(rawAc,'ac',unit):rawAc;
+      entry.measurementValue=parseFloat(Number(v).toFixed(2));
+      entry.acres=parseFloat(rawAc.toFixed(2));
+    }
+  }
+  const saved=(typeof trSaveEntry==='function')?trSaveEntry(entry,pid):null;
+  _endShapeEdit();
+  if(saved){
+    window.glHaptic&&window.glHaptic.success();
+    if(typeof showCloudBanner==='function') showCloudBanner('📐 Shape updated — measurements recalculated.');
+  }
+  if(typeof clRenderTrackerCard==='function') clRenderTrackerCard();
+}
+window.mapShapeEditSave=mapShapeEditSave;
+
+function mapShapeEditReset(){
+  if(!_shapeEdit||!_drawInstance) return;
+  const {fid,orig}=_shapeEdit;
+  try{ _drawInstance.delete(fid); }catch{}
+  _drawInstance.add({id:fid,type:'Feature',properties:{},geometry:JSON.parse(JSON.stringify(orig))});
+  try{ _drawInstance.changeMode('vertex_edit',{featureId:fid}); }catch{}
+}
+window.mapShapeEditReset=mapShapeEditReset;
+
+function mapShapeEditCancel(){
+  if(!_shapeEdit) return;
+  _endShapeEdit();
+}
+window.mapShapeEditCancel=mapShapeEditCancel;
 function _populateLinkToPlanDropdown(categoryId){
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
   const sel=document.getElementById('map-tr-link-plan');
@@ -3298,7 +3456,9 @@ function mapCancelTrackerEntry(){
   _pendingPhotoCaptions={};
   mapRefreshEntryPhotoStrip();
   mapCloseTrackerModal();
-  // Stay in draw mode so user can try again
+  // Stay in draw mode so user can try again. A copy-shape open has no draw mode —
+  // clear its category/plan context so it can't leak into the next native draw.
+  if(!_drawMode){ _drawCategory=null; _activePlannedEntryId=null; _drawEntryType='installed'; _updateActivePlanIndicator(); }
 }
 
 function mapSaveTrackerEntry(){
@@ -3868,6 +4028,7 @@ function mapRefreshDateLabels(){
       // removed, category visible) AND either it has the date-label flag OR it's an
       // open temporary item (which always gets a ⚠ flag so an issue is obvious).
       if(!e.geometry||e.deletedAt||e.archivedFromMap||e.deletedFromMap) return false;
+      if(_shapeEdit&&e.id===_shapeEdit.id) return false;  // the reshape session owns this shape
       const cid=e.categoryId||e.category;
       if(_tcLayerVisible[cid]===false) return false;
       const isOpenTemp=e.temporary&&e.tempStatus!=='resolved';
@@ -4993,6 +5154,7 @@ function mapRenderTrackerLayers(){
     _trackerClickHandlerRegistered=true;
     _mapInstance.on('click',e=>{
       if(_drawMode) return;
+      if(_shapeEdit) return;  // reshape session owns map taps — no popups mid-edit
       // Placing a repair flag — that tap belongs to the flag placement handler.
       if(_placingFlagParentId) return;
       const clickTarget=e.originalEvent&&e.originalEvent.target;
@@ -5034,7 +5196,7 @@ function mapRenderTrackerLayers(){
   // Repair flags honor the FAB visibility toggle (open temporaries only — resolved
   // ones are archived and never reach the map anyway).
   const _flagsOn=_flagsEffVisible();
-  const entries=(typeof trGetEntriesForProject==='function')?trGetEntriesForProject(pid).filter(e=>!e.deletedFromMap&&!e.archivedFromMap&&(_flagsOn||!(e.temporary&&e.tempStatus!=='resolved'))):[];
+  const entries=(typeof trGetEntriesForProject==='function')?trGetEntriesForProject(pid).filter(e=>!e.deletedFromMap&&!e.archivedFromMap&&(!_shapeEdit||e.id!==_shapeEdit.id)&&(_flagsOn||!(e.temporary&&e.tempStatus!=='resolved'))):[];
   const cats=_sortCatsByOrder((typeof tcGetCategories==='function')?tcGetCategories(pid):[],pid);
 
   const byCategory={};
@@ -5249,6 +5411,8 @@ function _showTrackerEntryPopup(lngLat,props){
   const sharedByNote=(!_mineEntry&&entry)?`<div style="font-size:10px;color:#4FD1C5;margin-top:4px;border-top:1px solid rgba(255,255,255,.08);padding-top:4px">🌐 Shared by a project member</div>`:'';
   // Repair flag (open-until-resolved point marker). Owner-only controls.
   const _isTemp=!!(entry&&entry.temporary&&entry.tempStatus!=='resolved');
+  // Copy/Reshape work on real line/area geometry only (not flags, not points).
+  const _hasShape=!!(entry&&!entry.temporary&&entry.geometry&&(entry.geometry.type==='Polygon'||entry.geometry.type==='LineString'));
   const tempStatusLine=_isTemp?`<div style="color:#C9A84C;display:flex;align-items:center;gap:6px;margin-top:2px">🚩 <b>${(entry.tempLabel||'Repair').replace(/</g,'&lt;')}</b><span style="opacity:.7">· needs attention</span></div>`:'';
   const tempBtn=_mineEntry?(_isTemp
     ?`<button onclick="mapResolveTemporary('${props.id}')" style="${_TRP_BTN}background:rgba(39,174,96,0.18);border:1px solid #27AE60;color:#27AE60" title="Mark fixed — leaves the live map but stays in the punchlist record">✓ Fixed</button>`
@@ -5320,12 +5484,14 @@ function _showTrackerEntryPopup(lngLat,props){
           <button onclick="mapShowCategoryLegend('${props.categoryId}')" style="${_TRP_BTN}background:var(--s2,#1a2a38);border:1px solid var(--border,#334);color:var(--muted,#888)" title="Show this category's color key on the map (for screenshots)">🏷️ Legend</button>
           <button onclick="mapOpenCategoryFromPopup('${props.categoryId}')" style="${_TRP_BTN}background:var(--s2,#1a2a38);border:1px solid var(--border,#334);color:var(--muted,#888)" title="Category settings">⚙ Category</button>
           <button onclick="mapCaptureForEntry('${props.id}')" style="${_TRP_BTN}background:var(--s2,#1a2a38);border:1px solid var(--border,#334);color:var(--muted,#888)" title="Capture map view as photo">📷 Capture</button>
+          ${_hasShape?`<button onclick="mapCopyEntryShape('${props.id}')" style="${_TRP_BTN}background:var(--s2,#1a2a38);border:1px solid var(--border,#334);color:var(--muted,#888)" title="New state layer with this exact shape — no retracing">📋 Copy shape</button>`:''}
           ${tempBtn}
           ${shareBtn}
         </div>`:''}
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px">
           <button onclick="mapEditTrackerEntry('${props.id}')" style="${_TRP_BTN}background:var(--amber,#D97706);border:none;color:#111;font-weight:700">✏️ Edit</button>
-          <button onclick="mapDeleteTrackerEntryFromPanel('${props.id}')" style="${_TRP_BTN}background:var(--s2);border:1px solid var(--border);color:var(--muted)">✕ Remove</button>
+          ${(_hasShape&&_mineEntry)?`<button onclick="mapEditEntryShape('${props.id}')" style="${_TRP_BTN}background:var(--s2,#1a2a38);border:1px solid var(--amber,#C9A84C);color:var(--amber,#C9A84C);font-weight:700" title="Drag points to adjust this shape — tap a midpoint to add a point">📐 Reshape</button>`:''}
+          <button onclick="mapDeleteTrackerEntryFromPanel('${props.id}')" style="${_TRP_BTN}background:var(--s2);border:1px solid var(--border);color:var(--muted)${(_hasShape&&_mineEntry)?';grid-column:1/-1':''}">✕ Remove</button>
         </div>
       </div>
     </div>
