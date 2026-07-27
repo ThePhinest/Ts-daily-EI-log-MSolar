@@ -144,6 +144,17 @@ function _docIcon(d){
     + `<text x="11" y="23.6" font-size="${fs}" font-weight="700" letter-spacing="0.2" text-anchor="middle" fill="#fff" font-family="Arial,Helvetica,sans-serif">${lbl}</text>`
     + `</svg>`;
 }
+// Shared mini PDF file-icon for export buttons app-wide (delta 7/22: PDF export
+// buttons wear the docs-page file-type icon instead of a generic 📤/⬇ emoji).
+window.glPdfIcon = function(h){
+  h = h || 13;
+  return `<svg viewBox="0 0 28 32" width="${Math.round(h*28/32)}" height="${h}" aria-hidden="true" style="vertical-align:-2px">`
+    + `<path d="M5 2h12l6 6v20a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Z" fill="#fcfcfc" stroke="#c9cdd6" stroke-width="1.3"/>`
+    + `<path d="M17 2v6h6" fill="none" stroke="#c9cdd6" stroke-width="1.3" stroke-linejoin="round"/>`
+    + `<rect x="2.5" y="16.5" width="17" height="9.5" rx="2" fill="#E5484D"/>`
+    + `<text x="11" y="23.6" font-size="6.5" font-weight="700" letter-spacing="0.2" text-anchor="middle" fill="#fff" font-family="Arial,Helvetica,sans-serif">PDF</text>`
+    + `</svg>`;
+};
 function _docFmtSize(n){
   if(!n) return '';
   if(n < 1024) return n+' B';

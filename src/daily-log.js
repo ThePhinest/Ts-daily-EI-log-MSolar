@@ -229,6 +229,11 @@ function _resetFormCore(){
   const rwEl=document.getElementById('wxRainWeek');
   if(rwEl) rwEl.value='';
   _renderRainWeek('');
+  // Cleared textareas keep yesterday's inline height (autoResize only runs on
+  // 'input') — a long inspection summary left a huge empty box on the fresh
+  // day. Re-run the same shrink-capable resize the restore path uses;
+  // collapsed cards re-resize again on expand (index.html toggle hook).
+  requestAnimationFrame(()=>document.querySelectorAll('#page-log textarea.auto-expand').forEach(el=>{ if(typeof autoResize==='function') autoResize(el); }));
   updateReportDateDow();
   applyProjectConfig();
   try{ localStorage.removeItem('msf_autosave'); }catch{}
@@ -593,14 +598,29 @@ function _applyWeatherData(data,forecastOffset){
 
 // ── Rain Outlook strip: renders 7 day-tiles from the persisted JSON in
 // #wxRainWeek. A day at/over the SPDES trigger gets the amber ⚠ tile; empty
-// or unparseable data hides the whole box (fresh day before any fetch).
+// or unparseable data renders the strip as dimmed skeleton day-tiles (the
+// days exist before "Get my Weather" runs and fill in on fetch).
 function _renderRainWeek(json){
   const box=document.getElementById('wx-rainweek-box');
   const row=document.getElementById('wx-rainweek');
   if(!box||!row) return;
   let week=null;
   try{ week=JSON.parse(json||'null'); }catch(e){}
-  if(!Array.isArray(week)||!week.length){ box.classList.remove('vis'); row.innerHTML=''; return; }
+  if(!Array.isArray(week)||!week.length){
+    const base=new Date(localToday()+'T12:00:00');
+    row.innerHTML=Array.from({length:7},(_,i)=>{
+      const dt=new Date(base); dt.setDate(base.getDate()+i);
+      const dow=i===0?'Today':dt.toLocaleDateString('en-US',{weekday:'short'});
+      const md=(dt.getMonth()+1)+'/'+dt.getDate();
+      return `<div class="wx-rain-tile dry" style="opacity:.45">`+
+        `<span class="wx-rain-dow">${dow}</span>`+
+        `<span class="wx-rain-date">${md}</span>`+
+        `<span class="wx-rain-amt">—</span>`+
+      `</div>`;
+    }).join('');
+    box.classList.add('vis');
+    return;
+  }
   const todayStr=localToday();
   row.innerHTML=week.map(w=>{
     const dt=new Date(w.d+'T12:00:00');

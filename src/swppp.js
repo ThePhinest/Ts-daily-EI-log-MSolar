@@ -633,7 +633,7 @@ function _swRenderReportsInner(host, pid){
         ${chip}
       </div>
       <button class="sw-list-btn" title="Export DOCX" onclick="swpppExport('${i.id}')">⬇</button>
-      <button class="sw-list-btn" title="Export PDF" onclick="swpppExportPdf('${i.id}')">PDF</button>
+      <button class="sw-list-btn" title="Export PDF" onclick="swpppExportPdf('${i.id}')">${window.glPdfIcon?window.glPdfIcon(12):'PDF'}</button>
       ${mine?`<button class="sw-list-btn" title="Delete report" onclick="swpppDeleteReport('${i.id}')">🗑</button>`:''}
     </div>`;
   }).join('');
@@ -997,7 +997,7 @@ function _swRenderForm(){
       </div>
       <div style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
         <button class="btn btn-outline" style="font-size:11px" onclick="swpppExportPhotosZip('${insp.id}')">🖼 Photos ZIP</button>
-        <button class="btn btn-outline" style="font-size:11px" onclick="swpppExportPdf('${insp.id}')">⬇ PDF</button>
+        <button class="btn btn-outline" style="font-size:11px" onclick="swpppExportPdf('${insp.id}')">${window.glPdfIcon?window.glPdfIcon(13):'⬇'} PDF</button>
         <button class="btn" style="font-size:11px" onclick="swpppExport('${insp.id}')">⬇ Export DOCX</button>
       </div>
     </div>
@@ -1031,12 +1031,13 @@ async function _swpppExportPdfNow(id){
   const cfg=_swCfg[pid];
   if(!insp||!cfg){ alert('Inspection or configuration not found.'); return; }
   const btns=document.querySelectorAll(`[onclick="swpppExportPdf('${id}')"]`);
-  btns.forEach(b=>{ b.dataset.oldTxt=b.textContent; b.textContent='Building…'; b.disabled=true; });
+  // innerHTML store/restore (not textContent) — these buttons carry the inline PDF-icon SVG.
+  btns.forEach(b=>{ b.dataset.oldHtml=b.innerHTML; b.textContent='Building…'; b.disabled=true; });
   try{
     const [{swpppExportPdfNow},sig]=await Promise.all([import('./swpppPdf.js'),_swLoadSig()]);
     await swpppExportPdfNow(insp,cfg,sig);
   }catch(e){ console.error('swppp pdf export failed:',e); alert('PDF export failed: '+e.message); }
-  finally{ btns.forEach(b=>{ b.textContent=b.dataset.oldTxt||'⬇ PDF'; b.disabled=false; }); }
+  finally{ btns.forEach(b=>{ b.innerHTML=b.dataset.oldHtml||((window.glPdfIcon?window.glPdfIcon(13):'⬇')+' PDF'); b.disabled=false; }); }
 }
 
 async function _swpppExportNow(id){

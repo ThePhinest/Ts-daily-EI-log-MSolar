@@ -150,7 +150,7 @@ function clExportPunchlist(){
     </label>
     <div style="display:flex;gap:8px">
       <button class="btn btn-outline" style="flex:1" id="_pl-cancel">Cancel</button>
-      <button class="btn btn-amber" style="flex:2" id="_pl-go">📤 Generate PDF</button>
+      <button class="btn btn-amber" style="flex:2" id="_pl-go">${window.glPdfIcon?window.glPdfIcon(13):'📤'} Generate PDF</button>
     </div>
   </div>`;
   document.body.appendChild(ov);
@@ -167,7 +167,7 @@ function clExportPunchlist(){
       ov.remove();
     }catch(err){
       console.warn('punchlist export failed:',err);
-      goBtn.disabled=false; goBtn.textContent='📤 Generate PDF';
+      goBtn.disabled=false; goBtn.innerHTML=(window.glPdfIcon?window.glPdfIcon(13):'📤')+' Generate PDF';
       alert('Export failed — try again in a moment.');
     }
   };
@@ -576,7 +576,7 @@ function clRenderPunchlist(){
     <div style="display:none">${resolved.map(e=>rowHtml(e,false)).join('')}</div>
   </div>`:'';
   el.innerHTML=`<div class="card${_clCardCollapsed('punch')?' collapsed':''}">
-    <div class="card-head" onclick="clToggleCard('punch')"><span class="card-num">🚩</span><span class="card-title">Punchlist</span><span class="head-fade"></span><span class="card-badge"${open.length?'':' style="opacity:.4"'}>${open.length} open</span><button onclick="event.stopPropagation();clExportPunchlist()" title="Export punchlist PDF" style="background:none;border:1px solid var(--border);border-radius:10px;color:var(--muted);font-family:var(--mono);font-size:10px;padding:3px 8px;cursor:pointer;flex-shrink:0">📤 PDF</button><span class="card-chevron">▾</span></div>
+    <div class="card-head" onclick="clToggleCard('punch')"><span class="card-num">🚩</span><span class="card-title">Punchlist</span><span class="head-fade"></span><span class="card-badge"${open.length?'':' style="opacity:.4"'}>${open.length} open</span><button onclick="event.stopPropagation();clExportPunchlist()" title="Export punchlist PDF" style="background:none;border:1px solid var(--border);border-radius:10px;color:var(--muted);font-family:var(--mono);font-size:10px;padding:3px 8px;cursor:pointer;flex-shrink:0">${window.glPdfIcon?window.glPdfIcon(12):'📤'} PDF</button><span class="card-chevron">▾</span></div>
     <div class="card-body" style="padding-top:4px">
       ${open.length?openRows:`<div style="font-family:var(--mono);font-size:11px;color:var(--muted);padding:8px 4px">Nothing needs attention. Flag repairs from any drawing's popup on the map.</div>`}
       ${resolvedBlock}
@@ -1909,6 +1909,8 @@ async function _allSeedingSummarySheet(wb, srcs, entries, pid){
   const hdr=ws.addRow(['Source','State','Coverage','Seed Tags','Mix / Product','Applied Rate','Required','Actual']);
   hdr.eachCell({includeEmpty:true},c=>{ c.font={bold:true,size:10,color:{argb:WHITE}}; c.fill={type:'pattern',pattern:'solid',fgColor:{argb:TEAL}}; c.alignment={vertical:'middle',wrapText:true}; });
   hdr.height=20;
+  // Freeze title block + column headers — they stay on top while scrolling the rows.
+  ws.views=[{state:'frozen',ySplit:hdr.number}];
   let grandAc=0, grandTags=0;
   srcs.forEach(m=>{
     const cat=(typeof tcGetCategory==='function')?tcGetCategory(m.cid,pid):null; if(!cat) return;
@@ -2638,6 +2640,8 @@ async function _seedingSheetRender(wb, o){
   const hdr=ws.addRow(COLS);
   hdr.eachCell({includeEmpty:true},c=>{ c.font={bold:true,size:10,color:{argb:WHITE}}; c.fill={type:'pattern',pattern:'solid',fgColor:{argb:TEAL}}; c.alignment={vertical:'middle',wrapText:true}; });
   hdr.height=20;
+  // Freeze title block + summary headers — they stay on top while scrolling (delta 7/27).
+  ws.views=[{state:'frozen',ySplit:hdr.number}];
   // Seeding-on-stab tabs skip states with no seed rows (a disturbance category's non-seed
   // states would otherwise pad the legend with empty lines).
   const sumStates=o.skipEmptyStates?childStates.filter(s=>installed.some(e=>stOf(e)===s.id)):childStates;
