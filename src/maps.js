@@ -3052,7 +3052,8 @@ function mapShowTrackerModal(feat,category){
   if(actualUnitEl) actualUnitEl.value='lbs';
   if(seedTagsEl) seedTagsEl.value='';
   const mixProductEl=document.getElementById('map-tr-mix-product');
-  if(mixProductEl) mixProductEl.value='';
+  if(mixProductEl){ mixProductEl.value=''; mixProductEl.dataset.auto=''; }
+  _trWhereReset();
   const newLabelBtn=document.getElementById('map-tr-date-label-btn');
   if(newLabelBtn){newLabelBtn.dataset.on='0';newLabelBtn.style.background='none';newLabelBtn.style.borderColor='rgba(255,255,255,0.15)';newLabelBtn.style.color='rgba(255,255,255,0.35)';newLabelBtn.textContent='🔖 Label';}
   const newLabelText=document.getElementById('map-tr-label-text'); if(newLabelText) newLabelText.value='';
@@ -3089,6 +3090,7 @@ function mapShowTrackerModal(feat,category){
   if(conEl) conEl.value='';
   if(statusEl) statusEl.value=isPlanned?'Planned':'Installed';
   _populateLinkToPlanDropdown(category);
+  _trWhereInit('');   // 🌱 seeding-specs row (renders only when the project has a config)
   document.getElementById('map-tracker-modal').classList.add('open');
 }
 
@@ -3144,6 +3146,7 @@ function mapTrStateChanged(){
   if(mixEl && !mixEl.value && st && st.productName) mixEl.value=st.productName;
   if(typeof mapTrackerCalc==='function') mapTrackerCalc();
   _trSeedSectionSync();   // 🌱 offer/hide seeding details as the state changes
+  _trSpecSync(true);      // 🌱 state purpose feeds the seeding-specs rule
 }
 window.mapTrStateChanged=mapTrStateChanged;
 
@@ -3238,6 +3241,104 @@ function mapTrSeedOpen(){
   _trSeedMethodReveal(true);
 }
 window.mapTrSeedOpen=mapTrSeedOpen;
+
+// ── 🌱 Seeding specs engine — entry-form wiring (src/seedingSpecs.js) ──
+// Where × state-purpose × date × method → autofill (never-clobber stamps) +
+// read-only spec notes + amber warnings. Entry-form only; exports untouched.
+var _ssUiBound=false;
+function _trWhereReset(){
+  const sel=document.getElementById('map-tr-where'); if(sel) sel.value='';
+  const pw=document.getElementById('map-tr-purpose-wrap'); if(pw) pw.style.display='none';
+  const n=document.getElementById('map-tr-spec-notes'); if(n){ n.style.display='none'; n.innerHTML=''; }
+}
+function _trWhereBindOnce(){
+  if(_ssUiBound) return; _ssUiBound=true;
+  // Date + method feed the rule (seasonal windows, broadcast-vs-drill rates).
+  document.getElementById('map-tr-date')?.addEventListener('change',()=>_trSpecSync(true));
+  document.getElementById('map-tr-method')?.addEventListener('change',()=>_trSpecSync(true));
+}
+function _trWherePopulate(){
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const cfg=(typeof ssGetCfg==='function')?ssGetCfg(pid):null;
+  const row=document.getElementById('map-tr-where-row');
+  const sel=document.getElementById('map-tr-where');
+  if(!row||!sel) return;
+  if(!cfg||!(cfg.locations||[]).length){ row.style.display='none'; return; }
+  const cur=sel.value;
+  sel.innerHTML='<option value="">— select —</option>'+
+    cfg.locations.map(l=>`<option value="${l.id}">${l.label}</option>`).join('');
+  if(cur&&[...sel.options].some(o=>o.value===cur)) sel.value=cur;
+  row.style.display='';
+}
+// Modal-open hook (new + edit). storedWhere = entry's saved value ('' for new).
+// Sync populate from cache, then async config load re-populates (first open).
+function _trWhereInit(storedWhere){
+  _trWhereBindOnce();
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  _trWherePopulate();
+  const sel=document.getElementById('map-tr-where');
+  if(sel) sel.value=storedWhere||'';
+  _trSpecSync(false);
+  if(typeof ssEnsureCfg==='function') ssEnsureCfg(pid).then(()=>{
+    _trWherePopulate();
+    const s2=document.getElementById('map-tr-where');
+    if(s2&&!s2.value) s2.value=storedWhere||'';
+    _trSpecSync(false);
+  });
+}
+function mapTrWhereChanged(){ _trSpecSync(true); }
+window.mapTrWhereChanged=mapTrWhereChanged;
+function _trSpecSync(fill){
+  const notesEl=document.getElementById('map-tr-spec-notes');
+  const pw=document.getElementById('map-tr-purpose-wrap');
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const cfg=(typeof ssGetCfg==='function')?ssGetCfg(pid):null;
+  const where=document.getElementById('map-tr-where')?.value||'';
+  if(!cfg||!where){
+    if(notesEl){ notesEl.style.display='none'; notesEl.innerHTML=''; }
+    if(pw) pw.style.display='none';
+    return;
+  }
+  // Purpose derives from the selected state's label (Temporary/Final Stabilization…);
+  // when underivable the manual picker shows (defaults temporary).
+  const st=_trSelectedState();
+  let purpose=(typeof ssStatePurpose==='function')?ssStatePurpose(cfg,st?st.label:''):null;
+  if(!purpose){ if(pw) pw.style.display=''; purpose=document.getElementById('map-tr-purpose')?.value||'temporary'; }
+  else if(pw) pw.style.display='none';
+  const date=document.getElementById('map-tr-date')?.value||'';
+  const method=document.getElementById('map-tr-method')?.value||'';
+  const res=(typeof ssResolve==='function')?ssResolve(cfg,{where,purpose,date,method}):null;
+  if(!notesEl) return;
+  if(!res){
+    notesEl.innerHTML='<div style="color:var(--amber)">⚠ No seeding rule matches this location — check the project seeding specs.</div>';
+    notesEl.style.display='';
+    return;
+  }
+  if(fill){
+    // Same never-clobber stamps as the state prefill: fill only while the field
+    // is empty or still holds the last auto-filled value.
+    const rateEl=document.getElementById('map-tr-rate');
+    if(rateEl&&res.rate!=null&&(!rateEl.value||rateEl.value===rateEl.dataset.auto)){
+      rateEl.value=res.rate; rateEl.dataset.auto=rateEl.value;
+      if(typeof mapTrackerCalc==='function') mapTrackerCalc();
+    }
+    const mixEl=document.getElementById('map-tr-mix-product');
+    if(mixEl&&res.product&&(!mixEl.value||mixEl.value===mixEl.dataset.auto)){
+      mixEl.value=res.product; mixEl.dataset.auto=mixEl.value;
+    }
+  }
+  const esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;');
+  const rows=[];
+  (res.warnings||[]).forEach(w=>rows.push(`<div style="color:var(--amber);margin-bottom:4px">⚠ ${esc(w)}</div>`));
+  if(res.label) rows.push(`<div style="color:var(--text);opacity:.85;margin-bottom:2px">📋 ${esc(res.label)}</div>`);
+  if(res.spec) rows.push(`<div>Spec: ${esc(res.spec.product||'')} ${esc((typeof _ssRateText==='function')?_ssRateText(res.spec.rate):'')}${res.spec.alt?` (alt: ${esc(res.spec.alt)})`:''}${res.spec.cite?` — <i>${esc(res.spec.cite)}</i>`:''}</div>`);
+  if(res.mulch) rows.push(`<div>Mulch: ${esc(res.mulch)}</div>`);
+  if(res.fertilizer) rows.push(`<div>Fert/lime: ${esc(res.fertilizer)}</div>`);
+  (res.notes||[]).forEach(n=>rows.push(`<div>• ${esc(n)}</div>`));
+  if((res.globalNotes||[]).length) rows.push(`<div style="margin-top:6px;opacity:.6">${res.globalNotes.map(n=>`<div>• ${esc(n)}</div>`).join('')}</div>`);
+  notesEl.innerHTML=rows.join('');
+  notesEl.style.display='';
+}
 
 function mapCloseTrackerModal(){
   document.getElementById('map-tracker-modal').classList.remove('open');
@@ -3513,6 +3614,8 @@ function mapSaveTrackerEntry(){
       };
     })(),
     seedMix:document.getElementById('map-tr-mix-product')?.value.trim()||null,
+    // 🌱 seeding-specs location — stored from day one, not in any export yet.
+    seedWhere:document.getElementById('map-tr-where')?.value||null,
     showDateLabel:document.getElementById('map-tr-date-label-btn')?.dataset.on==='1'||false,
     labelText:document.getElementById('map-tr-label-text')?.value.trim()||null,
     labelColor:(()=>{const v=document.getElementById('map-tr-label-color')?.value;return (v&&/^#[0-9A-Fa-f]{6}$/.test(v))?v:null;})(),
@@ -5437,6 +5540,8 @@ function _showTrackerEntryPopup(lngLat,props){
   // plan, not the plan itself — so a planned drawing's popup omits them (#5.1).
   if(!_isPlanned){
     if(_hasV(entry?.seedMix)) _detailRows.push(['Mix / Product',entry.seedMix]);
+    if(_hasV(entry?.seedWhere)) _detailRows.push(['Seeded where',
+      (typeof ssWhereLabel==='function'&&typeof ssGetCfg==='function')?ssWhereLabel(ssGetCfg(pid),entry.seedWhere):entry.seedWhere]);
     if(_hasV(_f.appliedRate)) _detailRows.push(['Applied rate',_f.appliedRate]);
     if(_hasV(_f.requiredAmount)) _detailRows.push(['Required',_f.requiredAmount+(_f.requiredUnit?(' '+_f.requiredUnit):'')]);
     if(_hasV(_f.actualAmount)) _detailRows.push(['Actual',_f.actualAmount+(_f.actualUnit?(' '+_f.actualUnit):'')]);
@@ -5843,8 +5948,10 @@ function mapEditTrackerEntry(entryId){
   if(editActualUnitEl) editActualUnitEl.value=entry.fields?.actualUnit||'lbs';
   if(editSeedTagsEl) editSeedTagsEl.value=entry.fields?.seedTagCount!=null?entry.fields.seedTagCount:'';
   const editMixEl=document.getElementById('map-tr-mix-product');
-  if(editMixEl) editMixEl.value=entry.seedMix||'';
+  // Stored mix = user data — dataset.auto stays empty so a spec fill never clobbers it.
+  if(editMixEl){ editMixEl.value=entry.seedMix||''; editMixEl.dataset.auto=''; }
   _trSeedSectionSync();   // values are in — re-run so seed-carrying stab entries open revealed
+  _trWhereInit(entry.seedWhere||'');   // 🌱 notes re-render; stored values never re-filled
   const editLabelBtn=document.getElementById('map-tr-date-label-btn');
   const on=!!entry.showDateLabel;
   if(editLabelBtn){

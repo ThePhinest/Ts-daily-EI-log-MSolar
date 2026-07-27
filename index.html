@@ -1421,7 +1421,7 @@ body.is-native select { font-size: 16px !important; }
           <div class="ob-slide-text">
             <div class="ob-eyebrow">FEATURE 03</div>
             <div class="ob-slide-title ob-title-teal">FIELD MAP</div>
-            <div class="ob-slide-desc">Draw and track site work by category. Overlay <span class="ob-hi-amber">KML &amp; GIS layers</span>, log photos on the map, measure areas, <span class="ob-hi-amber">copy a shape as the next state or reshape its points</span> — no retracing — and snap <span class="ob-hi-teal">legend-stamped status captures</span> that drop straight into your deliverables.</div>
+            <div class="ob-slide-desc">Draw and track site work by category. Overlay <span class="ob-hi-amber">KML &amp; GIS layers</span>, log photos on the map, measure areas, <span class="ob-hi-amber">copy a shape as the next state or reshape its points</span> — no retracing — snap <span class="ob-hi-teal">legend-stamped status captures</span> that drop straight into your deliverables, and let entries <span class="ob-hi-teal">autofill your project's seeding specs</span> by location and season.</div>
           </div>
         </div>
 
@@ -2573,6 +2573,24 @@ Anticipated rain — AM weather monitoring expected"></textarea>
       <!-- Seed / material calculator -->
       <div id="map-tr-calc-section" style="margin-bottom:14px;background:var(--s1);border:1px solid var(--border);border-radius:8px;padding:10px 12px">
         <div style="font-family:var(--mono);font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">Seed / Material Calc</div>
+        <!-- 🌱 Seeding specs engine — row renders only when the project has a
+             seedingSpecs config; resolves where × state purpose × date × method
+             into autofill + read-only spec notes. Entry-form only, no export. -->
+        <div id="map-tr-where-row" style="display:none;margin-bottom:10px">
+          <div style="display:flex;gap:10px">
+            <div style="flex:1">
+              <label style="font-family:var(--mono);font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:3px">Where seeded</label>
+              <select id="map-tr-where" onchange="mapTrWhereChanged()" style="width:100%;box-sizing:border-box;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:7px 9px;color:var(--text);font-family:var(--mono);font-size:12px"></select>
+            </div>
+            <div id="map-tr-purpose-wrap" style="display:none;width:110px">
+              <label style="font-family:var(--mono);font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:3px">Purpose</label>
+              <select id="map-tr-purpose" onchange="mapTrWhereChanged()" style="width:100%;box-sizing:border-box;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:7px 9px;color:var(--text);font-family:var(--mono);font-size:12px">
+                <option value="temporary">Temporary</option>
+                <option value="permanent">Permanent</option>
+              </select>
+            </div>
+          </div>
+        </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;align-items:center">
           <div>
             <label style="font-family:var(--mono);font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:3px">Rate (lbs/ac)</label>
@@ -2608,6 +2626,8 @@ Anticipated rain — AM weather monitoring expected"></textarea>
             </div>
           </div>
         </div>
+        <!-- Read-only spec notes + amber warnings from the resolved seeding rule -->
+        <div id="map-tr-spec-notes" style="display:none;margin-top:10px;border-top:1px dashed var(--border);padding-top:8px;font-family:var(--mono);font-size:10px;line-height:1.55;color:var(--muted)"></div>
       </div>
       <!-- Photos -->
       <div style="margin-bottom:14px">
@@ -3182,6 +3202,14 @@ Anticipated rain — AM weather monitoring expected"></textarea>
       </div>
       <button class="btn btn-amber" style="font-size:11px;padding:7px 14px;margin-top:4px" onclick="saveAmendmentConfig()">Save &amp; Apply</button>
       <span id="cfg-amendment-status" style="font-family:var(--mono);font-size:11px;color:var(--green);margin-left:12px;opacity:0;transition:opacity .4s"></span>
+    </div>
+  </div>
+
+  <div class="config-section" id="cfg-seedspecs">
+    <div class="config-head" onclick="toggleSection('cfg-seedspecs')"><span class="config-title">🌱 Seeding Specs</span><span class="head-fade"></span><span class="config-sub">Project seeding rules</span><span class="card-chevron">▾</span></div>
+    <div class="config-body">
+      <p class="config-hint">Per-project seeding rules: where you're seeding × temporary/permanent × time of year → the seed mix, rate, mulch, and fertilizer the project documents call for autofill on tracker entries, with spec citations and field-practice substitutions shown right on the form. Paste the project's seeding-specs JSON once — set it and never look it up again.</p>
+      <button class="btn btn-amber" style="font-size:11px;padding:7px 14px" onclick="ssShowSetup()">Set up / replace seeding specs</button>
     </div>
   </div>
 

@@ -91,6 +91,7 @@ import './promptStorage.js'
 import './aiBrandingEditor.js'
 import './report.js'
 import './swppp.js'
+import './seedingSpecs.js'
 
 window.firebase = firebase
 window.mapboxgl = mapboxgl
