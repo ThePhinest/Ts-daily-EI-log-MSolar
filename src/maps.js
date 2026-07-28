@@ -1133,6 +1133,7 @@ function mapKmlToggleSelectAll(){
 function mapUpdateKmlEditUI(){
   const editBtn = document.getElementById('map-kml-edit-btn');
   const delBtn = document.getElementById('map-kml-bulk-delete-btn');
+  const folderBtn = document.getElementById('map-kml-folder-btn');
   const helper = document.getElementById('map-kml-edit-helper');
   if(!editBtn || !delBtn || !helper) return;
   if(_mapKmlEditMode){
@@ -1141,6 +1142,10 @@ function mapUpdateKmlEditUI(){
     helper.style.display = _mapKmlLayers.length > 0 ? '' : 'none';
     if(_mapKmlSelected.size > 0){
       delBtn.style.display = '';
+      if(folderBtn){
+        folderBtn.style.display = '';
+        folderBtn.innerHTML = `📁 Folder (<span id="map-kml-folder-count">${_mapKmlSelected.size}</span>)`;
+      }
       if(_mapKmlDeleteArmed){
         delBtn.style.background = '#5a0000';
         delBtn.style.borderColor = '#ff4444';
@@ -1154,13 +1159,122 @@ function mapUpdateKmlEditUI(){
       }
     } else {
       delBtn.style.display = 'none';
+      if(folderBtn) folderBtn.style.display = 'none';
     }
   } else {
     editBtn.innerHTML = '✏️ Edit';
     editBtn.style.display = _mapKmlLayers.length > 0 ? '' : 'none';
     delBtn.style.display = 'none';
+    if(folderBtn) folderBtn.style.display = 'none';
     helper.style.display = 'none';
   }
+}
+
+// ═══════════════════════════════════════════
+// KML LAYER FOLDERS — create / move / rename in-app (delta #21)
+// ═══════════════════════════════════════════
+// Folders are derived entirely from each layer's `folderName` string, which
+// kmlSaveLayers() already persists (IDB + user Firestore + shared mirror) —
+// so "creating a folder" is just assigning that name; an emptied folder
+// disappears on its own. No schema change, no migration.
+function _kmlSanitizeFolderName(s){
+  return String(s||'').replace(/[<>"'&]/g,'').replace(/\s+/g,' ').trim().slice(0,40);
+}
+function _kmlAttrEsc(s){
+  return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+}
+function mapKmlMoveSelectedToFolder(){
+  if(_mapKmlSelected.size === 0) return;
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const folderNames=[...new Set(_mapKmlLayers.map(l=>l.folderName).filter(Boolean))];
+  const n=_mapKmlSelected.size;
+  document.getElementById('_kfm-ov')?.remove();
+  const ov=document.createElement('div');
+  ov.className='modal-overlay'; ov.id='_kfm-ov';
+  ov.style.cssText='z-index:9000';
+  ov.innerHTML=`<div class="modal-box" style="max-width:340px;width:90%">
+    <div class="modal-title" style="margin-bottom:8px">📁 Move to folder</div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.5">${n} layer${n>1?'s':''} selected. Layers keep their visibility; the folder gets the master toggle.</div>
+    <label style="${_LABEL_STYLE}">Folder</label>
+    <select id="_kfm-sel" style="${_INPUT_STYLE};margin-bottom:10px">
+      <option value="__new">＋ New folder…</option>
+      ${folderNames.map(f=>`<option value="${_kmlAttrEsc(f)}">📁 ${_kmlAttrEsc(f)}</option>`).join('')}
+      <option value="__none">⬆ No folder (top level)</option>
+    </select>
+    <input id="_kfm-name" placeholder="New folder name" maxlength="40" style="${_INPUT_STYLE};margin-bottom:12px">
+    <div class="modal-btns">
+      <button class="modal-confirm" id="_kfm-go">📁 Move ${n} layer${n>1?'s':''}</button>
+      <button class="modal-cancel" id="_kfm-cancel">Cancel</button>
+    </div>
+  </div>`;
+  document.body.appendChild(ov);
+  const sel=ov.querySelector('#_kfm-sel'), nameInput=ov.querySelector('#_kfm-name');
+  sel.onchange=()=>{ nameInput.style.display = sel.value==='__new' ? '' : 'none'; };
+  ov.querySelector('#_kfm-cancel').onclick=()=>ov.remove();
+  ov.addEventListener('click',ev=>{ if(ev.target===ov) ov.remove(); });
+  ov.querySelector('#_kfm-go').onclick=()=>{
+    let target;
+    if(sel.value==='__new'){
+      target=_kmlSanitizeFolderName(nameInput.value);
+      if(!target){ nameInput.style.borderColor='#ff4444'; nameInput.focus(); return; }
+    } else if(sel.value==='__none'){
+      target='';
+    } else {
+      target=sel.value;
+    }
+    ov.remove();
+    _mapKmlLayers.forEach(l=>{ if(_mapKmlSelected.has(l.id)) l.folderName=target; });
+    if(target){
+      let order=_getKmlFolderOrder(pid);
+      if(!order.includes(target)){ order.push(target); _setKmlFolderOrder(order,pid); }
+    }
+    kmlSaveLayers();
+    _mapKmlSelected.clear();
+    _mapKmlClearArm();
+    mapUpdateKmlLayerList();
+    _applyKmlFolderMapOrder();
+    if(typeof showCloudBanner==='function') showCloudBanner(target?`📁 Moved ${n} layer${n>1?'s':''} into "${target}".`:`⬆ Moved ${n} layer${n>1?'s':''} to top level.`);
+  };
+}
+function mapKmlRenameFolder(oldName){
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  document.getElementById('_kfr-ov')?.remove();
+  const ov=document.createElement('div');
+  ov.className='modal-overlay'; ov.id='_kfr-ov';
+  ov.style.cssText='z-index:9000';
+  ov.innerHTML=`<div class="modal-box" style="max-width:340px;width:90%">
+    <div class="modal-title" style="margin-bottom:8px">✏ Rename folder</div>
+    <label style="${_LABEL_STYLE}">Folder name</label>
+    <input id="_kfr-name" maxlength="40" style="${_INPUT_STYLE};margin-bottom:12px">
+    <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:12px;">Renaming to an existing folder's name merges them.</div>
+    <div class="modal-btns">
+      <button class="modal-confirm" id="_kfr-go">✏ Rename</button>
+      <button class="modal-cancel" id="_kfr-cancel">Cancel</button>
+    </div>
+  </div>`;
+  document.body.appendChild(ov);
+  const nameInput=ov.querySelector('#_kfr-name');
+  nameInput.value=oldName;
+  ov.querySelector('#_kfr-cancel').onclick=()=>ov.remove();
+  ov.addEventListener('click',ev=>{ if(ev.target===ov) ov.remove(); });
+  ov.querySelector('#_kfr-go').onclick=()=>{
+    const newName=_kmlSanitizeFolderName(nameInput.value);
+    if(!newName){ nameInput.style.borderColor='#ff4444'; nameInput.focus(); return; }
+    ov.remove();
+    if(newName===oldName) return;
+    _mapKmlLayers.forEach(l=>{ if(l.folderName===oldName) l.folderName=newName; });
+    let order=_getKmlFolderOrder(pid);
+    const i=order.indexOf(oldName);
+    if(i>=0){
+      if(order.includes(newName)) order.splice(i,1);   // merge — keep the survivor's slot
+      else order[i]=newName;
+      _setKmlFolderOrder(order,pid);
+    }
+    kmlSaveLayers();
+    mapUpdateKmlLayerList();
+    _applyKmlFolderMapOrder();
+    if(typeof showCloudBanner==='function') showCloudBanner(`✏ Folder renamed to "${newName}".`);
+  };
 }
 
 async function mapBulkDeleteSelected(){
@@ -1455,6 +1569,7 @@ function mapUpdateKmlLayerList(){
         style="accent-color:${cbAccent};width:14px;height:14px;flex-shrink:0;"
         id="${folderId}-cb">
       <span style="font-family:var(--mono);font-size:11px;color:var(--amber2);font-weight:600;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${folderName}">📁 ${folderName}</span>
+      ${_mapKmlEditMode?`<button onclick="event.stopPropagation();mapKmlRenameFolder('${folderName.replace(/'/g,"\\'")}')" title="Rename folder" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:11px;padding:0 2px;line-height:1;flex-shrink:0">✏</button>`:''}
       <button onclick="event.stopPropagation();mapMoveKmlFolderOrder('${folderName.replace(/'/g,"\\'")}','up')" title="Bring forward" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:11px;padding:0 1px;line-height:1;flex-shrink:0">↑</button>
       <button onclick="event.stopPropagation();mapMoveKmlFolderOrder('${folderName.replace(/'/g,"\\'")}','down')" title="Send back" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:11px;padding:0 1px;line-height:1;flex-shrink:0">↓</button>`;
     const children = document.createElement('div');
@@ -6315,6 +6430,8 @@ window.mapToggleKmlLayerById = mapToggleKmlLayerById;
 window.mapToggleKmlEditMode = mapToggleKmlEditMode;
 window.mapKmlToggleSelection = mapKmlToggleSelection;
 window.mapKmlFolderToggleSelection = mapKmlFolderToggleSelection;
+window.mapKmlMoveSelectedToFolder = mapKmlMoveSelectedToFolder;
+window.mapKmlRenameFolder = mapKmlRenameFolder;
 window.mapKmlToggleSelectAll = mapKmlToggleSelectAll;
 window.mapBulkDeleteSelected = mapBulkDeleteSelected;
 window.mapShowExportModal = mapShowExportModal;

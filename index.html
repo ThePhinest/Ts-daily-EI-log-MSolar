@@ -2300,6 +2300,7 @@ Anticipated rain — AM weather monitoring expected"></textarea>
     <div id="map-kml-section-header" style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;">
       <span style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;flex:1;">KML Layers</span>
       <button id="map-kml-edit-btn" onclick="mapToggleKmlEditMode()" style="display:none;background:none;border:1px solid var(--border);color:var(--muted);padding:3px 8px;border-radius:4px;font-family:var(--mono);font-size:9px;cursor:pointer;text-transform:uppercase;letter-spacing:.05em;white-space:nowrap;">✏️ Edit</button>
+      <button id="map-kml-folder-btn" onclick="mapKmlMoveSelectedToFolder()" style="display:none;background:#132630;border:1px solid #1f4a5e;color:#7fc9e8;padding:3px 8px;border-radius:4px;font-family:var(--mono);font-size:9px;cursor:pointer;text-transform:uppercase;letter-spacing:.05em;white-space:nowrap;">📁 Folder (<span id="map-kml-folder-count">0</span>)</button>
       <button id="map-kml-bulk-delete-btn" onclick="mapBulkDeleteSelected()" style="display:none;background:#3d1414;border:1px solid #6b2020;color:#ff8080;padding:3px 8px;border-radius:4px;font-family:var(--mono);font-size:9px;cursor:pointer;text-transform:uppercase;letter-spacing:.05em;white-space:nowrap;">🗑 Delete (<span id="map-kml-bulk-delete-count">0</span>)</button>
     </div>
     <div id="map-kml-edit-helper" style="display:none;margin-bottom:6px;">
