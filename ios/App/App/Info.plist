@@ -55,6 +55,8 @@
 	<false/>
 	<key>NSCameraUsageDescription</key>
 	<string>GroundLog uses the camera to capture field photos for daily inspection logs and reports.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>GroundLog does not record audio. This permission is declared only because the camera component references microphone APIs; photo capture never uses the microphone.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>GroundLog accesses your photo library so you can attach existing photos to daily logs and reports.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
