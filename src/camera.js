@@ -78,12 +78,10 @@ export async function camStampBlob(p, blob, toggles){
   ctx.textBaseline='alphabetic';
   ctx.shadowColor='rgba(0,0,0,0.85)'; ctx.shadowBlur=Math.round(S*0.25); ctx.shadowOffsetY=Math.round(S*0.06);
   const cfg=_cfg();
-  // Bottom-left block, drawn bottom-up: caption → coords → project → time → wordmark.
+  // Bottom-left block, drawn bottom-up. Visual order top→bottom (Tim 7/29 swap):
+  // caption → time → project → coords → wordmark (wordmark anchors the bottom).
   const lines=[];
-  if(t.caption){
-    const bits=[p.locLabel,p.caption].filter(Boolean).join(' · ');
-    if(bits) lines.push({txt:bits,font:`${S}px Arial`});
-  }
+  lines.push({wordmark:true});
   if(t.gps&&p.lat!=null&&p.lng!=null){
     const acc=p.gpsAcc!=null?` ±${Math.round(p.gpsAcc*3.28084)}ft`:'';
     lines.push({txt:`${(+p.lat).toFixed(5)}, ${(+p.lng).toFixed(5)}${acc}`,font:`${S}px Arial`});
@@ -96,7 +94,10 @@ export async function camStampBlob(p, blob, toggles){
     const d=new Date(p.takenAt||p.uploadedAt||Date.now());
     lines.push({txt:_fmtClock(d),font:`bold ${Math.round(S*1.12)}px Arial`,bar:true});
   }
-  lines.push({wordmark:true});
+  if(t.caption){
+    const bits=[p.locLabel,p.caption].filter(Boolean).join(' · ');
+    if(bits) lines.push({txt:bits,font:`${S}px Arial`});
+  }
   let y=H-pad;
   for(const ln of lines){
     if(ln.wordmark){
@@ -291,11 +292,11 @@ function _buildDom(){
     </div>
     <div class="glc-compass"><span class="dial">◐</span><span class="glc-hdg">—</span></div>
     <div class="glc-overlay">
-      <div class="glc-brand">GROUND<span class="pipe">|</span><span class="log">LOG</span></div>
+      <div class="glc-line glc-cap"></div>
       <div class="glc-line glc-time"></div>
       <div class="glc-line glc-proj">${(cfg.projectName||'').replace(/</g,'&lt;')}</div>
       <div class="glc-line glc-coords"></div>
-      <div class="glc-line glc-cap"></div>
+      <div class="glc-brand">GROUND<span class="pipe">|</span><span class="log">LOG</span></div>
     </div>
     <button id="glc-shutter" title="Take photo"></button>
     <div id="glc-strip" style="display:none"></div>`;
