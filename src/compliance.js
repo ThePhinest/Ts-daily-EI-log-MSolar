@@ -2133,6 +2133,11 @@ async function _disturbanceSheet(wb, cid, allEntries, pid){
   }
   ws.addRow([]);
 
+  // Newest-day 🚧 status captures (FAB flow) — collapsed under the summary band,
+  // the same placement the seeding tabs give their seedCap captures.
+  await _embedDistStatusCapture(ws, wb, cid, NC);
+  ws.addRow([]);
+
   // ── Itemized drawings ──
   const ih=ws.addRow(['Itemized Drawings']); ws.mergeCells(ih.number,1,ih.number,NC);
   ih.getCell(1).font={bold:true,size:13,color:{argb:WHITE}};
@@ -2293,13 +2298,35 @@ async function _embedSeedStatusCapture(ws, wb, srcKey, NC, pinDay){
   const day=pinDay||all[0].date||'';
   // The newest day's full set, in the order they were taken.
   const caps=all.filter(p=>(p.date||'')===day).sort((a,b)=>(a.uploadedAt||0)-(b.uploadedAt||0));
+  await _embedStatusCapRows(ws, wb, caps, NC,
+    ph=>`▸ 🌱 Seeding status capture · ${ph.date||''}${ph.caption?' — '+ph.caption:''}   ( click the + in the far-left margin to expand ↓ )`,
+    'EAF5EA');
+}
+
+// Disturbance twin: the FAB 🚧 flow (maps.js) stamps distCap:{cid} on its captures —
+// the newest capture day for this category lands under the disturbance tab's
+// summary band, same routing pattern as the seeding tabs' seedCap captures.
+async function _embedDistStatusCapture(ws, wb, cid, NC){
+  const all=(window._phPhotos||[]).filter(p=>p&&p.type==='map_capture'&&p.distCap&&p.distCap.cid===cid&&p.storageUrl)
+    .sort((a,b)=>String(b.date||'').localeCompare(String(a.date||''))||((b.uploadedAt||0)-(a.uploadedAt||0)));
+  if(!all.length) return;
+  const day=all[0].date||'';
+  const caps=all.filter(p=>(p.date||'')===day).sort((a,b)=>(a.uploadedAt||0)-(b.uploadedAt||0));
+  await _embedStatusCapRows(ws, wb, caps, NC,
+    ph=>`▸ 🚧 Disturbance status capture · ${ph.date||''}${ph.caption?' — '+ph.caption:''}   ( click the + in the far-left margin to expand ↓ )`,
+    'FDF5DC');
+}
+
+// Shared row/image writer for the status-capture embeds (seeding + disturbance):
+// each capture = a merged label row + K collapsed outline rows carrying the image.
+async function _embedStatusCapRows(ws, wb, caps, NC, lblFor, fillArgb){
   const cum=[]; { let a=0; for(let i=1;i<=NC;i++){ a+=Math.round((((ws.getColumn(i).width)||10)*7)+5); cum[i-1]=a; } }
   const MAXHPX=1100, ROWMAXPT=380;
   for(const ph of caps){
-    const lbl=ws.addRow([`▸ 🌱 Seeding status capture · ${ph.date||''}${ph.caption?' — '+ph.caption:''}   ( click the + in the far-left margin to expand ↓ )`]);
+    const lbl=ws.addRow([lblFor(ph)]);
     ws.mergeCells(lbl.number,1,lbl.number,NC);
     lbl.getCell(1).font={bold:true,size:10,color:{argb:'FF006B75'}};
-    lbl.getCell(1).fill={type:'pattern',pattern:'solid',fgColor:{argb:'EAF5EA'}};
+    lbl.getCell(1).fill={type:'pattern',pattern:'solid',fgColor:{argb:fillArgb}};
     lbl.getCell(1).border={top:{style:'thin',color:{argb:'FFC9A84C'}}};
     lbl.height=18;
     try{
@@ -2328,7 +2355,7 @@ async function _embedSeedStatusCapture(ws, wb, srcKey, NC, pinDay){
       for(let k=0;k<K;k++){ const ir=ws.addRow([]); ir.height=perRowPt; ir.outlineLevel=1; ir.hidden=true; if(k===0) firstNum=ir.number; }
       const imgId=wb.addImage({base64:raw, extension:'jpeg'});
       ws.addImage(imgId,{ tl:{col:0.08,row:firstNum-1+0.03}, br:{col:brCol,row:firstNum-1+K-0.03}, editAs:'twoCell' });
-    }catch(err){ console.warn('seed status capture embed failed',err); }
+    }catch(err){ console.warn('status capture embed failed',err); }
   }
 }
 

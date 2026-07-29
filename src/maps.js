@@ -4602,7 +4602,7 @@ function _addCategoryLineLayer(srcId,cat){
   // ESC-status capture framing: boost line widths so silt-fence runs etc. stay
   // legible in a zoomed-out phone/iPad capture. Layers re-add on every render, so
   // widths revert automatically when the filter clears.
-  const lw=(cat.lineWidth||2)*((_escCapFilter||_seedCapFilter)?1.8:1);
+  const lw=(cat.lineWidth||2)*((_escCapFilter||_seedCapFilter||_distCapFilter)?1.8:1);
   const lineColor=['coalesce',['get','stateColor'],color];
   const paint={'line-color':lineColor,'line-width':['case',['get','faint'],Math.max(1,lw-0.5),lw],'line-opacity':['case',['get','faint'],0.45,0.9]};
   // Per-STATE line style (ties the schema editor's state Style dropdown to the map;
@@ -4688,6 +4688,14 @@ function mapRefreshDateLabels(){
         if(planned&&(src.seedOnly||!_seedCapFilter.showPlans)) return false;
         if(!planned&&src.seedOnly&&!((typeof window._seedHasData==='function')&&window._seedHasData(e))) return false;
         if(st&&/remov/i.test(st.label||'')) return false;
+      }
+      // Disturbance-status capture framing: labels follow the solo filter — the
+      // selected category only, plans per the picker toggle, flags per the toggle.
+      if(_distCapFilter){
+        if(cid!==_distCapFilter.cid||(isOpenTemp&&!_capFlagsShow)) return false;
+        const st=(typeof tcEntryState==='function')?tcEntryState(e,cid,pid):null;
+        const planned=st?!!st.isPlanned:(e.entryType==='planned');
+        if(planned&&!_distCapFilter.showPlans) return false;
       }
       if(!e.showDateLabel&&!isOpenTemp) return false;
       return true;
@@ -5605,6 +5613,132 @@ async function _doCaptureSeed(selSrcs){
   setTimeout(_hideCaptureToast,2200);
 }
 
+// ── 🚧 Disturbance Status capture ──
+// The disturbance twin of the ESC/seeding captures (Tim 7/24, confirmed 7/29): the
+// per-drawing popup capture for running-mode categories moves to the FAB so all
+// three status captures share one process. SINGLE-category radio — the baked legend
+// (_compositeBrandWordmark's legendCat path, same legend the popup flow baked) renders
+// one category's net per-state totals + TOTAL open; multi-select would need a new
+// legend design. Solo-filters the map to that category's drawn work (plan outlines
+// opt-in, flags per the capture-bar toggle), saves with distCap metadata so the
+// disturbance XLSX embeds the newest capture day under its summary band (the same
+// routing pattern as seedCap).
+let _distCapFilter=null;   // {cid, showPlans} — armed only while framing
+
+function _distCapEntries(list,cat,pid){
+  if(!_distCapFilter) return list;
+  if(cat.id!==_distCapFilter.cid) return [];
+  return (list||[]).filter(e=>{
+    if(e.temporary&&e.tempStatus!=='resolved') return _capFlagsShow===true; // capture-bar flags toggle
+    if(e.temporary) return false;
+    const st=(typeof tcEntryState==='function')?tcEntryState(e,cat,pid):null;
+    const planned=st?!!st.isPlanned:(e.entryType==='planned');
+    if(planned) return _distCapFilter.showPlans===true;
+    return true;
+  });
+}
+
+function _distCapClear(){
+  if(!_distCapFilter) return;
+  _distCapFilter=null;
+  mapRenderTrackerLayers();
+  if(typeof mapRefreshDateLabels==='function') mapRefreshDateLabels();
+}
+
+function mapCaptureDisturbanceStatus(){
+  if(!_mapInstance) return;
+  if(typeof mapCloseFab==='function') mapCloseFab();
+  if(_trackerPopup){_trackerPopup.remove();_trackerPopup=null;}
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const cats=_sortCatsByOrder((typeof tcGetCategories==='function')?tcGetCategories(pid):[],pid);
+  const entries=(typeof trGetEntriesForProject==='function')?trGetEntriesForProject(pid).filter(e=>!e.deletedFromMap&&!e.archivedFromMap&&e.geometry):[];
+  const counts={};
+  entries.forEach(e=>{const cid=e.categoryId||e.category; counts[cid]=(counts[cid]||0)+1;});
+  // Running-mode (disturbance) categories with drawings only — and 🔒 closed
+  // categories are done capturing (same rule as the seeding picker).
+  const withData=cats.filter(c=>{
+    if(!counts[c.id]) return false;
+    const pm=(typeof tcProgressMode==='function')?tcProgressMode(c.id,pid):'';
+    if(pm!=='running-balance'&&pm!=='running-total') return false;
+    return !(typeof tcIsClosed==='function'&&tcIsClosed(c.id,pid));
+  });
+  if(!withData.length){ _showCaptureToast('No disturbance drawings to capture'); setTimeout(_hideCaptureToast,1800); return; }
+  // Last selection + plan-outlines choice remembered per project (tiny-pref tier).
+  let prefs={};
+  try{ prefs=JSON.parse(localStorage.getItem('gl_dist_cap_sel::'+pid)||'{}')||{}; }catch{}
+  let selCid=withData.some(c=>c.id===prefs.cid)?prefs.cid:withData[0].id;
+  let showPlans=!!prefs.plans;
+
+  const ov=document.createElement('div');
+  ov.className='modal-overlay';
+  ov.style.cssText='z-index:9500';
+  const rowBase='display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:12px 14px;border-radius:8px;cursor:pointer;border:2px solid var(--border);background:var(--s1);transition:border-color .15s';
+  const rowOn ='display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:12px 14px;border-radius:8px;cursor:pointer;border:2px solid var(--amber);background:var(--s1);transition:border-color .15s';
+  const render=()=>{
+    ov.innerHTML=`
+      <div class="modal-box" style="max-width:360px;width:92%">
+        <div class="modal-title" style="margin-bottom:4px">🚧 Disturbance Status Capture</div>
+        <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-bottom:16px">Pick the disturbance category — its net per-state legend and TOTAL open bake into the shot; everything else is hidden</div>
+        <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:10px;max-height:42dvh;overflow-y:auto">
+          ${withData.map(c=>`
+            <button class="_dist-cat" data-cid="${c.id}" style="${selCid===c.id?rowOn:rowBase}">
+              <span style="font-size:15px;width:18px;flex-shrink:0;text-align:center;color:${selCid===c.id?'var(--amber)':'var(--muted)'}">${selCid===c.id?'◉':'○'}</span>
+              <span style="display:flex;flex-direction:column;gap:2px;min-width:0">
+                <span style="font-family:var(--cond);font-weight:700;font-size:14px;letter-spacing:.03em;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${c.name}</span>
+                <span style="font-family:var(--mono);font-size:10px;color:var(--muted)">net per-state · ${counts[c.id]} entr${counts[c.id]===1?'y':'ies'}</span>
+              </span>
+            </button>`).join('')}
+        </div>
+        <button id="_dist-plans" style="width:100%;margin-bottom:14px;background:${showPlans?'rgba(201,168,76,0.25)':'var(--s1)'};border:1px solid ${showPlans?'var(--amber)':'var(--border)'};color:${showPlans?'var(--amber)':'var(--muted)'};padding:8px;border-radius:8px;font-family:var(--mono);font-size:11px;cursor:pointer">${showPlans?'▦ Plan outlines: shown':'▦ Plan outlines: hidden'}</button>
+        <button id="_dist-go" style="width:100%;padding:12px;background:var(--amber);color:#000;font-family:var(--cond);font-weight:700;font-size:14px;letter-spacing:.06em;border:none;border-radius:8px;cursor:pointer;margin-bottom:8px">📷 Frame &amp; capture</button>
+        <button id="_dist-cancel" style="width:100%;padding:9px;background:none;color:var(--muted);font-family:var(--mono);font-size:11px;border:1px solid var(--border);border-radius:8px;cursor:pointer">Cancel</button>
+      </div>`;
+    ov.querySelectorAll('._dist-cat').forEach(btn=>{
+      btn.onclick=()=>{ selCid=btn.dataset.cid; render(); };
+    });
+    ov.querySelector('#_dist-plans').onclick=()=>{ showPlans=!showPlans; render(); };
+    ov.querySelector('#_dist-cancel').onclick=()=>ov.remove();
+    ov.querySelector('#_dist-go').onclick=()=>{
+      try{ localStorage.setItem('gl_dist_cap_sel::'+pid,JSON.stringify({cid:selCid,plans:showPlans})); }catch{}
+      ov.remove();
+      _distCapFilter={cid:selCid,showPlans};
+      mapRenderTrackerLayers();
+      if(typeof mapRefreshDateLabels==='function') mapRefreshDateLabels();
+      _showCaptureBar(()=>_doCaptureDist(selCid));
+      // The shared capture bar's Cancel must also restore the filtered view.
+      const cb=document.getElementById('_gl-cap-cancel');
+      if(cb) cb.onclick=()=>{ _hideCaptureBar(); _capFlagsShow=null; _distCapClear(); };
+    };
+  };
+  render();
+  document.body.appendChild(ov);
+}
+window.mapCaptureDisturbanceStatus=mapCaptureDisturbanceStatus;
+
+async function _doCaptureDist(cid){
+  if(!_mapInstance){ _distCapClear(); return; }
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  _showCaptureToast('📷 Capturing…');
+  await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
+  const canvas=_mapInstance.getCanvas();
+  const today=new Date().toLocaleDateString('en-CA');
+  const rawBlob=await new Promise(res=>canvas.toBlob(res,'image/png'));
+  if(!rawBlob){ _hideCaptureToast(); _capFlagsShow=null; _distCapClear(); console.warn('_doCaptureDist: canvas returned null'); return; }
+  // Whole-category legend — the exact legendCat path the popup capture flow used.
+  const branded=await _compositeBrandWordmark(rawBlob,cid,pid,null);
+  _capFlagsShow=null; // _distCapClear's re-render restores the normal view
+  if(typeof phSaveCapturedImage!=='function'){ _hideCaptureToast(); _distCapClear(); return; }
+  _showCaptureToast('☁️ Saving…');
+  const catName=(typeof tcGetName==='function')?tcGetName(cid,pid):'Disturbance';
+  const prefill=`${catName} status · ${_fmtLabelDate(today)}`;
+  const photoEntry=await phSaveCapturedImage(branded,today,prefill,{distCap:{cid}});
+  _distCapClear();
+  _hideCaptureToast();
+  if(!photoEntry){ console.warn('_doCaptureDist: save failed'); return; }
+  _showCaptureToast('✓ Saved to Photos · 🚧 disturbance capture');
+  setTimeout(_hideCaptureToast,2200);
+}
+
 // Standalone caption modal for capture flow — writes directly to entry.photoCaptions
 // (since we're not inside the entry edit modal's pending state).
 function _showCaptureCaptionModal(entryId,photoId,prefill){
@@ -5850,7 +5984,7 @@ function mapRenderTrackerLayers(){
     const src='tracker-'+cat.id;
     const color=cat.color||'#888';
     const visible=_tcLayerVisible[cat.id]!==false;
-    const catEntries=visible?_seedCapEntries(_escCapEntries(byCategory[cat.id],cat,_rtPid),cat,_rtPid):[];
+    const catEntries=visible?_distCapEntries(_seedCapEntries(_escCapEntries(byCategory[cat.id],cat,_rtPid),cat,_rtPid),cat,_rtPid):[];
     // Running-mode categories (SWPPP disturbance): later-drawn work covers earlier
     // work, so stacked translucent fills alpha-blend (yellow over red reads orange —
     // colliding with a real orange state). Render fills AND outlines from the NET
@@ -5930,9 +6064,9 @@ function mapRenderTrackerLayers(){
     Object.entries(orphanByCat).forEach(([cid,group])=>{
       const src='tracker-'+cid;
       const color='#888';
-      // Orphan (not-yet-cached) categories can't appear in the ESC/seeding checklists —
-      // hide them while either capture solo filter is armed.
-      const visible=_tcLayerVisible[cid]!==false&&!_escCapFilter&&!_seedCapFilter;
+      // Orphan (not-yet-cached) categories can't appear in the ESC/seeding/disturbance
+      // checklists — hide them while any capture solo filter is armed.
+      const visible=_tcLayerVisible[cid]!==false&&!_escCapFilter&&!_seedCapFilter&&!_distCapFilter;
       const geojson={type:'FeatureCollection',features:(visible?group.entries:[]).map(e=>({
         type:'Feature',id:e.id,
         properties:{id:e.id,categoryId:e.categoryId||e.category,categoryName:e.categoryName||e.category,date:e.date,acres:e.acres,measurementValue:e.measurementValue??null,measurementUnit:e.measurementUnit||null,notes:e.notes,location:e.location,phase:e.phase||null,method:e.method||null,status:e.status||null,contractor:e.contractor||null,entryType:e.entryType||'installed'},
@@ -5996,6 +6130,10 @@ function _showTrackerEntryPopup(lngLat,props){
   const entry=(typeof trGetEntry==='function')?trGetEntry(props.id,pid):null;
   const label=props.categoryName||(typeof tcGetName==='function'?tcGetName(props.categoryId,pid):(props.categoryId||'Unknown'));
   const color=(typeof tcGetColor==='function')?tcGetColor(props.categoryId,pid):'#888';
+  // Running-mode (disturbance) categories: the per-drawing 📷 capture moved to the
+  // FAB 🚧 Disturbance-status flow (7/29) — one process for all three status captures.
+  const _pmPop=(typeof tcProgressMode==='function')?tcProgressMode(props.categoryId,pid):'';
+  const _distRunningCat=(_pmPop==='running-balance'||_pmPop==='running-total');
   let measText=(props.measurementValue!=null&&props.measurementUnit)
     ?((typeof tcFormatMeasurement==='function')?tcFormatMeasurement(props.measurementValue,props.measurementUnit):(props.measurementValue+' '+props.measurementUnit))
     :(props.acres?props.acres+' ac':'');
@@ -6121,7 +6259,7 @@ function _showTrackerEntryPopup(lngLat,props){
           <button onclick="mapHighlightEntry('${props.id}')" style="${_TRP_BTN}background:var(--s2,#1a2a38);border:1px solid var(--border,#334);color:var(--muted,#888)" title="Make this drawing stand out on the map">✨ Highlight</button>
           <button onclick="mapShowCategoryLegend('${props.categoryId}')" style="${_TRP_BTN}background:var(--s2,#1a2a38);border:1px solid var(--border,#334);color:var(--muted,#888)" title="Show this category's color key on the map (for screenshots)">🏷️ Legend</button>
           <button onclick="mapOpenCategoryFromPopup('${props.categoryId}')" style="${_TRP_BTN}background:var(--s2,#1a2a38);border:1px solid var(--border,#334);color:var(--muted,#888)" title="Category settings">⚙ Category</button>
-          <button onclick="mapCaptureForEntry('${props.id}')" style="${_TRP_BTN}background:var(--s2,#1a2a38);border:1px solid var(--border,#334);color:var(--muted,#888)" title="Capture map view as photo">📷 Capture</button>
+          ${_distRunningCat?'':`<button onclick="mapCaptureForEntry('${props.id}')" style="${_TRP_BTN}background:var(--s2,#1a2a38);border:1px solid var(--border,#334);color:var(--muted,#888)" title="Capture map view as photo">📷 Capture</button>`}
           ${_hasShape?`<button onclick="mapCopyEntryShape('${props.id}')" style="${_TRP_BTN}background:var(--s2,#1a2a38);border:1px solid var(--border,#334);color:var(--muted,#888)" title="New state layer with this exact shape — no retracing">📋 Copy shape</button>`:''}
           ${tempBtn}
           ${shareBtn}

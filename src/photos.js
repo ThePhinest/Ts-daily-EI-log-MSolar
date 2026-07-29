@@ -279,6 +279,7 @@ function _phDocFor(p){
   if(p.swppp) doc.swppp = true;
   if(p.seedTag) doc.seedTag = true;
   if(p.seedCap) doc.seedCap = p.seedCap;
+  if(p.distCap) doc.distCap = p.distCap;
   if(p.published !== undefined){ doc.published = p.published; doc.publishedAt = p.publishedAt || null; }
   return doc;
 }
@@ -956,6 +957,9 @@ async function phSaveCapturedImage(blob, photoDate, captionOverride, opts){
   // Seeding-status captures carry their source keys so the seeding XLSX can route the
   // latest capture onto the right tab (single source → its tab; multi → summary tab).
   if(opts&&opts.seedCap) entry.seedCap=opts.seedCap;
+  // Disturbance-status captures (FAB 🚧 flow) carry their category id so the
+  // disturbance XLSX embeds the newest capture day under its summary band.
+  if(opts&&opts.distCap) entry.distCap=opts.distCap;
   window._phPhotos=(window._phPhotos||[]);
   window._phPhotos.push(entry);
   phSaveLocal();
