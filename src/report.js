@@ -204,7 +204,9 @@ async function _doPolish(selectedFields, apiKey){
     const resp=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-sonnet-5',max_tokens:8000,system:systemPrompt,messages:[{role:'user',content:userPrompt}]})});
     if(!resp.ok){const err=await resp.text();throw new Error('API '+resp.status+': '+err);}
     const data=await resp.json();
-    const text=data.content[0].text;
+    const textBlock=(data.content||[]).find(function(b){return b.type==='text'&&b.text;});
+    if(!textBlock){console.error('Formalize Log: no text block in Claude response. Content:',data.content);throw new Error('Polish response empty — see console');}
+    const text=textBlock.text;
     const j0=text.indexOf('{'),j1=text.lastIndexOf('}');
     if(j0===-1||j1===-1){
       console.error('Formalize Log: no JSON object in Claude response. Raw text:',text);
@@ -287,7 +289,9 @@ async function rptCallClaude(apiKey, logData, compEntries, systemPromptIn){
   const resp=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-sonnet-5',max_tokens:8000,system:finalSystemPrompt,messages:[{role:'user',content:userPrompt}]})});
   if(!resp.ok){const err=await resp.text();throw new Error('Claude API error '+resp.status+': '+err);}
   const data=await resp.json();
-  const text=data.content[0].text;
+  const textBlock=(data.content||[]).find(function(b){return b.type==='text'&&b.text;});
+  if(!textBlock){console.error('Report generate: no text block in Claude response. Content:',data.content);throw new Error('Claude response empty — see console');}
+  const text=textBlock.text;
   const clean=text.replace(/```json\n?/g,'').replace(/```\n?/g,'').trim();
   return JSON.parse(clean);
 }
