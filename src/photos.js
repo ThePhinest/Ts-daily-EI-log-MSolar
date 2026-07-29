@@ -679,7 +679,30 @@ async function _phLbShow(index){
   _phLbUpdateNav();
   const full = await phGetFull(id);
   if(_phLbId === id) img.src = full;   // only swap in full-res if still on this photo
+  // Camera photos DISPLAY stamped (Tim 7/29: stamped everywhere, every time) —
+  // the lightbox view is the stamped rendering per the current element pills;
+  // the stored original stays clean underneath.
+  if(p.type==='camera') _phLbApplyStamp(p);
   _phLbPreloadNeighbors();
+}
+
+// Render the stamped preview into the lightbox (race-guarded, object-URL managed).
+let _phLbStampUrl=null;
+async function _phLbApplyStamp(p){
+  if(!p||p.type!=='camera') return;
+  const id=p.id;
+  try{
+    const url=await phGetFull(id);
+    const resp=await fetch(url); if(!resp.ok) return;
+    let blob=await resp.blob();
+    if(!_camMod) _camMod=await import('./camera.js');
+    blob=(await _camMod.camStampBlob(p,blob,_stampDefaults()))||blob;
+    if(_phLbId!==id) return;             // navigated away mid-render
+    const img=document.getElementById('ph-lb-img');
+    if(_phLbStampUrl){ try{ URL.revokeObjectURL(_phLbStampUrl); }catch(e){} _phLbStampUrl=null; }
+    _phLbStampUrl=URL.createObjectURL(blob);
+    img.src=_phLbStampUrl;
+  }catch(e){ console.warn('lightbox stamp preview failed:',e); }
 }
 
 // Stops at the ends (no wrap).
@@ -708,6 +731,7 @@ function phCloseLightbox(){
   _phLbId = null;
   _phLbList = [];
   _phLbIndex = -1;
+  if(_phLbStampUrl){ try{ URL.revokeObjectURL(_phLbStampUrl); }catch(e){} _phLbStampUrl=null; }
 }
 
 function phSaveCaption(){
@@ -1021,6 +1045,9 @@ function _phStampPillRow(){
       cur[btn.dataset.k]=!cur[btn.dataset.k];
       try{ localStorage.setItem('gl_cam_stamp',JSON.stringify(cur)); }catch{}
       _phStampPillRow();
+      // Live preview: re-render the stamped view with the new element set.
+      const p=(window._phPhotos||[]).find(x=>x.id===_phLbId);
+      if(p) _phLbApplyStamp(p);
     };
   });
 }

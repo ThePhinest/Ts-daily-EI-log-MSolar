@@ -40,3 +40,26 @@ export function exportImageParams(photoRec){
   const cap = photoRec && photoRec.type === 'map_capture';
   return cap ? {maxPx:1600, quality:0.88} : {maxPx:1400, quality:0.82};
 }
+
+// ── 🏷 Camera photos leave the app STAMPED (Tim 7/29: "every photo shows up
+// stamped how the user sets it, everywhere, every time") ──
+// The branded overlay renders from the photo's metadata record at export time,
+// per the user's element toggles (gl_cam_stamp — adjustable on the Photos page).
+// Stored originals stay clean (two-layer model); non-camera photos pass through
+// untouched, and ANY stamp failure returns the clean original so no export can
+// break on stamping. Call BEFORE exportImageBlob so the stamp renders at full
+// resolution and downscales with the image. Lazy-imports the camera chunk only
+// when a camera photo actually passes through an export.
+let _camMod = null;
+export async function stampIfCamera(photoRec, blob){
+  if(!photoRec || photoRec.type !== 'camera' || !blob) return blob;
+  try{
+    if(!_camMod) _camMod = await import('./camera.js');
+    const out = await _camMod.camStampBlob(photoRec, blob);
+    return out || blob;
+  }catch(e){
+    console.warn('stampIfCamera failed (using clean original):', e);
+    return blob;
+  }
+}
+window.stampIfCamera = stampIfCamera;

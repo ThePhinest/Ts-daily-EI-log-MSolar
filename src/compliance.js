@@ -1,4 +1,4 @@
-import { exportImageBlob } from './exportImg.js';
+import { exportImageBlob, stampIfCamera } from './exportImg.js';
 
 // ═══════════════════════════════════════════
 // COMPLIANCE LOG
@@ -2797,7 +2797,8 @@ async function _tlogExportPhotoZip(entries, pid, selKeys){
   const today=new Date().toLocaleDateString('en-CA');
   const selCids=selKeys?new Set(selKeys.map(k=>String(k).split('::')[0])):null;
   const selKeySet=selKeys?new Set(selKeys):null;
-  const _zipBlob=async(blob)=>{
+  const _zipBlob=async(blob,photo)=>{
+    if(photo) blob=await stampIfCamera(photo,blob);   // camera photos ZIP up stamped
     if(blob&&blob.type==='image/png'){ try{ return await exportImageBlob(blob,100000,0.9); }catch{ return blob; } }
     return blob;
   };
@@ -2822,7 +2823,7 @@ async function _tlogExportPhotoZip(entries, pid, selKeys){
       try{
         const resp=await fetch(photo.storageUrl);
         if(!resp.ok) continue;
-        const blob=await _zipBlob(await resp.blob());
+        const blob=await _zipBlob(await resp.blob(),photo);
         const ext=_zipExt(blob,(photo.filename||'photo.jpg').split('.').pop()||'jpg');
         const captionSource=(e.photoCaptions||{})[photoId]||photo?.caption||null;
         const idx=includeIds.indexOf(photoId)+1;
