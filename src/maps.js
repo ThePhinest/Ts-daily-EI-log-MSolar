@@ -5215,6 +5215,14 @@ function mapCaptureForEntry(entryId){
 }
 window.mapCaptureForEntry=mapCaptureForEntry;
 
+// 📸 In-app camera from a drawing popup — the shot auto-attaches to this entry
+// (phSaveCameraPhoto handles the trAddPhotoLink via meta.attach).
+function mapCameraForEntry(entryId){
+  if(_trackerPopup){_trackerPopup.remove();_trackerPopup=null;}
+  if(typeof window.phOpenCamera==='function') window.phOpenCamera({attach:{type:'entry',id:entryId}});
+}
+window.mapCameraForEntry=mapCameraForEntry;
+
 // Ask what the baked-in legend should cover before framing: the WHOLE category's totals
 // (overall-project SS) or just THIS drawing's area (that day's work). Then frame + capture.
 function _showCaptureScopeChoice(entryId){
@@ -6260,6 +6268,7 @@ function _showTrackerEntryPopup(lngLat,props){
           <button onclick="mapShowCategoryLegend('${props.categoryId}')" style="${_TRP_BTN}background:var(--s2,#1a2a38);border:1px solid var(--border,#334);color:var(--muted,#888)" title="Show this category's color key on the map (for screenshots)">🏷️ Legend</button>
           <button onclick="mapOpenCategoryFromPopup('${props.categoryId}')" style="${_TRP_BTN}background:var(--s2,#1a2a38);border:1px solid var(--border,#334);color:var(--muted,#888)" title="Category settings">⚙ Category</button>
           ${_distRunningCat?'':`<button onclick="mapCaptureForEntry('${props.id}')" style="${_TRP_BTN}background:var(--s2,#1a2a38);border:1px solid var(--border,#334);color:var(--muted,#888)" title="Capture map view as photo">📷 Capture</button>`}
+          <button onclick="mapCameraForEntry('${props.id}')" style="${_TRP_BTN}background:var(--s2,#1a2a38);border:1px solid var(--border,#334);color:var(--muted,#888)" title="Take a photo — auto-attaches to this drawing">📸 Take photo</button>
           ${_hasShape?`<button onclick="mapCopyEntryShape('${props.id}')" style="${_TRP_BTN}background:var(--s2,#1a2a38);border:1px solid var(--border,#334);color:var(--muted,#888)" title="New state layer with this exact shape — no retracing">📋 Copy shape</button>`:''}
           ${tempBtn}
           ${shareBtn}

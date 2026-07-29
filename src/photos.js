@@ -667,6 +667,10 @@ async function _phLbShow(index){
     sdBtn.textContent = p.seedTag ? '🌱 Seed Tag ✓' : '🌱 Tag as Seed Tag';
     sdBtn.classList.toggle('ph-seed-on', !!p.seedTag);
   }
+  // 🏷 Stamped copy — in-app camera photos only (they carry the metadata record
+  // the stamp renders from; imported photos keep their own baked-in overlays).
+  const stBtn = document.getElementById('ph-lb-stamp');
+  if(stBtn) stBtn.style.display = (own && p.type==='camera') ? '' : 'none';
   if(cap) cap.readOnly = !own;
   _phLbUpdateNav();
   const full = await phGetFull(id);
@@ -971,11 +975,84 @@ async function phSaveCameraPhoto(blob, meta){
   window._phPhotos.push(entry);
   phSaveLocal();
   phSaveCloudOne(entry);
+  // Contextual launch (📸 from a punchlist flag / drawing popup): auto-attach the
+  // photo to that tracker entry — the shot lands where it documents.
+  if(m.attach&&m.attach.type==='entry'&&m.attach.id&&typeof trAddPhotoLink==='function'){
+    try{ trAddPhotoLink(m.attach.id, id, pid, 'general'); }
+    catch(e){ console.warn('camera auto-attach failed:',e); }
+  }
   try{
     phRender();
     if(typeof mapRenderPhotoPins==='function') mapRenderPhotoPins();
   }catch(e){}
   return entry;
+}
+
+// ── 🏷 Stamped copy (lightbox) ──
+// Renders the branded stamp from the photo's metadata record onto its clean
+// original and hands it to the share/save path. Element toggles are editable
+// per photo here; the stored photo never changes (two-layer model).
+async function phStampCurrent(){
+  const p=(window._phPhotos||[]).find(x=>x.id===_phLbId);
+  if(!p||p.type!=='camera') return;
+  let cam;
+  try{
+    if(!_camMod) _camMod=await import('./camera.js');
+    cam=_camMod;
+  }catch(e){ console.error('stamp module failed to load:',e); alert('Stamp failed to load — try refreshing.'); return; }
+  const ELEMENTS=[
+    {key:'gps',     label:'GPS + compass'},
+    {key:'time',    label:'Date / time'},
+    {key:'project', label:'Project line'},
+    {key:'caption', label:'Caption + location'},
+    {key:'tags',    label:'Tag badges'},
+  ];
+  const sel=cam.camStampDefaults();
+  const ov=document.createElement('div');
+  ov.className='modal-overlay';
+  ov.style.cssText='z-index:9800';
+  const render=()=>{
+    ov.innerHTML=`
+      <div class="modal-box" style="max-width:330px;width:92%">
+        <div class="modal-title" style="margin-bottom:6px">🏷 Stamped copy</div>
+        <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:12px;line-height:1.5">Pick what the stamp shows for THIS copy. The photo in your library stays clean — share it directly any time for an unstamped version.</div>
+        <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px">
+          ${ELEMENTS.map(e=>`
+            <button class="_st-row" data-k="${e.key}" style="display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:10px 12px;border-radius:8px;cursor:pointer;border:1px solid ${sel[e.key]?'var(--amber)':'var(--border)'};background:var(--s1);color:var(--text);font-family:var(--mono);font-size:12px">
+              <span style="color:${sel[e.key]?'var(--amber)':'var(--muted)'}">${sel[e.key]?'☑':'☐'}</span>${e.label}
+            </button>`).join('')}
+        </div>
+        <div class="modal-btns">
+          <button class="modal-confirm" id="_st-go">📤 Save / share stamped</button>
+          <button class="modal-cancel" id="_st-x">Cancel</button>
+        </div>
+      </div>`;
+    ov.querySelectorAll('._st-row').forEach(btn=>{
+      btn.onclick=()=>{ const k=btn.dataset.k; sel[k]=!sel[k]; cam.camStampSetDefaults(sel); render(); };
+    });
+    ov.querySelector('#_st-x').onclick=()=>ov.remove();
+    ov.querySelector('#_st-go').onclick=async()=>{
+      const go=ov.querySelector('#_st-go');
+      go.disabled=true; go.textContent='Rendering…';
+      try{
+        const url=await phGetFull(p.id);
+        const resp=await fetch(url);
+        if(!resp.ok) throw new Error('full-res fetch failed');
+        const blob=await resp.blob();
+        const stamped=await cam.camStampBlob(p,blob,sel);
+        if(!stamped) throw new Error('stamp render failed');
+        const name=`GroundLog-${p.date||''}${p.locLabel?'-'+p.locLabel.replace(/[^\w-]+/g,'_'):''}.jpg`;
+        await window.saveFileNative(stamped,name,'image/jpeg');
+        ov.remove();
+      }catch(e){
+        console.error('stamped copy failed:',e);
+        go.disabled=false; go.textContent='📤 Save / share stamped';
+        alert('Stamped copy failed — see console.');
+      }
+    };
+  };
+  render();
+  document.body.appendChild(ov);
 }
 
 // Lazy camera launcher — the viewfinder module (and the capgo plugin with it)
@@ -1060,6 +1137,7 @@ window.phSaveCapturedImage = phSaveCapturedImage;
 window.phSaveCameraPhoto = phSaveCameraPhoto;
 window.phSaveCloudOne = phSaveCloudOne;
 window.phOpenCamera = phOpenCamera;
+window.phStampCurrent = phStampCurrent;
 window.phOpenLightbox = phOpenLightbox;
 window.phCloseLightbox = phCloseLightbox;
 window.phLbNext = phLbNext;

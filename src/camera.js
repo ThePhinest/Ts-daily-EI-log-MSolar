@@ -38,6 +38,107 @@ const TAGS=[
   {key:'repair',chip:'🚩 Repair'},
 ];
 
+// ── Stamp element toggles ──
+// One set of per-user defaults drives BOTH the live viewfinder preview and the
+// rendered stamp (WYSIWYG). Every element stays editable per photo at share time
+// because the stamp is render-on-demand — the stored photo is always clean.
+const STAMP_KEY='gl_cam_stamp';
+const STAMP_ELEMENTS=[
+  {key:'gps',     label:'GPS coordinates + compass bearing'},
+  {key:'time',    label:'Date / time'},
+  {key:'project', label:'Project + prepared-by line'},
+  {key:'caption', label:'Caption + location label'},
+  {key:'tags',    label:'Tag badges (🌊 🌱 🚩)'},
+];
+export function camStampDefaults(){
+  const base={gps:true,time:true,project:true,caption:true,tags:true};
+  try{ return Object.assign(base,JSON.parse(localStorage.getItem(STAMP_KEY)||'{}')); }catch{ return base; }
+}
+export function camStampSetDefaults(t){ try{ localStorage.setItem(STAMP_KEY,JSON.stringify(t)); }catch{} }
+window.camStampDefaults=camStampDefaults;
+
+// ── Stamp renderer — the second layer of the two-layer model ──
+// Composites the branded overlay from a photo's METADATA RECORD onto its clean
+// original at share/export time (photos.js lazy-imports this). Layout = the
+// agreed Timemark-inspired block: wordmark, gold-bar time/date line, project
+// line, coords line, caption line bottom-left; compass + tag badges bottom-right.
+export async function camStampBlob(p, blob, toggles){
+  const t=Object.assign(camStampDefaults(),toggles||{});
+  const bmp=await createImageBitmap(blob);
+  const W=bmp.width, H=bmp.height;
+  const c=document.createElement('canvas'); c.width=W; c.height=H;
+  const ctx=c.getContext('2d');
+  ctx.drawImage(bmp,0,0); bmp.close();
+  const S=Math.max(18,Math.round(W*0.022));   // base type size ≈ half Timemark's weight
+  const pad=Math.round(S*0.9), lh=Math.round(S*1.45);
+  ctx.textBaseline='alphabetic';
+  ctx.shadowColor='rgba(0,0,0,0.85)'; ctx.shadowBlur=Math.round(S*0.25); ctx.shadowOffsetY=Math.round(S*0.06);
+  const cfg=_cfg();
+  // Bottom-left block, drawn bottom-up: caption → coords → project → time → wordmark.
+  const lines=[];
+  if(t.caption){
+    const bits=[p.locLabel,p.caption].filter(Boolean).join(' · ');
+    if(bits) lines.push({txt:bits,font:`${S}px Arial`});
+  }
+  if(t.gps&&p.lat!=null&&p.lng!=null){
+    const acc=p.gpsAcc!=null?` ±${Math.round(p.gpsAcc*3.28084)}ft`:'';
+    lines.push({txt:`${(+p.lat).toFixed(5)}, ${(+p.lng).toFixed(5)}${acc}`,font:`${S}px Arial`});
+  }
+  if(t.project){
+    const who=[cfg.preparedBy,cfg.projectName].filter(Boolean).join(' · ');
+    if(who) lines.push({txt:who,font:`${S}px Arial`});
+  }
+  if(t.time){
+    const d=new Date(p.takenAt||p.uploadedAt||Date.now());
+    lines.push({txt:_fmtClock(d),font:`bold ${Math.round(S*1.12)}px Arial`,bar:true});
+  }
+  lines.push({wordmark:true});
+  let y=H-pad;
+  for(const ln of lines){
+    if(ln.wordmark){
+      const fs=S;
+      ctx.font=`bold ${fs}px Arial`;
+      let x=pad;
+      ctx.fillStyle='#ffffff'; ctx.fillText('GROUND',x,y); x+=ctx.measureText('GROUND').width+Math.round(fs*0.18);
+      ctx.fillStyle='#C9A84C'; ctx.fillText('|',x,y); x+=ctx.measureText('|').width+Math.round(fs*0.18);
+      ctx.fillStyle='#38b6c4'; ctx.fillText('LOG',x,y);
+      y-=lh;
+      continue;
+    }
+    ctx.font=ln.font; ctx.fillStyle='#ffffff';
+    let x=pad;
+    if(ln.bar){
+      ctx.save(); ctx.shadowBlur=0;
+      ctx.fillStyle='#C9A84C';
+      ctx.fillRect(pad, y-Math.round(S*1.02), Math.round(S*0.18), Math.round(S*1.24));
+      ctx.restore();
+      x=pad+Math.round(S*0.55);
+      ctx.fillStyle='#ffffff';
+    }
+    ctx.fillText(ln.txt,x,y,Math.round(W*0.72));
+    y-=lh;
+  }
+  // Bottom-right: compass bearing + tag badges (the #27 layout call).
+  ctx.textAlign='right';
+  const rx=W-pad;
+  let ry=H-pad;
+  if(t.gps&&p.direction!=null){
+    const dirs=['N','NE','E','SE','S','SW','W','NW'];
+    const card=dirs[Math.round(p.direction/45)%8];
+    ctx.font=`bold ${S}px Arial`; ctx.fillStyle='#ffffff';
+    ctx.fillText(`${card} ${Math.round(p.direction)}°`,rx,ry); ry-=Math.round(lh*1.1);
+    ctx.font=`${Math.round(S*1.5)}px Arial`;
+    ctx.fillText('◐',rx,ry); ry-=Math.round(lh*1.25);
+  }
+  if(t.tags){
+    const em=[p.swppp?'🌊':null,p.seedTag?'🌱':null,p.repairTag?'🚩':null].filter(Boolean).join(' ');
+    if(em){ ctx.font=`${Math.round(S*1.3)}px Arial`; ctx.fillText(em,rx,ry); }
+  }
+  ctx.textAlign='left';
+  return await new Promise(res=>c.toBlob(res,'image/jpeg',0.92));
+}
+window.camStampBlob=camStampBlob;
+
 function _fmtClock(d){
   const t=d.toLocaleTimeString([], {hour:'numeric',minute:'2-digit'});
   const dt=d.toLocaleDateString([], {month:'short',day:'numeric',year:'numeric'});
@@ -174,7 +275,10 @@ function _buildDom(){
   el.innerHTML=`
     <div id="gl-cam-feed"></div>
     <div class="glc-top">
-      <button class="glc-close" title="Close camera">✕</button>
+      <div style="display:flex;gap:8px">
+        <button class="glc-close" title="Close camera">✕</button>
+        <button class="glc-close glc-gear" title="Stamp elements">⚙</button>
+      </div>
       <div class="glc-tags">
         ${TAGS.map(t=>`<button class="glc-chip${_tags.has(t.key)?' on':''}" data-tag="${t.key}">${t.chip}</button>`).join('')}
       </div>
@@ -191,6 +295,7 @@ function _buildDom(){
     <div id="glc-strip" style="display:none"></div>`;
   document.body.appendChild(el);
   el.querySelector('.glc-close').onclick=()=>camClose();
+  el.querySelector('.glc-gear').onclick=_stampSheet;
   el.querySelectorAll('.glc-chip').forEach(btn=>{
     btn.onclick=()=>{
       const k=btn.dataset.tag;
@@ -205,6 +310,13 @@ function _buildDom(){
 
 function _renderOverlay(){
   const el=document.getElementById('gl-camera'); if(!el) return;
+  // WYSIWYG: the live preview shows exactly the elements the stamp will render.
+  const t=camStampDefaults();
+  el.querySelector('.glc-time').style.display=t.time?'':'none';
+  el.querySelector('.glc-proj').style.display=t.project?'':'none';
+  el.querySelector('.glc-coords').style.display=t.gps?'':'none';
+  el.querySelector('.glc-cap').style.display=t.caption?'':'none';
+  el.querySelector('.glc-compass').style.display=t.gps?'':'none';
   el.querySelector('.glc-time').textContent=_fmtClock(new Date());
   _renderLive();
 }
@@ -213,6 +325,43 @@ function _renderLive(){
   el.querySelector('.glc-coords').textContent=_fmtCoords();
   const h=_headingLabel();
   el.querySelector('.glc-hdg').textContent=h.txt;
+}
+
+// ⚙ Stamp-elements sheet: per-user defaults for what the rendered stamp (and the
+// live preview) includes. The photo itself always stores clean + full metadata —
+// these are display choices, changeable per photo at share time too.
+function _stampSheet(){
+  const t=camStampDefaults();
+  const ov=document.createElement('div');
+  ov.className='modal-overlay';
+  ov.style.cssText='z-index:11600';
+  ov.innerHTML=`
+    <div class="modal-box" style="max-width:330px;width:92%">
+      <div class="modal-title" style="margin-bottom:6px">⚙ Stamp elements</div>
+      <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:12px;line-height:1.5">What the stamped rendering shows. The saved photo is always clean — you can change these per photo when sharing.</div>
+      <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px">
+        ${STAMP_ELEMENTS.map(e=>`
+          <button class="glc-st-row" data-k="${e.key}" style="display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:10px 12px;border-radius:8px;cursor:pointer;border:1px solid ${t[e.key]?'var(--amber)':'var(--border)'};background:var(--s1);color:var(--text);font-family:var(--mono);font-size:12px">
+            <span style="color:${t[e.key]?'var(--amber)':'var(--muted)'}">${t[e.key]?'☑':'☐'}</span>${e.label}
+          </button>`).join('')}
+      </div>
+      <div class="modal-btns"><button class="modal-cancel" id="glc-st-done">Done</button></div>
+    </div>`;
+  (document.getElementById('gl-camera')||document.body).appendChild(ov);
+  const cur={...t};
+  ov.querySelectorAll('.glc-st-row').forEach(btn=>{
+    btn.onclick=()=>{
+      const k=btn.dataset.k;
+      cur[k]=!cur[k];
+      btn.style.borderColor=cur[k]?'var(--amber)':'var(--border)';
+      const chk=btn.querySelector('span');
+      chk.textContent=cur[k]?'☑':'☐';
+      chk.style.color=cur[k]?'var(--amber)':'var(--muted)';
+      camStampSetDefaults(cur);
+      _renderOverlay();
+    };
+  });
+  ov.querySelector('#glc-st-done').onclick=()=>ov.remove();
 }
 function _paintCapLine(caption,loc){
   const el=document.getElementById('gl-camera'); if(!el) return;

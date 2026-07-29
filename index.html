@@ -1474,7 +1474,7 @@ body.is-native select { font-size: 16px !important; }
           <div class="ob-slide-text">
             <div class="ob-eyebrow">FEATURE 04</div>
             <div class="ob-slide-title">PHOTO LOG</div>
-            <div class="ob-slide-desc">Upload <span class="ob-hi-amber">Solocator-tagged photos</span> directly to your daily log. Auto-compressed, date-stamped, and embedded in your report.</div>
+            <div class="ob-slide-desc">Shoot with the <span class="ob-hi-amber">built-in camera</span> — live GPS, compass and tags, with a <span class="ob-hi-teal">branded stamp you control</span> on every shared copy — or upload <span class="ob-hi-amber">Solocator-tagged photos</span>. Auto-compressed, date-stamped, and embedded in your report.</div>
           </div>
         </div>
 
@@ -2410,6 +2410,7 @@ Anticipated rain — AM weather monitoring expected"></textarea>
     <!-- FAB -->
     <button id="map-fab" onclick="mapToggleFab()" title="Tracker tools">✚</button>
     <div id="map-fab-palette">
+      <div class="map-fab-row"><span class="map-fab-lbl">Camera</span><button class="map-fab-btn" id="map-fab-cam-btn" onclick="mapToggleFab();phOpenCamera()" title="Open the in-app camera">📸</button></div>
       <div class="map-fab-row"><span class="map-fab-lbl">Draw</span><button class="map-fab-btn" id="map-fab-draw-btn" onclick="mapFabDraw()" title="Draw tracker entry">✏️</button></div>
       <div class="map-fab-row"><span class="map-fab-lbl">Measure</span><button class="map-fab-btn" id="map-fab-measure-btn" onclick="mapFabMeasure()" title="Measure area / distance">📏</button></div>
       <div class="map-fab-row"><span class="map-fab-lbl">Tracker</span><button class="map-fab-btn" id="map-fab-tracker-btn" onclick="mapShowTrackerSheet()" title="Manage tracker categories">☰</button></div>
@@ -2782,6 +2783,7 @@ Anticipated rain — AM weather monitoring expected"></textarea>
     <textarea class="ph-lb-caption" id="ph-lb-caption" placeholder="Add a caption…" rows="2"></textarea>
     <div class="ph-lb-row">
       <button class="btn btn-outline" id="ph-lb-share" style="font-size:10px;padding:6px 10px;margin-right:auto;display:none" onclick="phShareCurrent()">📤 Share to project</button>
+      <button class="btn btn-outline" id="ph-lb-stamp" style="font-size:10px;padding:6px 10px;display:none;border-color:var(--amber);color:var(--amber)" onclick="phStampCurrent()">🏷 Stamped copy</button>
       <button class="btn btn-outline" id="ph-lb-swppp" style="font-size:10px;padding:6px 10px;display:none" onclick="phToggleSwpppCurrent()">🌊 Tag as SWPPP</button>
       <button class="btn btn-outline" id="ph-lb-seed" style="font-size:10px;padding:6px 10px;display:none" onclick="phToggleSeedCurrent()">🌱 Tag as Seed Tag</button>
       <button class="btn btn-outline" style="font-size:10px;padding:6px 10px" onclick="phCloseLightbox()">Close</button>
