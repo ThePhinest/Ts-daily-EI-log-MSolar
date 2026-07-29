@@ -121,6 +121,12 @@ if (Capacitor.isNativePlatform && Capacitor.isNativePlatform()) {
     if (isActive && typeof window.checkNewDay === 'function') {
       window.checkNewDay()
     }
+    // Same resume-from-memory gap for KML layers: the boot-time load never
+    // re-fires, so layers imported on another device don't appear until a
+    // force-close. Reconcile (throttled, offline-safe) on every foreground.
+    if (isActive && typeof window.kmlReconcileLayers === 'function') {
+      window.kmlReconcileLayers()
+    }
   })
 }
 

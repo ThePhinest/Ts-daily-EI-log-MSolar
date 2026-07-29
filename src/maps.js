@@ -1545,6 +1545,8 @@ function mapRenderLegend(){
 function mapUpdateKmlLayerList(){
   const list = document.getElementById('map-kml-layer-list');
   if(!list) return;
+  // Pull cross-device folder organization once per project (async; re-renders on change).
+  _tcfHydrate((typeof _activeProjectId==='function')?_activeProjectId():'default');
   // Empty state — also reset edit mode in case the last layer was just deleted
   if(!_mapKmlLayers.length){
     _mapKmlEditMode = false;
@@ -1808,13 +1810,45 @@ function mapUpdateKmlLayerList(){
 // ═══════════════════════════════════════════
 // TRACKER CATEGORY FOLDERS + ⋯ ACTION SHEETS (7/28, delta #21)
 // ═══════════════════════════════════════════
-// Folder membership is per-user per-project VIEW STATE (like layer order):
-// a tiny {catId: folderName} map in localStorage — Tier 2 per the storage
-// architecture, same shelf as gl_tc_order_/gl_kfl_order_.
+// Folder membership is per-user per-project view state. localStorage is the
+// fast synchronous cache; the user-subtree settings doc (clAmberHours pattern)
+// is the cross-device copy — Tim organizes once, every device follows (7/28:
+// device-local-only was wrong, corrected same day).
+function _tcfCloudWrite(fields,pid){
+  try{
+    if(typeof window._udb==='function'&&window._fbReady&&pid!=='default')
+      window._udb().collection('settings').doc(pid).set({...fields,_ts:Date.now()},{merge:true}).catch(()=>{});
+  }catch{}
+}
 function _getTcFolderMap(pid){ try{ return JSON.parse(localStorage.getItem('gl_tcf_map_'+pid)||'{}'); }catch{ return {}; } }
-function _setTcFolderMap(m,pid){ try{ localStorage.setItem('gl_tcf_map_'+pid,JSON.stringify(m)); }catch{} }
+function _setTcFolderMap(m,pid){ try{ localStorage.setItem('gl_tcf_map_'+pid,JSON.stringify(m)); }catch{} _tcfCloudWrite({tcfMap:JSON.stringify(m)},pid); }
 function _getTcfFolderOrder(pid){ try{ return JSON.parse(localStorage.getItem('gl_tcf_order_'+pid)||'[]'); }catch{ return []; } }
-function _setTcfFolderOrder(order,pid){ try{ localStorage.setItem('gl_tcf_order_'+pid,JSON.stringify(order)); }catch{} }
+function _setTcfFolderOrder(order,pid){ try{ localStorage.setItem('gl_tcf_order_'+pid,JSON.stringify(order)); }catch{} _tcfCloudWrite({tcfOrder:JSON.stringify(order)},pid); }
+
+// One-shot per-project hydrate: pull folder state from the settings doc into
+// localStorage (remote wins), or backfill local → cloud when the doc predates
+// this feature (migrates organization done before sync shipped).
+const _tcfHydrated = new Set();
+function _tcfHydrate(pid){
+  if(_tcfHydrated.has(pid) || pid==='default') return;
+  if(typeof window._udb!=='function' || !window._fbReady) return;   // retry next render
+  _tcfHydrated.add(pid);
+  try{
+    window._udb().collection('settings').doc(pid).get().then(doc=>{
+      const d = doc.exists ? doc.data() : {};
+      let changed=false;
+      [['tcfMap','gl_tcf_map_'+pid,'{}'],['tcfOrder','gl_tcf_order_'+pid,'[]'],['kflOrder','gl_kfl_order_'+pid,'[]']].forEach(([field,lsKey,empty])=>{
+        const local = localStorage.getItem(lsKey);
+        if(typeof d[field]==='string'){
+          if(d[field]!==local){ try{ localStorage.setItem(lsKey,d[field]); changed=true; }catch{} }
+        } else if(local && local!==empty){
+          _tcfCloudWrite({[field]:local},pid);   // backfill pre-sync organization
+        }
+      });
+      if(changed) mapUpdateKmlLayerList();
+    }).catch(()=>{ _tcfHydrated.delete(pid); });
+  }catch{ _tcfHydrated.delete(pid); }
+}
 
 // Generic bottom action sheet (house dark style). Buttons run their fn and close.
 function _glActionSheet(title, items){
@@ -2257,6 +2291,72 @@ async function mapPromoteKmlLayer(layerId){
 }
 window.mapPromoteKmlLayer=mapPromoteKmlLayer;
 
+// ── Foreground reconcile (7/28) ─────────────────────────────────────────────
+// kmlLoadLayers runs once at boot, but iOS resumes the WebView from memory —
+// a layer imported on another device never appears until a force-close.
+// On resume/visibility we re-read the two layer docs and reconcile the list:
+// add unseen layers (metadata-only; features load on toggle), sync name/folder
+// on existing ones, drop remotely-deleted ones. Throttled; offline = no-op.
+let _kmlReconcileLast = 0;
+async function kmlReconcileLayers(force){
+  const now = Date.now();
+  if(!force && now - _kmlReconcileLast < 30000) return;
+  _kmlReconcileLast = now;
+  if(!db || !_fbReady) return;
+  const pid = (typeof _activeProjectId === 'function') ? _activeProjectId() : 'default';
+  let data = null;
+  try{
+    const doc = await _projDataUser(pid).collection('kml').doc('layers').get();
+    if(doc.exists) data = doc.data().data;
+    const sdoc = await db.collection('projects').doc(pid).collection('kmlLayers').doc('layers').get();
+    if(sdoc.exists && Array.isArray(sdoc.data().data) && sdoc.data().data.length){
+      const shared = sdoc.data().data;
+      const ownById = new Map((data || []).map(l => [l.id, l]));
+      const merged = shared.map(s => ownById.has(s.id) ? { ...s, visible: ownById.get(s.id).visible } : s);
+      (data || []).forEach(o => { if(!shared.find(s => s.id === o.id)) merged.push(o); });
+      data = merged;
+    }
+  }catch(e){ return; }   // offline / not signed in — try again next resume
+  if(!Array.isArray(data)) return;
+  const remoteIds = new Set(data.map(l => l.id));
+  let changed = false;
+  // Drop layers deleted on another device (same-account canon; saves are
+  // write-through on every mutation, so a local layer missing remotely was
+  // deleted remotely).
+  for(let i=_mapKmlLayers.length-1; i>=0; i--){
+    const l = _mapKmlLayers[i];
+    if(!remoteIds.has(l.id)){
+      if(_mapInstance){
+        KML_SUBLAYER_TYPES.forEach(t=>{ if(_mapInstance.getLayer(l.id+'-'+t)) _mapInstance.removeLayer(l.id+'-'+t); });
+        if(_mapInstance.getSource(l.id)) _mapInstance.removeSource(l.id);
+      }
+      _mapKmlLayers.splice(i,1);
+      changed = true;
+    }
+  }
+  for(const remote of data){
+    const local = _mapKmlLayers.find(l => l.id === remote.id);
+    if(!local){
+      _mapKmlLayers.push({ ...remote });
+      changed = true;
+      if(remote.visible) mapToggleKmlLayerById(remote.id, true);   // render via cached fetch path
+    } else if(local.name !== remote.name || (local.folderName||'') !== (remote.folderName||'')){
+      local.name = remote.name;
+      local.folderName = remote.folderName || '';
+      changed = true;
+    }
+  }
+  if(changed) mapUpdateKmlLayerList();
+}
+window.kmlReconcileLayers = kmlReconcileLayers;
+// Web/PWA path: tab or app becomes visible again. (Native also fires this in
+// WKWebView; the throttle absorbs the double-fire with the Capacitor listener.)
+if(typeof document !== 'undefined'){
+  document.addEventListener('visibilitychange', ()=>{
+    if(document.visibilityState === 'visible' && _mapKmlLayers.length >= 0) kmlReconcileLayers();
+  });
+}
+
 // B2 Stage 1.4 — called from projects.js loadProject() on project switch.
 // Tears down all KML sources/layers + clears in-memory state, then triggers
 // kmlLoadLayers() to rehydrate from the new project's per-project cache.
@@ -2486,7 +2586,7 @@ let _tcLayerVisible={};       // { [catId]: boolean } — default true
 function _getTcLayerOrder(pid){ try{ return JSON.parse(localStorage.getItem('gl_tc_order_'+pid)||'[]'); }catch{ return []; } }
 function _setTcLayerOrder(order,pid){ try{ localStorage.setItem('gl_tc_order_'+pid,JSON.stringify(order)); }catch{} }
 function _getKmlFolderOrder(pid){ try{ return JSON.parse(localStorage.getItem('gl_kfl_order_'+pid)||'[]'); }catch{ return []; } }
-function _setKmlFolderOrder(order,pid){ try{ localStorage.setItem('gl_kfl_order_'+pid,JSON.stringify(order)); }catch{} }
+function _setKmlFolderOrder(order,pid){ try{ localStorage.setItem('gl_kfl_order_'+pid,JSON.stringify(order)); }catch{} if(typeof _tcfCloudWrite==='function') _tcfCloudWrite({kflOrder:JSON.stringify(order)},pid); }
 function _applyKmlFolderMapOrder(){
   if(!_mapInstance) return;
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
