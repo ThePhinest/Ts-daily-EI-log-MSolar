@@ -201,7 +201,7 @@ async function _doPolish(selectedFields, apiKey){
     const payload=Object.fromEntries(selectedFields.map(function(f){return[f.id,f.value];}));
     const systemPrompt='You are a professional field inspector writing assistant. Rewrite the provided field log text into clean, professional language suitable for a regulatory compliance report. Rules: use "conducting" not "performing"; use definitive language ("will" not "anticipated to"); contractor compliance language must be collaborative in tone; do not use first person; preserve all specific facts, measurements, locations, and compliance levels exactly as entered; do not add information not present in the original; do not remove relevant observations. Return a JSON object with the same keys as provided, containing the rewritten text for each field. Return ONLY the JSON object — no preamble, no markdown, no code fences.';
     const userPrompt='Rewrite these daily log fields:\n'+JSON.stringify(payload);
-    const resp=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:4000,system:systemPrompt,messages:[{role:'user',content:userPrompt}]})});
+    const resp=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-sonnet-5',max_tokens:8000,system:systemPrompt,messages:[{role:'user',content:userPrompt}]})});
     if(!resp.ok){const err=await resp.text();throw new Error('API '+resp.status+': '+err);}
     const data=await resp.json();
     const text=data.content[0].text;
@@ -284,7 +284,7 @@ async function rptCallClaude(apiKey, logData, compEntries, systemPromptIn){
   const finalSystemPrompt=(window._rptSkipPolish===true)
     ? systemPromptIn + '\n\nIMPORTANT: The user has already professionally formalized the narrative text fields. Include ALL narrative content VERBATIM — do NOT rephrase, restructure, or alter any provided text.'
     : systemPromptIn;
-  const resp=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:4000,system:finalSystemPrompt,messages:[{role:'user',content:userPrompt}]})});
+  const resp=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-sonnet-5',max_tokens:8000,system:finalSystemPrompt,messages:[{role:'user',content:userPrompt}]})});
   if(!resp.ok){const err=await resp.text();throw new Error('Claude API error '+resp.status+': '+err);}
   const data=await resp.json();
   const text=data.content[0].text;
