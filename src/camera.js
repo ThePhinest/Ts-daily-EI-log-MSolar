@@ -31,6 +31,10 @@ function _lastKey(){ return 'gl_cam_last::'+_pid(); }
 function _last(){ try{ return JSON.parse(localStorage.getItem(_lastKey())||'{}')||{}; }catch{ return {}; } }
 function _saveLast(v){ try{ localStorage.setItem(_lastKey(),JSON.stringify(v)); }catch{} }
 function _tagsKey(){ return 'gl_cam_tags::'+_pid(); }
+// Per-project default caption (Tim 7/29: "captioned automatically… whatever the
+// user chooses in settings") — seeds the carry-forward when nothing's been typed.
+function _defCapKey(){ return 'gl_cam_defcap::'+_pid(); }
+function _defCap(){ try{ return localStorage.getItem(_defCapKey())||''; }catch{ return ''; } }
 
 const TAGS=[
   {key:'swppp', chip:'🌊 SWPPP'},
@@ -177,6 +181,8 @@ export async function camOpen(ctx){
   // Armed tags: launch context wins (e.g. 📷 from a punchlist item arms 🚩),
   // else the per-project remembered set.
   try{ _tags=new Set(ctx&&Array.isArray(ctx.tags)?ctx.tags:JSON.parse(localStorage.getItem(_tagsKey())||'[]')); }catch{ _tags=new Set(); }
+  // Seed the caption carry-forward from the per-project default on first use.
+  { const l=_last(); if(!l.caption&&_defCap()){ _saveLast({...l,caption:_defCap()}); } }
   _buildDom();
   document.documentElement.classList.add('camera-live');
   try{
@@ -339,13 +345,15 @@ function _stampSheet(){
     <div class="modal-box" style="max-width:330px;width:92%">
       <div class="modal-title" style="margin-bottom:6px">⚙ Stamp elements</div>
       <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:12px;line-height:1.5">What the stamped rendering shows. The saved photo is always clean — you can change these per photo when sharing.</div>
-      <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px">
+      <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px">
         ${STAMP_ELEMENTS.map(e=>`
           <button class="glc-st-row" data-k="${e.key}" style="display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:10px 12px;border-radius:8px;cursor:pointer;border:1px solid ${t[e.key]?'var(--amber)':'var(--border)'};background:var(--s1);color:var(--text);font-family:var(--mono);font-size:12px">
             <span style="color:${t[e.key]?'var(--amber)':'var(--muted)'}">${t[e.key]?'☑':'☐'}</span>${e.label}
           </button>`).join('')}
       </div>
-      <div class="modal-btns"><button class="modal-cancel" id="glc-st-done">Done</button></div>
+      <label style="font-family:var(--mono);font-size:10px;color:var(--muted)">DEFAULT CAPTION (this project — used until you type your own)</label>
+      <input type="text" id="glc-st-defcap" value="${_defCap().replace(/"/g,'&quot;')}" placeholder="e.g. Daily SWPPP inspection" style="width:100%;box-sizing:border-box;background:var(--s1);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--body);font-size:16px;padding:9px 12px;outline:none;margin:4px 0 16px">
+      <div class="modal-btns"><button class="modal-confirm" id="glc-st-done">Done</button></div>
     </div>`;
   (document.getElementById('gl-camera')||document.body).appendChild(ov);
   const cur={...t};
@@ -361,7 +369,16 @@ function _stampSheet(){
       _renderOverlay();
     };
   });
-  ov.querySelector('#glc-st-done').onclick=()=>ov.remove();
+  ov.querySelector('#glc-st-done').onclick=()=>{
+    const dc=ov.querySelector('#glc-st-defcap').value.trim();
+    const oldDefault=_defCap();
+    try{ localStorage.setItem(_defCapKey(),dc); }catch{}
+    // Adopt immediately if the carry-forward is empty or still the old default.
+    const l=_last();
+    if(dc&&(!l.caption||!l.caption.trim()||l.caption===oldDefault)) _saveLast({...l,caption:dc});
+    _paintCapLine(_last().caption||'',_last().loc||'');
+    ov.remove();
+  };
 }
 function _paintCapLine(caption,loc){
   const el=document.getElementById('gl-camera'); if(!el) return;
