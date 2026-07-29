@@ -651,30 +651,33 @@ async function _phLbShow(index){
     const pid = (typeof _activeProjectId==='function') ? _activeProjectId() : 'default';
     const inProject = own && p.projectId === pid && pid !== 'default';
     share.style.display = inProject ? '' : 'none';
-    share.textContent = p.published ? '🌐 Shared ✓ — tap to unshare' : '📤 Share to project';
+    share.textContent = p.published ? '🌐 Shared ✓' : '📤 Share';
+    share.title = p.published ? 'Shared with project members — tap to unshare' : 'Share to project members';
   }
   // SWPPP / Seed-Tag toggles — own photos only. SWPPP-tagged photos sort
   // first in the QI report's photo picker (swppp.js §11).
   const swBtn = document.getElementById('ph-lb-swppp');
   if(swBtn){
     swBtn.style.display = own ? '' : 'none';
-    swBtn.textContent = p.swppp ? '🌊 SWPPP ✓' : '🌊 Tag as SWPPP';
+    swBtn.textContent = p.swppp ? '🌊 SWPPP ✓' : '🌊 SWPPP';
+    swBtn.title = p.swppp ? 'SWPPP-tagged — tap to untag' : 'Tag as SWPPP documentation';
     swBtn.classList.toggle('ph-swppp-on', !!p.swppp);
   }
   const sdBtn = document.getElementById('ph-lb-seed');
   if(sdBtn){
     sdBtn.style.display = own ? '' : 'none';
-    sdBtn.textContent = p.seedTag ? '🌱 Seed Tag ✓' : '🌱 Tag as Seed Tag';
+    sdBtn.textContent = p.seedTag ? '🌱 Seed ✓' : '🌱 Seed';
+    sdBtn.title = p.seedTag ? 'Seed-tagged — tap to untag' : 'Tag as a seed tag photo';
     sdBtn.classList.toggle('ph-seed-on', !!p.seedTag);
   }
-  // 🏷 Stamped copy — in-app camera photos only (they carry the metadata record
+  const delBtn = document.getElementById('ph-lb-del');
+  if(delBtn) delBtn.style.display = own ? '' : 'none';
+  // 🏷 Stamp section — in-app camera photos only (they carry the metadata record
   // the stamp renders from; imported photos keep their own baked-in overlays).
-  // One-tap save; the pill row underneath adjusts which elements render.
+  // Pills adjust what renders (lightbox view + every export); button saves a copy.
   const isCam = own && p.type==='camera';
-  const stBtn = document.getElementById('ph-lb-stamp');
-  if(stBtn) stBtn.style.display = isCam ? '' : 'none';
-  const stRow = document.getElementById('ph-lb-stamp-row');
-  if(stRow){ stRow.style.display = isCam ? 'flex' : 'none'; if(isCam) _phStampPillRow(); }
+  const stWrap = document.getElementById('ph-lb-stamp-wrap');
+  if(stWrap){ stWrap.style.display = isCam ? 'flex' : 'none'; if(isCam) _phStampPillRow(); }
   if(cap) cap.readOnly = !own;
   _phLbUpdateNav();
   const full = await phGetFull(id);
@@ -1070,8 +1073,17 @@ async function phStampCurrent(){
     console.error('stamped copy failed:',e);
     alert('Stamped copy failed — see console.');
   }finally{
-    if(btn){ btn.disabled=false; btn.textContent='🏷 Stamped copy'; }
+    if(btn){ btn.disabled=false; btn.textContent='🏷 Save stamped copy'; }
   }
+}
+
+// 🗑 Delete from the lightbox — closes it, then runs the standard soft-delete
+// confirm (30-day undo window via the trash section).
+function phDeleteCurrent(){
+  const id=_phLbId;
+  if(!id) return;
+  phCloseLightbox();
+  phConfirmDelete(id);
 }
 
 // Lazy camera launcher — the viewfinder module (and the capgo plugin with it)
@@ -1157,6 +1169,7 @@ window.phSaveCameraPhoto = phSaveCameraPhoto;
 window.phSaveCloudOne = phSaveCloudOne;
 window.phOpenCamera = phOpenCamera;
 window.phStampCurrent = phStampCurrent;
+window.phDeleteCurrent = phDeleteCurrent;
 window.phOpenLightbox = phOpenLightbox;
 window.phCloseLightbox = phCloseLightbox;
 window.phLbNext = phLbNext;
