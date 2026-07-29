@@ -280,6 +280,11 @@ function _phDocFor(p){
   if(p.seedTag) doc.seedTag = true;
   if(p.seedCap) doc.seedCap = p.seedCap;
   if(p.distCap) doc.distCap = p.distCap;
+  // 📸 in-app camera fields (src/camera.js): the metadata record half of the
+  // two-layer model — the stamp overlay renders from these on demand.
+  if(p.locLabel) doc.locLabel = p.locLabel;
+  if(p.repairTag) doc.repairTag = true;
+  if(p.gpsAcc !== undefined) doc.gpsAcc = p.gpsAcc;
   if(p.published !== undefined){ doc.published = p.published; doc.publishedAt = p.publishedAt || null; }
   return doc;
 }
@@ -925,6 +930,67 @@ async function phInit(){
 // ── Reset day window and re-render (called from showPage) ──
 function phResetAndRender(){ _phDaysShown = 7; phRender(); }
 
+// ── 📸 In-app camera save (src/camera.js) ──
+// Stores the CLEAN original JPEG + the shutter-time metadata record (GPS, heading,
+// caption, location label, tags). The branded stamp is a rendering composited at
+// share/export time — never baked here — so every element stays toggleable and a
+// clean copy always exists (two-layer model, locked 7/29).
+async function phSaveCameraPhoto(blob, meta){
+  if(!storage||!_currentUser||!_fbReady) return null;
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const today=new Date().toLocaleDateString('en-CA');
+  const id='cam'+Date.now().toString(36)+Math.random().toString(36).slice(2,5);
+  const fname=`camera-${id}.jpg`;
+  // Thumbnail via canvas (same path as map captures).
+  const bmp=await createImageBitmap(blob);
+  const tc=document.createElement('canvas');
+  tc.width=280; tc.height=Math.round(280*bmp.height/bmp.width)||157;
+  tc.getContext('2d').drawImage(bmp,0,0,tc.width,tc.height);
+  bmp.close();
+  const thumb=tc.toDataURL('image/jpeg',0.72);
+  let storageUrl='';
+  try{
+    const ref=storage.ref(`photos/${_currentUser.uid}/${id}/${fname}`);
+    const snap=await ref.put(blob,{contentType:'image/jpeg'});
+    storageUrl=await snap.ref.getDownloadURL();
+  }catch(e){ console.warn('phSaveCameraPhoto upload failed:',e.message); return null; }
+  const m=meta||{};
+  const entry={
+    id, date:today, caption:m.caption||'', filename:fname, thumb, storageUrl,
+    uploadedAt:Date.now(), takenAt:Date.now(), projectId:pid, type:'camera',
+    ...(m.lat!=null&&m.lng!=null?{lat:m.lat,lng:m.lng}:{}),
+    ...(m.heading!=null?{direction:Math.round(m.heading)}:{}),
+    ...(m.accuracy!=null?{gpsAcc:Math.round(m.accuracy)}:{}),
+    ...(m.locLabel?{locLabel:m.locLabel}:{}),
+  };
+  const tags=Array.isArray(m.tags)?m.tags:[];
+  if(tags.includes('swppp'))  entry.swppp=true;
+  if(tags.includes('seed'))   entry.seedTag=true;
+  if(tags.includes('repair')) entry.repairTag=true;
+  window._phPhotos=(window._phPhotos||[]);
+  window._phPhotos.push(entry);
+  phSaveLocal();
+  phSaveCloudOne(entry);
+  try{
+    phRender();
+    if(typeof mapRenderPhotoPins==='function') mapRenderPhotoPins();
+  }catch(e){}
+  return entry;
+}
+
+// Lazy camera launcher — the viewfinder module (and the capgo plugin with it)
+// loads on first use only; nothing lands in the main bundle (7 MiB SW cap).
+let _camMod=null;
+async function phOpenCamera(ctx){
+  try{
+    if(!_camMod) _camMod=await import('./camera.js');
+    _camMod.camOpen(ctx);
+  }catch(e){
+    console.error('camera module failed to load:',e);
+    alert('Camera failed to open — try refreshing the app.');
+  }
+}
+
 // ── Save a captured map view blob as a photo record ──
 async function phSaveCapturedImage(blob, photoDate, captionOverride, opts){
   if(!storage||!_currentUser||!_fbReady) return null;
@@ -991,6 +1057,9 @@ window.phSaveLocal = phSaveLocal;
 window.phLoadMore = phLoadMore;
 window.phClearFilters = phClearFilters;
 window.phSaveCapturedImage = phSaveCapturedImage;
+window.phSaveCameraPhoto = phSaveCameraPhoto;
+window.phSaveCloudOne = phSaveCloudOne;
+window.phOpenCamera = phOpenCamera;
 window.phOpenLightbox = phOpenLightbox;
 window.phCloseLightbox = phCloseLightbox;
 window.phLbNext = phLbNext;
