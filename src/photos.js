@@ -971,7 +971,7 @@ function phResetAndRender(){ _phDaysShown = 7; phRender(); }
 // share/export time — never baked here — so every element stays toggleable and a
 // clean copy always exists (two-layer model, locked 7/29).
 async function phSaveCameraPhoto(blob, meta){
-  if(!storage||!_currentUser||!_fbReady) return null;
+  if(!_currentUser) return null;
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
   const today=new Date().toLocaleDateString('en-CA');
   const id='cam'+Date.now().toString(36)+Math.random().toString(36).slice(2,5);
@@ -983,15 +983,14 @@ async function phSaveCameraPhoto(blob, meta){
   tc.getContext('2d').drawImage(bmp,0,0,tc.width,tc.height);
   bmp.close();
   const thumb=tc.toDataURL('image/jpeg',0.72);
-  let storageUrl='';
-  try{
-    const ref=storage.ref(`photos/${_currentUser.uid}/${id}/${fname}`);
-    const snap=await ref.put(blob,{contentType:'image/jpeg'});
-    storageUrl=await snap.ref.getDownloadURL();
-  }catch(e){ console.warn('phSaveCameraPhoto upload failed:',e.message); return null; }
   const m=meta||{};
+  // LOCAL-FIRST (Tim device test 7/29): the record saves and the post-shot strip
+  // pops immediately; the Storage upload runs in the background and patches in.
+  // A failed upload (dead zone in the field) keeps the shot local instead of
+  // losing it — the cloud doc syncs with the thumb, storageUrl heals when the
+  // background upload (or a later phRecoverStorageUrls pass) lands.
   const entry={
-    id, date:today, caption:m.caption||'', filename:fname, thumb, storageUrl,
+    id, date:today, caption:m.caption||'', filename:fname, thumb, storageUrl:'',
     uploadedAt:Date.now(), takenAt:Date.now(), projectId:pid, type:'camera',
     ...(m.lat!=null&&m.lng!=null?{lat:m.lat,lng:m.lng}:{}),
     ...(m.heading!=null?{direction:Math.round(m.heading)}:{}),
@@ -1005,7 +1004,16 @@ async function phSaveCameraPhoto(blob, meta){
   window._phPhotos=(window._phPhotos||[]);
   window._phPhotos.push(entry);
   phSaveLocal();
-  phSaveCloudOne(entry);
+  (async()=>{
+    try{
+      if(!storage||!_fbReady) throw new Error('firebase not ready');
+      const ref=storage.ref(`photos/${_currentUser.uid}/${id}/${fname}`);
+      const snap=await ref.put(blob,{contentType:'image/jpeg'});
+      entry.storageUrl=await snap.ref.getDownloadURL();
+      phSaveLocal();
+    }catch(e){ console.warn('phSaveCameraPhoto upload deferred:',e.message); }
+    phSaveCloudOne(entry);
+  })();
   // Contextual launch (📸 from a punchlist flag / drawing popup): auto-attach the
   // photo to that tracker entry — the shot lands where it documents.
   if(m.attach&&m.attach.type==='entry'&&m.attach.id&&typeof trAddPhotoLink==='function'){

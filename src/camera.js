@@ -223,6 +223,13 @@ async function _startPreview(){
     toBack:true,
     disableAudio:true,          // stills only — never touches the mic
     position:'rear',
+    // Full-screen frame (Tim device test 7/29): without an explicit frame the iOS
+    // preview sizes to the sensor's 4:3 at the top and leaves the rest black.
+    // Given the frame, the native layer aspect-FILLS the whole screen and the
+    // overlay text sits on the live image exactly like the rendered stamp.
+    x:0, y:0,
+    width:Math.round(window.innerWidth),
+    height:Math.round(window.innerHeight),
     disableExifHeaderStripping:false,
   });
 }
