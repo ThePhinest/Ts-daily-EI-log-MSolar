@@ -884,21 +884,39 @@ function mapReaddKmlLayer(layer, features){
   _kmlWirePointPopup(layer.id);
 }
 
-// Tap popup for imported KML points — shows the placemark's name + description
+// Tap popup for imported KML features — shows the placemark's name + description
 // (house dark-popup style). Handlers are delegated by layer id, which survives
 // layer remove/re-add, so wire each id exactly once.
+// Covers points, lines, AND polygons (7/28 — ESA overlays are polygons; the
+// fill layer previously had no handler so polygon descriptions were unreachable).
 const _kmlPopupWired = new Set();
+// KML <description> is arbitrary HTML (CDATA). Render it safely as text while
+// keeping the line structure: <br> and block closers become newlines, all other
+// tags are stripped, entities decoded, then re-escaped and newlined back.
+function _kmlDescToHtml(raw){
+  if(!raw) return '';
+  let s = String(raw)
+    .replace(/<br\s*\/?\s*>/gi, '\n')
+    .replace(/<\/(p|div|li|tr|h[1-6])\s*>/gi, '\n')
+    .replace(/<[^>]+>/g, '');
+  const ta = document.createElement('textarea');
+  ta.innerHTML = s;                       // decode &amp; &lt; &mdash; …
+  s = ta.value;
+  s = s.replace(/\n{3,}/g, '\n\n').trim();
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
+}
 function _kmlWirePointPopup(layerId){
   if(_kmlPopupWired.has(layerId) || !_mapInstance) return;
   _kmlPopupWired.add(layerId);
   const esc = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   const showPopup = (lngLat, f)=>{
     const nm = esc(f.properties.name) || 'Imported feature';
-    const ds = esc(f.properties.desc);
-    const popup = new mapboxgl.Popup({ offset:12, maxWidth:'280px', closeButton:true, className:'gl-field-popup' })
+    // Two parser generations: kmlParseLayerById wrote `desc`, togeojson writes `description`.
+    const ds = _kmlDescToHtml(f.properties.desc || f.properties.description);
+    const popup = new mapboxgl.Popup({ offset:12, maxWidth:'300px', closeButton:true, className:'gl-field-popup' })
       .setLngLat(lngLat)
       .setHTML(`<div style="font-weight:700;font-size:13px;margin-bottom:4px;padding-right:20px">${nm}</div>`
-        + (ds ? `<div style="font-size:12px;line-height:1.5;color:#cfcfcf">${ds}</div>` : ''))
+        + (ds ? `<div style="font-size:11.5px;line-height:1.5;color:#cfcfcf;max-height:240px;overflow-y:auto">${ds}</div>` : ''))
       .addTo(_mapInstance);
     popup.on('close', _kmlGlowClear);
     return popup;
@@ -917,6 +935,19 @@ function _kmlWirePointPopup(layerId){
     if(!f || !f.geometry || f.geometry.type !== 'LineString') return;
     showPopup([e.lngLat.lng, e.lngLat.lat], f);
     _kmlGlowFeature(_kmlSourceFeatureFor(f) || { type:'Feature', geometry:f.geometry, properties:{} });
+  });
+  _mapInstance.on('click', layerId + '-fill', (e)=>{
+    // points and lines are more specific — they own the tap when present
+    const probe = [layerId + '-pt', layerId + '-line'].filter(id=>_mapInstance.getLayer(id));
+    const above = probe.length ? _mapInstance.queryRenderedFeatures(e.point, { layers: probe })
+      .filter(f => f.geometry && f.geometry.type !== 'Polygon' && f.geometry.type !== 'MultiPolygon') : [];
+    if(above.length) return;
+    const f = e.features && e.features[0];
+    if(!f) return;
+    showPopup([e.lngLat.lng, e.lngLat.lat], f);
+    // Rendered geometry is tile-clipped — glow the full source feature when findable.
+    const src = _kmlSourceFeatureFor(f, ['Polygon','MultiPolygon']);
+    _kmlGlowFeature(src || { type:'Feature', geometry:f.geometry, properties:{} });
   });
   _mapInstance.on('mouseenter', layerId + '-pt', ()=>{ _mapInstance.getCanvas().style.cursor = 'pointer'; });
   _mapInstance.on('mouseleave', layerId + '-pt', ()=>{ _mapInstance.getCanvas().style.cursor = ''; });
@@ -948,12 +979,14 @@ function _kmlGlowFeature(f){
 }
 // Rendered features come back tile-clipped; recover the full-length original
 // from the in-memory layer cache by matching name + first coordinate proximity.
-function _kmlSourceFeatureFor(rendered){
+function _kmlSourceFeatureFor(rendered, types){
   const nm = rendered.properties && rendered.properties.name;
+  if(!nm) return null;
+  const want = types || ['LineString'];
   for(const l of _mapKmlLayers){
     if(!l.features) continue;
     for(const f of l.features){
-      if(f.geometry && f.geometry.type === 'LineString' && (f.properties||{}).name === nm){
+      if(f.geometry && want.includes(f.geometry.type) && (f.properties||{}).name === nm){
         return f;
       }
     }
@@ -1017,10 +1050,23 @@ function kmlSaveLayers(){
   }
 }
 
+// ── Session caches (7/28 perf pass) ──────────────────────────────────────────
+// Toggling a FOLDER of layers from one big KMZ used to re-download and re-parse
+// the entire document once PER LAYER (the 16 MB IFP files = seconds × N).
+// Cache the fetched text and the parsed folder-map per source file for the
+// session; cleared on project switch (mapClearKmlLayers) to free memory.
+const _kmlTextCache = new Map();    // storagePath|downloadUrl -> kml text
+const _kmlParseCache = new Map();   // storagePath|downloadUrl -> Map(leafFolderName -> features[])
+function _kmlCacheKeyFor(storagePath, layers){
+  return storagePath || (layers && layers.find(l=>l.downloadUrl)?.downloadUrl) || null;
+}
+
 // Fetch a KML file's text. Own files: Storage ref by path. Another member's
 // files: Storage rules deny foreign paths — fall back to the token downloadUrl
 // persisted in layer metadata (same capability model photos already use).
 async function _kmlFetchKmlText(storagePath, layers){
+  const ck = _kmlCacheKeyFor(storagePath, layers);
+  if(ck && _kmlTextCache.has(ck)) return _kmlTextCache.get(ck);
   let lastErr = null;
   if(storage && storagePath){
     try{
@@ -1033,14 +1079,18 @@ async function _kmlFetchKmlText(storagePath, layers){
         layers.forEach(l => { l.downloadUrl = url; });
         window._kmlUrlBackfillPending = true;
       }
-      return await res.text();
+      const text = await res.text();
+      if(ck) _kmlTextCache.set(ck, text);
+      return text;
     }catch(err){ lastErr = err; }
   }
   const dl = layers && layers.find(l => l.downloadUrl);
   if(dl){
     const res = await fetch(dl.downloadUrl);
     if(!res.ok) throw new Error('HTTP ' + res.status + ' (shared url)');
-    return await res.text();
+    const text = await res.text();
+    if(ck) _kmlTextCache.set(ck, text);
+    return text;
   }
   throw (lastErr || new Error('no KML fetch path available'));
 }
@@ -1617,11 +1667,17 @@ function mapUpdateKmlLayerList(){
     sep.style.cssText='margin:10px 0 6px;border-top:1px solid var(--border);padding-top:8px;font-family:var(--mono);font-size:9px;color:var(--muted);letter-spacing:.08em;text-transform:uppercase;';
     sep.textContent='Tracker Drawings';
     list.appendChild(sep);
-    _trCats.forEach(cat=>{
+    // 7/28 declutter: header actions (✨ highlight, ↑↓ order, 📁 folder) moved
+    // into a ⋯ sheet; count collapsed to one badge (amber when some hidden) —
+    // the name gets the row back. Categories group into user folders via the
+    // same folderName pattern as KML layers (view state, localStorage).
+    const _tcfMap=_getTcFolderMap(_trPid);
+    const _renderCat=(cat, container)=>{
       const catEntries=_trAllEntries.filter(e=>e.categoryId===cat.id);
-      if(!catEntries.length) return;
+      if(!catEntries.length) return false;
       const fid='tr-folder-'+cat.id.replace(/[^a-z0-9]/gi,'_');
       const allVisible=catEntries.every(e=>!e.deletedFromMap);
+      const hiddenCount=catEntries.filter(e=>e.deletedFromMap).length;
       const folderWrap=document.createElement('div');
       folderWrap.style.cssText='margin-bottom:6px;border:1px solid var(--border2);border-radius:6px;overflow:hidden;';
       const hdr=document.createElement('div');
@@ -1631,11 +1687,8 @@ function mapUpdateKmlLayerList(){
         <input type="checkbox" ${allVisible?'checked':''} style="accent-color:${cat.color||'#888'};width:14px;height:14px;flex-shrink:0;" id="${fid}-cb">
         <div style="width:10px;height:10px;border-radius:50%;background:${cat.color||'#888'};flex-shrink:0;"></div>
         <span style="font-family:var(--mono);font-size:11px;color:var(--text);font-weight:600;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${cat.name}</span>
-        ${catEntries.some(e=>e.deletedFromMap)?`<span style="font-family:var(--mono);font-size:9px;color:var(--amber);white-space:nowrap;">${catEntries.filter(e=>e.deletedFromMap).length} hidden</span>`:''}
-        <span style="font-family:var(--mono);font-size:9px;color:var(--muted);">${catEntries.length}</span>
-        <button onclick="event.stopPropagation();mapHighlightCategory('${cat.id}')" title="Highlight this category on the map" style="background:none;border:none;color:var(--amber);cursor:pointer;font-size:12px;padding:0 2px;line-height:1">✨</button>
-        <button onclick="event.stopPropagation();mapMoveCatLayerOrder('${cat.id}','up')" title="Bring forward" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px;padding:0 2px;line-height:1">↑</button>
-        <button onclick="event.stopPropagation();mapMoveCatLayerOrder('${cat.id}','down')" title="Send back" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px;padding:0 2px;line-height:1">↓</button>`;
+        <span title="${hiddenCount?hiddenCount+' hidden of '+catEntries.length:catEntries.length+' drawings'}" style="font-family:var(--mono);font-size:9px;color:${hiddenCount?'var(--amber)':'var(--muted)'};white-space:nowrap;flex-shrink:0;">${hiddenCount?(catEntries.length-hiddenCount)+'/'+catEntries.length:catEntries.length}</span>
+        <button onclick="event.stopPropagation();mapTcCatSheet('${cat.id}')" title="Category actions" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;padding:0 4px;line-height:1;flex-shrink:0">⋯</button>`;
       const kids=document.createElement('div');
       kids.id=fid+'-children';
       kids.style.cssText='padding:4px 6px 4px 16px;';
@@ -1690,9 +1743,260 @@ function mapUpdateKmlLayerList(){
       });
       folderWrap.appendChild(hdr);
       folderWrap.appendChild(kids);
-      list.appendChild(folderWrap);
+      container.appendChild(folderWrap);
+      return true;
+    };
+    // Group categories into user folders; folders render first (their order
+    // array), then loose categories in the existing category order.
+    const _grouped={}, _loose=[];
+    _trCats.forEach(cat=>{
+      const fname=_tcfMap[cat.id];
+      if(fname) (_grouped[fname]=_grouped[fname]||[]).push(cat);
+      else _loose.push(cat);
     });
+    const _tcfOrder=_getTcfFolderOrder(_trPid);
+    Object.entries(_grouped).sort(([a],[b])=>{
+      const ai=_tcfOrder.indexOf(a), bi=_tcfOrder.indexOf(b);
+      if(ai<0&&bi<0) return 0;
+      if(ai<0) return 1;
+      if(bi<0) return -1;
+      return ai-bi;
+    }).forEach(([fname,cats])=>{
+      const catsWithEntries=cats.filter(c=>_trAllEntries.some(e=>e.categoryId===c.id));
+      if(!catsWithEntries.length) return;
+      const ffid='trf-folder-'+fname.replace(/[^a-z0-9]/gi,'_');
+      const memberEntries=catsWithEntries.flatMap(c=>_trAllEntries.filter(e=>e.categoryId===c.id));
+      const allVisible=memberEntries.every(e=>!e.deletedFromMap);
+      const wrap=document.createElement('div');
+      wrap.style.cssText='margin-bottom:6px;border:1px solid var(--border2);border-radius:6px;overflow:hidden;';
+      const fhdr=document.createElement('div');
+      fhdr.style.cssText='display:flex;align-items:center;gap:6px;padding:6px 8px;background:var(--s2);cursor:pointer;';
+      fhdr.innerHTML=`
+        <span id="${ffid}-chev" style="font-size:10px;color:var(--muted2);">▾</span>
+        <input type="checkbox" ${allVisible?'checked':''} style="accent-color:var(--amber);width:14px;height:14px;flex-shrink:0;" id="${ffid}-cb">
+        <span style="font-family:var(--mono);font-size:11px;color:var(--amber2);font-weight:600;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${fname}">📁 ${fname}</span>
+        <span style="font-family:var(--mono);font-size:9px;color:var(--muted);flex-shrink:0;">${catsWithEntries.length}</span>
+        <button onclick="event.stopPropagation();mapTcFolderSheet('${fname.replace(/'/g,"\\'")}')" title="Folder actions" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;padding:0 4px;line-height:1;flex-shrink:0">⋯</button>`;
+      const fkids=document.createElement('div');
+      fkids.id=ffid+'-children';
+      fkids.style.cssText='padding:4px 4px 4px 12px;';
+      catsWithEntries.forEach(c=>_renderCat(c,fkids));
+      if(_isFolderCollapsed(ffid)){
+        fkids.style.display='none';
+        const ch=fhdr.querySelector(`#${ffid}-chev`); if(ch) ch.textContent='▸';
+      }
+      fhdr.addEventListener('click',function(ev){
+        if(ev.target.type==='checkbox') return;
+        const collapsed=fkids.style.display==='none';
+        fkids.style.display=collapsed?'':'none';
+        const chev=document.getElementById(ffid+'-chev');
+        if(chev) chev.textContent=collapsed?'▾':'▸';
+        _setFolderCollapsed(ffid, !collapsed);
+      });
+      fhdr.querySelector(`#${ffid}-cb`).addEventListener('click',function(ev){
+        ev.stopPropagation();
+        mapTcFolderSetVisibility(fname,this.checked);
+      });
+      wrap.appendChild(fhdr);
+      wrap.appendChild(fkids);
+      list.appendChild(wrap);
+    });
+    _loose.forEach(cat=>_renderCat(cat,list));
   }
+}
+
+// ═══════════════════════════════════════════
+// TRACKER CATEGORY FOLDERS + ⋯ ACTION SHEETS (7/28, delta #21)
+// ═══════════════════════════════════════════
+// Folder membership is per-user per-project VIEW STATE (like layer order):
+// a tiny {catId: folderName} map in localStorage — Tier 2 per the storage
+// architecture, same shelf as gl_tc_order_/gl_kfl_order_.
+function _getTcFolderMap(pid){ try{ return JSON.parse(localStorage.getItem('gl_tcf_map_'+pid)||'{}'); }catch{ return {}; } }
+function _setTcFolderMap(m,pid){ try{ localStorage.setItem('gl_tcf_map_'+pid,JSON.stringify(m)); }catch{} }
+function _getTcfFolderOrder(pid){ try{ return JSON.parse(localStorage.getItem('gl_tcf_order_'+pid)||'[]'); }catch{ return []; } }
+function _setTcfFolderOrder(order,pid){ try{ localStorage.setItem('gl_tcf_order_'+pid,JSON.stringify(order)); }catch{} }
+
+// Generic bottom action sheet (house dark style). Buttons run their fn and close.
+function _glActionSheet(title, items){
+  document.getElementById('_gl-sheet-ov')?.remove();
+  const ov=document.createElement('div');
+  ov.className='modal-overlay'; ov.id='_gl-sheet-ov';
+  ov.style.cssText='z-index:9000;align-items:flex-end;';
+  const box=document.createElement('div');
+  box.className='modal-box';
+  box.style.cssText='max-width:420px;width:96%;margin-bottom:12px;padding:14px;';
+  const tt=document.createElement('div');
+  tt.className='modal-title';
+  tt.style.cssText='margin-bottom:10px;font-size:13px;';
+  tt.textContent=title;
+  box.appendChild(tt);
+  items.forEach(it=>{
+    const b=document.createElement('button');
+    b.style.cssText='display:flex;align-items:center;gap:10px;width:100%;background:var(--s1);border:1px solid var(--border);border-radius:8px;padding:11px 12px;margin-bottom:6px;color:var(--text);font-family:var(--mono);font-size:12px;cursor:pointer;text-align:left;';
+    b.innerHTML=`<span style="font-size:14px;width:20px;text-align:center;flex-shrink:0;">${it.icon}</span><span>${it.label}</span>`;
+    b.onclick=()=>{ ov.remove(); it.fn(); };
+    box.appendChild(b);
+  });
+  const cancel=document.createElement('button');
+  cancel.className='modal-cancel';
+  cancel.style.cssText='width:100%;margin-top:4px;';
+  cancel.textContent='Cancel';
+  cancel.onclick=()=>ov.remove();
+  box.appendChild(cancel);
+  ov.appendChild(box);
+  ov.addEventListener('click',ev=>{ if(ev.target===ov) ov.remove(); });
+  document.body.appendChild(ov);
+}
+
+function mapTcCatSheet(catId){
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const name=(typeof tcGetName==='function')?tcGetName(catId,pid):catId;
+  const inFolder=_getTcFolderMap(pid)[catId];
+  _glActionSheet(name,[
+    {icon:'✨', label:'Highlight on map', fn:()=>mapHighlightCategory(catId)},
+    {icon:'📁', label:inFolder?`Move to folder… (now in "${inFolder}")`:'Move to folder…', fn:()=>mapTcMoveCatToFolder(catId)},
+    {icon:'↑', label:'Bring forward', fn:()=>mapMoveCatLayerOrder(catId,'up')},
+    {icon:'↓', label:'Send back', fn:()=>mapMoveCatLayerOrder(catId,'down')},
+  ]);
+}
+
+function mapTcFolderSheet(fname){
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  _glActionSheet('📁 '+fname,[
+    {icon:'✏', label:'Rename folder', fn:()=>mapTcRenameFolder(fname)},
+    {icon:'⬆', label:'Ungroup (move all out)', fn:()=>mapTcUngroupFolder(fname)},
+    {icon:'↑', label:'Bring forward', fn:()=>mapMoveTcfFolderOrder(fname,'up')},
+    {icon:'↓', label:'Send back', fn:()=>mapMoveTcfFolderOrder(fname,'down')},
+  ]);
+}
+
+function mapTcMoveCatToFolder(catId){
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const m=_getTcFolderMap(pid);
+  const folderNames=[...new Set(Object.values(m).filter(Boolean))];
+  const catName=(typeof tcGetName==='function')?tcGetName(catId,pid):catId;
+  document.getElementById('_tcf-ov')?.remove();
+  const ov=document.createElement('div');
+  ov.className='modal-overlay'; ov.id='_tcf-ov';
+  ov.style.cssText='z-index:9000';
+  ov.innerHTML=`<div class="modal-box" style="max-width:340px;width:90%">
+    <div class="modal-title" style="margin-bottom:8px">📁 Move to folder</div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-bottom:12px;"><b>${String(catName).replace(/</g,'&lt;')}</b></div>
+    <label style="${_LABEL_STYLE}">Folder</label>
+    <select id="_tcf-sel" style="${_INPUT_STYLE};margin-bottom:10px">
+      <option value="__new">＋ New folder…</option>
+      ${folderNames.map(f=>`<option value="${_kmlAttrEsc(f)}">📁 ${_kmlAttrEsc(f)}</option>`).join('')}
+      <option value="__none">⬆ No folder (top level)</option>
+    </select>
+    <input id="_tcf-name" placeholder="New folder name" maxlength="40" style="${_INPUT_STYLE};margin-bottom:12px">
+    <div class="modal-btns">
+      <button class="modal-confirm" id="_tcf-go">📁 Move</button>
+      <button class="modal-cancel" id="_tcf-cancel">Cancel</button>
+    </div>
+  </div>`;
+  document.body.appendChild(ov);
+  const sel=ov.querySelector('#_tcf-sel'), nameInput=ov.querySelector('#_tcf-name');
+  sel.onchange=()=>{ nameInput.style.display = sel.value==='__new' ? '' : 'none'; };
+  ov.querySelector('#_tcf-cancel').onclick=()=>ov.remove();
+  ov.addEventListener('click',ev=>{ if(ev.target===ov) ov.remove(); });
+  ov.querySelector('#_tcf-go').onclick=()=>{
+    let target;
+    if(sel.value==='__new'){
+      target=_kmlSanitizeFolderName(nameInput.value);
+      if(!target){ nameInput.style.borderColor='#ff4444'; nameInput.focus(); return; }
+    } else if(sel.value==='__none'){ target=''; }
+    else { target=sel.value; }
+    ov.remove();
+    const map=_getTcFolderMap(pid);
+    if(target) map[catId]=target; else delete map[catId];
+    _setTcFolderMap(map,pid);
+    if(target){
+      let order=_getTcfFolderOrder(pid);
+      if(!order.includes(target)){ order.push(target); _setTcfFolderOrder(order,pid); }
+    }
+    mapUpdateKmlLayerList();
+    if(typeof showCloudBanner==='function') showCloudBanner(target?`📁 "${catName}" moved into "${target}".`:`⬆ "${catName}" moved to top level.`);
+  };
+}
+
+function mapTcRenameFolder(oldName){
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  document.getElementById('_tcfr-ov')?.remove();
+  const ov=document.createElement('div');
+  ov.className='modal-overlay'; ov.id='_tcfr-ov';
+  ov.style.cssText='z-index:9000';
+  ov.innerHTML=`<div class="modal-box" style="max-width:340px;width:90%">
+    <div class="modal-title" style="margin-bottom:8px">✏ Rename folder</div>
+    <label style="${_LABEL_STYLE}">Folder name</label>
+    <input id="_tcfr-name" maxlength="40" style="${_INPUT_STYLE};margin-bottom:12px">
+    <div class="modal-btns">
+      <button class="modal-confirm" id="_tcfr-go">✏ Rename</button>
+      <button class="modal-cancel" id="_tcfr-cancel">Cancel</button>
+    </div>
+  </div>`;
+  document.body.appendChild(ov);
+  const nameInput=ov.querySelector('#_tcfr-name');
+  nameInput.value=oldName;
+  ov.querySelector('#_tcfr-cancel').onclick=()=>ov.remove();
+  ov.addEventListener('click',ev=>{ if(ev.target===ov) ov.remove(); });
+  ov.querySelector('#_tcfr-go').onclick=()=>{
+    const newName=_kmlSanitizeFolderName(nameInput.value);
+    if(!newName){ nameInput.style.borderColor='#ff4444'; nameInput.focus(); return; }
+    ov.remove();
+    if(newName===oldName) return;
+    const map=_getTcFolderMap(pid);
+    Object.keys(map).forEach(k=>{ if(map[k]===oldName) map[k]=newName; });
+    _setTcFolderMap(map,pid);
+    let order=_getTcfFolderOrder(pid);
+    const i=order.indexOf(oldName);
+    if(i>=0){
+      if(order.includes(newName)) order.splice(i,1);
+      else order[i]=newName;
+      _setTcfFolderOrder(order,pid);
+    }
+    mapUpdateKmlLayerList();
+    if(typeof showCloudBanner==='function') showCloudBanner(`✏ Folder renamed to "${newName}".`);
+  };
+}
+
+function mapTcUngroupFolder(fname){
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const map=_getTcFolderMap(pid);
+  Object.keys(map).forEach(k=>{ if(map[k]===fname) delete map[k]; });
+  _setTcFolderMap(map,pid);
+  const order=_getTcfFolderOrder(pid).filter(f=>f!==fname);
+  _setTcfFolderOrder(order,pid);
+  mapUpdateKmlLayerList();
+  if(typeof showCloudBanner==='function') showCloudBanner(`⬆ "${fname}" ungrouped.`);
+}
+
+function mapTcFolderSetVisibility(fname, visible){
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const map=_getTcFolderMap(pid);
+  const catIds=Object.keys(map).filter(k=>map[k]===fname);
+  const entries=(typeof trGetEntriesForProject==='function')?trGetEntriesForProject(pid):[];
+  catIds.forEach(catId=>{
+    entries.filter(e=>e.categoryId===catId).forEach(e=>{
+      if(typeof trSetMapVisibility==='function') trSetMapVisibility(e.id,visible,pid);
+    });
+  });
+  mapRenderTrackerLayers();
+  mapUpdateKmlLayerList();
+}
+
+function mapMoveTcfFolderOrder(fname, dir){
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const map=_getTcFolderMap(pid);
+  const folderNames=[...new Set(Object.values(map).filter(Boolean))];
+  let order=_getTcfFolderOrder(pid);
+  if(!order.length) order=[...folderNames];
+  folderNames.forEach(f=>{ if(!order.includes(f)) order.push(f); });
+  const idx=order.indexOf(fname);
+  if(idx<0) return;
+  if(dir==='up'&&idx>0){ const t=order[idx-1];order[idx-1]=order[idx];order[idx]=t; }
+  if(dir==='down'&&idx<order.length-1){ const t=order[idx+1];order[idx+1]=order[idx];order[idx]=t; }
+  _setTcfFolderOrder(order,pid);
+  mapUpdateKmlLayerList();
 }
 // Reparse a KML text through parseKmlOrKmzFile (preserves fill/stroke + _paletteIdx).
 // Falls back to kmlParseLayerById only when the full parser is unavailable.
@@ -1701,19 +2005,27 @@ async function _kmlReparseFeaturesForLayer(kmlText, layer){
   if(typeof window.parseKmlOrKmzFile !== 'function')
     return kmlParseLayerById(kmlText, layer.name);
   try{
-    const kmlFile = new File([kmlText], 'restore.kml', {type:'text/xml'});
-    const reparsed = await window.parseKmlOrKmzFile(kmlFile);
-    const folderMap = new Map();
-    reparsed.features.forEach(f => {
-      const fp = (f.properties||{})._folderPath||'';
-      const segs = fp.split(' / ');
-      const leafName = segs[segs.length-1]||'';
-      if(!folderMap.has(leafName)) folderMap.set(leafName,[]);
-      folderMap.get(leafName).push(f);
-    });
+    // Parse each source FILE once per session — folder toggles used to run the
+    // full togeojson pass once per member layer of the same document.
+    const ck = _kmlCacheKeyFor(layer.storagePath, [layer]);
+    let folderMap = ck ? _kmlParseCache.get(ck) : null;
+    if(!folderMap){
+      const kmlFile = new File([kmlText], 'restore.kml', {type:'text/xml'});
+      const reparsed = await window.parseKmlOrKmzFile(kmlFile);
+      folderMap = new Map();
+      reparsed.features.forEach(f => {
+        const fp = (f.properties||{})._folderPath||'';
+        const segs = fp.split(' / ');
+        const leafName = segs[segs.length-1]||'';
+        if(!folderMap.has(leafName)) folderMap.set(leafName,[]);
+        folderMap.get(leafName).push(f);
+      });
+      folderMap.set('__all', reparsed.features);
+      if(ck) _kmlParseCache.set(ck, folderMap);
+    }
     let features = folderMap.get(layer.name)||[];
     if(!features.length) features = folderMap.get('')||[];
-    if(!features.length) features = reparsed.features;
+    if(!features.length) features = folderMap.get('__all')||[];
     return features;
   }catch(e){
     console.warn('_kmlReparseFeaturesForLayer fell back:', e.message);
@@ -1725,21 +2037,18 @@ async function kmlToggleFolderVisibility(folderName, visible){
   const layers = _mapKmlLayers.filter(l=>l.folderName===folderName);
   for(const layer of layers){
     layer.visible = visible;
-    if(!visible){
-      KML_SUBLAYER_TYPES.forEach(t=>{ if(_mapInstance.getLayer(layer.id+'-'+t)) _mapInstance.removeLayer(layer.id+'-'+t); });
-      if(_mapInstance.getSource(layer.id)) _mapInstance.removeSource(layer.id);
-    } else {
-      if(!_mapInstance.getSource(layer.id)){
-        if(layer.features && layer.features.length){
-          mapReaddKmlLayer(layer, layer.features);
-        } else if(layer.storagePath || layer.downloadUrl){
-          try{
-            const kmlText = await _kmlFetchKmlText(layer.storagePath, [layer]);
-            const features = await _kmlReparseFeaturesForLayer(kmlText, layer);
-            layer.features = features;
-            mapReaddKmlLayer(layer, features);
-          }catch(err){ console.warn('kmlToggleFolderVisibility:', err.message); }
-        }
+    if(!_kmlSetSublayerVisibility(layer.id, visible) && visible){
+      if(layer.features && layer.features.length){
+        mapReaddKmlLayer(layer, layer.features);
+      } else if(layer.storagePath || layer.downloadUrl){
+        try{
+          // Text + parse caches make this loop fetch/parse the shared source
+          // file ONCE instead of once per member layer.
+          const kmlText = await _kmlFetchKmlText(layer.storagePath, [layer]);
+          const features = await _kmlReparseFeaturesForLayer(kmlText, layer);
+          layer.features = features;
+          mapReaddKmlLayer(layer, features);
+        }catch(err){ console.warn('kmlToggleFolderVisibility:', err.message); }
       }
     }
   }
@@ -1818,35 +2127,42 @@ function _mapRemoveKmlLayerNow(id){
   kmlSaveLayers();
   mapUpdateKmlLayerList();
 }
+// Show/hide an already-added KML layer via layout visibility — no source
+// teardown, no GPU re-tessellation on the next toggle ON (7/28 perf pass).
+// Returns false when the layer isn't on the map yet (caller takes the add path).
+function _kmlSetSublayerVisibility(layerId, visible){
+  if(!_mapInstance || !_mapInstance.getSource(layerId)) return false;
+  KML_SUBLAYER_TYPES.forEach(t=>{
+    if(_mapInstance.getLayer(layerId+'-'+t))
+      _mapInstance.setLayoutProperty(layerId+'-'+t, 'visibility', visible ? 'visible' : 'none');
+  });
+  return true;
+}
+
 async function mapToggleKmlLayerById(id, visible){
   const layer = _mapKmlLayers.find(l=>l.id===id);
   if(!layer) return;
   layer.visible = visible;
-  if(!visible){
-    KML_SUBLAYER_TYPES.forEach(t=>{ if(_mapInstance.getLayer(layer.id+'-'+t)) _mapInstance.removeLayer(layer.id+'-'+t); });
-    if(_mapInstance.getSource(layer.id)) _mapInstance.removeSource(layer.id);
-  } else {
-    if(!_mapInstance.getSource(layer.id)){
-      if(layer.features && layer.features.length){
-        mapReaddKmlLayer(layer, layer.features);
-      } else if(layer.storagePath || layer.downloadUrl){
-        try{
-          const kmlText = await _kmlFetchKmlText(layer.storagePath, [layer]);
-          const features = await _kmlReparseFeaturesForLayer(kmlText, layer);
-          layer.features = features;
-          mapReaddKmlLayer(layer, features);
-        }catch(err){
-          console.warn('mapToggleKmlLayerById:', err.message);
-          if(typeof window._reportError === 'function'){
-            window._reportError({
-              type: 'kml-toggle-failed',
-              message: 'KML toggle ON failed: ' + (err && err.message ? err.message : String(err)),
-              stack: err && err.stack ? err.stack : null,
-              kmlLayerId: layer.id,
-              kmlLayerName: layer.name,
-              kmlStoragePath: layer.storagePath
-            });
-          }
+  if(!_kmlSetSublayerVisibility(layer.id, visible) && visible){
+    if(layer.features && layer.features.length){
+      mapReaddKmlLayer(layer, layer.features);
+    } else if(layer.storagePath || layer.downloadUrl){
+      try{
+        const kmlText = await _kmlFetchKmlText(layer.storagePath, [layer]);
+        const features = await _kmlReparseFeaturesForLayer(kmlText, layer);
+        layer.features = features;
+        mapReaddKmlLayer(layer, features);
+      }catch(err){
+        console.warn('mapToggleKmlLayerById:', err.message);
+        if(typeof window._reportError === 'function'){
+          window._reportError({
+            type: 'kml-toggle-failed',
+            message: 'KML toggle ON failed: ' + (err && err.message ? err.message : String(err)),
+            stack: err && err.stack ? err.stack : null,
+            kmlLayerId: layer.id,
+            kmlLayerName: layer.name,
+            kmlStoragePath: layer.storagePath
+          });
         }
       }
     }
@@ -1955,6 +2271,8 @@ function mapClearKmlLayers(){
     });
   }
   _mapKmlLayers.length = 0;
+  _kmlTextCache.clear();     // session caches are per-project — free the memory
+  _kmlParseCache.clear();
   if(typeof _mapKmlEditMode !== 'undefined') _mapKmlEditMode = false;
   if(typeof _mapKmlSelected !== 'undefined' && _mapKmlSelected.clear) _mapKmlSelected.clear();
   mapUpdateKmlLayerList();
@@ -6432,6 +6750,13 @@ window.mapKmlToggleSelection = mapKmlToggleSelection;
 window.mapKmlFolderToggleSelection = mapKmlFolderToggleSelection;
 window.mapKmlMoveSelectedToFolder = mapKmlMoveSelectedToFolder;
 window.mapKmlRenameFolder = mapKmlRenameFolder;
+window.mapTcCatSheet = mapTcCatSheet;
+window.mapTcFolderSheet = mapTcFolderSheet;
+window.mapTcMoveCatToFolder = mapTcMoveCatToFolder;
+window.mapTcRenameFolder = mapTcRenameFolder;
+window.mapTcUngroupFolder = mapTcUngroupFolder;
+window.mapTcFolderSetVisibility = mapTcFolderSetVisibility;
+window.mapMoveTcfFolderOrder = mapMoveTcfFolderOrder;
 window.mapKmlToggleSelectAll = mapKmlToggleSelectAll;
 window.mapBulkDeleteSelected = mapBulkDeleteSelected;
 window.mapShowExportModal = mapShowExportModal;
