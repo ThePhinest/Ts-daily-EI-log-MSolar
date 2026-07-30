@@ -225,7 +225,7 @@ function swpppNewInspection(){
     .sort((a,b)=>(a.uploadedAt||0)-(b.uploadedAt||0))
     .slice(0,24);
   insp.photos = autoPhotos.map(p=>p.id);
-  autoPhotos.forEach(p=>{ insp.photoMeta[p.id] = { subject: p.caption||'', loc:'' }; });
+  autoPhotos.forEach(p=>{ insp.photoMeta[p.id] = { subject: p.caption||'', loc: p.locLabel||'' }; });   // camera locLabel (e.g. W21) pre-fills Location
   if(!_swInsp[pid]) _swInsp[pid]=[];
   _swInsp[pid].push(insp);
   _swQueueSave(insp);
@@ -512,7 +512,7 @@ function swpppPickDone(kind){
       const p=(window._phPhotos||[]).find(x=>x.id===id)||{};
       insp[metaKey][id] = kind==='sketches'
         ? {area:'', desc:p.caption||'', date:p.date||insp.date}
-        : {subject:p.caption||'', loc:''};
+        : {subject:p.caption||'', loc:p.locLabel||''};
     }
   });
   Object.keys(insp[metaKey]).forEach(id=>{ if(!ids.includes(id)) delete insp[metaKey][id]; });
