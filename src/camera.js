@@ -138,19 +138,19 @@ function _drawRose(ctx,cx,cy,R,heading,coordLines,bearing){
   ctx.beginPath(); ctx.arc(cx,cy,R,0,Math.PI*2);
   ctx.fillStyle='rgba(8,14,20,0.42)'; ctx.fill();
   ctx.lineWidth=Math.max(1,R*0.035); ctx.strokeStyle='rgba(255,255,255,0.9)'; ctx.stroke();
-  for(let a=0;a<360;a+=30){                       // ticks — long at the cardinals
+  for(let a=0;a<360;a+=15){                       // 5 ticks between cardinals (Tim 7/29)
     const rad=(a+off-90)*Math.PI/180, main=a%90===0;
-    const r1=R*(main?0.84:0.91), r2=R*0.975;
+    const r1=R*(main?0.85:0.915), r2=R*0.975;
     ctx.beginPath();
     ctx.moveTo(cx+Math.cos(rad)*r1, cy+Math.sin(rad)*r1);
     ctx.lineTo(cx+Math.cos(rad)*r2, cy+Math.sin(rad)*r2);
-    ctx.lineWidth=Math.max(1,R*(main?0.03:0.018));
+    ctx.lineWidth=Math.max(1,R*(main?0.03:0.015));
     ctx.strokeStyle=main?'rgba(255,255,255,0.95)':'rgba(255,255,255,0.5)';
     ctx.stroke();
   }
-  ctx.font=`bold ${Math.round(R*0.22)}px Arial`;  // cardinal letters, N in amber
+  ctx.font=`bold ${Math.round(R*0.2)}px Arial`;   // cardinal letters, N in amber
   for(const [ch,a] of [['N',0],['E',90],['S',180],['W',270]]){
-    const rad=(a+off-90)*Math.PI/180, rr=R*0.68;
+    const rad=(a+off-90)*Math.PI/180, rr=R*0.78;
     ctx.fillStyle=ch==='N'?'#C9A84C':'rgba(255,255,255,0.95)';
     ctx.fillText(ch,cx+Math.cos(rad)*rr,cy+Math.sin(rad)*rr);
   }
@@ -163,7 +163,7 @@ function _drawRose(ctx,cx,cy,R,heading,coordLines,bearing){
     ctx.fillStyle='#C9A84C'; ctx.fill();
   }
   if(coordLines&&coordLines.length){              // the coordinates, mid-dial
-    const fs=Math.round(R*0.21), clh=Math.round(fs*1.3);
+    const fs=Math.round(R*0.185), clh=Math.round(fs*1.28);
     let yy=cy-((coordLines.length-1)*clh)/2;
     coordLines.forEach((ln,i)=>{
       ctx.font=`${i<2?fs:Math.round(fs*0.82)}px Arial`;
@@ -236,8 +236,8 @@ export async function camStampBlob(p, blob, toggles){
   // Bottom-right: compass rose (coords inside, bearing below) + tag badges above.
   // Everything right-of-rose leaves a lane for the vertical edge strip.
   const laneR=Math.round(S*1.6);                  // edge-strip lane width
-  const R=Math.round(S*3.1);
-  const roseCy=H-pad-R-Math.round(R*0.55);        // rose centre (strip aligns to it)
+  const R=Math.round(S*3.6);                      // sized up 7/29 — coords were crowding the ring
+  const roseCy=H-pad-R-Math.round(R*0.5);         // rose centre (strip aligns to it)
   let tagY=H-pad;
   if(t.gps&&(p.lat!=null&&p.lng!=null||p.direction!=null)){
     const cx=W-laneR-R;
@@ -292,7 +292,7 @@ function _paintRose(){
   const cv=document.getElementById('glc-rose'); if(!cv) return;
   const dpr=window.devicePixelRatio||1;
   // Square canvas so the landscape counter-rotation pivots in place.
-  const CW=150, CH=150, R=46;
+  const CW=176, CH=176, R=54;
   if(cv.width!==Math.round(CW*dpr)){
     cv.width=Math.round(CW*dpr); cv.height=Math.round(CH*dpr);
     cv.style.width=CW+'px'; cv.style.height=CH+'px';
@@ -443,7 +443,38 @@ function _applyUiRot(){
   const el=document.getElementById('gl-camera'); if(!el) return;
   el.classList.toggle('glc-cw',_uiRot===90);
   el.classList.toggle('glc-ccw',_uiRot===-90);
+  _fitUframe();
   _renderLive();
+}
+// Fit the photo-frame layer to where the IMAGE actually displays. In landscape
+// the feed presents as a band with black above/below (Tim ss 7/29 — Solocator
+// looks the same), so the stamp preview must hug the BAND, not the screen.
+// Ground truth from the plugin's getPreviewSize when it reports a sub-screen
+// rect; otherwise assume the 4:3 photo band (landscape 4:3 rotated on the
+// portrait screen = full width × 4/3·width, centred).
+async function _fitUframe(){
+  const uf=document.querySelector('#gl-camera .glc-uframe'); if(!uf) return;
+  if(!_isNative()||_uiRot===0){ uf.style.cssText=''; return; }   // portrait: CSS default
+  const W=Math.round(window.innerWidth), H=Math.round(window.innerHeight);
+  let bx=0, by=0, bw=W, bh=H;
+  try{
+    const r=await CameraPreview.getPreviewSize();
+    if(r&&r.width>0&&r.height>0&&(r.width<W-2||r.height<H-2)){
+      bx=r.x||0; by=r.y||0; bw=Math.round(r.width); bh=Math.round(r.height);
+    }else{
+      bh=Math.min(H,Math.round(W*4/3)); by=Math.round((H-bh)/2);
+    }
+  }catch{
+    bh=Math.min(H,Math.round(W*4/3)); by=Math.round((H-bh)/2);
+  }
+  if(_uiRot===0){ uf.style.cssText=''; return; }                 // re-check after await
+  // The user frame is the band rotated to the hold: width = band height, etc.
+  uf.style.inset='auto';
+  uf.style.width=bh+'px';
+  uf.style.height=bw+'px';
+  uf.style.left=(bx+bw/2)+'px';
+  uf.style.top=(by+bh/2)+'px';
+  uf.style.transform=`translate(-50%,-50%) rotate(${_uiRot===90?-90:90}deg)`;
 }
 // Compass heading arrives in the DEVICE frame (direction of the device's top
 // edge). Held sideways, the top edge points ±90° off the shot direction — the
