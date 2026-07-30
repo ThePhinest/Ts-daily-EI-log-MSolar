@@ -144,6 +144,7 @@ function tsSaveEntry(date, data, projectId){
   if (!existingV2.date)      existingV2.date = date;
   if (!existingV2.projectName && pname) existingV2.projectName = pname;
   v2[key] = Object.assign(existingV2, data);
+  v2[key]._mts = Date.now();   // newest-wins stamp — the cloud read merges on this
   _tsWriteEntriesV2(v2);
 
   // ── Legacy old shape (dual-write for 30-day overlap) ──
@@ -231,6 +232,26 @@ async function tsLoadFromFirestore(){
         localStorage.setItem('msf_ts_config',JSON.stringify(cfg));
       }
     }
+    // ── v2 collection read — the collection was WRITE-ONLY until 7/30 (the
+    // missing-hours bug class): edits never propagated across devices, and a
+    // reinstalled/cleared device couldn't recover its timesheet. Newest-wins
+    // per compound key on the _mts stamp; legacy docs without a stamp heal
+    // toward whichever copy actually carries data.
+    const v2Snap=await _udb().collection('timesheetEntries_v2').get();
+    if(!v2Snap.empty){
+      const v2=_tsEntriesV2();
+      let v2Changed=false;
+      const _score=e=>['hours','miles','activitySummary','perDiem'].reduce((n,f)=>n+((e[f]!==undefined&&e[f]!=='')?1:0),0);
+      v2Snap.forEach(doc=>{
+        const key=doc.id, rd=doc.data();
+        const loc=v2[key];
+        if(!loc){ v2[key]=rd; v2Changed=true; return; }
+        const rts=rd._mts||0, lts=loc._mts||0;
+        if(rts>lts){ v2[key]=rd; v2Changed=true; }
+        else if(rts===0&&lts===0&&_score(rd)>_score(loc)){ v2[key]=rd; v2Changed=true; }
+      });
+      if(v2Changed) _tsWriteEntriesV2(v2);
+    }
     const entriesSnap=await _udb().collection('timesheetEntries').get();
     if(!entriesSnap.empty){
       const local=tsGetAllEntries();
@@ -283,6 +304,10 @@ function tsPushFromDailyLog(){
     if(sum){const first=sum.split(/[.!?]/)[0].trim();update.activitySummary=first.length>80?first.substring(0,80)+'…':first;}
   }
   if(!existing._manualPerDiem){update.perDiem=tsLoadConfig(pid).perDiem;}
+  // Only write what actually changed — this runs from the daily-log autosave
+  // path now (every debounced keystroke), so identical values must not spam
+  // IDB/Firestore writes.
+  Object.keys(update).forEach(k=>{ if(existing[k]===update[k]) delete update[k]; });
   if(Object.keys(update).length>0)tsSaveEntry(ds,update,pid);
 }
 

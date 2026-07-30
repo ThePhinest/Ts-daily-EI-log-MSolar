@@ -220,6 +220,11 @@ function debouncedAutoSave() {
       window._editingArchivedDate = null; // only flag once
     }
     _autoSaveLocal();
+    // Bank hours/miles the moment the log fields change — until 7/30 the
+    // timesheet only derived them when its page was OPENED on the same day
+    // (miss the visit, lose the day: the 7/28 missing-hours bug). The push
+    // no-ops unless a derived value actually changed.
+    if (typeof tsPushFromDailyLog === 'function') { try { tsPushFromDailyLog(); } catch(e) {} }
     clearTimeout(_cloudTimer);
     _cloudTimer = setTimeout(cloudSave, 2500);
   }, 600);

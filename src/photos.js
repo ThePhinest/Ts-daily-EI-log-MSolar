@@ -661,6 +661,7 @@ async function phOpenLightbox(id, listIds){
   _phLbIndex = _phLbList.indexOf(id);
   if(_phLbIndex < 0){ _phLbList = [id]; _phLbIndex = 0; } // opened on a photo outside the current filter
   document.getElementById('ph-lightbox').classList.remove('hidden');
+  _phBindCaptionLive();
   await _phLbShow(_phLbIndex);
 }
 
@@ -784,8 +785,39 @@ function phSaveCaption(){
     // Published photo: keep the project mirror's caption current — in the
     // photo's OWN project (the library can show other projects' photos too).
     if(p.published && typeof phSetPublished === 'function') phSetPublished([p.id], true, p.projectId);
+    // Map pin popups bake the caption into their HTML — re-render or they hold
+    // the old caption until something else redraws the pins.
+    if(typeof mapRenderPhotoPins === 'function') mapRenderPhotoPins();
   }
   phCloseLightbox();
+}
+
+// ── Live caption editing (Tim 7/30) ──
+// Typing in the lightbox caption box applies without waiting for Save Caption:
+// debounced auto-persist + live refresh of everything that displays the caption
+// (grid, pins, and the stamped rendering — its caption line is drawn from the
+// record). Save Caption stays as the explicit commit-and-close.
+let _phCapDeb=null,_phCapBound=false;
+function _phBindCaptionLive(){
+  if(_phCapBound) return;
+  const cap=document.getElementById('ph-lb-caption');
+  if(!cap) return;
+  _phCapBound=true;
+  cap.addEventListener('input',()=>{
+    if(!_phLbId||cap.readOnly) return;
+    clearTimeout(_phCapDeb);
+    _phCapDeb=setTimeout(()=>{
+      const p=window._phPhotos.find(x=>x.id===_phLbId);
+      if(!p) return;
+      p.caption=cap.value.trim();
+      phMarkDirty(p.id);
+      phSave();
+      phRender();
+      if(p.published && typeof phSetPublished === 'function') phSetPublished([p.id], true, p.projectId);
+      if(typeof mapRenderPhotoPins === 'function') mapRenderPhotoPins();
+      if(p.type==='camera') _phLbApplyStamp(p);
+    },600);
+  });
 }
 
 // ── Lightbox Share / Unshare toggle (own photos in the active project) ──

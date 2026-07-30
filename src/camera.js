@@ -430,14 +430,27 @@ function _onReframe(){
 // desk-shot bug from Tim's device test). Near-flat is genuinely ambiguous
 // (same as the native camera) — keep the current state. Snap bands with dead
 // zones between them stop the UI flapping mid-rotation.
+let _rotCand=null,_rotCandN=0;
 function _calcUiRot(beta,gamma){
   if(typeof beta!=='number'||typeof gamma!=='number') return _uiRot;
-  if(Math.hypot(beta,gamma)<20) return _uiRot;      // phone ~flat: keep current
+  // Pitched down at a subject BOTH axes shrink toward the noise floor and the
+  // atan2 ratio goes unstable — 7/30 field: overlay flapped portrait↔landscape
+  // while tilting forward in landscape, no real rotation. Two defenses: a
+  // bigger ambiguous zone (30, was 20 — ambiguous keeps current state, same as
+  // the native camera), and a consecutive-agree debounce: a band switch needs
+  // 5 matching readings in a row (~80 ms at sensor rate — imperceptible on a
+  // real rotation, but noise almost never votes the same way 5 times).
+  if(Math.hypot(beta,gamma)<30){ _rotCand=null; _rotCandN=0; return _uiRot; }
   const a=Math.atan2(gamma,beta)*180/Math.PI;
-  if(a>65&&a<115) return 90;
-  if(a<-65&&a>-115) return -90;
-  if(Math.abs(a)<25) return 0;
-  return _uiRot;                                    // between bands / upside down
+  let band=null;
+  if(a>65&&a<115) band=90;
+  else if(a<-65&&a>-115) band=-90;
+  else if(Math.abs(a)<25) band=0;
+  if(band==null||band===_uiRot){ _rotCand=null; _rotCandN=0; return _uiRot; }  // between bands / upside down / no change
+  if(band===_rotCand) _rotCandN++;
+  else { _rotCand=band; _rotCandN=1; }
+  if(_rotCandN>=5){ _rotCand=null; _rotCandN=0; return band; }
+  return _uiRot;
 }
 function _applyUiRot(){
   const el=document.getElementById('gl-camera'); if(!el) return;
@@ -756,6 +769,9 @@ async function _shoot(){
     if(typeof window.phSaveCameraPhoto!=='function') throw new Error('photo pipeline unavailable');
     const entry=await window.phSaveCameraPhoto(blob,meta);
     if(!entry){ _toast('✗ Save failed — photo not stored'); return; }
+    // Collector launches (e.g. the pre-save flag sheet, which has no entry id to
+    // attach to yet): hand every shot back so the caller can bank the photo ids.
+    if(_ctx&&typeof _ctx.onSaved==='function'){ try{ _ctx.onSaved(entry); }catch{} }
     _showStrip(entry,blob);
   }catch(e){
     console.warn('camera capture failed:',e);
@@ -815,6 +831,10 @@ function _stripEdit(entry,strip,objUrl){
     entry.locLabel=loc; entry.caption=cap;
     if(typeof window.phSaveLocal==='function') window.phSaveLocal();
     if(typeof window.phSaveCloudOne==='function') window.phSaveCloudOne(entry);
+    // Re-bake the map pin popups — they carry the caption in their HTML, so
+    // without this the popup showed the pre-edit caption until the NEXT shot
+    // re-rendered pins (Tim 7/30: "lags behind by 1 photo").
+    if(typeof window.mapRenderPhotoPins==='function') window.mapRenderPhotoPins();
     _saveLast({caption:cap,loc});
     _paintCapLine(cap,loc);
     done();

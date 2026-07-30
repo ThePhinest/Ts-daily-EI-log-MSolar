@@ -31,6 +31,22 @@ function _snapGetFeatures(){
 }
 
 let _mapInstance=null, _mapGpsMarker=null, _mapGpsWatch=null;
+
+// ── Style-ready retry queue ────────────────────────────────────────────────
+// Map mutations (addSource/addLayer/removeLayer) need isStyleLoaded()=true —
+// but pending tile/glyph fetches keep the style "busy", and on a bad cell
+// connection those windows stretch from milliseconds to minutes. A plain
+// early-return silently drops the work (the 7/30 field-day bug class: reshape
+// saves not appearing, the direction cone never showing). Callers that hit a
+// busy style queue ONE retry on the next map idle instead — deduped per
+// function so repeated calls while busy don't stack. If the style is somehow
+// busy again at idle, the function re-queues itself and self-heals.
+const _styleReadyQ=new Set();
+function _queueOnIdle(fn){
+  if(_styleReadyQ.has(fn)) return;
+  _styleReadyQ.add(fn);
+  _mapInstance.once('idle',()=>{ _styleReadyQ.delete(fn); fn(); });
+}
 let _mapCurrentStyle=localStorage.getItem('gl_map_style')||'satellite-streets-v11';
 
 // B2 — Draw / Measure / FAB / GPS state
@@ -172,6 +188,7 @@ function mapSetup(token){
     attributionControl:false,
     preserveDrawingBuffer:true,
   });
+  _styleReadyQ.clear();   // idle retries queued on a previous instance died with it
 
   // ── β.1 instrumentation — Mapbox + WebGL silent-failure capture ──
   // Mapbox emits its own 'error' event on tile/style/source failures —
@@ -329,6 +346,8 @@ function mapSetStyle(style){
   });
   _mapInstance.once('idle',()=>{
     mapRenderTrackerLayers();
+    // setStyle wiped the cone source/layer — re-show it if a cone mode is active.
+    if(_gpsMode>=2) _showCone();
     // Symbol layers (text) need glyph loading to complete before they render.
     // Wait for the map to go idle a second time (after fill/line layers trigger
     // a full render cycle and glyphs are available) then refresh date labels.
@@ -4206,7 +4225,8 @@ let _measureType='line';
 let _measurePoints=[], _measureClickHandler=null;
 
 function _initMeasureSource(){
-  if(!_mapInstance||!_mapInstance.isStyleLoaded()) return;
+  if(!_mapInstance) return;
+  if(!_mapInstance.isStyleLoaded()){ _queueOnIdle(_initMeasureSource); return; }
   if(_mapInstance.getSource('measure-source')) return;
   _mapInstance.addSource('measure-source',{type:'geojson',data:{type:'FeatureCollection',features:[]}});
   _mapInstance.addLayer({id:'measure-fill',type:'fill',source:'measure-source',
@@ -4407,7 +4427,11 @@ function _coneFeatureCollection(){
   return {type:'FeatureCollection',features:[{type:'Feature',geometry:{type:'Point',coordinates:[ll.lng,ll.lat]},properties:{heading:_curHeading}}]};
 }
 function _showCone(){
-  if(!_mapInstance||!_mapInstance.isStyleLoaded()) return;
+  if(!_mapInstance) return;
+  // The cone only gets ONE call per mode-cycle — a silent bail here while the
+  // style is busy (slow tiles) means no cone for the whole session (7/30 bug).
+  if(!_mapInstance.isStyleLoaded()){ _queueOnIdle(_showCone); return; }
+  if(_gpsMode<2) return;   // queued retry may land after the user cycled off
   _ensureConeImage();
   if(!_mapInstance.getSource('gps-cone')){
     _mapInstance.addSource('gps-cone',{type:'geojson',data:_coneFeatureCollection()});
@@ -4529,7 +4553,8 @@ function mapCycleGpsMode(){
 let _trackerPopup=null,_trackerClickHandlerRegistered=false,_editingEntryId=null,_labelTopGuardRegistered=false;
 
 function mapClearTrackerLayers(){
-  if(!_mapInstance||!_mapInstance.isStyleLoaded()) return;
+  if(!_mapInstance) return;
+  if(!_mapInstance.isStyleLoaded()){ _queueOnIdle(mapClearTrackerLayers); return; }
   const style=_mapInstance.getStyle();
   if(!style) return;
   (style.layers||[]).forEach(l=>{
@@ -5860,6 +5885,8 @@ function _highlightTick(ts){
   _highlightRAF=requestAnimationFrame(_highlightTick);
 }
 function _startHighlight(){
+  if(!_mapInstance) return;
+  if(!_mapInstance.isStyleLoaded()){ _queueOnIdle(_startHighlight); return; }
   _ensureHighlightLayers();
   if(!_mapInstance.getSource('tracker-highlight')) return;
   _mapInstance.getSource('tracker-highlight').setData(_highlightGeoms());
@@ -5909,7 +5936,11 @@ function _showHighlightChip(){
 function _hideHighlightChip(){ const c=document.getElementById('_gl-highlight-chip'); if(c) c.remove(); }
 
 function mapRenderTrackerLayers(){
-  if(!_mapInstance||!_mapInstance.isStyleLoaded()) return;
+  if(!_mapInstance) return;
+  // THE 7/30 field bug: a reshape/entry save re-renders through here, and under
+  // bad service the style stays busy long enough that the old shape kept
+  // showing until a force-close. Queue the retry instead of dropping it.
+  if(!_mapInstance.isStyleLoaded()){ _queueOnIdle(mapRenderTrackerLayers); return; }
   // Keep an open legend in sync if a state color/label changed.
   if(_legendCatId) mapRenderLegend();
 
@@ -6414,9 +6445,18 @@ function _showRepairFlagSheet(parentId,lngLat,existing){
   ov.querySelector('#_rf-cancel').onclick=done;
   ov.addEventListener('click',ev=>{ if(ev.target===ov) done(); });
   _rfRefreshStrip();
-  // Take photo — straight into the camera on mobile, routed through the normal
-  // photo pipeline (EXIF, thumb, Storage), then auto-linked to this flag.
-  ov.querySelector('#_rf-take').onclick=()=>ov.querySelector('#_rf-file').click();
+  // Take photo — the IN-APP camera with 🚩 armed (the flag doesn't exist yet, so
+  // shots bank into the pending strip via onSaved instead of meta.attach; the
+  // save below links them). Pre-7/30 this clicked the hidden file input = the OS
+  // camera, a different pipeline than the popup's 📸 — Tim field-caught it.
+  ov.querySelector('#_rf-take').onclick=()=>{
+    if(typeof window.phOpenCamera==='function'){
+      window.phOpenCamera({tags:['repair'],onSaved:(p)=>{
+        if(p&&p.id&&!_pendingPhotoIds.includes(p.id)) _pendingPhotoIds.push(p.id);
+        _rfRefreshStrip();
+      }});
+    } else ov.querySelector('#_rf-file').click();   // fail-open: OS camera
+  };
   ov.querySelector('#_rf-file').addEventListener('change',async ev=>{
     const files=ev.target.files;
     if(!files||!files.length) return;
