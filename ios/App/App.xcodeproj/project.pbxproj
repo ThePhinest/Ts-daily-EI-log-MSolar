@@ -16,6 +16,9 @@
 		504EC3121FED79650016851F /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 504EC3101FED79650016851F /* LaunchScreen.storyboard */; };
 		50B271D11FEDC1A000F3C39B /* public in Resources */ = {isa = PBXBuildFile; fileRef = 50B271D01FEDC1A000F3C39B /* public */; };
 		8B71D3E52DF4774A564C3DAF /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = F059A1E779DCEE7D72042187 /* GoogleService-Info.plist */; };
+		A5D10C0DE000000000000001 /* gl_taps.wav in Resources */ = {isa = PBXBuildFile; fileRef = A5D10C0DE000000000000011 /* gl_taps.wav */; };
+		A5D10C0DE000000000000002 /* gl_digest.wav in Resources */ = {isa = PBXBuildFile; fileRef = A5D10C0DE000000000000012 /* gl_digest.wav */; };
+		A5D10C0DE000000000000003 /* gl_silent.wav in Resources */ = {isa = PBXBuildFile; fileRef = A5D10C0DE000000000000013 /* gl_silent.wav */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -31,6 +34,9 @@
 		958DCC722DB07C7200EA8C5F /* debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = debug.xcconfig; path = ../debug.xcconfig; sourceTree = SOURCE_ROOT; };
 		F059A1E779DCEE7D72042187 /* GoogleService-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "GoogleService-Info.plist"; sourceTree = "<group>"; };
 		AABC00010000000000000001 /* App.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = App.entitlements; sourceTree = "<group>"; };
+		A5D10C0DE000000000000011 /* gl_taps.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = gl_taps.wav; sourceTree = "<group>"; };
+		A5D10C0DE000000000000012 /* gl_digest.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = gl_digest.wav; sourceTree = "<group>"; };
+		A5D10C0DE000000000000013 /* gl_silent.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = gl_silent.wav; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -75,6 +81,9 @@
 				50B271D01FEDC1A000F3C39B /* public */,
 				F059A1E779DCEE7D72042187 /* GoogleService-Info.plist */,
 				AABC00010000000000000001 /* App.entitlements */,
+				A5D10C0DE000000000000011 /* gl_taps.wav */,
+				A5D10C0DE000000000000012 /* gl_digest.wav */,
+				A5D10C0DE000000000000013 /* gl_silent.wav */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -151,6 +160,9 @@
 				504EC30D1FED79650016851F /* Main.storyboard in Resources */,
 				2FAD9763203C412B000D30F8 /* config.xml in Resources */,
 				8B71D3E52DF4774A564C3DAF /* GoogleService-Info.plist in Resources */,
+				A5D10C0DE000000000000001 /* gl_taps.wav in Resources */,
+				A5D10C0DE000000000000002 /* gl_digest.wav in Resources */,
+				A5D10C0DE000000000000003 /* gl_silent.wav in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -3366,7 +3366,11 @@ Anticipated rain — AM weather monitoring expected"></textarea>
       <label style="display:flex;align-items:center;gap:10px;margin-bottom:14px;cursor:pointer;font-family:var(--mono);font-size:12px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted2)">
         <input type="checkbox" id="cfg-oi-digest-on" style="width:18px;height:18px;accent-color:var(--amber)" onchange="oiDigestChanged()">Daily summary notification
       </label>
-      <div class="field" style="max-width:200px;margin-bottom:10px"><label>Summary time</label><input type="time" id="cfg-oi-digest-time" value="06:00" onchange="oiDigestChanged()"></div>
+      <div class="field" style="max-width:200px;margin-bottom:14px"><label>Summary time</label><input type="time" id="cfg-oi-digest-time" value="06:00" onchange="oiDigestChanged()"></div>
+      <label style="display:flex;align-items:center;gap:10px;margin-bottom:6px;cursor:pointer;font-family:var(--mono);font-size:12px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted2)">
+        <input type="checkbox" id="cfg-oi-sound-on" style="width:18px;height:18px;accent-color:var(--amber)" onchange="oiSoundChanged()">🔊 Notification sounds
+      </label>
+      <p class="config-hint">The daily summary announces itself with the GroundLog voice; item reminders use the stake-taps. Off = notifications still show, silently.</p>
       <p class="config-hint" style="margin-bottom:0">Scheduled notifications fire on the iOS app (even offline). On the web you'll get the in-app summary when a new day starts.</p>
     </div>
   </div>

@@ -576,6 +576,33 @@ function _oiDigestSave(v){
   }catch{}
   _oiNotifSync();
 }
+
+// ── Notification sound pref — ON by default (Tim 7/30). ──
+// ON: digest plays the goblin "grOUndLog" (Tim's own voice through the chain),
+// reminders/snoozes play the stake-taps. OFF: a bundled SILENT wav — omitting
+// the field would fall back to the iOS DEFAULT chime, not silence.
+function oiSoundGet(){
+  try{
+    const v=JSON.parse(localStorage.getItem('gl_oi_sound')||'null');
+    if(v && typeof v.on==='boolean') return v;
+  }catch{}
+  return {on:true};
+}
+function _oiSoundSave(v){
+  try{ localStorage.setItem('gl_oi_sound', JSON.stringify(v)); }catch{}
+  try{
+    if(typeof _udb==='function' && window._fbReady && _udb())
+      _udb().collection('settings').doc('_user').set({oiSound:v,_ts:Date.now()},{merge:true}).catch(()=>{});
+  }catch{}
+  _oiNotifSync();
+}
+function oiSoundChanged(){
+  const tog=document.getElementById('cfg-oi-sound-on');
+  if(!tog) return;
+  _oiSoundSave({on:!!tog.checked});
+}
+function _oiSndDigest(){ return oiSoundGet().on ? 'gl_digest.wav' : 'gl_silent.wav'; }
+function _oiSndTaps(){ return oiSoundGet().on ? 'gl_taps.wav' : 'gl_silent.wav'; }
 var _oiDigestHydrated=false;
 function _oiDigestHydrate(){
   if(_oiDigestHydrated) return;
@@ -589,6 +616,12 @@ function _oiDigestHydrate(){
         oiSettingsInit();
         _oiNotifSync();
       }
+      const s=doc.exists && doc.data().oiSound;
+      if(s && typeof s.on==='boolean'){
+        try{ localStorage.setItem('gl_oi_sound', JSON.stringify(s)); }catch{}
+        oiSettingsInit();
+        _oiNotifSync();
+      }
     }).catch(()=>{});
   }catch{}
 }
@@ -597,10 +630,13 @@ function _oiDigestHydrate(){
 function oiSettingsInit(){
   const tog=document.getElementById('cfg-oi-digest-on');
   const time=document.getElementById('cfg-oi-digest-time');
-  if(!tog||!time) return;
-  const v=oiDigestGet();
-  tog.checked=v.on;
-  time.value=String(v.hour).padStart(2,'0')+':'+String(v.min).padStart(2,'0');
+  if(tog&&time){
+    const v=oiDigestGet();
+    tog.checked=v.on;
+    time.value=String(v.hour).padStart(2,'0')+':'+String(v.min).padStart(2,'0');
+  }
+  const snd=document.getElementById('cfg-oi-sound-on');
+  if(snd) snd.checked=oiSoundGet().on;
 }
 function oiDigestChanged(){
   const tog=document.getElementById('cfg-oi-digest-on');
@@ -815,6 +851,7 @@ async function _oiNotifInit(){
             body:ev.notification.body||'',
             actionTypeId:'GL_OI_REMIND',
             extra:{oiId},
+            sound:_oiSndTaps(),
             schedule:{at:new Date(Date.now()+10*60000), allowWhileIdle:true}
           }]});
         } else if(ev.actionId==='oi_cancel'){
@@ -860,7 +897,8 @@ async function _oiNotifSync(){
         title:'📌 Open Item reminder',
         body:oiItemLabel(it).slice(0,180),
         actionTypeId:'GL_OI_REMIND',
-        extra:{oiId:it.id}
+        extra:{oiId:it.id},
+        sound:_oiSndTaps()      // ⛏ stake-taps (or bundled silence when muted)
       };
       const at=new Date(it.remindAt);
       const rep=it.remindRepeat||'';
@@ -887,6 +925,7 @@ async function _oiNotifSync(){
         title:'📌 GroundLog — Open Items',
         body:n?(n+' open item'+(n===1?'':'s')+(due?' · '+due+' due today':'')+' — review before you start the day.')
               :'No open items — clean slate today.',
+        sound:_oiSndDigest(),   // 👺 "grOUndLog" (Tim's voice, goblin chain)
         schedule:{on:{hour:digest.hour, minute:digest.min}, allowWhileIdle:true}
       });
     }
@@ -913,6 +952,7 @@ window.oiNdSummaryHtml = oiNdSummaryHtml;
 window.oiResolvedForReport = oiResolvedForReport;
 window.oiSettingsInit = oiSettingsInit;
 window.oiDigestChanged = oiDigestChanged;
+window.oiSoundChanged = oiSoundChanged;
 window.oiPinFlag = oiPinFlag;
 window.oiUnpinFlag = oiUnpinFlag;
 window.oiFlagPinned = oiFlagPinned;
