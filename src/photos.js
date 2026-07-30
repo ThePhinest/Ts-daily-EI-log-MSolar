@@ -1031,6 +1031,8 @@ async function phSaveCameraPhoto(blob, meta){
     ...(m.lat!=null&&m.lng!=null?{lat:m.lat,lng:m.lng}:{}),
     ...(m.heading!=null?{direction:Math.round(m.heading)}:{}),
     ...(m.accuracy!=null?{gpsAcc:Math.round(m.accuracy)}:{}),
+    ...(m.altitude!=null?{alt:Math.round(m.altitude*10)/10}:{}),   // meters MSL
+
     ...(m.locLabel?{locLabel:m.locLabel}:{}),
   };
   const tags=Array.isArray(m.tags)?m.tags:[];

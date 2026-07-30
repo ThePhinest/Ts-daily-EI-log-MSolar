@@ -233,6 +233,7 @@ export async function camStampBlob(p, blob, toggles){
     if(p.lat!=null&&p.lng!=null){
       coordLines.push((+p.lat).toFixed(5), (+p.lng).toFixed(5));
       if(p.gpsAcc!=null) coordLines.push(`±${Math.round(p.gpsAcc*3.28084)} ft`);
+      if(p.alt!=null) coordLines.push(`EL ${Math.round(p.alt*3.28084).toLocaleString()} ft`);
     }
     _drawRose(ctx,cx,cy,R,p.direction!=null?+p.direction:null,coordLines,_bearingTxt(p.direction!=null?+p.direction:null));
     tagY=cy-R-Math.round(S*1.1);
@@ -288,6 +289,7 @@ function _paintRose(){
   if(_coords){
     coordLines.push(_coords.latitude.toFixed(5), _coords.longitude.toFixed(5));
     if(_coords.accuracy!=null) coordLines.push(`±${Math.round(_coords.accuracy*3.28084)} ft`);
+    if(_coords.altitude!=null) coordLines.push(`EL ${Math.round(_coords.altitude*3.28084).toLocaleString()} ft`);
   } else coordLines.push('GPS','acquiring…');
   _drawRose(ctx,CW/2,R+6,R,_heading,coordLines,_bearingTxt(_heading)||'—');
 }
@@ -570,6 +572,7 @@ async function _shoot(){
       lat:_coords?_coords.latitude:null,
       lng:_coords?_coords.longitude:null,
       accuracy:_coords&&_coords.accuracy!=null?_coords.accuracy:null,
+      altitude:_coords&&_coords.altitude!=null?_coords.altitude:null,   // meters MSL
       heading:_heading,
       caption:last.caption||'',
       locLabel:last.loc||'',
