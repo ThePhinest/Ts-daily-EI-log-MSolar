@@ -572,12 +572,14 @@ function _buildDom(){
         ${TAGS.map(t=>`<button class="glc-chip${_tags.has(t.key)?' on':''}" data-tag="${t.key}">${t.chip}</button>`).join('')}
       </div>
     </div>
-    <div class="glc-compass"><canvas id="glc-rose"></canvas></div>
-    <div class="glc-edge">GROUND<span class="pipe">|</span><span class="log">LOG</span></div>
-    <div class="glc-overlay">
-      <div class="glc-line glc-cap"></div>
-      <div class="glc-line glc-time"></div>
-      <div class="glc-line glc-proj">${(cfg.projectName||'').replace(/</g,'&lt;')}</div>
+    <div class="glc-uframe">
+      <div class="glc-compass"><canvas id="glc-rose"></canvas></div>
+      <div class="glc-edge">GROUND<span class="pipe">|</span><span class="log">LOG</span></div>
+      <div class="glc-overlay">
+        <div class="glc-line glc-cap"></div>
+        <div class="glc-line glc-time"></div>
+        <div class="glc-line glc-proj">${(cfg.projectName||'').replace(/</g,'&lt;')}</div>
+      </div>
     </div>
     <button id="glc-shutter" title="Take photo"></button>
     <div id="glc-strip" style="display:none"></div>`;
@@ -676,20 +678,6 @@ function _b64ToBlob(b64,type){
   return new Blob([arr],{type:type||'image/jpeg'});
 }
 
-// Landscape capture under the portrait interface lock arrives portrait-tagged —
-// rotate the pixels upright by the physical hold before anything stores them.
-async function _rotateBlob(blob,rot){
-  const bmp=await createImageBitmap(blob);
-  const c=document.createElement('canvas');
-  c.width=bmp.height; c.height=bmp.width;
-  const ctx=c.getContext('2d');
-  ctx.translate(c.width/2,c.height/2);
-  ctx.rotate(rot*Math.PI/180);
-  ctx.drawImage(bmp,-bmp.width/2,-bmp.height/2);
-  bmp.close();
-  return await new Promise(res=>c.toBlob(res,'image/jpeg',0.92));
-}
-
 async function _shoot(){
   if(_busy) return; _busy=true;
   const sh=document.getElementById('glc-shutter'); if(sh) sh.disabled=true;
@@ -698,9 +686,29 @@ async function _shoot(){
     const b64=res&&(res.value||res.base64PictureTaken);
     if(!b64) throw new Error('empty capture result');
     let blob=_b64ToBlob(b64,'image/jpeg');
+    // The plugin captures with the PHYSICAL device orientation (accelerometer
+    // ratio check in CameraController.getPhysicalOrientation) — a landscape
+    // shot already comes back framed exactly as shot, even under our interface
+    // lock. v3's blanket rotation was therefore a DOUBLE rotation (Tim: "it
+    // worked originally" — correct). Safety net only: if the hold says
+    // landscape but the image came back portrait-framed, the plugin hit its
+    // accelerometer-data-missing fallback (interface orientation) — fix it.
+    // createImageBitmap applies EXIF, so its dimensions are display truth.
     if(_isNative()&&(_uiRot===90||_uiRot===-90)){
-      try{ blob=(await _rotateBlob(blob,_uiRot))||blob; }
-      catch(e){ console.warn('camera rotate failed (storing as captured):',e); }
+      try{
+        const bmp=await createImageBitmap(blob);
+        if(bmp.height>bmp.width){
+          const c=document.createElement('canvas');
+          c.width=bmp.height; c.height=bmp.width;
+          const cctx=c.getContext('2d');
+          cctx.translate(c.width/2,c.height/2);
+          cctx.rotate(_uiRot*Math.PI/180);
+          cctx.drawImage(bmp,-bmp.width/2,-bmp.height/2);
+          const rb=await new Promise(r=>c.toBlob(r,'image/jpeg',0.92));
+          if(rb) blob=rb;
+        }
+        bmp.close();
+      }catch(e){ console.warn('camera orientation check failed (storing as captured):',e); }
     }
     const last=_last();
     const meta={

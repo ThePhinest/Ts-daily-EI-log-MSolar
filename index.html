@@ -177,12 +177,30 @@ html.camera-live body>*:not(#gl-camera){visibility:hidden}
 .glc-edge{position:absolute;right:2px;bottom:calc(238px + env(safe-area-inset-bottom));z-index:2;pointer-events:none;writing-mode:vertical-rl;transform:rotate(180deg);font-family:var(--cond);font-weight:700;font-size:12px;letter-spacing:.16em;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.85)}
 .glc-edge .pipe{color:var(--amber)}
 .glc-edge .log{color:#38b6c4}
-/* Landscape holds (Solocator architecture): the interface stays LOCKED portrait;
-   these classes counter-rotate elements in place so they read upright however
-   the phone is held. glc-cw = device rotated clockwise (shutter under the left
-   hand), glc-ccw = counterclockwise. */
-#gl-camera.glc-cw .glc-compass canvas,#gl-camera.glc-cw .glc-overlay,#gl-camera.glc-cw .glc-chip,#gl-camera.glc-cw .glc-close{transform:rotate(-90deg)}
-#gl-camera.glc-ccw .glc-compass canvas,#gl-camera.glc-ccw .glc-overlay,#gl-camera.glc-ccw .glc-chip,#gl-camera.glc-ccw .glc-close{transform:rotate(90deg)}
+/* Landscape holds (Solocator architecture): the interface stays LOCKED portrait.
+   glc-cw = device rotated clockwise (shutter lands under the left hand),
+   glc-ccw = counterclockwise.
+   .glc-uframe is the PHOTO FRAME layer (Tim 7/29): it holds the stamp-preview
+   elements (rose, text block, wordmark) and counter-rotates as a whole, so in
+   landscape they re-anchor to the photo's real bottom-left / bottom-right —
+   they sit where they'll land on the capture, not spun in place. Controls
+   (chips, close/gear) stay UI-anchored and just rotate their glyphs. */
+.glc-uframe{position:absolute;inset:0;z-index:2;pointer-events:none}
+#gl-camera.glc-cw .glc-uframe,#gl-camera.glc-ccw .glc-uframe{inset:auto;top:50%;left:50%;width:100dvh;height:100dvw}
+#gl-camera.glc-cw .glc-uframe{transform:translate(-50%,-50%) rotate(-90deg)}
+#gl-camera.glc-ccw .glc-uframe{transform:translate(-50%,-50%) rotate(90deg)}
+/* photo-depth anchors inside the rotated frame (no shutter/strip on those edges) */
+#gl-camera.glc-cw .glc-overlay,#gl-camera.glc-ccw .glc-overlay{bottom:18px;max-width:calc(100dvh - 190px)}
+#gl-camera.glc-cw .glc-compass,#gl-camera.glc-ccw .glc-compass{bottom:22px}
+#gl-camera.glc-cw .glc-edge,#gl-camera.glc-ccw .glc-edge{bottom:96px}
+/* controls rotate their glyphs in place (device-verified good) */
+#gl-camera.glc-cw .glc-chip,#gl-camera.glc-cw .glc-close{transform:rotate(-90deg)}
+#gl-camera.glc-ccw .glc-chip,#gl-camera.glc-ccw .glc-close{transform:rotate(90deg)}
+/* keep controls out of the photo-frame corners the stamp preview now occupies:
+   cw — chips (UI top-right) would land on the rose corner; ccw — close/gear
+   (UI top-left) would land on the text-block corner */
+#gl-camera.glc-cw .glc-tags{margin-right:160px}
+#gl-camera.glc-ccw .glc-top>div:first-child{margin-left:170px}
 #glc-shutter{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(28px + env(safe-area-inset-bottom));z-index:3;width:74px;height:74px;border-radius:50%;background:rgba(255,255,255,.92);border:5px solid rgba(201,168,76,.95);cursor:pointer;padding:0}
 #glc-shutter:active{transform:translateX(-50%) scale(.93)}
 #glc-shutter:disabled{opacity:.55}
