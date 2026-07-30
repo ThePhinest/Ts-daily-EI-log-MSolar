@@ -115,17 +115,20 @@ export function camStampHydrate(){
 window.camStampHydrate=camStampHydrate;
 
 // ── Compass rose — the #27 vision: coordinates in the middle of a compass ──
-// Shared by the live viewfinder canvas and the stamp renderer (WYSIWYG). Drawn
-// N-up with an amber wedge on the rim at the shot bearing; GPS coords sit
-// INSIDE the dial; bearing text below it. `coordLines` = up to lat / lng / ±acc.
+// Shared by the live viewfinder canvas and the stamp renderer (WYSIWYG).
+// HEADING-UP dial (Tim 7/29 v2 refinement): the ring SPINS so the facing
+// direction sits under a fixed amber pointer at the top — real-compass
+// behavior, the amber N travels the ring as you turn. Letters stay upright.
+// GPS coords sit INSIDE the dial; bearing text below it.
 function _drawRose(ctx,cx,cy,R,heading,coordLines,bearing){
+  const off=heading!=null?-heading:0;             // spin the dial, not the glyphs
   ctx.save();
   ctx.textAlign='center'; ctx.textBaseline='middle';
   ctx.beginPath(); ctx.arc(cx,cy,R,0,Math.PI*2);
   ctx.fillStyle='rgba(8,14,20,0.42)'; ctx.fill();
   ctx.lineWidth=Math.max(1,R*0.035); ctx.strokeStyle='rgba(255,255,255,0.9)'; ctx.stroke();
   for(let a=0;a<360;a+=30){                       // ticks — long at the cardinals
-    const rad=(a-90)*Math.PI/180, main=a%90===0;
+    const rad=(a+off-90)*Math.PI/180, main=a%90===0;
     const r1=R*(main?0.84:0.91), r2=R*0.975;
     ctx.beginPath();
     ctx.moveTo(cx+Math.cos(rad)*r1, cy+Math.sin(rad)*r1);
@@ -136,16 +139,15 @@ function _drawRose(ctx,cx,cy,R,heading,coordLines,bearing){
   }
   ctx.font=`bold ${Math.round(R*0.22)}px Arial`;  // cardinal letters, N in amber
   for(const [ch,a] of [['N',0],['E',90],['S',180],['W',270]]){
-    const rad=(a-90)*Math.PI/180, rr=R*0.68;
+    const rad=(a+off-90)*Math.PI/180, rr=R*0.68;
     ctx.fillStyle=ch==='N'?'#C9A84C':'rgba(255,255,255,0.95)';
     ctx.fillText(ch,cx+Math.cos(rad)*rr,cy+Math.sin(rad)*rr);
   }
-  if(heading!=null){                              // amber bearing wedge on the rim
-    const rad=(heading-90)*Math.PI/180;
+  if(heading!=null){                              // fixed amber pointer, straight up
     ctx.beginPath();
-    ctx.moveTo(cx+Math.cos(rad)*R*1.08, cy+Math.sin(rad)*R*1.08);
-    ctx.lineTo(cx+Math.cos(rad+0.17)*R*0.86, cy+Math.sin(rad+0.17)*R*0.86);
-    ctx.lineTo(cx+Math.cos(rad-0.17)*R*0.86, cy+Math.sin(rad-0.17)*R*0.86);
+    ctx.moveTo(cx, cy-R*1.08);
+    ctx.lineTo(cx+Math.sin(0.17)*R*0.86*-1, cy-Math.cos(0.17)*R*0.86);
+    ctx.lineTo(cx+Math.sin(0.17)*R*0.86, cy-Math.cos(0.17)*R*0.86);
     ctx.closePath();
     ctx.fillStyle='#C9A84C'; ctx.fill();
   }
