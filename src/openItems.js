@@ -19,6 +19,31 @@ var _oiLoadedPid = null;
 var _oiExpanded = null;
 var _oiResolvedOpen = false;
 var _oiNewKind = 'task';
+// v2 (7/30): filter pills + manual order + due-sort toggle. Filter/sort are
+// view state; ORDER persists on the item. Legacy items carry no title/order —
+// accessors derive both so no migration writes are needed.
+var _oiFilter = 'all';                    // all | task | note | check
+function _oiSortDue(){ try{ return localStorage.getItem('gl_oi_sortdue')==='1'; }catch{ return false; } }
+function _oiTitle(it){
+  const t=(it.title||'').trim();
+  if(t) return t;
+  const first=String(it.text||'').split('\n')[0].trim();
+  return first.length>64 ? first.slice(0,61)+'…' : (first||'(untitled)');
+}
+function _oiBody(it){ return String(it.text||''); }   // legacy items: full text doubles as body
+function _oiOrder(it){ return (typeof it.order==='number') ? it.order : (it.createdTs||0); }
+function _oiNextOrder(){
+  let max=0;
+  oiOpenItems().forEach(it=>{ const o=_oiOrder(it); if(o>max) max=o; });
+  return max+10;
+}
+// Report / notification label — title plus body when both exist.
+function oiItemLabel(it){
+  const t=(it.title||'').trim();
+  if(!t) return String(it.text||'');
+  const b=String(it.text||'').trim();
+  return b ? t+' — '+b : t;
+}
 
 // ── Helpers ──
 function _oiPid(){ return (typeof window._activeProjectId==='function') ? window._activeProjectId() : 'default'; }
@@ -116,6 +141,7 @@ async function oiLoadForProject(){
 function oiBoot(){
   _oiDigestHydrate();
   oiSettingsInit();
+  _oiNotifInit();
   oiLoadForProject();
 }
 
@@ -145,28 +171,45 @@ function _oiTouch(it){
 
 function oiAdd(){
   const inp=document.getElementById('oi-new-text');
-  const text=(inp&&inp.value||'').trim();
-  if(!text) return;
+  const typed=(inp&&inp.value||'').trim();
+  if(!typed) return;
   const uid=_oiUid();
+  // v2: the typed line is the TITLE (shows in the list); details/steps get
+  // added from the expanded card.
   const it={
-    id:_oiGenId(), ownerUid:uid||'', kind:_oiNewKind, text,
+    id:_oiGenId(), ownerUid:uid||'', kind:_oiNewKind, title:typed, text:'',
+    checkItems:_oiNewKind==='check'?[]:undefined,
+    order:_oiNextOrder(),
     source:'manual', sourceRef:null,
     createdDate:_oiToday(), createdTs:Date.now(),
-    dueDate:'', remindAt:'',
+    dueDate:'', remindAt:'', remindRepeat:'', remindDays:[],
     status:'open', resolvedDate:'', resolvedTs:0, resolutionNote:'',
     includeInReport:false, visibility:'private', deleted:false, _mts:Date.now()
   };
+  if(it.checkItems===undefined) delete it.checkItems;
   _oiItems.push(it);
   if(inp) inp.value='';
   _oiSaveLocal(); _oiMarkDirty(it.id); _oiFlush();
+  _oiExpanded=it.id;             // open the new card so details/steps are one tap away
   oiRender();
   window.glHaptic && window.glHaptic.light && window.glHaptic.light();
 }
 
+var _OI_KINDS=[['task','☑︎ Task'],['note','📝 Note'],['check','📋 List']];
 function oiToggleNewKind(){
-  _oiNewKind = (_oiNewKind==='task') ? 'note' : 'task';
+  const i=_OI_KINDS.findIndex(k=>k[0]===_oiNewKind);
+  _oiNewKind=_OI_KINDS[(i+1)%_OI_KINDS.length][0];
   const b=document.getElementById('oi-new-kind');
-  if(b) b.textContent = (_oiNewKind==='task') ? '☑︎ Task' : '📝 Note';
+  if(b) b.textContent=_OI_KINDS.find(k=>k[0]===_oiNewKind)[1];
+}
+
+function oiSetFilter(f){
+  _oiFilter=f;
+  oiRender();
+}
+function oiToggleSortDue(){
+  try{ localStorage.setItem('gl_oi_sortdue', _oiSortDue()?'0':'1'); }catch{}
+  oiRender();
 }
 
 function oiExpand(id){
@@ -177,16 +220,109 @@ function oiExpand(id){
 function oiFieldChange(id, field, value){
   const it=_oiItems.find(x=>x.id===id);
   if(!it) return;
-  if(field==='text'){ const v=String(value).trim(); if(!v) return; it.text=v; }
-  else if(field==='kind'){ it.kind = (value==='note')?'note':'task'; }
+  if(field==='text'){ it.text=String(value); }             // body may be cleared
+  else if(field==='title'){ const v=String(value).trim(); if(!v) return; it.title=v; }
+  else if(field==='kind'){
+    it.kind=(value==='note')?'note':(value==='check')?'check':'task';
+    if(it.kind==='check'&&!Array.isArray(it.checkItems)) it.checkItems=[];
+  }
   else if(field==='dueDate'){ it.dueDate=value||''; }
   else if(field==='remindAt'){ it.remindAt=value||''; }
+  else if(field==='remindRepeat'){ it.remindRepeat=value||''; if(it.remindRepeat!=='weekly') it.remindDays=[]; }
   _oiTouch(it);
   // NO re-render here — iOS fires `change` on the first tap inside a date /
   // datetime picker, and re-rendering destroys the input mid-interaction,
   // slamming the picker shut (Tim, 7/22). The input already shows the new
   // value; chips/labels catch up on the next render (row close, resolve, sync).
-  if(field==='remindAt') _oiNotifSync();
+  // Exceptions that change the detail card's own structure re-render:
+  if(field==='kind'||field==='remindRepeat') oiRender();
+  if(field==='remindAt'||field==='remindRepeat') _oiNotifSync();
+}
+
+// Weekly-repeat weekday chips (JS day numbers 0=Sun..6=Sat; +1 at scheduling).
+function oiRemDayToggle(id, day){
+  const it=_oiItems.find(x=>x.id===id);
+  if(!it) return;
+  const days=Array.isArray(it.remindDays)?it.remindDays.slice():[];
+  const i=days.indexOf(day);
+  if(i>=0) days.splice(i,1); else days.push(day);
+  it.remindDays=days.sort();
+  _oiTouch(it);
+  oiRender();
+  _oiNotifSync();
+}
+
+// ── Checklist steps (kind 'check') ──
+function oiCkAdd(id){
+  const it=_oiItems.find(x=>x.id===id);
+  if(!it) return;
+  if(!Array.isArray(it.checkItems)) it.checkItems=[];
+  it.checkItems.push({t:'',done:false});
+  _oiTouch(it);
+  oiRender();
+  // Focus the new step's text box so add-type-add flows.
+  requestAnimationFrame(()=>{
+    const rows=document.querySelectorAll('.oi-ck-row input[type="text"]');
+    if(rows.length) rows[rows.length-1].focus();
+  });
+}
+function oiCkToggle(id, idx){
+  const it=_oiItems.find(x=>x.id===id);
+  if(!it||!it.checkItems||!it.checkItems[idx]) return;
+  it.checkItems[idx].done=!it.checkItems[idx].done;
+  _oiTouch(it);
+  oiRender();
+  window.glHaptic && window.glHaptic.light && window.glHaptic.light();
+}
+function oiCkText(id, idx, v){
+  const it=_oiItems.find(x=>x.id===id);
+  if(!it||!it.checkItems||!it.checkItems[idx]) return;
+  it.checkItems[idx].t=String(v);
+  _oiTouch(it);
+  // no render — value already in the input (blur-time change event)
+}
+function oiCkDel(id, idx){
+  const it=_oiItems.find(x=>x.id===id);
+  if(!it||!it.checkItems) return;
+  it.checkItems.splice(idx,1);
+  _oiTouch(it);
+  oiRender();
+}
+
+// ── Drag reorder (⠿ handle; manual order only — hidden under filters/sort) ──
+function oiDragStart(ev, id){
+  ev.preventDefault();
+  const row=ev.target.closest('.oi-row');
+  const list=document.getElementById('oi-list');
+  if(!row||!list) return;
+  row.classList.add('oi-dragging');
+  const move=e=>{
+    const y=(e.clientY!=null)?e.clientY:(e.touches&&e.touches[0]&&e.touches[0].clientY);
+    if(y==null) return;
+    e.preventDefault();
+    const others=[...list.querySelectorAll('.oi-row:not(.oi-dragging)')];
+    let before=null;
+    for(const r of others){ const b=r.getBoundingClientRect(); if(y<b.top+b.height/2){ before=r; break; } }
+    if(before) list.insertBefore(row,before); else list.appendChild(row);
+  };
+  const up=()=>{
+    document.removeEventListener('pointermove',move);
+    document.removeEventListener('pointerup',up);
+    document.removeEventListener('pointercancel',up);
+    row.classList.remove('oi-dragging');
+    // Persist the DOM order as the manual order (10-step reindex).
+    let n=10, changed=false;
+    [...list.querySelectorAll('.oi-row[data-id]')].forEach(r=>{
+      const it=_oiItems.find(x=>x.id===r.dataset.id);
+      if(it){ if(it.order!==n){ it.order=n; it._mts=Date.now(); _oiMarkDirty(it.id); changed=true; } n+=10; }
+    });
+    if(changed){ _oiSaveLocal(); _oiFlush(); }
+    oiRender();
+    window.glHaptic && window.glHaptic.light && window.glHaptic.light();
+  };
+  document.addEventListener('pointermove',move,{passive:false});
+  document.addEventListener('pointerup',up);
+  document.addEventListener('pointercancel',up);
 }
 
 function oiDelete(id){
@@ -217,7 +353,7 @@ function oiResolve(id){
   ov.style.cssText='z-index:5000';
   ov.innerHTML='<div class="modal-box" style="max-width:360px;width:92%;text-align:left">'
     +'<div class="modal-title" style="margin-bottom:6px">✓ Resolve Item</div>'
-    +'<div style="font-family:var(--body);font-size:13.5px;color:var(--text);line-height:1.45;margin-bottom:12px;background:rgba(0,107,117,0.08);border:1px solid var(--border2);border-radius:6px;padding:9px 11px">'+_oiEsc(it.text)+'</div>'
+    +'<div style="font-family:var(--body);font-size:13.5px;color:var(--text);line-height:1.45;margin-bottom:12px;background:rgba(0,107,117,0.08);border:1px solid var(--border2);border-radius:6px;padding:9px 11px">'+_oiEsc(oiItemLabel(it))+'</div>'
     +'<div class="field" style="margin-bottom:12px"><label>Resolution note <span style="text-transform:none;letter-spacing:0">(optional)</span></label>'
     +'<textarea id="_oi-res-note" class="short" style="min-height:64px" placeholder="What was done / outcome…"></textarea></div>'
     +'<label style="display:flex;align-items:center;gap:9px;margin-bottom:16px;cursor:pointer;font-family:var(--mono);font-size:11.5px;letter-spacing:.05em;color:var(--muted2);text-transform:uppercase">'
@@ -284,52 +420,103 @@ function oiToggleResolved(){
 }
 
 // ── Render ──
+var _OI_DAYS=['S','M','T','W','T','F','S'];
 function oiRender(){
   const list=document.getElementById('oi-list');
   if(!list) return;
-  const open=oiOpenItems().slice().sort((a,b)=>(a.createdTs||0)-(b.createdTs||0));
+  const sortDue=_oiSortDue();
+  const all=oiOpenItems();
+  let open=all.slice();
+  if(_oiFilter!=='all') open=open.filter(it=>(it.kind||'task')===_oiFilter);
+  open.sort(sortDue
+    ? (a,b)=>((a.dueDate||'9999-99-99')<(b.dueDate||'9999-99-99')?-1:(a.dueDate||'9999-99-99')>(b.dueDate||'9999-99-99')?1:_oiOrder(a)-_oiOrder(b))
+    : (a,b)=>_oiOrder(a)-_oiOrder(b));
   const today=_oiToday();
+  const canDrag=(_oiFilter==='all')&&!sortDue;
 
   const badge=document.getElementById('oi-badge');
   if(badge){
     const due=oiDueTodayCount();
-    badge.textContent=open.length+' open'+(due?' · '+due+' due':'');
+    badge.textContent=all.length+' open'+(due?' · '+due+' due':'');
     badge.classList.toggle('oi-badge-due', due>0);
   }
 
+  // Filter pills + sort toggle
+  const pills=document.getElementById('oi-pills');
+  if(pills){
+    const counts={task:0,note:0,check:0};
+    all.forEach(it=>{ counts[(it.kind||'task')]=(counts[(it.kind||'task')]||0)+1; });
+    const pill=(key,label,n)=>'<button class="oi-pill'+(_oiFilter===key?' on':'')+'" onclick="oiSetFilter(\''+key+'\')">'+label+(n?' '+n:'')+'</button>';
+    pills.innerHTML=pill('all','All',all.length)
+      +pill('task','☑︎ Tasks',counts.task)
+      +pill('note','📝 Notes',counts.note)
+      +pill('check','📋 Lists',counts.check)
+      +'<button class="oi-pill oi-pill-sort'+(sortDue?' on':'')+'" onclick="oiToggleSortDue()" title="Sort by due date (off = your manual order)">⇅ Due</button>';
+  }
+
   if(!open.length){
-    list.innerHTML='<div class="oi-empty">Nothing carried over — add a note or task below and it stays here, day after day, until you check it off.</div>';
+    list.innerHTML='<div class="oi-empty">'+(all.length?'Nothing in this filter.':'Nothing carried over — add a task, note, or checklist below. It stays here, day after day, until you check it off.')+'</div>';
   } else {
     list.innerHTML=open.map(it=>{
+      const kind=it.kind||'task';
       const age=_oiAgeDays(it);
       const ageChip=age>0?'<span class="oi-chip" title="Opened '+_oiFmtDate(it.createdDate)+'">'+age+'d</span>':'';
       const dueOver=it.dueDate && it.dueDate<=today;
       const dueChip=it.dueDate?'<span class="oi-chip'+(dueOver?' over':'')+'">due '+_oiFmtDate(it.dueDate)+(dueOver?' ⚠':'')+'</span>':'';
+      const repChip=(it.remindAt&&it.remindRepeat)?'<span class="oi-chip" title="Repeating reminder">🔁</span>':'';
       const remChip=it.remindAt?'<span class="oi-chip" title="Reminder set">🔔</span>':'';
       const srcChip=it.source==='flag'
         ?'<span class="oi-chip" style="cursor:pointer" onclick="event.stopPropagation();clPunchlistGoto(\''+_oiEsc(it.sourceRef)+'\')" title="Repair flag — tap to view on map">🚩</span>'
         :it.source==='cl'?'<span class="oi-chip" title="Compliance Log entry — resolves both places">§8</span>':'';
-      const kindIcon=it.kind==='note'?'📝':'';
+      const ck=Array.isArray(it.checkItems)?it.checkItems:[];
+      const ckChip=(kind==='check'&&ck.length)?'<span class="oi-chip'+(ck.every(c=>c.done)?' over':'')+'">'+ck.filter(c=>c.done).length+'/'+ck.length+'</span>':'';
+      const kindIcon=kind==='note'?'📝':kind==='check'?'📋':'';
       const exp=_oiExpanded===it.id;
+      const handle=canDrag?'<span class="oi-handle" onpointerdown="oiDragStart(event,\''+it.id+'\')" title="Drag to reorder">⠿</span>':'';
+      const bodyPeek=(!exp&&_oiBody(it)&&(it.title||'').trim())?'<div class="oi-peek">'+_oiEsc(_oiBody(it).split('\n')[0].slice(0,90))+'</div>':'';
       let detail='';
       if(exp){
+        // Checklist editor (check kind only)
+        let ckHtml='';
+        if(kind==='check'){
+          ckHtml='<div class="field"><label>Steps</label>'
+            +ck.map((c,i)=>'<div class="oi-ck-row">'
+              +'<input type="checkbox"'+(c.done?' checked':'')+' onchange="oiCkToggle(\''+it.id+'\','+i+')">'
+              +'<input type="text" value="'+_oiEsc(c.t)+'" placeholder="Step…" onchange="oiCkText(\''+it.id+'\','+i+',this.value)"'+(c.done?' style="text-decoration:line-through;color:var(--muted)"':'')+'>'
+              +'<button class="oi-ck-del" onclick="oiCkDel(\''+it.id+'\','+i+')">✕</button>'
+              +'</div>').join('')
+            +'<button class="btn btn-outline" style="font-size:10.5px;padding:5px 12px;margin-top:6px" onclick="oiCkAdd(\''+it.id+'\')">＋ Add step</button></div>';
+        }
+        // Repeat controls — anchor time comes from the reminder datetime.
+        const rep=it.remindRepeat||'';
+        const dayChips=(rep==='weekly')
+          ?'<div class="oi-daychips">'+_OI_DAYS.map((d,i)=>'<button class="oi-day'+((it.remindDays||[]).includes(i)?' on':'')+'" onclick="oiRemDayToggle(\''+it.id+'\','+i+')">'+d+'</button>').join('')+'</div>'
+          :'';
         detail='<div class="oi-detail">'
-          +'<div class="field"><label>Text</label><textarea class="short auto-expand" onchange="oiFieldChange(\''+it.id+'\',\'text\',this.value)">'+_oiEsc(it.text)+'</textarea></div>'
+          +'<div class="field"><label>Title</label><input type="text" value="'+_oiEsc(it.title||'')+'" placeholder="'+_oiEsc((it.title||'').trim()?'':_oiTitle(it))+'" onchange="oiFieldChange(\''+it.id+'\',\'title\',this.value)"></div>'
+          +'<div class="field"><label>Details</label><textarea class="short auto-expand" placeholder="Notes, details, anything…" onchange="oiFieldChange(\''+it.id+'\',\'text\',this.value)">'+_oiEsc(_oiBody(it))+'</textarea></div>'
+          +ckHtml
           +'<div class="oi-detail-row">'
-          +'<div class="field" style="flex:1"><label>Type</label><select onchange="oiFieldChange(\''+it.id+'\',\'kind\',this.value)"><option value="task"'+(it.kind!=='note'?' selected':'')+'>☑︎ Task</option><option value="note"'+(it.kind==='note'?' selected':'')+'>📝 Note</option></select></div>'
+          +'<div class="field" style="flex:1"><label>Type</label><select onchange="oiFieldChange(\''+it.id+'\',\'kind\',this.value)"><option value="task"'+(kind==='task'?' selected':'')+'>☑︎ Task</option><option value="note"'+(kind==='note'?' selected':'')+'>📝 Note</option><option value="check"'+(kind==='check'?' selected':'')+'>📋 Checklist</option></select></div>'
           +'<div class="field" style="flex:1"><label>Due date</label><input type="date" value="'+_oiEsc(it.dueDate)+'" onchange="oiFieldChange(\''+it.id+'\',\'dueDate\',this.value)"></div>'
           +'</div>'
-          +'<div class="field"><label>Reminder'+(_oiNative()?'':' <span style="text-transform:none;letter-spacing:0">(fires on the iOS app)</span>')+'</label><input type="datetime-local" value="'+_oiEsc(it.remindAt)+'" onchange="oiFieldChange(\''+it.id+'\',\'remindAt\',this.value)"></div>'
+          +'<div class="oi-detail-row">'
+          +'<div class="field" style="flex:1.4"><label>Reminder'+(_oiNative()?'':' <span style="text-transform:none;letter-spacing:0">(fires on the iOS app)</span>')+'</label><input type="datetime-local" value="'+_oiEsc(it.remindAt)+'" onchange="oiFieldChange(\''+it.id+'\',\'remindAt\',this.value)"></div>'
+          +'<div class="field" style="flex:1"><label>Repeat</label><select onchange="oiFieldChange(\''+it.id+'\',\'remindRepeat\',this.value)"'+(it.remindAt?'':' disabled title="Set a reminder time first"')+'><option value=""'+(rep===''?' selected':'')+'>Once</option><option value="daily"'+(rep==='daily'?' selected':'')+'>Daily</option><option value="weekly"'+(rep==='weekly'?' selected':'')+'>Weekly</option><option value="monthly"'+(rep==='monthly'?' selected':'')+'>Monthly</option></select></div>'
+          +'</div>'
+          +dayChips
+          +((rep==='monthly'&&it.remindAt)?'<div class="oi-rep-note">Fires on day '+new Date(it.remindAt).getDate()+' of each month at '+new Date(it.remindAt).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'})+'</div>':'')
           +'<div class="oi-detail-btns">'
           +'<button class="btn btn-outline" style="font-size:10.5px;padding:6px 12px" onclick="oiDelete(\''+it.id+'\')">🗑 Delete</button>'
           +'<button class="btn btn-outline" style="font-size:10.5px;padding:6px 12px;margin-left:auto" onclick="oiExpand(\''+it.id+'\')">Close</button>'
           +'</div></div>';
       }
-      return '<div class="oi-row'+(exp?' expanded':'')+'">'
+      return '<div class="oi-row'+(exp?' expanded':'')+'" data-id="'+it.id+'">'
         +'<div class="oi-row-main">'
-        +'<button class="oi-check" onclick="oiResolve(\''+it.id+'\')" title="Resolve">'+'</button>'
-        +'<div class="oi-text" onclick="oiExpand(\''+it.id+'\')">'+(kindIcon?'<span class="oi-kind">'+kindIcon+'</span> ':'')+_oiEsc(it.text)+'</div>'
-        +'<div class="oi-chips">'+srcChip+remChip+dueChip+ageChip+'</div>'
+        +handle
+        +'<button class="oi-check" onclick="oiResolve(\''+it.id+'\')" title="'+(kind==='note'?'Archive':'Resolve')+'"></button>'
+        +'<div class="oi-text" onclick="oiExpand(\''+it.id+'\')">'+(kindIcon?'<span class="oi-kind">'+kindIcon+'</span> ':'')+_oiEsc(_oiTitle(it))+bodyPeek+'</div>'
+        +'<div class="oi-chips">'+srcChip+ckChip+repChip+remChip+dueChip+ageChip+'</div>'
         +'</div>'+detail+'</div>';
     }).join('');
   }
@@ -346,7 +533,7 @@ function oiRender(){
       if(head) head.innerHTML='✓ Resolved today ('+res.length+') <span style="margin-left:auto">'+(_oiResolvedOpen?'▾':'▸')+'</span>';
       rlist.style.display=_oiResolvedOpen?'block':'none';
       rlist.innerHTML=res.map(it=>'<div class="oi-res-row">'
-        +'<span class="oi-res-text">'+_oiEsc(it.text)+'</span>'
+        +'<span class="oi-res-text">'+_oiEsc(_oiTitle(it))+'</span>'
         +(it.includeInReport?'<span class="oi-chip" title="Will appear in today’s report">📄</span>':'')
         +'<button class="oi-reopen" onclick="oiReopen(\''+it.id+'\')" title="Reopen">↩</button>'
         +'</div>').join('');
@@ -597,6 +784,48 @@ function _oiNotifId(id){
 }
 const _OI_DIGEST_ID=1999999999;
 
+// Snooze / Cancel actions on every reminder notification (Tim 7/30) — act
+// straight from the lock screen, no app open needed. Registered once per boot.
+var _oiActionsReady=false;
+async function _oiNotifInit(){
+  if(!_oiNative()||_oiActionsReady) return;
+  _oiActionsReady=true;
+  try{
+    const mod=await import('@capacitor/local-notifications');
+    const LN=mod.LocalNotifications;
+    try{
+      await LN.registerActionTypes({types:[{
+        id:'GL_OI_REMIND',
+        actions:[
+          {id:'oi_snooze', title:'⏰ Snooze 10 min'},
+          {id:'oi_cancel', title:'✕ Cancel reminder', destructive:true}
+        ]
+      }]});
+    }catch(e){}
+    LN.addListener('localNotificationActionPerformed', async (ev)=>{
+      try{
+        const oiId=ev&&ev.notification&&ev.notification.extra&&ev.notification.extra.oiId;
+        if(!oiId) return;
+        const it=_oiItems.find(x=>x.id===oiId);
+        if(ev.actionId==='oi_snooze'){
+          // One-off re-fire in 10 minutes, same content, same actions.
+          await LN.schedule({notifications:[{
+            id:_oiNotifId(oiId+'::snooze::'+Date.now()),
+            title:ev.notification.title||'📌 Open Item reminder',
+            body:ev.notification.body||'',
+            actionTypeId:'GL_OI_REMIND',
+            extra:{oiId},
+            schedule:{at:new Date(Date.now()+10*60000), allowWhileIdle:true}
+          }]});
+        } else if(ev.actionId==='oi_cancel'){
+          if(it){ it.remindAt=''; it.remindRepeat=''; it.remindDays=[]; _oiTouch(it); oiRender(); }
+          _oiNotifSync();
+        }
+      }catch(e){ console.warn('openItems notif action:', e.message); }
+    });
+  }catch(e){ _oiActionsReady=false; console.warn('openItems notif init:', e.message); }
+}
+
 async function _oiNotifSync(){
   if(!_oiNative()) return;
   try{
@@ -604,10 +833,13 @@ async function _oiNotifSync(){
     const LN=mod.LocalNotifications;
     const digest=oiDigestGet();
     const now=Date.now();
+    // Once-reminders need a future fire time; repeaters always schedule (the
+    // datetime supplies the anchor time-of-day / day-of-month).
     const reminders=oiOpenItems().filter(it=>{
       if(!it.remindAt) return false;
       const t=new Date(it.remindAt).getTime();
-      return isFinite(t) && t>now;
+      if(!isFinite(t)) return false;
+      return it.remindRepeat ? true : t>now;
     });
     const wantAny=digest.on || reminders.length>0;
 
@@ -624,12 +856,29 @@ async function _oiNotifSync(){
 
     const toSchedule=[];
     reminders.forEach(it=>{
-      toSchedule.push({
-        id:_oiNotifId(it.id),
+      const base={
         title:'📌 Open Item reminder',
-        body:it.text.slice(0,180),
-        schedule:{at:new Date(it.remindAt), allowWhileIdle:true}
-      });
+        body:oiItemLabel(it).slice(0,180),
+        actionTypeId:'GL_OI_REMIND',
+        extra:{oiId:it.id}
+      };
+      const at=new Date(it.remindAt);
+      const rep=it.remindRepeat||'';
+      if(!rep){
+        toSchedule.push({...base, id:_oiNotifId(it.id), schedule:{at, allowWhileIdle:true}});
+      } else if(rep==='daily'){
+        toSchedule.push({...base, id:_oiNotifId(it.id), schedule:{on:{hour:at.getHours(), minute:at.getMinutes()}, allowWhileIdle:true}});
+      } else if(rep==='weekly'){
+        // One scheduled notification per picked weekday (JS 0-6 → platform 1-7).
+        const days=(Array.isArray(it.remindDays)&&it.remindDays.length)?it.remindDays:[at.getDay()];
+        days.forEach(d=>{
+          toSchedule.push({...base, id:_oiNotifId(it.id+'::w'+d),
+            schedule:{on:{weekday:d+1, hour:at.getHours(), minute:at.getMinutes()}, allowWhileIdle:true}});
+        });
+      } else if(rep==='monthly'){
+        toSchedule.push({...base, id:_oiNotifId(it.id+'::m'),
+          schedule:{on:{day:at.getDate(), hour:at.getHours(), minute:at.getMinutes()}, allowWhileIdle:true}});
+      }
     });
     if(digest.on){
       const n=oiOpenCount(), due=oiDueTodayCount();
@@ -669,3 +918,12 @@ window.oiUnpinFlag = oiUnpinFlag;
 window.oiFlagPinned = oiFlagPinned;
 window.oiSyncSources = oiSyncSources;
 window.oiRainSync = oiRainSync;
+window.oiSetFilter = oiSetFilter;
+window.oiToggleSortDue = oiToggleSortDue;
+window.oiRemDayToggle = oiRemDayToggle;
+window.oiCkAdd = oiCkAdd;
+window.oiCkToggle = oiCkToggle;
+window.oiCkText = oiCkText;
+window.oiCkDel = oiCkDel;
+window.oiDragStart = oiDragStart;
+window.oiItemLabel = oiItemLabel;

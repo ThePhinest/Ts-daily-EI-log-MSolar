@@ -699,6 +699,21 @@ button:disabled,button[disabled]{opacity:.45;cursor:not-allowed}
 .wx-rain-flag{font-size:9px;line-height:1;margin-top:1px}
 /* ── 📌 Open Items — carryover notes & tasks ── */
 .oi-empty{font-family:var(--mono);font-size:11px;color:var(--muted);line-height:1.55;padding:10px 4px 12px;text-align:center}
+.oi-pills{display:flex;gap:6px;flex-wrap:wrap;margin:2px 0 9px}
+.oi-pill{font-family:var(--cond);font-size:10.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--muted2);background:var(--s1);border:1px solid var(--border);border-radius:12px;padding:4px 11px;cursor:pointer;white-space:nowrap}
+.oi-pill.on{color:var(--amber);border-color:var(--amber);background:var(--amber-bg)}
+.oi-pill-sort{margin-left:auto}
+.oi-handle{flex:none;color:var(--muted);font-size:14px;cursor:grab;touch-action:none;padding:2px 1px;user-select:none;-webkit-user-select:none}
+.oi-row.oi-dragging{opacity:.85;border-color:var(--amber);box-shadow:0 6px 18px rgba(0,0,0,.4)}
+.oi-peek{font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.oi-ck-row{display:flex;align-items:center;gap:8px;margin-top:6px}
+.oi-ck-row input[type="checkbox"]{width:17px;height:17px;accent-color:var(--amber);flex:none}
+.oi-ck-row input[type="text"]{flex:1;min-width:0}
+.oi-ck-del{flex:none;background:transparent;border:1px solid var(--border);border-radius:5px;color:var(--muted2);font-size:11px;padding:4px 8px;cursor:pointer}
+.oi-daychips{display:flex;gap:5px}
+.oi-day{flex:1;font-family:var(--mono);font-size:11px;font-weight:700;color:var(--muted2);background:var(--s1);border:1px solid var(--border);border-radius:6px;padding:7px 0;cursor:pointer}
+.oi-day.on{color:var(--amber);border-color:var(--amber);background:var(--amber-bg)}
+.oi-rep-note{font-family:var(--mono);font-size:10px;color:var(--muted)}
 .oi-row{border:1px solid var(--border);border-radius:7px;background:var(--s1);margin-bottom:7px;overflow:hidden}
 .oi-row.expanded{border-color:var(--border2)}
 .oi-row-main{display:flex;align-items:center;gap:10px;padding:9px 11px;min-height:44px}
@@ -1947,10 +1962,11 @@ body.is-native select { font-size: 16px !important; }
       <span class="card-chevron">▾</span>
     </div>
     <div class="card-body">
+      <div class="oi-pills" id="oi-pills"></div>
       <div id="oi-list"></div>
       <div class="oi-add-row">
         <button class="oi-kind-btn" id="oi-new-kind" onclick="oiToggleNewKind()" title="Switch between task and note">☑︎ Task</button>
-        <input type="text" id="oi-new-text" placeholder="Add a task or note — it carries until you check it off…" onkeydown="if(event.key==='Enter'){event.preventDefault();oiAdd()}">
+        <input type="text" id="oi-new-text" placeholder="Title — tap it after adding for details, steps, reminders…" onkeydown="if(event.key==='Enter'){event.preventDefault();oiAdd()}">
         <button class="oi-add-btn" onclick="oiAdd()" title="Add">＋</button>
       </div>
       <div id="oi-resolved-wrap" style="display:none">

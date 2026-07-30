@@ -420,7 +420,7 @@ async function rptBuildDocx(logData,polished,photos){
     const oiFmt=(ds)=>{ if(!ds) return ''; const p=ds.split('-'); return p.length===3?`${parseInt(p[1])}/${parseInt(p[2])}/${p[0].slice(2)}`:ds; };
     const oiTable=new Table({rows:[
       new TableRow({children:[oiHdrCell('Item',3600),oiHdrCell('Opened',1200),oiHdrCell('Resolved',1200),oiHdrCell('Resolution',3360)]}),
-      ...oiRes.map(it=>new TableRow({children:[oiCell(it.text),oiCell(oiFmt(it.createdDate)),oiCell(oiFmt(it.resolvedDate)),oiCell(it.resolutionNote||'Resolved')]}))
+      ...oiRes.map(it=>new TableRow({children:[oiCell((typeof window.oiItemLabel==='function')?window.oiItemLabel(it):it.text),oiCell(oiFmt(it.createdDate)),oiCell(oiFmt(it.resolvedDate)),oiCell(it.resolutionNote||'Resolved')]}))
     ]});
     sec3.push(spacer(60),h2('Open Items Resolved'),spacer(40),oiTable);
   }
@@ -601,7 +601,7 @@ function _buildSnapshot(logData, compEntries, skipPolish, photos, effectivePromp
   // Opted-in resolved Open Items render in the DOCX (openItems.js), so they must
   // be part of the cache key — resolving one after generating must be a cache miss.
   const oiRefs = ((typeof window.oiResolvedForReport==='function')?window.oiResolvedForReport(logData.reportDate):[])
-    .map(it => ({id:it.id, text:it.text, resolutionNote:it.resolutionNote, createdDate:it.createdDate, resolvedDate:it.resolvedDate}))
+    .map(it => ({id:it.id, text:it.text, title:it.title||'', resolutionNote:it.resolutionNote, createdDate:it.createdDate, resolvedDate:it.resolvedDate}))
     .sort((a,b) => String(a.id||'').localeCompare(String(b.id||'')));
   // effectivePromptHash (added 2026-05-08, C10) folds the user's assembled prompt
   // into the cache key. Identical inputs but different prompt config = cache miss.
