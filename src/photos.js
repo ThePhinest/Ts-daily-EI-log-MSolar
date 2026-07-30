@@ -1082,7 +1082,7 @@ const _STAMP_PILLS=[
   {key:'project', pill:'🏗 Project'},
   {key:'caption', pill:'✏ Caption'},
   {key:'tags',    pill:'🏷 Tags'},
-  {key:'brand',   pill:'🪪 ID'},
+  {key:'brand',   pill:'🖋 Watermark'},
 ];
 function _stampDefaults(){
   const base={gps:true,time:true,project:true,caption:true,tags:true,brand:true};

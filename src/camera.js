@@ -18,12 +18,23 @@
 // the non-blocking post-shot strip. Tag chips (🌊/🌱/🚩) stay armed across shots.
 
 import { CameraPreview } from '@capgo/camera-preview';
+import { ScreenOrientation } from '@capacitor/screen-orientation';
 
 let _open=false, _suspended=false, _busy=false;
 let _geoWatch=null, _coords=null, _heading=null;
 let _tags=new Set(), _ctx=null;
 let _clockTimer=null, _stripTimer=null;
 let _orientBound=null, _visBound=null, _reframeT=null;
+// Solocator-style orientation architecture (v3, Tim 7/29 device feedback): the
+// INTERFACE is locked to portrait while the camera is open — the native preview
+// never reframes (kills the plugin's 4:3 re-shrink on rotation for good) — and
+// we track the PHYSICAL hold from the orientation sensor instead. _uiRot is the
+// device's rotation from portrait: +90 = rotated clockwise (shutter lands under
+// the left hand), -90 = counterclockwise. Overlay elements counter-rotate in
+// place (CSS classes), the compass heading gets the ±90 correction, and
+// landscape captures are pixel-rotated upright at save.
+let _uiRot=0;
+const _isNative=()=>!!(window.Capacitor?.isNativePlatform?.());
 
 function _pid(){ return (typeof window._activeProjectId==='function')?window._activeProjectId():'default'; }
 function _cfg(){ try{ return JSON.parse(localStorage.getItem('msf_projectconfig')||'{}'); }catch{ return {}; } }
@@ -53,7 +64,7 @@ const STAMP_ELEMENTS=[
   {key:'project', label:'Project + prepared-by line'},
   {key:'caption', label:'Caption + location label'},
   {key:'tags',    label:'Tag badges (🌊 🌱 🚩)'},
-  {key:'brand',   label:'Wordmark + record ID (edge strip)'},
+  {key:'brand',   label:'Wordmark watermark (edge strip)'},
 ];
 export function camStampDefaults(){
   const base={gps:true,time:true,project:true,caption:true,tags:true,brand:true};
@@ -225,18 +236,19 @@ export async function camStampBlob(p, blob, toggles){
   // Bottom-right: compass rose (coords inside, bearing below) + tag badges above.
   // Everything right-of-rose leaves a lane for the vertical edge strip.
   const laneR=Math.round(S*1.6);                  // edge-strip lane width
+  const R=Math.round(S*3.1);
+  const roseCy=H-pad-R-Math.round(R*0.55);        // rose centre (strip aligns to it)
   let tagY=H-pad;
   if(t.gps&&(p.lat!=null&&p.lng!=null||p.direction!=null)){
-    const R=Math.round(S*3.1);
-    const cx=W-laneR-R, cy=H-pad-R-Math.round(R*0.55);
+    const cx=W-laneR-R;
     const coordLines=[];
     if(p.lat!=null&&p.lng!=null){
       coordLines.push((+p.lat).toFixed(5), (+p.lng).toFixed(5));
       if(p.gpsAcc!=null) coordLines.push(`±${Math.round(p.gpsAcc*3.28084)} ft`);
       if(p.alt!=null) coordLines.push(`EL ${Math.round(p.alt*3.28084).toLocaleString()} ft`);
     }
-    _drawRose(ctx,cx,cy,R,p.direction!=null?+p.direction:null,coordLines,_bearingTxt(p.direction!=null?+p.direction:null));
-    tagY=cy-R-Math.round(S*1.1);
+    _drawRose(ctx,cx,roseCy,R,p.direction!=null?+p.direction:null,coordLines,_bearingTxt(p.direction!=null?+p.direction:null));
+    tagY=roseCy-R-Math.round(S*1.1);
   }
   if(t.tags){
     const em=[p.swppp?'🌊':null,p.seedTag?'🌱':null,p.repairTag?'🚩':null].filter(Boolean).join(' ');
@@ -247,19 +259,22 @@ export async function camStampBlob(p, blob, toggles){
       ctx.textAlign='left';
     }
   }
-  // Right edge: vertical wordmark + record ID (the brand/verification signature).
+  // Right edge: vertical wordmark, centred on the rose (Tim 7/29: ID dropped —
+  // it lives in the record — leaving a clean brand watermark; future slot for
+  // per-tenant output logos).
   if(t.brand){
     ctx.save();
-    ctx.translate(W-Math.round(S*0.45), H-pad);
-    ctx.rotate(-Math.PI/2);
     ctx.textAlign='left'; ctx.textBaseline='alphabetic';
     const fs=Math.round(S*0.92), gap=Math.round(fs*0.18);
+    ctx.font=`bold ${fs}px Arial`;
+    const L=ctx.measureText('GROUND').width+ctx.measureText('|').width+ctx.measureText('LOG').width+gap*2;
+    ctx.translate(W-Math.round(S*0.45), Math.min(H-pad, roseCy+L/2));
+    ctx.rotate(-Math.PI/2);
     let x=0;
-    const seg=(txt,color,font)=>{ ctx.font=font||`bold ${fs}px Arial`; ctx.fillStyle=color; ctx.fillText(txt,x,0); x+=ctx.measureText(txt).width+gap; };
+    const seg=(txt,color)=>{ ctx.fillStyle=color; ctx.fillText(txt,x,0); x+=ctx.measureText(txt).width+gap; };
     seg('GROUND','#ffffff');
     seg('|','#C9A84C');
     seg('LOG','#38b6c4');
-    if(p.id) seg(`  ·  ${String(p.id).toUpperCase()}`,'rgba(255,255,255,0.72)',`${Math.round(fs*0.85)}px Arial`);
     ctx.restore();
   }
   return await new Promise(res=>c.toBlob(res,'image/jpeg',0.92));
@@ -276,7 +291,8 @@ function _fmtClock(d){
 function _paintRose(){
   const cv=document.getElementById('glc-rose'); if(!cv) return;
   const dpr=window.devicePixelRatio||1;
-  const CW=118, CH=150, R=46;
+  // Square canvas so the landscape counter-rotation pivots in place.
+  const CW=150, CH=150, R=46;
   if(cv.width!==Math.round(CW*dpr)){
     cv.width=Math.round(CW*dpr); cv.height=Math.round(CH*dpr);
     cv.style.width=CW+'px'; cv.style.height=CH+'px';
@@ -291,7 +307,8 @@ function _paintRose(){
     if(_coords.accuracy!=null) coordLines.push(`±${Math.round(_coords.accuracy*3.28084)} ft`);
     if(_coords.altitude!=null) coordLines.push(`EL ${Math.round(_coords.altitude*3.28084).toLocaleString()} ft`);
   } else coordLines.push('GPS','acquiring…');
-  _drawRose(ctx,CW/2,R+6,R,_heading,coordLines,_bearingTxt(_heading)||'—');
+  const h=_viewHeading();
+  _drawRose(ctx,CW/2,R+8,R,h,coordLines,_bearingTxt(h)||'—');
 }
 
 function _toast(msg){
@@ -319,6 +336,13 @@ export async function camOpen(ctx){
   { const l=_last(); if(!l.caption&&_defCap()){ _saveLast({...l,caption:_defCap()}); } }
   _buildDom();
   document.documentElement.classList.add('camera-live');
+  // Lock the interface to portrait for the whole camera session (native only —
+  // browsers reject outside fullscreen). Small settle so innerWidth/Height are
+  // portrait before the preview frame is computed.
+  if(_isNative()){
+    try{ await ScreenOrientation.lock({orientation:'portrait'}); await new Promise(r=>setTimeout(r,60)); }catch{}
+  }
+  _uiRot=0; _applyUiRot();
   try{
     await _startSensors();          // permission prompts ride the opening tap gesture
     await _startPreview();
@@ -350,6 +374,7 @@ export async function camClose(){
   if(_orientBound){ window.removeEventListener('deviceorientationabsolute',_orientBound); window.removeEventListener('deviceorientation',_orientBound); _orientBound=null; }
   if(_geoWatch!=null){ try{ navigator.geolocation.clearWatch(_geoWatch); }catch{} _geoWatch=null; }
   try{ await CameraPreview.stop(); }catch{}
+  if(_isNative()){ try{ ScreenOrientation.unlock(); }catch{} }   // app rotation restored
   // finally-shaped teardown: a failed stop must NEVER strand the app transparent.
   document.documentElement.classList.remove('camera-live');
   const el=document.getElementById('gl-camera'); if(el) el.remove();
@@ -372,25 +397,54 @@ async function _startPreview(){
     width:Math.round(window.innerWidth),
     height:Math.round(window.innerHeight),
     aspectMode:'cover',
+    // Interface is locked to portrait while open — the plugin's own rotation
+    // handling (stale-frame updateCameraFrame + 4:3 re-shrink, the v2 square-
+    // view bug) must stay OUT of the picture entirely.
+    rotateWhenOrientationChanged:false,
     disableExifHeaderStripping:false,
   });
 }
 
-// Rotation fix (★ v2 device-test bug): the explicit start frame never re-sizes
-// on its own, so landscape→portrait left the preview stuck at the old frame.
-// Re-frame the native layer to the new window on every rotation/resize —
-// setPreviewSize resizes the running session in place (no stop/restart flicker).
+// Reframe fallback: with the interface locked, native resizes shouldn't happen;
+// if one does (e.g. the lock landing mid-open), restart the preview — the START
+// path is the only device-verified full-screen sizing; the plugin's
+// setPreviewSize re-shrinks explicit frames toward its internal 4:3 default.
 function _onReframe(){
   clearTimeout(_reframeT);
   _reframeT=setTimeout(async()=>{
     if(!_open||_suspended) return;
-    if(window.Capacitor?.isNativePlatform?.()){
-      try{
-        await CameraPreview.setPreviewSize({x:0,y:0,width:Math.round(window.innerWidth),height:Math.round(window.innerHeight)});
-      }catch(e){ console.warn('camera reframe failed:',e&&e.message); }
+    if(_isNative()){
+      try{ await CameraPreview.stop(); await _startPreview(); }
+      catch(e){ console.warn('camera reframe restart failed:',e&&e.message); }
     }
     _renderOverlay();   // web <video> follows CSS; overlay repaints either way
   },250);
+}
+
+// ── Physical-hold tracking (interface is locked; sensors tell us the truth) ──
+// From the same deviceorientation events that carry the compass: gamma is the
+// left-right tilt — past ±50° with beta flat means landscape, sign gives the
+// direction (gamma>0 = rotated clockwise). Dead zone keeps the current state so
+// the UI doesn't flap mid-rotation.
+function _calcUiRot(beta,gamma){
+  if(typeof beta!=='number'||typeof gamma!=='number') return _uiRot;
+  if(Math.abs(gamma)>=50&&Math.abs(beta)<=40) return gamma>0?90:-90;
+  if(Math.abs(beta)>=50) return 0;
+  return _uiRot;
+}
+function _applyUiRot(){
+  const el=document.getElementById('gl-camera'); if(!el) return;
+  el.classList.toggle('glc-cw',_uiRot===90);
+  el.classList.toggle('glc-ccw',_uiRot===-90);
+  _renderLive();
+}
+// Compass heading arrives in the DEVICE frame (direction of the device's top
+// edge). Held sideways, the top edge points ±90° off the shot direction — the
+// same correction Solocator applies. Only meaningful under the native lock.
+function _viewHeading(){
+  if(_heading==null) return null;
+  const rot=_isNative()?_uiRot:0;
+  return ((_heading-rot)%360+360)%360;
 }
 
 async function _onVis(){
@@ -426,6 +480,11 @@ async function _startSensors(){
   }catch{ return; }
   let lastPaint=0;
   _orientBound=(e)=>{
+    // Physical hold first — beta/gamma flow even before the compass warms up.
+    if(_isNative()){
+      const rot=_calcUiRot(e.beta,e.gamma);
+      if(rot!==_uiRot){ _uiRot=rot; _applyUiRot(); }
+    }
     let h=null;
     if(typeof e.webkitCompassHeading==='number') h=e.webkitCompassHeading;            // iOS: degrees from north
     else if(e.absolute===true && typeof e.alpha==='number') h=(360-e.alpha)%360;      // spec absolute
@@ -559,6 +618,20 @@ function _b64ToBlob(b64,type){
   return new Blob([arr],{type:type||'image/jpeg'});
 }
 
+// Landscape capture under the portrait interface lock arrives portrait-tagged —
+// rotate the pixels upright by the physical hold before anything stores them.
+async function _rotateBlob(blob,rot){
+  const bmp=await createImageBitmap(blob);
+  const c=document.createElement('canvas');
+  c.width=bmp.height; c.height=bmp.width;
+  const ctx=c.getContext('2d');
+  ctx.translate(c.width/2,c.height/2);
+  ctx.rotate(rot*Math.PI/180);
+  ctx.drawImage(bmp,-bmp.width/2,-bmp.height/2);
+  bmp.close();
+  return await new Promise(res=>c.toBlob(res,'image/jpeg',0.92));
+}
+
 async function _shoot(){
   if(_busy) return; _busy=true;
   const sh=document.getElementById('glc-shutter'); if(sh) sh.disabled=true;
@@ -566,14 +639,18 @@ async function _shoot(){
     const res=await CameraPreview.capture({quality:92});
     const b64=res&&(res.value||res.base64PictureTaken);
     if(!b64) throw new Error('empty capture result');
-    const blob=_b64ToBlob(b64,'image/jpeg');
+    let blob=_b64ToBlob(b64,'image/jpeg');
+    if(_isNative()&&(_uiRot===90||_uiRot===-90)){
+      try{ blob=(await _rotateBlob(blob,_uiRot))||blob; }
+      catch(e){ console.warn('camera rotate failed (storing as captured):',e); }
+    }
     const last=_last();
     const meta={
       lat:_coords?_coords.latitude:null,
       lng:_coords?_coords.longitude:null,
       accuracy:_coords&&_coords.accuracy!=null?_coords.accuracy:null,
       altitude:_coords&&_coords.altitude!=null?_coords.altitude:null,   // meters MSL
-      heading:_heading,
+      heading:_viewHeading(),          // shot direction, ±90-corrected for the hold
       caption:last.caption||'',
       locLabel:last.loc||'',
       tags:[..._tags],

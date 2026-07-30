@@ -172,11 +172,17 @@ html.camera-live body>*:not(#gl-camera){visibility:hidden}
 .glc-line{font-size:12px;line-height:1.55;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .glc-time{border-left:3px solid var(--amber);padding-left:7px}
 /* live compass rose (canvas — same renderer as the stamp, WYSIWYG) */
-.glc-compass{position:absolute;right:8px;bottom:calc(178px + env(safe-area-inset-bottom));z-index:2;pointer-events:none}
-/* vertical wordmark strip up the right edge (matches the stamp's brand element) */
-.glc-edge{position:absolute;right:2px;bottom:calc(28px + env(safe-area-inset-bottom));z-index:2;pointer-events:none;writing-mode:vertical-rl;transform:rotate(180deg);font-family:var(--cond);font-weight:700;font-size:12px;letter-spacing:.16em;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.85)}
+.glc-compass{position:absolute;right:4px;bottom:calc(178px + env(safe-area-inset-bottom));z-index:2;pointer-events:none}
+/* vertical wordmark strip, right edge, centred on the rose (stamp's brand element) */
+.glc-edge{position:absolute;right:2px;bottom:calc(238px + env(safe-area-inset-bottom));z-index:2;pointer-events:none;writing-mode:vertical-rl;transform:rotate(180deg);font-family:var(--cond);font-weight:700;font-size:12px;letter-spacing:.16em;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.85)}
 .glc-edge .pipe{color:var(--amber)}
 .glc-edge .log{color:#38b6c4}
+/* Landscape holds (Solocator architecture): the interface stays LOCKED portrait;
+   these classes counter-rotate elements in place so they read upright however
+   the phone is held. glc-cw = device rotated clockwise (shutter under the left
+   hand), glc-ccw = counterclockwise. */
+#gl-camera.glc-cw .glc-compass canvas,#gl-camera.glc-cw .glc-overlay,#gl-camera.glc-cw .glc-chip,#gl-camera.glc-cw .glc-close{transform:rotate(-90deg)}
+#gl-camera.glc-ccw .glc-compass canvas,#gl-camera.glc-ccw .glc-overlay,#gl-camera.glc-ccw .glc-chip,#gl-camera.glc-ccw .glc-close{transform:rotate(90deg)}
 #glc-shutter{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(28px + env(safe-area-inset-bottom));z-index:3;width:74px;height:74px;border-radius:50%;background:rgba(255,255,255,.92);border:5px solid rgba(201,168,76,.95);cursor:pointer;padding:0}
 #glc-shutter:active{transform:translateX(-50%) scale(.93)}
 #glc-shutter:disabled{opacity:.55}
@@ -2724,7 +2730,8 @@ Anticipated rain — AM weather monitoring expected"></textarea>
         <span class="cl-stat-lbl">Days</span>
       </div>
     </div>
-    <button class="btn" style="background:transparent;border:1.5px solid var(--amber);color:var(--amber);font-weight:700" onclick="phOpenCamera()">📸 Camera</button>
+    <!-- Camera = the primary capture action: stretch to fill the header row at stat-tile height (Tim 7/29) -->
+    <button class="btn" style="flex:1 1 auto;align-self:stretch;min-width:150px;background:transparent;border:1.5px solid var(--amber);color:var(--amber);font-weight:700;font-size:15px" onclick="phOpenCamera()">📸 Camera</button>
     <button class="btn btn-amber" onclick="document.getElementById('ph-file-input').click()">+ Upload Photos</button>
     <button class="btn" id="ph-shared-btn" style="background:transparent;border:1.5px solid var(--s3);color:var(--s3);font-weight:700" onclick="phJumpToShared()" title="Photos shared by project members">👥 <span id="ph-shared-count">0</span></button>
     <button class="btn" id="ph-trash-btn" style="display:none;background:transparent;border:1.5px solid #e25555;color:#e25555;font-weight:700" onclick="phJumpToTrash()">🗑 <span id="ph-trash-count">0</span></button>
