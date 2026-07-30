@@ -4729,10 +4729,11 @@ function mapRefreshDateLabels(){
       const c=_calcCentroid(e.geometry);
       if(!c) return null;
       const isOpenTemp=e.temporary&&e.tempStatus!=='resolved';
-      // Open repair flags override the date label with an amber 🚩 so the
-      // live punchlist reads at a glance; otherwise the normal date/custom label.
+      // Open repair flags override the date label with an amber 🚩 + the flag's
+      // permanent PL number so map ↔ punchlist line up at a glance; otherwise
+      // the normal date/custom label.
       const text=isOpenTemp
-        ? '🚩 '+((e.tempLabel&&e.tempLabel.trim())||'Repair')
+        ? '🚩 '+(e.plNum?((typeof trPlFmt==='function'?trPlFmt(e.plNum):'PL-'+e.plNum)+' · '):'')+((e.tempLabel&&e.tempLabel.trim())||'Repair')
         : ((e.labelText&&e.labelText.trim())?e.labelText.trim():_fmtLabelDate(e.date));
       const color=isOpenTemp ? '#C9A84C'
         : ((e.labelColor&&/^#[0-9A-Fa-f]{6}$/.test(e.labelColor))?e.labelColor:'#ffffff');
@@ -4953,9 +4954,9 @@ async function _compositeBrandWordmark(blob, legendCat, pid, scopeEntryId, opts)
     // onto the image at its projected position (anchor 'bottom' = tip at the point),
     // so an end-of-day map capture actually shows where photos were taken.
     try{
-      // ESC-status + seeding-status captures skip the marker overlay — pins/markers
-      // are context those deliverables deliberately exclude (clean status image).
-      if(_mapInstance&&!(opts&&(opts.escCids||opts.seedSrcs))){
+      // ESC-status + seeding-status + punchlist captures skip the marker overlay —
+      // pins/markers are context those deliverables deliberately exclude.
+      if(_mapInstance&&!(opts&&(opts.escCids||opts.seedSrcs||opts.plCap))){
         const cont=_mapInstance.getContainer();
         const sx=cont&&cont.clientWidth?c.width/cont.clientWidth:1;
         const sy=cont&&cont.clientHeight?c.height/cont.clientHeight:1;
@@ -5186,6 +5187,20 @@ async function _compositeBrandWordmark(blob, legendCat, pid, scopeEntryId, opts)
           _drawLegendBox(ctx,c,`🌱 SEEDING STATUS · ${_fmtLabelDate(new Date().toLocaleDateString('en-CA'))}`,rows);
         }
       }catch(e){ console.warn('seeding legend composite failed:',e.message); }
+    }
+    // 🚩 PUNCHLIST legend — open/overdue counts baked in so the overview capture
+    // matches the PDF header it fronts. Item identity lives in the map labels
+    // (each flag renders "🚩 PL-NN · deficiency"), not the legend.
+    if(opts&&opts.plCap){
+      try{
+        const open=(typeof trGetOpenTemporary==='function')?trGetOpenTemporary(pid):[];
+        const winHrs=(typeof clAmberHours==='function')?clAmberHours():48;
+        const nowTs=Date.now();
+        const overdue=open.filter(e=>{ const t=new Date((e.date||'')+'T00:00:00').getTime(); return !isNaN(t)&&nowTs>t+winHrs*3600000; }).length;
+        const rows=[{label:`${open.length} open item${open.length===1?'':'s'} — flags show their PL number`,color:'#C9A84C'}];
+        if(overdue) rows.push({label:`${overdue} past the ${winHrs}-hour correction window`,bold:true});
+        _drawLegendBox(ctx,c,`🚩 ESC PUNCHLIST · ${_fmtLabelDate(new Date().toLocaleDateString('en-CA'))}`,rows);
+      }catch(e){ console.warn('punchlist legend composite failed:',e.message); }
     }
     const PAD=Math.max(16,Math.round(c.width*0.012));
     const PILL_H=Math.max(28,Math.round(c.height*0.035));
@@ -5772,6 +5787,48 @@ async function _doCaptureDist(cid){
   setTimeout(_hideCaptureToast,2200);
 }
 
+// ── 🚩 Punchlist capture (7/30, Tim) ──
+// FAB 🚩 row: overview shot(s) of flag locations for the punchlist export.
+// No picker — the subject is the open flags themselves (labels carry their
+// permanent PL numbers, so the capture IS the map↔list index). Flags are
+// forced visible for the shot; everything else stays as the user framed it
+// (layers panel controls the context). The newest capture day embeds at the
+// FRONT of the punchlist PDF.
+function mapCapturePunchlist(){
+  if(!_mapInstance) return;
+  if(typeof mapCloseFab==='function') mapCloseFab();
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  if(typeof trEnsurePlNums==='function'){ try{ trEnsurePlNums(pid); }catch(e){} }
+  const open=(typeof trGetOpenTemporary==='function')?trGetOpenTemporary(pid):[];
+  if(!open.length){ _showCaptureToast('Nothing on the punchlist — no open flags to capture.'); setTimeout(_hideCaptureToast,2600); return; }
+  if(_trackerPopup){_trackerPopup.remove();_trackerPopup=null;}
+  _showCaptureBar(()=>_doCapturePunchlist());
+  // Flags ARE the subject — force them on regardless of the capture pref.
+  _capFlagsShow=true; _capFlagsRefresh(); _capFlagsPaintBtn();
+}
+window.mapCapturePunchlist=mapCapturePunchlist;
+
+async function _doCapturePunchlist(){
+  if(!_mapInstance) return;
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  _showCaptureToast('📷 Capturing…');
+  await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
+  const canvas=_mapInstance.getCanvas();
+  const today=new Date().toLocaleDateString('en-CA');
+  const rawBlob=await new Promise(res=>canvas.toBlob(res,'image/png'));
+  if(!rawBlob){ _hideCaptureToast(); _capFlagsDisarm(); console.warn('_doCapturePunchlist: canvas returned null'); return; }
+  const branded=await _compositeBrandWordmark(rawBlob,null,pid,null,{plCap:true});
+  _capFlagsDisarm();
+  if(typeof phSaveCapturedImage!=='function'){ _hideCaptureToast(); return; }
+  _showCaptureToast('☁️ Saving…');
+  const prefill=`Punchlist · ${_fmtLabelDate(today)}`;
+  const photoEntry=await phSaveCapturedImage(branded,today,prefill,{plCap:true});
+  _hideCaptureToast();
+  if(!photoEntry){ console.warn('_doCapturePunchlist: save failed'); return; }
+  _showCaptureToast('✓ Saved · rides the front of the next punchlist PDF');
+  setTimeout(_hideCaptureToast,2600);
+}
+
 // Standalone caption modal for capture flow — writes directly to entry.photoCaptions
 // (since we're not inside the entry edit modal's pending state).
 function _showCaptureCaptionModal(entryId,photoId,prefill){
@@ -6226,7 +6283,7 @@ function _showTrackerEntryPopup(lngLat,props){
   const _isTemp=!!(entry&&entry.temporary&&entry.tempStatus!=='resolved');
   // Copy/Reshape work on real line/area geometry only (not flags, not points).
   const _hasShape=!!(entry&&!entry.temporary&&entry.geometry&&(entry.geometry.type==='Polygon'||entry.geometry.type==='LineString'));
-  const tempStatusLine=_isTemp?`<div style="color:#C9A84C;display:flex;align-items:center;gap:6px;margin-top:2px">🚩 <b>${(entry.tempLabel||'Repair').replace(/</g,'&lt;')}</b><span style="opacity:.7">· needs attention</span></div>`:'';
+  const tempStatusLine=_isTemp?`<div style="color:#C9A84C;display:flex;align-items:center;gap:6px;margin-top:2px">🚩 <b>${entry.plNum?((typeof trPlFmt==='function'?trPlFmt(entry.plNum):'PL-'+entry.plNum)+' · '):''}${(entry.tempLabel||'Repair').replace(/</g,'&lt;')}</b><span style="opacity:.7">· needs attention</span></div>`:'';
   const tempBtn=_mineEntry?(_isTemp
     ?`<button onclick="mapResolveTemporary('${props.id}')" style="${_TRP_BTN}background:rgba(39,174,96,0.18);border:1px solid #27AE60;color:#27AE60" title="Mark fixed — leaves the live map but stays in the punchlist record">✓ Fixed</button>`
     :`<button onclick="mapFlagRepair('${props.id}')" style="${_TRP_BTN}background:var(--s2,#1a2a38);border:1px solid var(--border,#334);color:var(--muted,#888)" title="Pin a repair / needs-attention flag on this drawing — photo + note, shows on the punchlist until fixed">🚩 Flag repair</button>`):'';
@@ -6509,6 +6566,8 @@ function _saveRepairFlag(parentId,lngLat,existing,label,notes,photoIds){
     fields:{}, seedMix:null, showDateLabel:false, labelText:null, labelColor:null,
     entryType:'installed', parentId:parentId, state:null,
     temporary:true, tempStatus:'open', tempType:'repair',
+    // Permanent punchlist number — assigned once at creation, never reused.
+    plNum:(typeof trNextPlNum==='function')?trNextPlNum(pid):null,
   };
   entry.tempLabel=label.slice(0,60);
   entry.notes=notes||null;

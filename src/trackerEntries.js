@@ -588,6 +588,45 @@ function trGetResolvedTemporary(projectId){
     .sort((a,b) => (b.resolvedAt||0) - (a.resolvedAt||0));
 }
 
+// ── Persistent punchlist numbers (7/30) ──
+// Every flag gets a permanent per-project PL number at creation. The number
+// NEVER changes or gets reused — a fixed item keeps its number in the PDF's
+// verification table, so "PL-07" on a printed copy stays PL-07 forever.
+// (Before this, the PDF numbered positionally at export time: fixing an old
+// item renumbered everything below it.)
+function trPlFmt(n){ return n ? 'PL-'+String(n).padStart(2,'0') : ''; }
+
+// Next free number = max across ALL flags (open, resolved, soft-deleted —
+// deleted flags keep their number reserved so it can't be reissued).
+function trNextPlNum(projectId){
+  const pid = projectId || ((typeof _activeProjectId === 'function') ? _activeProjectId() : 'default');
+  let max = 0;
+  _trLoadRaw(pid).entries.forEach(e => { if(e.temporary && e.plNum > max) max = e.plNum; });
+  return max + 1;
+}
+
+// One-time backfill for flags created before plNum existed — oldest first, so
+// historical ordering matches what earlier positional exports showed. Runs at
+// tracker startup + before every punchlist render/export; no-ops when nothing
+// is missing.
+function trEnsurePlNums(projectId){
+  const pid = projectId || ((typeof _activeProjectId === 'function') ? _activeProjectId() : 'default');
+  const data = _trLoadRaw(pid);
+  const missing = data.entries.filter(e => e.temporary && !e.deletedAt && !e.plNum);
+  if(!missing.length) return;
+  let next = trNextPlNum(pid);
+  missing
+    .sort((a,b) => (a.date||'') < (b.date||'') ? -1 : ((a.date||'') > (b.date||'') ? 1 : (a.createdAt||0)-(b.createdAt||0)))
+    .forEach(e => { e.plNum = next++; e.updatedAt = Date.now(); _trStamp(e); });
+  _trSaveRaw(pid, data);
+  if(_trCloudOk(pid)){
+    missing.forEach(e => {
+      if(_trForeign(e)) return;
+      try { _projData(pid).collection('trackerEntries').doc(e.id).set(_trToFs(e)).catch(()=>{}); } catch(err){}
+    });
+  }
+}
+
 // Window exposure — mirrors the pattern in db.js / timesheet.js.
 if(typeof window !== 'undefined'){
   window.trGenId = trGenId;
@@ -616,4 +655,7 @@ if(typeof window !== 'undefined'){
   window.trDeleteEntry = trDeleteEntry;
   window.trLoadFromFirestore = trLoadFromFirestore;
   window.trSetPublished = trSetPublished;
+  window.trPlFmt = trPlFmt;
+  window.trNextPlNum = trNextPlNum;
+  window.trEnsurePlNums = trEnsurePlNums;
 }

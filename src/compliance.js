@@ -542,6 +542,7 @@ function clRenderPunchlist(){
   const el=document.getElementById('cl-punchlist-card');
   if(!el) return;
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  if(typeof trEnsurePlNums==='function'){ try{ trEnsurePlNums(pid); }catch(e){} }
   const open=(typeof trGetOpenTemporary==='function')?trGetOpenTemporary(pid):[];
   const resolved=(typeof trGetResolvedTemporary==='function')?trGetResolvedTemporary(pid):[];
   if(!open.length&&!resolved.length){ el.style.display='none'; return; }
@@ -562,8 +563,8 @@ function clRenderPunchlist(){
     return `<div style="display:flex;align-items:center;gap:8px;padding:8px 4px;border-bottom:1px solid var(--border)">
       ${thumb}
       <div style="flex:1;min-width:0">
-        <div style="font-family:var(--mono);font-size:12px;color:${isOpen?'var(--text)':'var(--muted)'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${isOpen?'🚩':'✓'} ${(e.tempLabel||'Repair').replace(/</g,'&lt;')}</div>
-        <div style="font-family:var(--mono);font-size:10px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${catName} · flagged ${e.date||''}${isOpen?'':(e.resolvedAt?` · fixed ${fmtWhen(e.resolvedAt)}`:'')}</div>
+        <div style="font-family:var(--mono);font-size:12px;color:${isOpen?'var(--text)':'var(--muted)'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${isOpen?'🚩':'✓'} ${e.plNum?`<b style="color:${isOpen?'var(--amber)':'var(--muted)'}">${typeof trPlFmt==='function'?trPlFmt(e.plNum):'PL-'+e.plNum}</b> · `:''}${(e.tempLabel||'Repair').replace(/</g,'&lt;')}</div>
+        <div style="font-family:var(--mono);font-size:10px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${catName} · flagged ${e.date||''}${isOpen?(e.date?` · ${Math.max(0,Math.floor((Date.now()-new Date(e.date+'T00:00:00').getTime())/86400000))}d open`:''):(e.resolvedAt?` · fixed ${fmtWhen(e.resolvedAt)}`:'')}</div>
         ${(!isOpen&&e.resolveNote)?`<div style="font-family:var(--mono);font-size:10px;color:var(--green,#27AE60);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">→ ${String(e.resolveNote).replace(/</g,'&lt;')}</div>`:''}
       </div>
       ${btns}

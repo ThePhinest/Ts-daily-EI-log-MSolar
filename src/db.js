@@ -306,6 +306,9 @@ function _trackerStartupLoad(){
   tcLoadForProject()
     .then(()=>{ if(typeof trLoadFromFirestore==='function') return trLoadFromFirestore(); })
     .then(()=>{
+      // Backfill permanent PL numbers on any flags created before 7/30 —
+      // no-ops once every flag carries one.
+      if(typeof trEnsurePlNums==='function'){ try{ trEnsurePlNums(); }catch(e){} }
       // Non-map UI updates immediately.
       if(typeof window._renderTrackerSheet==='function') window._renderTrackerSheet();
       if(typeof clRenderTrackerCard==='function') clRenderTrackerCard();

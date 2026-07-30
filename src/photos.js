@@ -280,6 +280,7 @@ function _phDocFor(p){
   if(p.seedTag) doc.seedTag = true;
   if(p.seedCap) doc.seedCap = p.seedCap;
   if(p.distCap) doc.distCap = p.distCap;
+  if(p.plCap) doc.plCap = true;
   // 📸 in-app camera fields (src/camera.js): the metadata record half of the
   // two-layer model — the stamp overlay renders from these on demand.
   if(p.locLabel) doc.locLabel = p.locLabel;
@@ -587,24 +588,137 @@ function phRender(){
 
   lib.innerHTML = visibleDates.map(date => `
     <div class="ph-day-group">
-      <div class="ph-day-label">${phDayLabel(date)} <span class="ph-day-count">${grouped[date].length} photo${grouped[date].length>1?'s':''}</span></div>
+      <div class="ph-day-label">${phDayLabel(date)} <span class="ph-day-count">${grouped[date].length} photo${grouped[date].length>1?'s':''}</span>${_phSelMode?` <a onclick="phSelectDay('${date}')" style="margin-left:auto;color:var(--amber);cursor:pointer;font-size:10px;text-decoration:underline">select day</a>`:''}</div>
       <div class="ph-grid">
         ${grouped[date].map(p=>`
-          <div class="ph-thumb" onclick="phOpenLightbox('${p.id}')">
+          <div class="ph-thumb" onclick="${_phSelMode?`phSelTap('${p.id}')`:`phOpenLightbox('${p.id}')`}"${_phSel.has(p.id)?' style="outline:3px solid var(--amber);outline-offset:-3px;border-radius:6px"':''}>
             <img src="${p.thumb}" alt="${p.caption||''}" loading="lazy">
+            ${_phSelMode?`<span style="position:absolute;top:6px;right:6px;width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;background:${_phSel.has(p.id)?'var(--amber)':'rgba(10,18,26,0.6)'};color:${_phSel.has(p.id)?'#111':'#fff'};border:1.5px solid ${_phSel.has(p.id)?'var(--amber)':'rgba(255,255,255,0.6)'}">${_phSel.has(p.id)?'✓':''}</span>`:''}
             ${p.swppp?'<span class="ph-thumb-swppp">🌊 SWPPP</span>':''}
             ${p.seedTag?`<span class="ph-thumb-seed"${p.swppp?' style="top:24px"':''}>🌱 SEED</span>`:''}
             <div class="ph-thumb-caption">${p.caption||'Tap to add caption'}</div>
-            <button class="ph-thumb-del" onclick="event.stopPropagation();phConfirmDelete('${p.id}')">✕</button>
+            ${_phSelMode?'':`<button class="ph-thumb-del" onclick="event.stopPropagation();phConfirmDelete('${p.id}')">✕</button>`}
           </div>
         `).join('')}
       </div>
     </div>
   `).join('');
+  _phSelBar();
 
   document.getElementById('ph-load-more').style.display = hasMore ? 'block' : 'none';
   _phRenderShared();
   _phRenderTrash();
+}
+
+// ── ☑ Multi-select → save to camera roll / share (Tim 7/30) ──
+// Select photos on the grid, then ONE share sheet with every file attached —
+// on iOS "Save N Images" drops them all into the camera roll in one tap.
+// Camera photos export their STAMPED rendering (two-layer rule: every export
+// path shows the stamp; the stored original stays clean). Web falls back to
+// sequential downloads.
+let _phSelMode=false; const _phSel=new Set();
+function phToggleSelectMode(){
+  _phSelMode=!_phSelMode;
+  if(!_phSelMode) _phSel.clear();
+  const btn=document.getElementById('ph-select-btn');
+  if(btn){ btn.textContent=_phSelMode?'✕ Done':'☑ Select'; btn.classList.toggle('btn-amber',_phSelMode); }
+  phRender();
+}
+function phSelTap(id){
+  if(_phSel.has(id)) _phSel.delete(id); else _phSel.add(id);
+  phRender();
+}
+function phSelectDay(date){
+  _phFilteredSorted().filter(p=>p.date===date).forEach(p=>_phSel.add(p.id));
+  phRender();
+}
+function _phSelBar(){
+  let bar=document.getElementById('ph-sel-bar');
+  if(!_phSelMode){ if(bar) bar.remove(); return; }
+  if(!bar){
+    bar=document.createElement('div');
+    bar.id='ph-sel-bar';
+    bar.style.cssText='position:fixed;left:50%;transform:translateX(-50%);bottom:calc(95px + env(safe-area-inset-bottom));z-index:4800;background:rgba(15,31,46,0.97);border:1px solid var(--amber);border-radius:12px;padding:10px 12px;display:flex;gap:8px;align-items:center;box-shadow:0 4px 18px rgba(0,0,0,.55);max-width:92vw';
+    document.body.appendChild(bar);
+  }
+  const n=_phSel.size;
+  bar.innerHTML=`
+    <span style="font-family:var(--mono);font-size:12px;color:#dce8f4;white-space:nowrap">${n} selected</span>
+    <button onclick="phShareSelected()" ${n?'':'disabled'} style="background:${n?'var(--amber)':'var(--s2,#1a2a38)'};border:none;color:${n?'#111':'var(--muted)'};padding:9px 14px;border-radius:8px;font-family:var(--mono);font-size:12px;font-weight:700;cursor:${n?'pointer':'default'};white-space:nowrap">📤 Save / Share</button>
+    <button onclick="phToggleSelectMode()" style="background:var(--s2,#1a2a38);border:1px solid var(--border,#334);color:var(--muted,#888);padding:9px 12px;border-radius:8px;font-family:var(--mono);font-size:12px;cursor:pointer">✕</button>`;
+}
+// Full-res bytes for export: offline-pending camera original (IDB) first, then
+// the Storage copy, then the thumb as last resort.
+async function _phFullBlob(p){
+  try{
+    if(p.type==='camera'&&window.idbGet){
+      const pend=window.idbGet('cam_pending::'+p.id);
+      if(pend instanceof Blob) return pend;
+    }
+  }catch(e){}
+  if(p.storageUrl){ try{ const r=await fetch(p.storageUrl); if(r.ok) return await r.blob(); }catch(e){} }
+  const raw=p.full||p.thumb||'';
+  if(raw.startsWith('data:')){
+    const b64=raw.split(',')[1]; const bin=atob(b64);
+    const arr=new Uint8Array(bin.length);
+    for(let i=0;i<bin.length;i++) arr[i]=bin.charCodeAt(i);
+    return new Blob([arr],{type:'image/jpeg'});
+  }
+  return null;
+}
+async function phShareSelected(){
+  const ids=[..._phSel];
+  if(!ids.length) return;
+  const bar=document.getElementById('ph-sel-bar');
+  const setMsg=m=>{ if(bar) bar.firstElementChild.textContent=m; };
+  const isNative=!!(window.Capacitor&&window.Capacitor.isNativePlatform&&window.Capacitor.isNativePlatform());
+  try{
+    if(isNative){
+      const [{Filesystem,Directory},{Share}]=await Promise.all([import('@capacitor/filesystem'),import('@capacitor/share')]);
+      const uris=[], paths=[];
+      for(let i=0;i<ids.length;i++){
+        setMsg(`Preparing ${i+1}/${ids.length}…`);
+        const p=_phById(ids[i]); if(!p) continue;
+        let blob=await _phFullBlob(p); if(!blob) continue;
+        try{ if(typeof window.stampIfCamera==='function') blob=await window.stampIfCamera(p,blob); }catch(e){}
+        const b64=await new Promise((res,rej)=>{ const r=new FileReader(); r.onloadend=()=>res(String(r.result).split(',')[1]); r.onerror=()=>rej(r.error); r.readAsDataURL(blob); });
+        const path=`glshare/${p.id}.jpg`;
+        await Filesystem.writeFile({path,data:b64,directory:Directory.Cache,recursive:true});
+        uris.push((await Filesystem.getUri({path,directory:Directory.Cache})).uri);
+        paths.push(path);
+      }
+      if(!uris.length) throw new Error('no photos could be prepared');
+      setMsg(`${uris.length} ready`);
+      await Share.share({files:uris});
+      for(const path of paths){ try{ await Filesystem.deleteFile({path,directory:Directory.Cache}); }catch(e){} }
+    } else {
+      for(let i=0;i<ids.length;i++){
+        setMsg(`Saving ${i+1}/${ids.length}…`);
+        const p=_phById(ids[i]); if(!p) continue;
+        let blob=await _phFullBlob(p); if(!blob) continue;
+        try{ if(typeof window.stampIfCamera==='function') blob=await window.stampIfCamera(p,blob); }catch(e){}
+        const a=document.createElement('a');
+        a.href=URL.createObjectURL(blob);
+        const safeCap=(p.caption||'photo').replace(/[^\w\- ]+/g,'').trim().replace(/\s+/g,'-').slice(0,40)||'photo';
+        a.download=`${p.date||'photo'}_${safeCap}.jpg`;
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+        await new Promise(r=>setTimeout(r,350));   // sequential downloads need breathing room
+      }
+    }
+    if(typeof showCloudBanner==='function') showCloudBanner(`✓ ${ids.length} photo${ids.length>1?'s':''} ${isNative?'handed to the share sheet — tap "Save Images" for the camera roll':'downloaded'}.`);
+    phToggleSelectMode();
+  }catch(e){
+    // User-cancelled share sheets land here too — quiet reset, no scary banner.
+    console.warn('phShareSelected:',e&&e.message);
+    _phSelBar();
+  }
+}
+if(typeof window!=='undefined'){
+  window.phToggleSelectMode=phToggleSelectMode;
+  window.phSelTap=phSelTap;
+  window.phSelectDay=phSelectDay;
+  window.phShareSelected=phShareSelected;
 }
 
 // ── Recently Deleted section (collapsed by default; restore within 30 days) ──
@@ -1223,6 +1337,8 @@ async function phSaveCapturedImage(blob, photoDate, captionOverride, opts){
   // Disturbance-status captures (FAB 🚧 flow) carry their category id so the
   // disturbance XLSX embeds the newest capture day under its summary band.
   if(opts&&opts.distCap) entry.distCap=opts.distCap;
+  // Punchlist captures (FAB 🚩 flow) front the punchlist PDF's newest capture day.
+  if(opts&&opts.plCap) entry.plCap=true;
   window._phPhotos=(window._phPhotos||[]);
   window._phPhotos.push(entry);
   phSaveLocal();

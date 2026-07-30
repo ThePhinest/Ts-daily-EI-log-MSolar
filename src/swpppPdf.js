@@ -386,6 +386,7 @@ export async function punchlistBuildPdf(opts){
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
   const cfg=(typeof loadProjectConfig==='function')?loadProjectConfig():{};
   const projName=cfg.projectName||'Project';
+  if(typeof trEnsurePlNums==='function'){ try{ trEnsurePlNums(pid); }catch(e){} }
   const open=(typeof trGetOpenTemporary==='function')?trGetOpenTemporary(pid):[];
   const fixed=(opts.includeFixed!==false&&typeof trGetResolvedTemporary==='function')?trGetResolvedTemporary(pid):[];
   const winHrs=(typeof clAmberHours==='function')?clAmberHours():48;
@@ -412,12 +413,19 @@ export async function punchlistBuildPdf(opts){
     ...(fixed.length?[infoRow('Fixed to date:',String(fixed.length))]:[])
   ];
 
+  // Item ids are the flags' PERMANENT plNum (assigned at creation, backfilled
+  // above) — a fixed item keeps its number in the verification table, so this
+  // export's numbers line up with every earlier printed copy. Positional
+  // numbering (the pre-7/30 behavior) is only the fallback for a missing num.
+  const plId=(e,i)=>e.plNum?('PL-'+String(e.plNum).padStart(2,'0')):('PL-'+String(i+1).padStart(2,'0'));
+  const daysOpen=e=>{ const t=new Date((e.date||'')+'T00:00:00').getTime(); return isNaN(t)?null:Math.max(0,Math.floor((now-t)/86400000)); };
   const itemBlocks=[];
   for(let i=0;i<sorted.length;i++){
     const e=sorted[i];
-    const id='PL-'+String(i+1).padStart(2,'0');
+    const id=plId(e,i);
     const du=dueOf(e), over=du&&now>du;
     const hot=over?{fill:AMBER,bold:true}:{};
+    const dOpen=daysOpen(e);
     const ims=[];
     for(const pId of (e.photoIds||[])){
       const im=await _imgFor(pId,250,300);
@@ -426,7 +434,7 @@ export async function punchlistBuildPdf(opts){
     itemBlocks.push(
       {table:{headerRows:1,dontBreakRows:true,widths:cols(12,22,16,16),body:[
         [hcell('Item'),hcell('BMP / Category'),hcell('Flagged'),hcell('Due'),hcell('Status')],
-        [cell(id,{bold:true}),cell(catName(e)),cell(fmtD(e.date)),cell(du?fmtTs(du):'—',hot),cell(over?'OPEN — OVERDUE':'OPEN',Object.assign({bold:true},hot))]
+        [cell(id,{bold:true}),cell(catName(e)),cell(fmtD(e.date)+(dOpen!=null?`  (${dOpen}d)`:'')),cell(du?fmtTs(du):'—',hot),cell(over?'OPEN — OVERDUE':'OPEN',Object.assign({bold:true},hot))]
       ]},layout:hairLayout,margin:[0,8,0,2]},
       body([{text:'Deficiency / corrective action:  ',bold:true},{text:esc(e.tempLabel||'Repair needed')}]),
       body([{text:'GPS:  ',bold:true},{text:coordsOf(e)}],{fontSize:8,color:'#555555',margin:[0,0,0,2]}),
@@ -435,17 +443,35 @@ export async function punchlistBuildPdf(opts){
   }
 
   const fxSorted=[...fixed].sort((a,b)=>(b.resolvedAt||0)-(a.resolvedAt||0));
-  const fxBody=[[hcell('Deficiency'),hcell('BMP / Category'),hcell('Flagged'),hcell('Fixed'),hcell('Resolution')]];
-  fxSorted.forEach(e=>fxBody.push([cell(esc(e.tempLabel||'Repair')),cell(catName(e)),cell(fmtD(e.date)),cell(fmtTs(e.resolvedAt)),cell(esc(e.resolveNote||'—'))]));
+  const fxBody=[[hcell('Item'),hcell('Deficiency'),hcell('BMP / Category'),hcell('Flagged'),hcell('Fixed'),hcell('Resolution')]];
+  fxSorted.forEach(e=>fxBody.push([cell(e.plNum?('PL-'+String(e.plNum).padStart(2,'0')):'—',{bold:true}),cell(esc(e.tempLabel||'Repair')),cell(catName(e)),cell(fmtD(e.date)),cell(fmtTs(e.resolvedAt)),cell(esc(e.resolveNote||'—'))]));
 
+  // 🚩 Overview captures (FAB punchlist capture flow) — every shot from the
+  // NEWEST capture day fronts the report, so "where is PL-NN" is answered
+  // before the item list starts (the map labels in the capture carry the same
+  // permanent PL numbers as the items below).
+  const plCaps=(window._phPhotos||[]).filter(p=>p.plCap&&p.projectId===pid&&!p.deletedAt);
+  const capDay=plCaps.length?plCaps.map(p=>p.date).sort().pop():null;
+  const dayCaps=capDay?plCaps.filter(p=>p.date===capDay).sort((a,b)=>(a.uploadedAt||0)-(b.uploadedAt||0)):[];
+  const overviewIms=[];
+  for(const p of dayCaps){
+    const im=await _imgFor(p.id,660,700);
+    if(im) overviewIms.push(im);
+  }
+  let sec=0;
   const content=[
     infoTable(infoRows),
-    h1('1.  Open Items — Corrective Action Required'),
+    ...(overviewIms.length?[
+      h1(`${++sec}.  Site Overview — Flag Locations`),
+      note(`Map capture${overviewIms.length>1?'s':''} from ${fmtD(capDay)}. Each flag label carries the item's permanent PL number, matching the list below.`),
+      ...overviewIms.map(im=>({image:im.dataUrl,width:Math.min(im.w,CONTENT_W),margin:[0,4,0,8]}))
+    ]:[]),
+    h1(`${++sec}.  Open Items — Corrective Action Required`),
     note(`Items are listed oldest first. Photos were taken in the field at the time each item was flagged; GPS coordinates locate the flag on the site map.`),
     ...(sorted.length?itemBlocks:[body('No open items — nothing currently requires attention.')]),
     ...(fixed.length?[
-      h1('2.  Fixed — Verification Record'),
-      {table:{headerRows:1,dontBreakRows:true,widths:cols(28,18,10,10),body:fxBody},layout:hairLayout,margin:[0,2,0,4]}
+      h1(`${++sec}.  Fixed — Verification Record`),
+      {table:{headerRows:1,dontBreakRows:true,widths:cols(9,24,17,10,10),body:fxBody},layout:hairLayout,margin:[0,2,0,4]}
     ]:[])
   ];
 

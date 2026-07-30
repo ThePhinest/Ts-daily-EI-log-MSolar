@@ -803,19 +803,55 @@ function _showStrip(entry,blob){
   _stripTimer=setTimeout(()=>{ el.style.display='none'; URL.revokeObjectURL(url); },6000);
 }
 
+// Previously-used values for the ＋ quick-pick (Solocator's little + beside the
+// fields). Derived LIVE from this project's camera records, most-recent first —
+// no separate history store to maintain or migrate.
+function _histVals(field){
+  const pid=_pid();
+  const seen=new Set(), out=[];
+  const list=(window._phPhotos||[])
+    .filter(p=>p.type==='camera'&&p.projectId===pid)
+    .sort((a,b)=>(b.uploadedAt||0)-(a.uploadedAt||0));
+  for(const p of list){
+    const v=(p[field]||'').trim();
+    if(v&&!seen.has(v)){ seen.add(v); out.push(v); if(out.length>=8) break; }
+  }
+  return out;
+}
+function _histPick(ov,inputId,field){
+  const old=ov.querySelector('.glc-hist');
+  if(old){ const was=old.dataset.for; old.remove(); if(was===inputId) return; }
+  const vals=_histVals(field);
+  const inp=ov.querySelector('#'+inputId);
+  if(!vals.length){ inp.focus(); return; }
+  const list=document.createElement('div');
+  list.className='glc-hist'; list.dataset.for=inputId;
+  list.style.cssText='margin:-8px 0 12px;border:1px solid var(--amber);border-radius:8px;background:var(--s1);overflow:hidden';
+  list.innerHTML=vals.map(v=>`<button style="display:block;width:100%;text-align:left;background:none;border:none;border-bottom:1px solid var(--border);color:var(--text);font-family:var(--body);font-size:14px;padding:9px 12px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${v.replace(/</g,'&lt;')}</button>`).join('');
+  list.querySelectorAll('button').forEach((b,i)=>{ b.onclick=()=>{ inp.value=vals[i]; list.remove(); }; });
+  // After the flex ROW (input + ＋ live in one), not inside it.
+  inp.parentElement.insertAdjacentElement('afterend',list);
+}
 function _stripEdit(entry,strip,objUrl){
   strip.style.display='none';
   const ov=document.createElement('div');
   ov.className='modal-overlay';
   ov.style.cssText='z-index:11600';
   const esc=s=>(s||'').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+  const plusBtn=(id)=>`<button data-hist="${id}" title="Pick a previous entry" style="flex-shrink:0;width:38px;background:var(--s1);border:1px solid var(--amber);border-radius:6px;color:var(--amber);font-size:18px;font-weight:700;cursor:pointer;padding:0">＋</button>`;
   ov.innerHTML=`
     <div class="modal-box" style="max-width:320px;width:90%">
       <div class="modal-title" style="margin-bottom:10px">📸 Photo details</div>
       <label style="font-family:var(--mono);font-size:10px;color:var(--muted)">LOCATION LABEL (e.g. W21)</label>
-      <input type="text" id="glc-ed-loc" value="${esc(entry.locLabel)}" style="width:100%;box-sizing:border-box;background:var(--s1);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--body);font-size:16px;padding:9px 12px;outline:none;margin:4px 0 12px">
+      <div style="display:flex;gap:6px;margin:4px 0 12px">
+        <input type="text" id="glc-ed-loc" value="${esc(entry.locLabel)}" style="flex:1;min-width:0;box-sizing:border-box;background:var(--s1);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--body);font-size:16px;padding:9px 12px;outline:none">
+        ${plusBtn('glc-ed-loc')}
+      </div>
       <label style="font-family:var(--mono);font-size:10px;color:var(--muted)">CAPTION</label>
-      <input type="text" id="glc-ed-cap" value="${esc(entry.caption)}" style="width:100%;box-sizing:border-box;background:var(--s1);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--body);font-size:16px;padding:9px 12px;outline:none;margin:4px 0 16px">
+      <div style="display:flex;gap:6px;margin:4px 0 16px">
+        <input type="text" id="glc-ed-cap" value="${esc(entry.caption)}" style="flex:1;min-width:0;box-sizing:border-box;background:var(--s1);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--body);font-size:16px;padding:9px 12px;outline:none">
+        ${plusBtn('glc-ed-cap')}
+      </div>
       <div class="modal-btns">
         <button class="modal-confirm" id="glc-ed-ok">Save</button>
         <button class="modal-cancel" id="glc-ed-x">Cancel</button>
@@ -823,6 +859,9 @@ function _stripEdit(entry,strip,objUrl){
     </div>`;
   // Inside #gl-camera — a body-mounted modal is hidden by the camera-live rules.
   (document.getElementById('gl-camera')||document.body).appendChild(ov);
+  ov.querySelectorAll('[data-hist]').forEach(b=>{
+    b.onclick=()=>_histPick(ov,b.dataset.hist,b.dataset.hist==='glc-ed-loc'?'locLabel':'caption');
+  });
   const done=()=>{ ov.remove(); if(objUrl) URL.revokeObjectURL(objUrl); };
   ov.querySelector('#glc-ed-x').onclick=done;
   ov.querySelector('#glc-ed-ok').onclick=()=>{

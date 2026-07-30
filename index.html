@@ -201,6 +201,14 @@ html.camera-live body>*:not(#gl-camera){visibility:hidden}
    (UI top-left) would land on the text-block corner */
 #gl-camera.glc-cw .glc-tags{margin-right:160px}
 #gl-camera.glc-ccw .glc-top>div:first-child{margin-left:170px}
+/* Popups opened over the camera (photo details, stamp sheet, toast) rotate to
+   the HOLD orientation — the interface lock left them portrait-only (Tim 7/30).
+   Note: the system keyboard stays portrait; that's the interface lock, same as
+   Solocator. */
+#gl-camera.glc-cw .modal-overlay .modal-box{transform:rotate(-90deg)}
+#gl-camera.glc-ccw .modal-overlay .modal-box{transform:rotate(90deg)}
+#gl-camera.glc-cw #glc-toast{transform:translateX(-50%) rotate(-90deg)!important}
+#gl-camera.glc-ccw #glc-toast{transform:translateX(-50%) rotate(90deg)!important}
 #glc-shutter{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(28px + env(safe-area-inset-bottom));z-index:3;width:74px;height:74px;border-radius:50%;background:rgba(255,255,255,.92);border:5px solid rgba(201,168,76,.95);cursor:pointer;padding:0}
 #glc-shutter:active{transform:translateX(-50%) scale(.93)}
 #glc-shutter:disabled{opacity:.55}
@@ -2442,6 +2450,7 @@ Anticipated rain — AM weather monitoring expected"></textarea>
       <div class="map-fab-row"><span class="map-fab-lbl">ESC status</span><button class="map-fab-btn" id="map-fab-esc-btn" onclick="mapCaptureEscStatus()" title="Capture ESC installation status with a legend">🛡️</button></div>
       <div class="map-fab-row"><span class="map-fab-lbl">Seeding</span><button class="map-fab-btn" id="map-fab-seed-btn" onclick="mapCaptureSeedingStatus()" title="Capture seeding status with a legend">🌱</button></div>
       <div class="map-fab-row"><span class="map-fab-lbl">Disturbance</span><button class="map-fab-btn" id="map-fab-dist-btn" onclick="mapCaptureDisturbanceStatus()" title="Capture disturbance status with a legend">🚧</button></div>
+      <div class="map-fab-row"><span class="map-fab-lbl">Punchlist</span><button class="map-fab-btn" id="map-fab-pl-btn" onclick="mapCapturePunchlist()" title="Capture flag locations for the punchlist export">🚩</button></div>
       <div class="map-fab-row"><span class="map-fab-lbl">Flags</span><button class="map-fab-btn" id="map-fab-flags-btn" onclick="mapToggleRepairFlags()" title="Show / hide repair flags on the map">🚩</button></div>
     </div>
 
@@ -2779,6 +2788,7 @@ Anticipated rain — AM weather monitoring expected"></textarea>
     <label style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em">To</label>
     <input type="date" id="ph-filter-to" onchange="phRender()">
     <button class="btn btn-outline" style="font-size:11px;padding:5px 12px" onclick="phClearFilters()">Clear</button>
+    <button class="btn btn-outline" id="ph-select-btn" style="font-size:11px;padding:5px 12px" onclick="phToggleSelectMode()" title="Select photos to save to the camera roll / share">☑ Select</button>
     <button class="btn btn-outline btn-proj-active" id="ph-proj-filter-btn" style="font-size:11px;padding:5px 12px" onclick="_toggleProjectFilter()">🏗️ Active Project</button>
   </div>
 
