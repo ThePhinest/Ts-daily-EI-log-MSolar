@@ -689,6 +689,7 @@ button:disabled,button[disabled]{opacity:.45;cursor:not-allowed}
 .wx-rain-dow{font-family:var(--cond);font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted2)}
 .wx-rain-date{font-family:var(--mono);font-size:9px;color:var(--muted)}
 .wx-rain-amt{font-family:var(--mono);font-size:11.5px;color:var(--text);margin-top:2px}
+.wx-rain-prob{font-family:var(--mono);font-size:9px;color:var(--muted)}
 .wx-rain-tile.dry .wx-rain-amt{color:var(--muted)}
 .wx-rain-tile.trig{border-color:var(--amber);background:var(--amber-bg)}
 .wx-rain-tile.trig .wx-rain-amt{color:var(--amber);font-weight:700}
@@ -1893,7 +1894,7 @@ body.is-native select { font-size: 16px !important; }
         <div class="field"><label>AM Temp (°F)</label><input type="number" id="tempAM" placeholder="°F"></div>
         <div class="field"><label>PM Temp (°F)</label><input type="number" id="tempPM" placeholder="°F"></div>
         <div class="field"><label>Wind (mph)</label><input type="text" id="wind" placeholder="e.g. 10–15 mph"></div>
-        <div class="field"><label>Precip (in.)</label><input type="number" id="precip" step="0.01" placeholder="0.00"></div>
+        <div class="field"><label>Precip (in.)</label><input type="number" id="precip" step="0.01" placeholder="0.00"><div id="wx-precip-peak" style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:3px;min-height:12px"></div><input type="hidden" id="wxPrecipPeak"></div>
         <div class="weather-daylight" style="grid-column:1 / -1;display:flex;flex-direction:column;gap:8px;padding:11px 12px;background:rgba(0,107,117,0.06);border:1px solid var(--border2);border-radius:5px;font-size:12.5px;font-family:var(--cond);font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted2)">
           <div style="display:flex;justify-content:space-around;align-items:center">
             <span>🌅 Sunrise <strong id="wx-sunrise" style="color:var(--text);font-family:var(--mono);font-weight:400;text-transform:none;letter-spacing:0;margin-left:6px">—</strong></span>

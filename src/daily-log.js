@@ -16,7 +16,7 @@ function collectFormState(){
   // Simple fields
   const fields=['projectName','reportDate','preparedBy','org','activePhase','contractor','reviewedBy',
     'tempAM','tempPM','wind','precip','soilCond','upcomingWeather',
-    'wxSunrise','wxSunset','wxDaylight','wxRainWeek',
+    'wxSunrise','wxSunset','wxDaylight','wxRainWeek','wxPrecipPeak',
     'inspSummary','agencyInsp','landowner','rte','nonCompliance',
     'genComms','lookahead','lookaheadWeather',
     'p-timeIn','p-timeOut','p-break','p-odoStart','p-odoEnd','p-notes'];
@@ -90,6 +90,8 @@ function restoreFormState(state){
     const vEl=document.getElementById(visibleId);
     if(hv && vEl) vEl.textContent=hv;
   });
+  // Peak-hour line sets UNCONDITIONALLY — a dry day must clear a rainy day's text.
+  { const pv=document.getElementById('wx-precip-peak'); if(pv) pv.textContent=document.getElementById('wxPrecipPeak')?.value||''; }
   _renderRainWeek(document.getElementById('wxRainWeek')?.value||'');
   requestAnimationFrame(()=>requestAnimationFrame(()=>document.querySelectorAll('textarea.auto-expand').forEach(autoResize)));
   updateReportDateDow();
@@ -229,6 +231,8 @@ function _resetFormCore(){
   const rwEl=document.getElementById('wxRainWeek');
   if(rwEl) rwEl.value='';
   _renderRainWeek('');
+  const ppEl=document.getElementById('wxPrecipPeak'); if(ppEl) ppEl.value='';
+  const ppVis=document.getElementById('wx-precip-peak'); if(ppVis) ppVis.textContent='';
   // Cleared textareas keep yesterday's inline height (autoResize only runs on
   // 'input') — a long inspection summary left a huge empty box on the fresh
   // day. Re-run the same shrink-capable resize the restore path uses;
@@ -327,7 +331,7 @@ async function _doWeatherFetch(forecastOffset){
       const lon=pos.coords.longitude.toFixed(4);
       try{
         const url=`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}`+
-          `&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,snowfall_sum,windspeed_10m_max,windgusts_10m_max,winddirection_10m_dominant,weathercode,sunrise,sunset`+
+          `&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,snowfall_sum,precipitation_probability_max,windspeed_10m_max,windgusts_10m_max,winddirection_10m_dominant,weathercode,sunrise,sunset`+
           `&hourly=precipitation,windspeed_10m,weathercode,soil_moisture_0_to_7cm,soil_temperature_0_to_7cm`+
           `&past_days=1&current_weather=true`+
           `&temperature_unit=fahrenheit&windspeed_unit=mph&precipitation_unit=inch&timezone=auto&forecast_days=8`;
@@ -381,19 +385,26 @@ function _windRangeActive(data, startIdx, endIdx){
   return {min: Math.min(...speeds), max: Math.max(...speeds)};
 }
 
-// Sum hourly precipitation for the 24 hours leading up to current_weather time
+// Sum hourly precipitation for the 24 hours leading up to current_weather time,
+// plus the worst single hour in that window (7/30 ask) — intensity matters for
+// ESC performance in a way the 24-hr total alone can't show.
 function _past24hrPrecip(data){
-  if(!data.hourly?.precipitation || !data.current_weather?.time) return 0;
+  const none={sum:0,peak:0,peakAt:null};
+  if(!data.hourly?.precipitation || !data.current_weather?.time) return none;
   const nowMs = new Date(data.current_weather.time).getTime();
   let currentIdx = -1;
   for(let i = data.hourly.time.length - 1; i >= 0; i--){
     if(new Date(data.hourly.time[i]).getTime() <= nowMs){ currentIdx = i; break; }
   }
-  if(currentIdx < 0) return 0;
+  if(currentIdx < 0) return none;
   const startIdx = Math.max(0, currentIdx - 24);
-  let sum = 0;
-  for(let i = startIdx; i < currentIdx; i++) sum += (data.hourly.precipitation[i] || 0);
-  return sum;
+  let sum = 0, peak = 0, peakAt = null;
+  for(let i = startIdx; i < currentIdx; i++){
+    const v = data.hourly.precipitation[i] || 0;
+    sum += v;
+    if(v > peak){ peak = v; peakAt = data.hourly.time[i]; }
+  }
+  return {sum, peak, peakAt};
 }
 
 // Fixed-threshold soil descriptor (per Tim 2026-05-07)
@@ -512,7 +523,18 @@ function _applyWeatherData(data,forecastOffset){
   // ── Precip: past 24 hours from hourly (more accurate than today's daily total) ──
   const past24 = _past24hrPrecip(data);
   const precipEl = document.getElementById('precip');
-  if(precipEl) precipEl.value = past24.toFixed(2);
+  if(precipEl) precipEl.value = past24.sum.toFixed(2);
+  // Worst single hour in the window — persisted like the other wx hiddens so an
+  // archived day reloads its own snapshot. Only meaningful when it rained.
+  {
+    const peakStr = past24.peak >= 0.01
+      ? `Peak hour ${past24.peak.toFixed(2)}"${past24.peakAt?` @ ${new Date(past24.peakAt).toLocaleTimeString([],{hour:'numeric'})}`:''}`
+      : '';
+    const hid = document.getElementById('wxPrecipPeak');
+    if(hid) hid.value = peakStr;
+    const vis = document.getElementById('wx-precip-peak');
+    if(vis) vis.textContent = peakStr;
+  }
 
   // ── Soil Conditions: classify by mean of active-hour samples ──
   if(data.hourly?.soil_temperature_0_to_7cm && data.hourly?.soil_moisture_0_to_7cm){
@@ -548,9 +570,15 @@ function _applyWeatherData(data,forecastOffset){
     const gustTail = tmrGusts > 0 ? ` (gusts ${tmrGusts})` : '';
     // Expected rainfall for the forecast day (daily precipitation_sum, inches) —
     // ≥0.5" is the SPDES post-storm inspection trigger, so flag it loudly.
+    // The figure is the model's DETERMINISTIC total — on uncertain convective
+    // days it shows the wet scenario, which reads high next to probability-
+    // hedged consumer forecasts (Tim 7/27). That conservatism is correct for a
+    // compliance trigger; the probability alongside supplies the context.
     const tmrRain = d.precipitation_sum?.[TMR];
+    const tmrProb = d.precipitation_probability_max?.[TMR];
+    const probTail = (typeof tmrProb === 'number') ? ` (${Math.round(tmrProb)}% prob)` : '';
     const rainTail = (typeof tmrRain === 'number')
-      ? `, Expected rain ${tmrRain.toFixed(2)}"${tmrRain >= SWPPP_RAIN_TRIGGER_IN ? ' ⚠ ≥0.5" SWPPP trigger' : ''}`
+      ? `, Expected rain ${tmrRain.toFixed(2)}"${probTail}${tmrRain >= SWPPP_RAIN_TRIGGER_IN ? ' ⚠ ≥0.5" SWPPP trigger' : ''}`
       : '';
     // Label with the real weekday when the forecast isn't literally tomorrow
     // (Friday's "use Monday" pick should say "Monday:", not "Tomorrow:").
@@ -576,8 +604,10 @@ function _applyWeatherData(data,forecastOffset){
     for(let i=TODAY;i<Math.min(TODAY+7,d.time.length);i++){
       const v=d.precipitation_sum[i];
       const sn=d.snowfall_sum?.[i]; // actual snow inches (precipitation_unit=inch applies)
+      const pb=d.precipitation_probability_max?.[i];
       week.push({d:d.time[i], r:(typeof v==='number')?+v.toFixed(2):null,
-        s:(typeof sn==='number'&&sn>0)?+sn.toFixed(1):0});
+        s:(typeof sn==='number'&&sn>0)?+sn.toFixed(1):0,
+        p:(typeof pb==='number')?Math.round(pb):null});
     }
     const json=JSON.stringify(week);
     const rwHidden=document.getElementById('wxRainWeek');
@@ -635,10 +665,14 @@ function _renderRainWeek(json){
       :((typeof w.r==='number')?w.r.toFixed(2)+'"':'—');
     const trig=(typeof w.r==='number')&&w.r>=SWPPP_RAIN_TRIGGER_IN;
     const dry=!trig&&!snow&&(!w.r||w.r<0.01);
+    // Chance-of-precip under the amount (7/30) — the amount is the model's wet
+    // scenario; the probability says how likely that scenario is.
+    const prob=(!dry&&typeof w.p==='number')?`<span class="wx-rain-prob">${w.p}%</span>`:'';
     return `<div class="wx-rain-tile${trig?' trig':snow?' snow':dry?' dry':''}">`+
       `<span class="wx-rain-dow">${dow}</span>`+
       `<span class="wx-rain-date">${md}</span>`+
       `<span class="wx-rain-amt">${amt}</span>`+
+      prob+
       (trig?`<span class="wx-rain-flag">⚠ ≥${SWPPP_RAIN_TRIGGER_IN}"</span>`:'')+
     `</div>`;
   }).join('');
