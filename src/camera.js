@@ -352,6 +352,7 @@ export async function camOpen(ctx){
     camClose();
     return;
   }
+  _zoomInit();                      // pinch-to-zoom range (async, non-blocking)
   _visBound=_onVis.bind(null);
   document.addEventListener('visibilitychange',_visBound);
   window.addEventListener('resize',_onReframe);
@@ -414,7 +415,7 @@ function _onReframe(){
   _reframeT=setTimeout(async()=>{
     if(!_open||_suspended) return;
     if(_isNative()){
-      try{ await CameraPreview.stop(); await _startPreview(); }
+      try{ await CameraPreview.stop(); await _startPreview(); _zoomInit(); }
       catch(e){ console.warn('camera reframe restart failed:',e&&e.message); }
     }
     _renderOverlay();   // web <video> follows CSS; overlay repaints either way
@@ -422,15 +423,21 @@ function _onReframe(){
 }
 
 // ── Physical-hold tracking (interface is locked; sensors tell us the truth) ──
-// From the same deviceorientation events that carry the compass: gamma is the
-// left-right tilt — past ±50° with beta flat means landscape, sign gives the
-// direction (gamma>0 = rotated clockwise). Dead zone keeps the current state so
-// the UI doesn't flap mid-rotation.
+// From the same deviceorientation events that carry the compass. The roll about
+// the view axis is atan2(gamma, beta): 0 upright, +90 rotated clockwise, -90
+// counterclockwise — and the RATIO survives pitching the phone down at a
+// subject (the failure mode of raw thresholds: both axes shrink together, the
+// desk-shot bug from Tim's device test). Near-flat is genuinely ambiguous
+// (same as the native camera) — keep the current state. Snap bands with dead
+// zones between them stop the UI flapping mid-rotation.
 function _calcUiRot(beta,gamma){
   if(typeof beta!=='number'||typeof gamma!=='number') return _uiRot;
-  if(Math.abs(gamma)>=50&&Math.abs(beta)<=40) return gamma>0?90:-90;
-  if(Math.abs(beta)>=50) return 0;
-  return _uiRot;
+  if(Math.hypot(beta,gamma)<20) return _uiRot;      // phone ~flat: keep current
+  const a=Math.atan2(gamma,beta)*180/Math.PI;
+  if(a>65&&a<115) return 90;
+  if(a<-65&&a>-115) return -90;
+  if(Math.abs(a)<25) return 0;
+  return _uiRot;                                    // between bands / upside down
 }
 function _applyUiRot(){
   const el=document.getElementById('gl-camera'); if(!el) return;
@@ -447,6 +454,56 @@ function _viewHeading(){
   return ((_heading-rot)%360+360)%360;
 }
 
+// ── Pinch-to-zoom (Tim 7/29) ──
+// Two-finger pinch drives the plugin's native zoom (incl. 0.5× ultra-wide when
+// the device has one). Range from getZoom(), capped at 10× — beyond that is
+// digital mush. Native only; the web <video> has no zoom API worth faking.
+let _pinch=null, _zoomRange=null, _zoomAt=0, _zoomLblT=null;
+async function _zoomInit(){
+  _zoomRange=null;
+  if(!_isNative()) return;
+  try{
+    const z=await CameraPreview.getZoom();
+    _zoomRange={min:z.min,max:Math.min(z.max,10),cur:z.current||1};
+  }catch(e){ console.warn('camera zoom unavailable:',e&&e.message); }
+}
+function _touchDist(e){
+  const a=e.touches[0], b=e.touches[1];
+  return Math.hypot(a.clientX-b.clientX, a.clientY-b.clientY);
+}
+function _zoomLabel(lvl){
+  const el=document.getElementById('gl-camera'); if(!el) return;
+  let z=document.getElementById('glc-zoom');
+  if(!z){
+    z=document.createElement('div'); z.id='glc-zoom';
+    z.style.cssText='position:absolute;left:50%;transform:translateX(-50%);bottom:calc(118px + env(safe-area-inset-bottom));z-index:3;pointer-events:none;background:rgba(10,18,26,.72);border:1px solid rgba(255,255,255,.3);border-radius:14px;padding:4px 12px;font-family:var(--mono);font-size:13px;font-weight:700;color:#fff';
+    el.appendChild(z);
+  }
+  z.textContent=(Math.round(lvl*10)/10)+'×';
+  z.style.display='';
+  clearTimeout(_zoomLblT); _zoomLblT=setTimeout(()=>{ z.style.display='none'; },900);
+}
+function _bindPinch(el){
+  el.addEventListener('touchstart',e=>{
+    if(e.touches.length===2&&_zoomRange){
+      e.preventDefault();
+      _pinch={d:_touchDist(e), base:_zoomRange.cur};
+    }
+  },{passive:false});
+  el.addEventListener('touchmove',e=>{
+    if(!_pinch||e.touches.length!==2||!_zoomRange) return;
+    e.preventDefault();
+    let lvl=_pinch.base*(_touchDist(e)/_pinch.d);
+    lvl=Math.max(_zoomRange.min,Math.min(_zoomRange.max,lvl));
+    _zoomRange.cur=lvl;
+    _zoomLabel(lvl);
+    const now=Date.now();
+    if(now-_zoomAt>66){ _zoomAt=now; CameraPreview.setZoom({level:lvl,autoFocus:false}).catch(()=>{}); }
+  },{passive:false});
+  el.addEventListener('touchend',e=>{ if(e.touches.length<2) _pinch=null; });
+  el.addEventListener('touchcancel',()=>{ _pinch=null; });
+}
+
 async function _onVis(){
   // Backgrounding is where camera-preview plugins historically break — stop the
   // native session on hide, restart on return (lock screen / app switcher safe).
@@ -456,7 +513,7 @@ async function _onVis(){
     try{ await CameraPreview.stop(); }catch{}
   } else if(_suspended){
     _suspended=false;
-    try{ await _startPreview(); }
+    try{ await _startPreview(); _zoomInit(); }
     catch(e){ console.warn('camera resume failed:',e); _toast('✗ Camera lost — reopening'); camClose(); }
   }
 }
@@ -536,6 +593,7 @@ function _buildDom(){
     };
   });
   document.getElementById('glc-shutter').onclick=_shoot;
+  _bindPinch(el);
   _paintCapLine(last.caption||'', last.loc||'');
 }
 
