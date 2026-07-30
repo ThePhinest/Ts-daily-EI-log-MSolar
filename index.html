@@ -168,14 +168,15 @@ html.camera-live body>*:not(#gl-camera){visibility:hidden}
 .glc-tags{display:flex;gap:8px}
 .glc-chip{padding:7px 12px;border-radius:16px;background:rgba(10,18,26,.72);border:1px solid rgba(255,255,255,.25);color:#cfd8e3;font-family:var(--mono);font-size:12px;cursor:pointer}
 .glc-chip.on{background:rgba(201,168,76,.92);border-color:var(--amber);color:#111;font-weight:700}
-.glc-overlay{position:absolute;left:12px;bottom:calc(170px + env(safe-area-inset-bottom));z-index:2;pointer-events:none;text-shadow:0 1px 3px rgba(0,0,0,.85);color:#fff;max-width:78vw}
-.glc-brand{font-family:var(--cond);font-weight:700;font-size:13px;letter-spacing:.12em;margin-bottom:2px;color:#fff}
-.glc-brand .pipe{color:var(--amber)}
-.glc-brand .log{color:#38b6c4}
+.glc-overlay{position:absolute;left:12px;bottom:calc(170px + env(safe-area-inset-bottom));z-index:2;pointer-events:none;text-shadow:0 1px 3px rgba(0,0,0,.85);color:#fff;max-width:calc(100vw - 152px)}
 .glc-line{font-size:12px;line-height:1.55;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .glc-time{border-left:3px solid var(--amber);padding-left:7px}
-.glc-compass{position:absolute;right:14px;bottom:calc(178px + env(safe-area-inset-bottom));z-index:2;pointer-events:none;text-align:center;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.85);font-size:12px}
-.glc-compass .dial{font-size:22px;display:block;line-height:1.1}
+/* live compass rose (canvas — same renderer as the stamp, WYSIWYG) */
+.glc-compass{position:absolute;right:8px;bottom:calc(178px + env(safe-area-inset-bottom));z-index:2;pointer-events:none}
+/* vertical wordmark strip up the right edge (matches the stamp's brand element) */
+.glc-edge{position:absolute;right:2px;bottom:calc(28px + env(safe-area-inset-bottom));z-index:2;pointer-events:none;writing-mode:vertical-rl;transform:rotate(180deg);font-family:var(--cond);font-weight:700;font-size:12px;letter-spacing:.16em;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.85)}
+.glc-edge .pipe{color:var(--amber)}
+.glc-edge .log{color:#38b6c4}
 #glc-shutter{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(28px + env(safe-area-inset-bottom));z-index:3;width:74px;height:74px;border-radius:50%;background:rgba(255,255,255,.92);border:5px solid rgba(201,168,76,.95);cursor:pointer;padding:0}
 #glc-shutter:active{transform:translateX(-50%) scale(.93)}
 #glc-shutter:disabled{opacity:.55}

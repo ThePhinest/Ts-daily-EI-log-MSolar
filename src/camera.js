@@ -23,7 +23,7 @@ let _open=false, _suspended=false, _busy=false;
 let _geoWatch=null, _coords=null, _heading=null;
 let _tags=new Set(), _ctx=null;
 let _clockTimer=null, _stripTimer=null;
-let _orientBound=null, _visBound=null;
+let _orientBound=null, _visBound=null, _reframeT=null;
 
 function _pid(){ return (typeof window._activeProjectId==='function')?window._activeProjectId():'default'; }
 function _cfg(){ try{ return JSON.parse(localStorage.getItem('msf_projectconfig')||'{}'); }catch{ return {}; } }
@@ -48,24 +48,136 @@ const TAGS=[
 // because the stamp is render-on-demand — the stored photo is always clean.
 const STAMP_KEY='gl_cam_stamp';
 const STAMP_ELEMENTS=[
-  {key:'gps',     label:'GPS coordinates + compass bearing'},
+  {key:'gps',     label:'Compass rose (GPS + bearing)'},
   {key:'time',    label:'Date / time'},
   {key:'project', label:'Project + prepared-by line'},
   {key:'caption', label:'Caption + location label'},
   {key:'tags',    label:'Tag badges (🌊 🌱 🚩)'},
+  {key:'brand',   label:'Wordmark + record ID (edge strip)'},
 ];
 export function camStampDefaults(){
-  const base={gps:true,time:true,project:true,caption:true,tags:true};
+  const base={gps:true,time:true,project:true,caption:true,tags:true,brand:true};
   try{ return Object.assign(base,JSON.parse(localStorage.getItem(STAMP_KEY)||'{}')); }catch{ return base; }
 }
-export function camStampSetDefaults(t){ try{ localStorage.setItem(STAMP_KEY,JSON.stringify(t)); }catch{} }
+export function camStampSetDefaults(t){
+  try{ localStorage.setItem(STAMP_KEY,JSON.stringify(t)); }catch{}
+  _camCloudWrite('cameraPrefs',{stampDefaults:JSON.stringify(t)});
+}
 window.camStampDefaults=camStampDefaults;
+window.camStampSetDefaults=camStampSetDefaults;
+
+// ── Cross-device stamp prefs (settings-doc seam — the 7/28 tcfMap pattern) ──
+// localStorage stays the fast synchronous cache; the user-subtree settings docs
+// carry the cross-device copy. Stamp element toggles are user-global (doc
+// 'cameraPrefs'); the default caption is per-project (field on the pid doc,
+// alongside tcfMap/kflOrder). One-shot hydrate per session, remote wins;
+// local-only values backfill the cloud (organization done before sync shipped).
+const _camHydrated=new Set();
+function _camCloudWrite(docId,fields){
+  try{
+    if(typeof window._udb==='function'&&window._fbReady)
+      window._udb().collection('settings').doc(docId).set({...fields,_ts:Date.now()},{merge:true}).catch(()=>{});
+  }catch{}
+}
+export function camStampHydrate(){
+  if(typeof window._udb!=='function'||!window._fbReady) return;   // retry next open
+  const pid=_pid();
+  if(!_camHydrated.has('prefs')){
+    _camHydrated.add('prefs');
+    try{
+      window._udb().collection('settings').doc('cameraPrefs').get().then(doc=>{
+        const d=doc.exists?doc.data():{};
+        if(typeof d.stampDefaults==='string'){
+          if(d.stampDefaults!==localStorage.getItem(STAMP_KEY)){
+            try{ localStorage.setItem(STAMP_KEY,d.stampDefaults); }catch{}
+            if(_open) _renderOverlay();
+          }
+        } else if(localStorage.getItem(STAMP_KEY)){
+          _camCloudWrite('cameraPrefs',{stampDefaults:localStorage.getItem(STAMP_KEY)});
+        }
+      }).catch(()=>{ _camHydrated.delete('prefs'); });
+    }catch{ _camHydrated.delete('prefs'); }
+  }
+  if(pid!=='default'&&!_camHydrated.has('cap::'+pid)){
+    _camHydrated.add('cap::'+pid);
+    try{
+      window._udb().collection('settings').doc(pid).get().then(doc=>{
+        const d=doc.exists?doc.data():{};
+        if(typeof d.camDefCap==='string'){
+          if(d.camDefCap!==_defCap()){ try{ localStorage.setItem(_defCapKey(),d.camDefCap); }catch{} }
+        } else if(_defCap()){
+          _camCloudWrite(pid,{camDefCap:_defCap()});
+        }
+      }).catch(()=>{ _camHydrated.delete('cap::'+pid); });
+    }catch{ _camHydrated.delete('cap::'+pid); }
+  }
+}
+window.camStampHydrate=camStampHydrate;
+
+// ── Compass rose — the #27 vision: coordinates in the middle of a compass ──
+// Shared by the live viewfinder canvas and the stamp renderer (WYSIWYG). Drawn
+// N-up with an amber wedge on the rim at the shot bearing; GPS coords sit
+// INSIDE the dial; bearing text below it. `coordLines` = up to lat / lng / ±acc.
+function _drawRose(ctx,cx,cy,R,heading,coordLines,bearing){
+  ctx.save();
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.beginPath(); ctx.arc(cx,cy,R,0,Math.PI*2);
+  ctx.fillStyle='rgba(8,14,20,0.42)'; ctx.fill();
+  ctx.lineWidth=Math.max(1,R*0.035); ctx.strokeStyle='rgba(255,255,255,0.9)'; ctx.stroke();
+  for(let a=0;a<360;a+=30){                       // ticks — long at the cardinals
+    const rad=(a-90)*Math.PI/180, main=a%90===0;
+    const r1=R*(main?0.84:0.91), r2=R*0.975;
+    ctx.beginPath();
+    ctx.moveTo(cx+Math.cos(rad)*r1, cy+Math.sin(rad)*r1);
+    ctx.lineTo(cx+Math.cos(rad)*r2, cy+Math.sin(rad)*r2);
+    ctx.lineWidth=Math.max(1,R*(main?0.03:0.018));
+    ctx.strokeStyle=main?'rgba(255,255,255,0.95)':'rgba(255,255,255,0.5)';
+    ctx.stroke();
+  }
+  ctx.font=`bold ${Math.round(R*0.22)}px Arial`;  // cardinal letters, N in amber
+  for(const [ch,a] of [['N',0],['E',90],['S',180],['W',270]]){
+    const rad=(a-90)*Math.PI/180, rr=R*0.68;
+    ctx.fillStyle=ch==='N'?'#C9A84C':'rgba(255,255,255,0.95)';
+    ctx.fillText(ch,cx+Math.cos(rad)*rr,cy+Math.sin(rad)*rr);
+  }
+  if(heading!=null){                              // amber bearing wedge on the rim
+    const rad=(heading-90)*Math.PI/180;
+    ctx.beginPath();
+    ctx.moveTo(cx+Math.cos(rad)*R*1.08, cy+Math.sin(rad)*R*1.08);
+    ctx.lineTo(cx+Math.cos(rad+0.17)*R*0.86, cy+Math.sin(rad+0.17)*R*0.86);
+    ctx.lineTo(cx+Math.cos(rad-0.17)*R*0.86, cy+Math.sin(rad-0.17)*R*0.86);
+    ctx.closePath();
+    ctx.fillStyle='#C9A84C'; ctx.fill();
+  }
+  if(coordLines&&coordLines.length){              // the coordinates, mid-dial
+    const fs=Math.round(R*0.21), clh=Math.round(fs*1.3);
+    let yy=cy-((coordLines.length-1)*clh)/2;
+    coordLines.forEach((ln,i)=>{
+      ctx.font=`${i<2?fs:Math.round(fs*0.82)}px Arial`;
+      ctx.fillStyle=i<2?'#fff':'rgba(255,255,255,0.75)';
+      ctx.fillText(ln,cx,yy); yy+=clh;
+    });
+  }
+  if(bearing){                                    // bearing text under the dial
+    ctx.font=`bold ${Math.round(R*0.26)}px Arial`;
+    ctx.fillStyle='#fff';
+    ctx.fillText(bearing,cx,cy+R+Math.round(R*0.32));
+  }
+  ctx.restore();
+}
+function _bearingTxt(h){
+  if(h==null) return null;
+  const dirs=['N','NE','E','SE','S','SW','W','NW'];
+  return `${dirs[Math.round(h/45)%8]} ${Math.round(h)}°`;
+}
 
 // ── Stamp renderer — the second layer of the two-layer model ──
 // Composites the branded overlay from a photo's METADATA RECORD onto its clean
-// original at share/export time (photos.js lazy-imports this). Layout = the
-// agreed Timemark-inspired block: wordmark, gold-bar time/date line, project
-// line, coords line, caption line bottom-left; compass + tag badges bottom-right.
+// original at share/export time (photos.js lazy-imports this). Layout (v2,
+// Tim 7/29): caption → gold-bar time → project bottom-left; compass rose with
+// the coords inside + tag badges bottom-right; the wordmark + record ID run
+// vertically up the right edge (Timemark-style signature — and the future slot
+// for a per-tenant output logo).
 export async function camStampBlob(p, blob, toggles){
   const t=Object.assign(camStampDefaults(),toggles||{});
   const bmp=await createImageBitmap(blob);
@@ -78,14 +190,9 @@ export async function camStampBlob(p, blob, toggles){
   ctx.textBaseline='alphabetic';
   ctx.shadowColor='rgba(0,0,0,0.85)'; ctx.shadowBlur=Math.round(S*0.25); ctx.shadowOffsetY=Math.round(S*0.06);
   const cfg=_cfg();
-  // Bottom-left block, drawn bottom-up. Visual order top→bottom (Tim 7/29 swap):
-  // caption → time → project → coords → wordmark (wordmark anchors the bottom).
+  // Bottom-left block, drawn bottom-up. Visual order top→bottom:
+  // caption → time → project (coords moved into the rose, wordmark to the edge).
   const lines=[];
-  lines.push({wordmark:true});
-  if(t.gps&&p.lat!=null&&p.lng!=null){
-    const acc=p.gpsAcc!=null?` ±${Math.round(p.gpsAcc*3.28084)}ft`:'';
-    lines.push({txt:`${(+p.lat).toFixed(5)}, ${(+p.lng).toFixed(5)}${acc}`,font:`${S}px Arial`});
-  }
   if(t.project){
     const who=[cfg.preparedBy,cfg.projectName].filter(Boolean).join(' · ');
     if(who) lines.push({txt:who,font:`${S}px Arial`});
@@ -100,16 +207,6 @@ export async function camStampBlob(p, blob, toggles){
   }
   let y=H-pad;
   for(const ln of lines){
-    if(ln.wordmark){
-      const fs=S;
-      ctx.font=`bold ${fs}px Arial`;
-      let x=pad;
-      ctx.fillStyle='#ffffff'; ctx.fillText('GROUND',x,y); x+=ctx.measureText('GROUND').width+Math.round(fs*0.18);
-      ctx.fillStyle='#C9A84C'; ctx.fillText('|',x,y); x+=ctx.measureText('|').width+Math.round(fs*0.18);
-      ctx.fillStyle='#38b6c4'; ctx.fillText('LOG',x,y);
-      y-=lh;
-      continue;
-    }
     ctx.font=ln.font; ctx.fillStyle='#ffffff';
     let x=pad;
     if(ln.bar){
@@ -123,23 +220,45 @@ export async function camStampBlob(p, blob, toggles){
     ctx.fillText(ln.txt,x,y,Math.round(W*0.72));
     y-=lh;
   }
-  // Bottom-right: compass bearing + tag badges (the #27 layout call).
-  ctx.textAlign='right';
-  const rx=W-pad;
-  let ry=H-pad;
-  if(t.gps&&p.direction!=null){
-    const dirs=['N','NE','E','SE','S','SW','W','NW'];
-    const card=dirs[Math.round(p.direction/45)%8];
-    ctx.font=`bold ${S}px Arial`; ctx.fillStyle='#ffffff';
-    ctx.fillText(`${card} ${Math.round(p.direction)}°`,rx,ry); ry-=Math.round(lh*1.1);
-    ctx.font=`${Math.round(S*1.5)}px Arial`;
-    ctx.fillText('◐',rx,ry); ry-=Math.round(lh*1.25);
+  // Bottom-right: compass rose (coords inside, bearing below) + tag badges above.
+  // Everything right-of-rose leaves a lane for the vertical edge strip.
+  const laneR=Math.round(S*1.6);                  // edge-strip lane width
+  let tagY=H-pad;
+  if(t.gps&&(p.lat!=null&&p.lng!=null||p.direction!=null)){
+    const R=Math.round(S*3.1);
+    const cx=W-laneR-R, cy=H-pad-R-Math.round(R*0.55);
+    const coordLines=[];
+    if(p.lat!=null&&p.lng!=null){
+      coordLines.push((+p.lat).toFixed(5), (+p.lng).toFixed(5));
+      if(p.gpsAcc!=null) coordLines.push(`±${Math.round(p.gpsAcc*3.28084)} ft`);
+    }
+    _drawRose(ctx,cx,cy,R,p.direction!=null?+p.direction:null,coordLines,_bearingTxt(p.direction!=null?+p.direction:null));
+    tagY=cy-R-Math.round(S*1.1);
   }
   if(t.tags){
     const em=[p.swppp?'🌊':null,p.seedTag?'🌱':null,p.repairTag?'🚩':null].filter(Boolean).join(' ');
-    if(em){ ctx.font=`${Math.round(S*1.3)}px Arial`; ctx.fillText(em,rx,ry); }
+    if(em){
+      ctx.textAlign='right';
+      ctx.font=`${Math.round(S*1.3)}px Arial`; ctx.fillStyle='#ffffff';
+      ctx.fillText(em,W-laneR,tagY);
+      ctx.textAlign='left';
+    }
   }
-  ctx.textAlign='left';
+  // Right edge: vertical wordmark + record ID (the brand/verification signature).
+  if(t.brand){
+    ctx.save();
+    ctx.translate(W-Math.round(S*0.45), H-pad);
+    ctx.rotate(-Math.PI/2);
+    ctx.textAlign='left'; ctx.textBaseline='alphabetic';
+    const fs=Math.round(S*0.92), gap=Math.round(fs*0.18);
+    let x=0;
+    const seg=(txt,color,font)=>{ ctx.font=font||`bold ${fs}px Arial`; ctx.fillStyle=color; ctx.fillText(txt,x,0); x+=ctx.measureText(txt).width+gap; };
+    seg('GROUND','#ffffff');
+    seg('|','#C9A84C');
+    seg('LOG','#38b6c4');
+    if(p.id) seg(`  ·  ${String(p.id).toUpperCase()}`,'rgba(255,255,255,0.72)',`${Math.round(fs*0.85)}px Arial`);
+    ctx.restore();
+  }
   return await new Promise(res=>c.toBlob(res,'image/jpeg',0.92));
 }
 window.camStampBlob=camStampBlob;
@@ -149,16 +268,26 @@ function _fmtClock(d){
   const dt=d.toLocaleDateString([], {month:'short',day:'numeric',year:'numeric'});
   return `${t} │ ${dt}`;
 }
-function _fmtCoords(){
-  if(!_coords) return 'GPS: acquiring…';
-  const acc=_coords.accuracy!=null?` ±${Math.round(_coords.accuracy*3.28084)}ft`:'';
-  return `${_coords.latitude.toFixed(5)}, ${_coords.longitude.toFixed(5)}${acc}`;
-}
-function _headingLabel(){
-  if(_heading==null) return {dial:'◐', txt:'—'};
-  const dirs=['N','NE','E','SE','S','SW','W','NW'];
-  const d=dirs[Math.round(_heading/45)%8];
-  return {dial:'◐', txt:`${d} ${Math.round(_heading)}°`};
+// Live rose (viewfinder) — same _drawRose as the stamp, repainted on GPS /
+// heading updates. Sized in CSS px, backed at devicePixelRatio for crispness.
+function _paintRose(){
+  const cv=document.getElementById('glc-rose'); if(!cv) return;
+  const dpr=window.devicePixelRatio||1;
+  const CW=118, CH=150, R=46;
+  if(cv.width!==Math.round(CW*dpr)){
+    cv.width=Math.round(CW*dpr); cv.height=Math.round(CH*dpr);
+    cv.style.width=CW+'px'; cv.style.height=CH+'px';
+  }
+  const ctx=cv.getContext('2d');
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.clearRect(0,0,CW,CH);
+  ctx.shadowColor='rgba(0,0,0,0.7)'; ctx.shadowBlur=4;
+  const coordLines=[];
+  if(_coords){
+    coordLines.push(_coords.latitude.toFixed(5), _coords.longitude.toFixed(5));
+    if(_coords.accuracy!=null) coordLines.push(`±${Math.round(_coords.accuracy*3.28084)} ft`);
+  } else coordLines.push('GPS','acquiring…');
+  _drawRose(ctx,CW/2,R+6,R,_heading,coordLines,_bearingTxt(_heading)||'—');
 }
 
 function _toast(msg){
@@ -197,6 +326,9 @@ export async function camOpen(ctx){
   }
   _visBound=_onVis.bind(null);
   document.addEventListener('visibilitychange',_visBound);
+  window.addEventListener('resize',_onReframe);
+  window.addEventListener('orientationchange',_onReframe);
+  camStampHydrate();               // cross-device stamp prefs (eventual — repaints on land)
   _renderOverlay();
   _clockTimer=setInterval(_renderOverlay,30000);
 }
@@ -207,6 +339,9 @@ export async function camClose(){
   _open=false; _suspended=false;
   clearInterval(_clockTimer); _clockTimer=null;
   clearTimeout(_stripTimer); _stripTimer=null;
+  clearTimeout(_reframeT); _reframeT=null;
+  window.removeEventListener('resize',_onReframe);
+  window.removeEventListener('orientationchange',_onReframe);
   if(_visBound){ document.removeEventListener('visibilitychange',_visBound); _visBound=null; }
   if(_orientBound){ window.removeEventListener('deviceorientationabsolute',_orientBound); window.removeEventListener('deviceorientation',_orientBound); _orientBound=null; }
   if(_geoWatch!=null){ try{ navigator.geolocation.clearWatch(_geoWatch); }catch{} _geoWatch=null; }
@@ -227,11 +362,31 @@ async function _startPreview(){
     // preview sizes to the sensor's 4:3 at the top and leaves the rest black.
     // Given the frame, the native layer aspect-FILLS the whole screen and the
     // overlay text sits on the live image exactly like the rendered stamp.
+    // aspectMode 'cover' is that fill behavior made explicit (device-verified in
+    // portrait) instead of leaning on whatever the plugin defaults to.
     x:0, y:0,
     width:Math.round(window.innerWidth),
     height:Math.round(window.innerHeight),
+    aspectMode:'cover',
     disableExifHeaderStripping:false,
   });
+}
+
+// Rotation fix (★ v2 device-test bug): the explicit start frame never re-sizes
+// on its own, so landscape→portrait left the preview stuck at the old frame.
+// Re-frame the native layer to the new window on every rotation/resize —
+// setPreviewSize resizes the running session in place (no stop/restart flicker).
+function _onReframe(){
+  clearTimeout(_reframeT);
+  _reframeT=setTimeout(async()=>{
+    if(!_open||_suspended) return;
+    if(window.Capacitor?.isNativePlatform?.()){
+      try{
+        await CameraPreview.setPreviewSize({x:0,y:0,width:Math.round(window.innerWidth),height:Math.round(window.innerHeight)});
+      }catch(e){ console.warn('camera reframe failed:',e&&e.message); }
+    }
+    _renderOverlay();   // web <video> follows CSS; overlay repaints either way
+  },250);
 }
 
 async function _onVis(){
@@ -297,13 +452,12 @@ function _buildDom(){
         ${TAGS.map(t=>`<button class="glc-chip${_tags.has(t.key)?' on':''}" data-tag="${t.key}">${t.chip}</button>`).join('')}
       </div>
     </div>
-    <div class="glc-compass"><span class="dial">◐</span><span class="glc-hdg">—</span></div>
+    <div class="glc-compass"><canvas id="glc-rose"></canvas></div>
+    <div class="glc-edge">GROUND<span class="pipe">|</span><span class="log">LOG</span></div>
     <div class="glc-overlay">
       <div class="glc-line glc-cap"></div>
       <div class="glc-line glc-time"></div>
       <div class="glc-line glc-proj">${(cfg.projectName||'').replace(/</g,'&lt;')}</div>
-      <div class="glc-line glc-coords"></div>
-      <div class="glc-brand">GROUND<span class="pipe">|</span><span class="log">LOG</span></div>
     </div>
     <button id="glc-shutter" title="Take photo"></button>
     <div id="glc-strip" style="display:none"></div>`;
@@ -328,17 +482,15 @@ function _renderOverlay(){
   const t=camStampDefaults();
   el.querySelector('.glc-time').style.display=t.time?'':'none';
   el.querySelector('.glc-proj').style.display=t.project?'':'none';
-  el.querySelector('.glc-coords').style.display=t.gps?'':'none';
   el.querySelector('.glc-cap').style.display=t.caption?'':'none';
   el.querySelector('.glc-compass').style.display=t.gps?'':'none';
+  el.querySelector('.glc-edge').style.display=t.brand?'':'none';
   el.querySelector('.glc-time').textContent=_fmtClock(new Date());
   _renderLive();
 }
 function _renderLive(){
-  const el=document.getElementById('gl-camera'); if(!el) return;
-  el.querySelector('.glc-coords').textContent=_fmtCoords();
-  const h=_headingLabel();
-  el.querySelector('.glc-hdg').textContent=h.txt;
+  if(!document.getElementById('gl-camera')) return;
+  _paintRose();
 }
 
 // ⚙ Stamp-elements sheet: per-user defaults for what the rendered stamp (and the
@@ -381,6 +533,7 @@ function _stampSheet(){
     const dc=ov.querySelector('#glc-st-defcap').value.trim();
     const oldDefault=_defCap();
     try{ localStorage.setItem(_defCapKey(),dc); }catch{}
+    if(_pid()!=='default') _camCloudWrite(_pid(),{camDefCap:dc});
     // Adopt immediately if the carry-forward is empty or still the old default.
     const l=_last();
     if(dc&&(!l.caption||!l.caption.trim()||l.caption===oldDefault)) _saveLast({...l,caption:dc});

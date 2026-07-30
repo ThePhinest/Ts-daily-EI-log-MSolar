@@ -377,6 +377,41 @@ async function phRecoverStorageUrls(){
   }
 }
 
+// ── 📸 Offline upload retry (camera v2) ──
+// A camera shot whose Storage upload failed in the field keeps its ORIGINAL
+// bytes in IDB (cam_pending::<id>, written by phSaveCameraPhoto) and retries
+// here on reconnect / foreground / boot until the upload lands. The record was
+// never at risk (local-first save); this heals the full-res cloud copy too.
+let _phRetryBusy=false;
+async function phRetryPendingUploads(){
+  if(_phRetryBusy||!_currentUser||!storage||!_fbReady) return;
+  if(!window.idbKeysWithPrefix) return;
+  const keys=window.idbKeysWithPrefix('cam_pending::');
+  if(!keys.length) return;
+  _phRetryBusy=true;
+  try{
+    for(const key of keys){
+      const id=key.slice('cam_pending::'.length);
+      const p=(window._phPhotos||[]).find(x=>x.id===id);
+      if(!p){ window.idbDel(key); continue; }            // photo deleted — drop the bytes
+      if(p.storageUrl){ window.idbDel(key); continue; }  // healed elsewhere
+      const blob=window.idbGet(key);
+      if(!(blob instanceof Blob)){ window.idbDel(key); continue; }
+      try{
+        const ref=storage.ref(`photos/${_currentUser.uid}/${id}/${p.filename||('camera-'+id+'.jpg')}`);
+        const snap=await ref.put(blob,{contentType:'image/jpeg'});
+        p.storageUrl=await snap.ref.getDownloadURL();
+        phSaveLocal(); phSaveCloudOne(p);
+        window.idbDel(key);
+        console.log('phRetryPendingUploads: healed '+id);
+      }catch(e){ /* still offline / weak signal — next trigger tries again */ }
+    }
+  }finally{ _phRetryBusy=false; }
+}
+window.phRetryPendingUploads=phRetryPendingUploads;
+window.addEventListener('online',()=>{ setTimeout(phRetryPendingUploads,1500); });
+document.addEventListener('visibilitychange',()=>{ if(!document.hidden) setTimeout(phRetryPendingUploads,1500); });
+
 // Find a photo by id — own library first, then the project's shared mirror
 // (other members' published photos, opened from map pins).
 function _phById(id){
@@ -955,6 +990,7 @@ async function phInit(){
   const fromCloud = await phLoadCloud();
   phRender();
   phRecoverStorageUrls();
+  phRetryPendingUploads();   // finish any camera uploads a dead zone deferred
   _glMigratePhaseD();
   // Other members' published photos (shared projects) — feed the map pins.
   phLoadShared().then(()=>{
@@ -1011,7 +1047,13 @@ async function phSaveCameraPhoto(blob, meta){
       const snap=await ref.put(blob,{contentType:'image/jpeg'});
       entry.storageUrl=await snap.ref.getDownloadURL();
       phSaveLocal();
-    }catch(e){ console.warn('phSaveCameraPhoto upload deferred:',e.message); }
+    }catch(e){
+      console.warn('phSaveCameraPhoto upload deferred:',e.message);
+      // Camera v2: park the original bytes in IDB so the retry pass can finish
+      // the upload later (reconnect / foreground / next boot) — the full-res
+      // shot survives a dead zone, not just the thumbnail.
+      try{ if(window.idbSet) window.idbSet('cam_pending::'+id, blob); }catch(_){}
+    }
     phSaveCloudOne(entry);
   })();
   // Contextual launch (📸 from a punchlist flag / drawing popup): auto-attach the
@@ -1033,19 +1075,21 @@ async function phSaveCameraPhoto(blob, meta){
 // the photo itself: the inline pill row under the lightbox (below) flips elements
 // and is remembered. The stored photo never changes (two-layer model).
 const _STAMP_PILLS=[
-  {key:'gps',     pill:'📍 GPS'},
+  {key:'gps',     pill:'🧭 GPS'},
   {key:'time',    pill:'🕐 Time'},
   {key:'project', pill:'🏗 Project'},
   {key:'caption', pill:'✏ Caption'},
   {key:'tags',    pill:'🏷 Tags'},
+  {key:'brand',   pill:'🪪 ID'},
 ];
 function _stampDefaults(){
-  const base={gps:true,time:true,project:true,caption:true,tags:true};
+  const base={gps:true,time:true,project:true,caption:true,tags:true,brand:true};
   try{ return Object.assign(base,JSON.parse(localStorage.getItem('gl_cam_stamp')||'{}')); }catch{ return base; }
 }
 function _phStampPillRow(){
   const row=document.getElementById('ph-lb-stamp-row');
   if(!row) return;
+  if(window.camStampHydrate) window.camStampHydrate();   // cross-device prefs (one-shot)
   const t=_stampDefaults();
   row.innerHTML=_STAMP_PILLS.map(e=>
     `<button class="_lb-st-pill" data-k="${e.key}" style="padding:4px 9px;border-radius:12px;border:1px solid ${t[e.key]?'var(--amber)':'var(--border)'};background:${t[e.key]?'rgba(201,168,76,0.18)':'transparent'};color:${t[e.key]?'var(--amber)':'var(--muted)'};font-family:var(--mono);font-size:10px;cursor:pointer">${e.pill}</button>`
@@ -1054,7 +1098,10 @@ function _phStampPillRow(){
     btn.onclick=()=>{
       const cur=_stampDefaults();
       cur[btn.dataset.k]=!cur[btn.dataset.k];
-      try{ localStorage.setItem('gl_cam_stamp',JSON.stringify(cur)); }catch{}
+      // camStampSetDefaults also writes the cross-device settings doc; the
+      // camera module is loaded here whenever the stamp preview rendered.
+      if(window.camStampSetDefaults) window.camStampSetDefaults(cur);
+      else try{ localStorage.setItem('gl_cam_stamp',JSON.stringify(cur)); }catch{}
       _phStampPillRow();
       // Live preview: re-render the stamped view with the new element set.
       const p=(window._phPhotos||[]).find(x=>x.id===_phLbId);
