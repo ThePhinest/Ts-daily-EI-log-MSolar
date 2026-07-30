@@ -4732,8 +4732,11 @@ function mapRefreshDateLabels(){
       // Open repair flags override the date label with an amber 🚩 + the flag's
       // permanent PL number so map ↔ punchlist line up at a glance; otherwise
       // the normal date/custom label.
+      const plTag=e.plNum?(typeof trPlFmt==='function'?trPlFmt(e.plNum):'PL-'+e.plNum):'';
       const text=isOpenTemp
-        ? '🚩 '+(e.plNum?((typeof trPlFmt==='function'?trPlFmt(e.plNum):'PL-'+e.plNum)+' · '):'')+((e.tempLabel&&e.tempLabel.trim())||'Repair')
+        ? (_plCapActive
+            ? '🚩 '+(plTag||'Repair')   // punchlist framing: compact number tags only
+            : '🚩 '+(plTag?plTag+' · ':'')+((e.tempLabel&&e.tempLabel.trim())||'Repair'))
         : ((e.labelText&&e.labelText.trim())?e.labelText.trim():_fmtLabelDate(e.date));
       const color=isOpenTemp ? '#C9A84C'
         : ((e.labelColor&&/^#[0-9A-Fa-f]{6}$/.test(e.labelColor))?e.labelColor:'#ffffff');
@@ -5397,6 +5400,7 @@ function _capFlagsArm(){
   _capFlagsRefresh();
 }
 function _capFlagsDisarm(){
+  _plCapActive=false;   // punchlist framing over — labels back to full text
   if(_capFlagsShow===null) return;
   _capFlagsShow=null;
   _capFlagsRefresh();
@@ -5794,6 +5798,7 @@ async function _doCaptureDist(cid){
 // forced visible for the shot; everything else stays as the user framed it
 // (layers panel controls the context). The newest capture day embeds at the
 // FRONT of the punchlist PDF.
+let _plCapActive=false;
 function mapCapturePunchlist(){
   if(!_mapInstance) return;
   if(typeof mapCloseFab==='function') mapCloseFab();
@@ -5803,7 +5808,11 @@ function mapCapturePunchlist(){
   if(!open.length){ _showCaptureToast('Nothing on the punchlist — no open flags to capture.'); setTimeout(_hideCaptureToast,2600); return; }
   if(_trackerPopup){_trackerPopup.remove();_trackerPopup=null;}
   _showCaptureBar(()=>_doCapturePunchlist());
-  // Flags ARE the subject — force them on regardless of the capture pref.
+  // Flags ARE the subject — force them on regardless of the capture pref, and
+  // collapse their labels to just "🚩 PL-NN" while framing (full deficiency
+  // text overlaps into a cluster where flags bunch up — Tim 7/30; the PDF item
+  // list carries the descriptions).
+  _plCapActive=true;
   _capFlagsShow=true; _capFlagsRefresh(); _capFlagsPaintBtn();
 }
 window.mapCapturePunchlist=mapCapturePunchlist;
