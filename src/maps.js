@@ -2495,6 +2495,11 @@ function mapToggleViewFab(){
   _viewFabOpen=!_viewFabOpen;
   document.getElementById('map-view-fab').classList.toggle('open',_viewFabOpen);
   document.getElementById('map-view-palette').classList.toggle('open',_viewFabOpen);
+  // Labels mode + flags toggle live here — paint their current state on open.
+  if(_viewFabOpen){
+    if(typeof _syncLabelModeBtns==='function') _syncLabelModeBtns();
+    if(typeof _syncFlagFabBtn==='function') _syncFlagFabBtn();
+  }
 }
 function mapCloseViewFab(){
   _viewFabOpen=false;
@@ -3611,6 +3616,7 @@ function mapShowTrackerModal(feat,category){
   const newLabelText=document.getElementById('map-tr-label-text'); if(newLabelText) newLabelText.value='';
   const newLabelColor=document.getElementById('map-tr-label-color'); if(newLabelColor) newLabelColor.value='#ffffff';
   const newLabelCfg=document.getElementById('map-tr-label-config'); if(newLabelCfg) newLabelCfg.style.display='none';
+  _trLblSetChips({date:true,meas:false,custom:false});
   if(catDetails?.targetRate&&measType!=='linear') mapTrackerCalc();
   const catColor=(typeof tcGetColor==='function')?tcGetColor(category,pid):'#888';
   const catName=(typeof tcGetName==='function')?tcGetName(category,pid):(category||'Unknown');
@@ -4169,6 +4175,14 @@ function mapSaveTrackerEntry(){
     // 🌱 seeding-specs location — stored from day one, not in any export yet.
     seedWhere:document.getElementById('map-tr-where')?.value||null,
     showDateLabel:document.getElementById('map-tr-date-label-btn')?.dataset.on==='1'||false,
+    labelParts:(()=>{
+      const g=id=>document.getElementById(id)?.dataset.on==='1';
+      const p={date:g('map-tr-lbl-date'),meas:g('map-tr-lbl-meas'),custom:g('map-tr-lbl-custom')};
+      const txt=document.getElementById('map-tr-label-text')?.value.trim();
+      if(p.custom&&!txt) p.custom=false;
+      if(!p.date&&!p.meas&&!p.custom) p.date=true;
+      return p;
+    })(),
     labelText:document.getElementById('map-tr-label-text')?.value.trim()||null,
     labelColor:(()=>{const v=document.getElementById('map-tr-label-color')?.value;return (v&&/^#[0-9A-Fa-f]{6}$/.test(v))?v:null;})(),
     notes:document.getElementById('map-tr-notes').value.trim()||null,
@@ -4196,6 +4210,12 @@ function mapSaveTrackerEntry(){
   if(_editingEntryId){
     entry.id=_editingEntryId; entry.deletedFromMap=false;
     const _prev=(typeof trGetEntry==='function')?trGetEntry(_editingEntryId,pid):null;
+    // Label size + custom anchor live only in the label editor (not this form) —
+    // a re-save rebuilds the entry from form inputs and would strip them.
+    if(_prev){
+      if(_prev.labelSize!=null) entry.labelSize=_prev.labelSize;
+      if(_prev.labelLng!=null){ entry.labelLng=_prev.labelLng; entry.labelLat=_prev.labelLat; }
+    }
     if(_prev&&_prev.temporary){
       entry.temporary=true; entry.tempStatus=_prev.tempStatus||'open';
       entry.tempLabel=_prev.tempLabel; entry.tempType=_prev.tempType;
@@ -4727,25 +4747,34 @@ function mapRefreshDateLabels(){
         const planned=st?!!st.isPlanned:(e.entryType==='planned');
         if(planned&&!_distCapFilter.showPlans) return false;
       }
-      if(!e.showDateLabel&&!isOpenTemp) return false;
-      return true;
+      // Master labels mode (view palette): all / picks / today / hide.
+      // Open flags are punchlist evidence — their 🚩 labels ride the FLAGS
+      // toggle (checked above), never the labels mode.
+      if(isOpenTemp) return true;
+      const m=_lblMode();
+      if(m==='hide') return false;
+      if(m==='all') return true;
+      if(m==='today') return e.date===new Date().toLocaleDateString('en-CA');
+      return !!e.showDateLabel; // 'picks'
     })
     .map(e=>{
-      const c=_calcCentroid(e.geometry);
+      // Custom anchor (📍 tap-to-place) wins over the geometry centroid.
+      const c=(e.labelLng!=null&&e.labelLat!=null)?[e.labelLng,e.labelLat]:_calcCentroid(e.geometry);
       if(!c) return null;
       const isOpenTemp=e.temporary&&e.tempStatus!=='resolved';
       // Open repair flags override the date label with an amber 🚩 + the flag's
       // permanent PL number so map ↔ punchlist line up at a glance; otherwise
-      // the normal date/custom label.
+      // the configured label lines (custom / measurement / date).
       const plTag=e.plNum?(typeof trPlFmt==='function'?trPlFmt(e.plNum):'PL-'+e.plNum):'';
       const text=isOpenTemp
         ? (_plCapActive
             ? '🚩 '+(plTag||'Repair')   // punchlist framing: compact number tags only
             : '🚩 '+(plTag?plTag+' · ':'')+((e.tempLabel&&e.tempLabel.trim())||'Repair'))
-        : ((e.labelText&&e.labelText.trim())?e.labelText.trim():_fmtLabelDate(e.date));
+        : _lblText(e);
       const color=isOpenTemp ? '#C9A84C'
         : ((e.labelColor&&/^#[0-9A-Fa-f]{6}$/.test(e.labelColor))?e.labelColor:'#ffffff');
-      return {type:'Feature',geometry:{type:'Point',coordinates:c},properties:{label:text,color}};
+      const size=isOpenTemp ? 11 : ({S:9,M:11,L:14}[e.labelSize]||11);
+      return {type:'Feature',geometry:{type:'Point',coordinates:c},properties:{label:text,color,size}};
     })
     .filter(Boolean);
   const geojson={type:'FeatureCollection',features};
@@ -4755,7 +4784,7 @@ function mapRefreshDateLabels(){
     _mapInstance.addSource('tracker-date-labels',{type:'geojson',data:geojson});
     _mapInstance.addLayer({
       id:'tracker-date-labels-layer',type:'symbol',source:'tracker-date-labels',
-      layout:{'text-field':['get','label'],'text-size':11,'text-anchor':'center','text-allow-overlap':true,'text-ignore-placement':true},
+      layout:{'text-field':['get','label'],'text-size':['coalesce',['get','size'],11],'text-anchor':'center','text-allow-overlap':true,'text-ignore-placement':true},
       paint:{'text-color':['get','color'],'text-halo-color':'rgba(0,0,0,0.85)','text-halo-width':1.5},
     });
   }
@@ -4768,6 +4797,87 @@ function mapRefreshDateLabels(){
   }
 }
 window.mapRefreshDateLabels=mapRefreshDateLabels;
+
+// ── Label content / mode helpers (#4 + #45 label pass, 2026-07-31) ──
+// Per-entry label content is COMBINABLE: labelParts {date,meas,custom} — checked
+// parts stack as label lines (custom → measurement → date). Legacy entries have
+// no labelParts; derive the exact pre-pass display (custom text if set, else date).
+function _lblParts(e){
+  if(e.labelParts&&typeof e.labelParts==='object') return e.labelParts;
+  const hasCustom=!!(e.labelText&&e.labelText.trim());
+  return {date:!hasCustom,meas:false,custom:hasCustom};
+}
+function _fmtLabelMeasure(e){
+  let v=e.measurementValue,u=e.measurementUnit||'ac';
+  if(v==null){ v=e.acres; u='ac'; }
+  if(v==null||isNaN(Number(v))) return '';
+  const n=Number(v);
+  const txt=n>=100?Math.round(n).toLocaleString():n.toLocaleString(undefined,{maximumFractionDigits:2});
+  return txt+' '+u;
+}
+function _lblText(e){
+  const p=_lblParts(e);
+  const lines=[];
+  if(p.custom&&e.labelText&&e.labelText.trim()) lines.push(e.labelText.trim());
+  if(p.meas){ const m=_fmtLabelMeasure(e); if(m) lines.push(m); }
+  if(p.date) lines.push(_fmtLabelDate(e.date));
+  if(!lines.length) lines.push(_fmtLabelDate(e.date)); // never render an empty label
+  return lines.join('\n');
+}
+// Master mode — tiny per-project pref (view palette row): all/picks/today/hide.
+function _lblMode(){
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  try{
+    const m=localStorage.getItem('gl_lbl_mode::'+pid);
+    return ['all','picks','today','hide'].includes(m)?m:'picks';
+  }catch{ return 'picks'; }
+}
+function mapSetLabelMode(mode){
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  try{ localStorage.setItem('gl_lbl_mode::'+pid,mode); }catch{}
+  _syncLabelModeBtns();
+  mapRefreshDateLabels();
+  const msg={all:'🔖 Labels: all drawings',picks:'🔖 Labels: my picks',today:"🔖 Labels: today's drawings",hide:'🔖 Labels hidden'}[mode];
+  if(msg&&typeof showCloudBanner==='function') showCloudBanner(msg);
+}
+window.mapSetLabelMode=mapSetLabelMode;
+function _syncLabelModeBtns(){
+  const m=_lblMode();
+  [['all','map-lbl-all'],['picks','map-lbl-picks'],['today','map-lbl-today'],['hide','map-lbl-hide']]
+    .forEach(([mode,id])=>{ const b=document.getElementById(id); if(b) b.classList.toggle('active',m===mode); });
+}
+
+// 📍 Tap-to-place label move (from the label editor). One follow-up map tap
+// stores a custom anchor (labelLng/labelLat); ✕ on the chip cancels.
+let _lblPlaceId=null,_lblPlaceHandler=null;
+function mapMoveLabelStart(entryId){
+  if(!_mapInstance) return;
+  mapCancelLabelPlacement();
+  _lblPlaceId=entryId;
+  const chip=document.createElement('div');
+  chip.id='_gl-lbl-place-chip';
+  chip.style.cssText='position:fixed;bottom:calc(120px + env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);z-index:400;background:var(--bg);border:1px solid var(--amber);border-radius:20px;padding:8px 16px;font-family:var(--mono);font-size:11px;color:var(--amber);display:flex;align-items:center;gap:10px;white-space:nowrap';
+  chip.innerHTML='🔖 Tap the map to place the label <button onclick="mapCancelLabelPlacement()" style="background:none;border:none;color:var(--muted);font-size:14px;cursor:pointer;padding:0">✕</button>';
+  document.body.appendChild(chip);
+  _lblPlaceHandler=(ev)=>{
+    const id=_lblPlaceId;
+    mapCancelLabelPlacement();
+    const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+    const entry=(typeof trGetEntry==='function')?trGetEntry(id,pid):null;
+    if(!entry) return;
+    if(typeof trSaveEntry==='function') trSaveEntry({...entry,labelLng:ev.lngLat.lng,labelLat:ev.lngLat.lat},pid);
+    mapRefreshDateLabels();
+    if(typeof showCloudBanner==='function') showCloudBanner('🔖 Label moved');
+  };
+  _mapInstance.once('click',_lblPlaceHandler);
+}
+window.mapMoveLabelStart=mapMoveLabelStart;
+function mapCancelLabelPlacement(){
+  if(_lblPlaceHandler&&_mapInstance){ try{_mapInstance.off('click',_lblPlaceHandler);}catch(e){} }
+  _lblPlaceHandler=null; _lblPlaceId=null;
+  document.getElementById('_gl-lbl-place-chip')?.remove();
+}
+window.mapCancelLabelPlacement=mapCancelLabelPlacement;
 
 function mapToggleDateLabel(entryId){
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
@@ -4788,27 +4898,46 @@ function mapToggleDateLabel(entryId){
 }
 window.mapToggleDateLabel=mapToggleDateLabel;
 
-// Inline rename modal for the popup tap-to-edit path. Edits labelText + labelColor;
-// "Turn Off" toggles the label visibility off; persists directly to entry.
+// Inline label editor for the popup tap-to-edit path. Edits the combinable
+// content parts (date/measurement/custom), color, size, and position (📍
+// tap-to-place / ↺ reset to centroid); "Turn Off" toggles visibility off.
 function _showLabelTextModal(entryId){
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
   const entry=(typeof trGetEntry==='function')?trGetEntry(entryId,pid):null;
   if(!entry) return;
   const curText=entry.labelText||'';
   const curColor=(entry.labelColor&&/^#[0-9A-Fa-f]{6}$/.test(entry.labelColor))?entry.labelColor:'#ffffff';
-  const dateFallback=_fmtLabelDate(entry.date);
+  const parts={..._lblParts(entry)};
+  const curSize=['S','M','L'].includes(entry.labelSize)?entry.labelSize:'M';
+  const hasAnchor=entry.labelLng!=null&&entry.labelLat!=null;
+  const measTxt=_fmtLabelMeasure(entry);
+  const dateTxt=_fmtLabelDate(entry.date);
   const ov=document.createElement('div');
   ov.className='modal-overlay';
   ov.style.cssText='z-index:9700';
+  const chip=(id,on,label)=>`<button id="${id}" data-on="${on?'1':'0'}" style="flex:1;background:${on?'rgba(201,168,76,0.25)':'none'};border:1px solid ${on?'var(--amber)':'var(--border)'};border-radius:6px;color:${on?'var(--amber)':'var(--muted2)'};font-family:var(--mono);font-size:10px;padding:7px 4px;cursor:pointer;white-space:nowrap">${label}</button>`;
   ov.innerHTML=`
     <div class="modal-box" style="max-width:320px;width:90%">
       <div class="modal-title" style="margin-bottom:6px">Edit Label</div>
-      <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:12px;line-height:1.5">Leave blank to use the date (${dateFallback||'—'}).</div>
-      <input type="text" id="_lblt-input" value="${curText.replace(/"/g,'&quot;').replace(/'/g,'&#39;')}" placeholder="Custom label" style="width:100%;box-sizing:border-box;background:var(--s1);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--body);font-size:16px;padding:9px 12px;outline:none;margin-bottom:12px">
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+      <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:6px;letter-spacing:.06em">SHOW ON LABEL</div>
+      <div style="display:flex;gap:6px;margin-bottom:12px">
+        ${chip('_lblt-p-date',parts.date,'📅 '+(dateTxt||'Date'))}
+        ${chip('_lblt-p-meas',parts.meas,'📏 '+(measTxt||'Length/Acres'))}
+        ${chip('_lblt-p-custom',parts.custom,'✏️ Custom')}
+      </div>
+      <input type="text" id="_lblt-input" value="${curText.replace(/"/g,'&quot;').replace(/'/g,'&#39;')}" placeholder="Custom text" style="display:${parts.custom?'block':'none'};width:100%;box-sizing:border-box;background:var(--s1);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--body);font-size:16px;padding:9px 12px;outline:none;margin-bottom:12px">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
         <span style="font-family:var(--mono);font-size:11px;color:var(--muted)">Color</span>
         <input type="color" id="_lblt-color" value="${curColor}" style="width:32px;height:32px;padding:0;border:1px solid var(--border);border-radius:4px;background:transparent;cursor:pointer">
         <input type="text" id="_lblt-color-hex" value="${curColor}" maxlength="7" style="flex:1;min-width:0;background:var(--s1);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--mono);font-size:12px;padding:6px 9px">
+        <span style="font-family:var(--mono);font-size:11px;color:var(--muted)">Size</span>
+        <div style="display:flex;gap:4px" id="_lblt-sizes">
+          ${['S','M','L'].map(s=>`<button data-size="${s}" style="width:30px;background:${s===curSize?'rgba(201,168,76,0.25)':'none'};border:1px solid ${s===curSize?'var(--amber)':'var(--border)'};border-radius:5px;color:${s===curSize?'var(--amber)':'var(--muted2)'};font-family:var(--mono);font-size:10px;padding:6px 0;cursor:pointer">${s}</button>`).join('')}
+        </div>
+      </div>
+      <div style="display:flex;gap:6px;margin-bottom:14px">
+        <button class="modal-cancel" id="_lblt-move" style="flex:1;color:var(--amber);border-color:var(--amber)">📍 Move</button>
+        <button class="modal-cancel" id="_lblt-resetpos" style="flex:1;${hasAnchor?'':'display:none'}">↺ Reset position</button>
       </div>
       <div class="modal-btns">
         <button class="modal-confirm" id="_lblt-ok">Save</button>
@@ -4820,9 +4949,28 @@ function _showLabelTextModal(entryId){
   const input=ov.querySelector('#_lblt-input');
   const cIn=ov.querySelector('#_lblt-color');
   const cHex=ov.querySelector('#_lblt-color-hex');
-  input.focus(); input.select();
   cIn.addEventListener('input',()=>{ cHex.value=cIn.value; });
   cHex.addEventListener('input',()=>{ if(/^#[0-9A-Fa-f]{6}$/.test(cHex.value)) cIn.value=cHex.value; });
+  // Part chips toggle in place; Custom reveals its text input.
+  let selSize=curSize;
+  const chipSync=(btn,on)=>{ btn.dataset.on=on?'1':'0'; btn.style.background=on?'rgba(201,168,76,0.25)':'none'; btn.style.borderColor=on?'var(--amber)':'var(--border)'; btn.style.color=on?'var(--amber)':'var(--muted2)'; };
+  [['_lblt-p-date','date'],['_lblt-p-meas','meas'],['_lblt-p-custom','custom']].forEach(([id,key])=>{
+    const b=ov.querySelector('#'+id);
+    b.onclick=()=>{
+      parts[key]=!parts[key];
+      chipSync(b,parts[key]);
+      if(key==='custom'){ input.style.display=parts.custom?'block':'none'; if(parts.custom) input.focus(); }
+    };
+  });
+  ov.querySelector('#_lblt-sizes').querySelectorAll('button').forEach(b=>{
+    b.onclick=()=>{
+      selSize=b.dataset.size;
+      ov.querySelector('#_lblt-sizes').querySelectorAll('button').forEach(x=>{
+        const on=x.dataset.size===selSize;
+        x.style.background=on?'rgba(201,168,76,0.25)':'none'; x.style.borderColor=on?'var(--amber)':'var(--border)'; x.style.color=on?'var(--amber)':'var(--muted2)';
+      });
+    };
+  });
   const persist=(patch)=>{
     const refreshed=(typeof trGetEntry==='function')?trGetEntry(entryId,pid):entry;
     if(!refreshed) return;
@@ -4834,17 +4982,49 @@ function _showLabelTextModal(entryId){
       _showTrackerEntryPopup(lngLat,{id:entryId,categoryId:updated.categoryId,categoryName:updated.categoryName,date:updated.date,measurementValue:updated.measurementValue,measurementUnit:updated.measurementUnit,acres:updated.acres,location:updated.location,status:updated.status,phase:updated.phase,method:updated.method,contractor:updated.contractor,notes:updated.notes});
     }
   };
-  ov.querySelector('#_lblt-ok').onclick=()=>{
+  const collectSave=()=>{
     const val=input.value.trim();
     const hex=cHex.value.trim();
     const color=/^#[0-9A-Fa-f]{6}$/.test(hex)?hex:'#ffffff';
-    persist({labelText:val||null,labelColor:color});
-    ov.remove();
+    if(parts.custom&&!val) parts.custom=false;            // empty custom = unchecked
+    if(!parts.date&&!parts.meas&&!parts.custom) parts.date=true; // never save an empty label
+    persist({labelParts:{...parts},labelText:val||null,labelColor:color,labelSize:selSize});
   };
+  ov.querySelector('#_lblt-ok').onclick=()=>{ collectSave(); ov.remove(); };
+  ov.querySelector('#_lblt-move').onclick=()=>{ collectSave(); ov.remove(); mapMoveLabelStart(entryId); };
+  ov.querySelector('#_lblt-resetpos').onclick=()=>{ persist({labelLng:null,labelLat:null}); ov.remove(); };
   ov.querySelector('#_lblt-off').onclick=()=>{ persist({showDateLabel:false}); ov.remove(); };
   ov.querySelector('#_lblt-cancel').onclick=()=>ov.remove();
   input.addEventListener('keydown',e=>{ if(e.key==='Enter') ov.querySelector('#_lblt-ok').click(); });
 }
+
+// Entry-form label content chips (#45). _trLblSetChips paints all three from a
+// parts object; mapTrLblPartToggle flips one (custom reveals its text input).
+function _trLblSetChips(parts){
+  [['map-tr-lbl-date','date'],['map-tr-lbl-meas','meas'],['map-tr-lbl-custom','custom']].forEach(([id,key])=>{
+    const b=document.getElementById(id); if(!b) return;
+    const on=!!parts[key];
+    b.dataset.on=on?'1':'0';
+    b.style.background=on?'rgba(201,168,76,0.25)':'none';
+    b.style.borderColor=on?'var(--amber)':'var(--border)';
+    b.style.color=on?'var(--amber)':'var(--muted2)';
+  });
+  const txt=document.getElementById('map-tr-label-text');
+  if(txt) txt.style.display=parts.custom?'block':'none';
+}
+function mapTrLblPartToggle(key){
+  const b=document.getElementById('map-tr-lbl-'+({date:'date',meas:'meas',custom:'custom'})[key]);
+  if(!b) return;
+  const parts={
+    date:document.getElementById('map-tr-lbl-date')?.dataset.on==='1',
+    meas:document.getElementById('map-tr-lbl-meas')?.dataset.on==='1',
+    custom:document.getElementById('map-tr-lbl-custom')?.dataset.on==='1',
+  };
+  parts[key]=!parts[key];
+  _trLblSetChips(parts);
+  if(key==='custom'&&parts.custom) document.getElementById('map-tr-label-text')?.focus();
+}
+window.mapTrLblPartToggle=mapTrLblPartToggle;
 
 function mapToggleDateLabelEdit(){
   const btn=document.getElementById('map-tr-date-label-btn');
@@ -6037,6 +6217,8 @@ function mapRenderTrackerLayers(){
       if(_shapeEdit) return;  // reshape session owns map taps — no popups mid-edit
       // Placing a repair flag — that tap belongs to the flag placement handler.
       if(_placingFlagParentId) return;
+      // Placing a label (📍 tap-to-place) — same rule.
+      if(_lblPlaceId) return;
       const clickTarget=e.originalEvent&&e.originalEvent.target;
       // Don't open tracker popup when user clicked a photo pin or field marker
       if(clickTarget&&clickTarget.closest&&(
@@ -6434,8 +6616,9 @@ function mapToggleRepairFlags(){
 }
 window.mapToggleRepairFlags=mapToggleRepairFlags;
 function _syncFlagFabBtn(){
-  const btn=document.getElementById('map-fab-flags-btn');
-  if(btn) btn.classList.toggle('active',_flagsVisible());
+  // Lives in the view palette since 7/31 (field-markers Show/Hide pattern).
+  const btn=document.getElementById('map-vf-flags-toggle');
+  if(btn) btn.textContent=_flagsVisible()?'Hide':'Show';
 }
 
 // Step 1 — popup 🚩 → pick the spot. One follow-up tap places the flag.
@@ -6756,6 +6939,7 @@ function mapEditTrackerEntry(entryId){
   }
   const editLabelText=document.getElementById('map-tr-label-text');
   if(editLabelText) editLabelText.value=entry.labelText||'';
+  _trLblSetChips(_lblParts(entry));
   const editLabelColor=document.getElementById('map-tr-label-color');
   if(editLabelColor) editLabelColor.value=(entry.labelColor&&/^#[0-9A-Fa-f]{6}$/.test(entry.labelColor))?entry.labelColor:'#ffffff';
   const editLabelCfg=document.getElementById('map-tr-label-config');

@@ -2362,6 +2362,17 @@ Anticipated rain — AM weather monitoring expected"></textarea>
         <input type="date" id="map-pin-to" style="background:var(--s1);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--mono);font-size:11px;padding:5px 8px" onchange="mapRenderPhotoPins()">
       </div>
       <input id="map-photo-search" type="text" placeholder="Filter by caption…" style="display:none;margin-top:6px;background:var(--s1);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--mono);font-size:11px;padding:5px 8px;width:100%;box-sizing:border-box" oninput="if(typeof mapSetPhotoSearch==='function')mapSetPhotoSearch(this.value)">
+      <div class="map-vf-label">DRAWING LABELS</div>
+      <div class="map-vf-row">
+        <button class="map-style-btn" id="map-lbl-all" onclick="mapSetLabelMode('all')">🔖 All</button>
+        <button class="map-style-btn" id="map-lbl-picks" onclick="mapSetLabelMode('picks')">My picks</button>
+      </div>
+      <div class="map-vf-row" style="margin-top:4px">
+        <button class="map-style-btn" id="map-lbl-today" onclick="mapSetLabelMode('today')">Today</button>
+        <button class="map-style-btn" id="map-lbl-hide" onclick="mapSetLabelMode('hide')">Hide</button>
+      </div>
+      <div class="map-vf-label">REPAIR FLAGS</div>
+      <button id="map-vf-flags-toggle" class="map-style-btn" onclick="mapToggleRepairFlags()" style="margin-bottom:2px">Hide</button>
       <div style="cursor:pointer" onclick="mapToggleFmList()">
         <div class="map-vf-label" style="display:flex;align-items:center;gap:5px">
           <span id="map-vf-fm-arrow" style="font-size:9px;color:var(--muted)">▾</span>FIELD MARKERS
@@ -2468,7 +2479,7 @@ Anticipated rain — AM weather monitoring expected"></textarea>
       <div class="map-fab-row"><span class="map-fab-lbl">Seeding</span><button class="map-fab-btn" id="map-fab-seed-btn" onclick="mapCaptureSeedingStatus()" title="Capture seeding status with a legend">🌱</button></div>
       <div class="map-fab-row"><span class="map-fab-lbl">Disturbance</span><button class="map-fab-btn" id="map-fab-dist-btn" onclick="mapCaptureDisturbanceStatus()" title="Capture disturbance status with a legend">🚧</button></div>
       <div class="map-fab-row"><span class="map-fab-lbl">Punchlist</span><button class="map-fab-btn" id="map-fab-pl-btn" onclick="mapCapturePunchlist()" title="Capture flag locations for the punchlist export">🚩</button></div>
-      <div class="map-fab-row"><span class="map-fab-lbl">Flags</span><button class="map-fab-btn" id="map-fab-flags-btn" onclick="mapToggleRepairFlags()" title="Show / hide repair flags on the map">🚩</button></div>
+      <!-- Flags show/hide moved to the view palette (bottom-left GroundLog FAB), 7/31 -->
     </div>
 
     <!-- Draw mode indicator bar -->
@@ -2589,9 +2600,15 @@ Anticipated rain — AM weather monitoring expected"></textarea>
         <button id="map-tr-date-label-btn" data-on="0" onclick="mapToggleDateLabelEdit()" style="background:none;border:1px solid rgba(255,255,255,0.15);border-radius:4px;color:rgba(255,255,255,0.35);font-family:var(--mono);font-size:9px;padding:2px 7px;cursor:pointer;line-height:1.4;white-space:nowrap;flex-shrink:0">🔖 Label</button>
       </div>
       <div id="map-tr-label-config" style="display:none;margin:0 0 10px 22px">
+        <!-- Combinable label content (#45): checked chips stack as label lines -->
+        <div style="display:flex;gap:6px;margin-bottom:6px">
+          <button type="button" id="map-tr-lbl-date" data-on="1" onclick="mapTrLblPartToggle('date')" style="flex:1;background:rgba(201,168,76,0.25);border:1px solid var(--amber);border-radius:5px;color:var(--amber);font-family:var(--mono);font-size:9px;padding:5px 4px;cursor:pointer;white-space:nowrap">📅 Date</button>
+          <button type="button" id="map-tr-lbl-meas" data-on="0" onclick="mapTrLblPartToggle('meas')" style="flex:1;background:none;border:1px solid var(--border);border-radius:5px;color:var(--muted2);font-family:var(--mono);font-size:9px;padding:5px 4px;cursor:pointer;white-space:nowrap">📏 Length/Acres</button>
+          <button type="button" id="map-tr-lbl-custom" data-on="0" onclick="mapTrLblPartToggle('custom')" style="flex:1;background:none;border:1px solid var(--border);border-radius:5px;color:var(--muted2);font-family:var(--mono);font-size:9px;padding:5px 4px;cursor:pointer;white-space:nowrap">✏️ Custom</button>
+        </div>
         <div style="display:flex;gap:8px;align-items:center">
-          <input type="text" id="map-tr-label-text" placeholder="Custom label (blank = date)" style="flex:1;min-width:0;box-sizing:border-box;background:var(--s1);border:1px solid var(--border);border-radius:6px;padding:6px 9px;color:var(--text);font-family:var(--mono);font-size:11px">
-          <input type="color" id="map-tr-label-color" value="#ffffff" title="Label color" style="width:28px;height:28px;padding:0;border:1px solid var(--border);border-radius:4px;background:transparent;cursor:pointer;flex-shrink:0">
+          <input type="text" id="map-tr-label-text" placeholder="Custom text" style="display:none;flex:1;min-width:0;box-sizing:border-box;background:var(--s1);border:1px solid var(--border);border-radius:6px;padding:6px 9px;color:var(--text);font-family:var(--mono);font-size:11px">
+          <input type="color" id="map-tr-label-color" value="#ffffff" title="Label color" style="width:28px;height:28px;padding:0;border:1px solid var(--border);border-radius:4px;background:transparent;cursor:pointer;flex-shrink:0;margin-left:auto">
         </div>
       </div>
       <div id="map-tr-type-row" style="display:none;margin-bottom:10px">
@@ -3894,6 +3911,7 @@ function showPage(name){
   // outlive the map page.
   if(name!=='map' && typeof mapClearHighlight==='function') mapClearHighlight();
   if(name!=='map' && typeof mapCancelFlagPlacement==='function') mapCancelFlagPlacement();
+  if(name!=='map' && typeof mapCancelLabelPlacement==='function') mapCancelLabelPlacement();
   if(name!=='map' && typeof mapShapeEditCancel==='function') mapShapeEditCancel();
   // Always land at the top of a freshly-opened page — #scroll-root keeps its scroll
   // position across page swaps, so without this Photos (and others) could open
