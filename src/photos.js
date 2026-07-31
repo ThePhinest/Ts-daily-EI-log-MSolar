@@ -276,14 +276,17 @@ function _phDocFor(p){
   if(p.software) doc.software = p.software;
   if(p.projectId) doc.projectId = p.projectId;
   if(p.type) doc.type = p.type;
-  if(p.swppp) doc.swppp = true;
-  if(p.seedTag) doc.seedTag = true;
+  // swppp/seedTag/locLabel write explicit falsy values: the flush is merge:true,
+  // so a truthy-only write means an untag/clear NEVER reaches the cloud and other
+  // devices resurrect it on next load.
+  doc.swppp = !!p.swppp;
+  doc.seedTag = !!p.seedTag;
   if(p.seedCap) doc.seedCap = p.seedCap;
   if(p.distCap) doc.distCap = p.distCap;
   if(p.plCap) doc.plCap = true;
   // 📸 in-app camera fields (src/camera.js): the metadata record half of the
   // two-layer model — the stamp overlay renders from these on demand.
-  if(p.locLabel) doc.locLabel = p.locLabel;
+  if(p.locLabel != null) doc.locLabel = p.locLabel;
   if(p.repairTag) doc.repairTag = true;
   if(p.gpsAcc !== undefined) doc.gpsAcc = p.gpsAcc;
   if(p.published !== undefined){ doc.published = p.published; doc.publishedAt = p.publishedAt || null; }
@@ -829,6 +832,13 @@ async function _phLbShow(index){
   const stWrap = document.getElementById('ph-lb-stamp-wrap');
   if(stWrap){ stWrap.style.display = isCam ? 'flex' : 'none'; if(isCam) _phStampPillRow(); }
   if(cap) cap.readOnly = !own;
+  // Location label — camera photos only (a record field: feeds the stamp's
+  // caption line, map pins, and the SWPPP photo-log Location column).
+  const locRow = document.getElementById('ph-lb-loc-row');
+  const locInp = document.getElementById('ph-lb-loc');
+  if(locRow) locRow.style.display = isCam ? 'flex' : 'none';
+  if(locInp){ locInp.value = p.locLabel||''; locInp.readOnly = !own; }
+  document.querySelectorAll('.ph-lb-hist').forEach(el=>el.remove()); // stale ＋ list from the prior photo
   _phLbUpdateNav();
   const full = await phGetFull(id);
   if(_phLbId === id) img.src = full;   // only swap in full-res if still on this photo
@@ -881,6 +891,7 @@ function _phLbPreloadNeighbors(){
 
 function phCloseLightbox(){
   document.getElementById('ph-lightbox').classList.add('hidden');
+  document.querySelectorAll('.ph-lb-hist').forEach(el=>el.remove());
   _phLbId = null;
   _phLbList = [];
   _phLbIndex = -1;
@@ -893,6 +904,11 @@ function phSaveCaption(){
   const p = window._phPhotos.find(x=>x.id===_phLbId);
   if(p){
     p.caption = cap;
+    // Camera photos: the location label saves with the caption (Tim 7/31 —
+    // edit path only exposed the caption). '' is a real value: it clears the
+    // label (and _phDocFor writes it explicitly so the clear syncs).
+    const locInp = document.getElementById('ph-lb-loc');
+    if(p.type==='camera' && locInp) p.locLabel = locInp.value.trim();
     phMarkDirty(p.id);
     phSave();
     phRender();
@@ -911,19 +927,22 @@ function phSaveCaption(){
 // debounced auto-persist + live refresh of everything that displays the caption
 // (grid, pins, and the stamped rendering — its caption line is drawn from the
 // record). Save Caption stays as the explicit commit-and-close.
-let _phCapDeb=null,_phCapBound=false;
+let _phCapDebs={},_phCapBound=false;
 function _phBindCaptionLive(){
   if(_phCapBound) return;
   const cap=document.getElementById('ph-lb-caption');
   if(!cap) return;
   _phCapBound=true;
-  cap.addEventListener('input',()=>{
-    if(!_phLbId||cap.readOnly) return;
-    clearTimeout(_phCapDeb);
-    _phCapDeb=setTimeout(()=>{
+  // Debounced persist for both editors — per-field timers, so a quick
+  // caption-edit → location-edit can't cancel the caption's pending write.
+  const persist=(field,el)=>{
+    if(!_phLbId||el.readOnly) return;
+    clearTimeout(_phCapDebs[field]);
+    _phCapDebs[field]=setTimeout(()=>{
       const p=window._phPhotos.find(x=>x.id===_phLbId);
       if(!p) return;
-      p.caption=cap.value.trim();
+      if(field==='locLabel' && p.type!=='camera') return;
+      p[field]=el.value.trim();
       phMarkDirty(p.id);
       phSave();
       phRender();
@@ -931,8 +950,59 @@ function _phBindCaptionLive(){
       if(typeof mapRenderPhotoPins === 'function') mapRenderPhotoPins();
       if(p.type==='camera') _phLbApplyStamp(p);
     },600);
-  });
+  };
+  cap.addEventListener('input',()=>persist('caption',cap));
+  const loc=document.getElementById('ph-lb-loc');
+  if(loc) loc.addEventListener('input',()=>persist('locLabel',loc));
+  // ＋ = previous locations quick-pick (the camera module derives MRU values
+  // live from this project's camera records — same list as the post-shot strip).
+  const hist=document.getElementById('ph-lb-loc-hist');
+  if(hist) hist.onclick=async()=>{
+    const wrap=hist.closest('.ph-lb-caption-wrap');
+    const old=wrap&&wrap.querySelector('.ph-lb-hist');
+    if(old){ old.remove(); return; }
+    if(!_camMod) _camMod=await import('./camera.js');
+    const vals=(typeof _camMod.camHistVals==='function')?_camMod.camHistVals('locLabel'):[];
+    if(!vals.length||!loc||loc.readOnly){ if(loc&&!loc.readOnly) loc.focus(); return; }
+    const list=document.createElement('div');
+    list.className='ph-lb-hist';
+    list.style.cssText='border:1px solid var(--amber);border-radius:8px;background:var(--s1);overflow:hidden';
+    list.innerHTML=vals.map(v=>`<button style="display:block;width:100%;text-align:left;background:none;border:none;border-bottom:1px solid var(--border);color:var(--text);font-family:var(--body);font-size:14px;padding:9px 12px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${v.replace(/</g,'&lt;')}</button>`).join('');
+    list.querySelectorAll('button').forEach((b,i)=>{ b.onclick=()=>{ loc.value=vals[i]; list.remove(); persist('locLabel',loc); }; });
+    document.getElementById('ph-lb-loc-row').insertAdjacentElement('afterend',list);
+  };
 }
+
+// ── Seed-tag sync from tracker entries (Tim 7/31) ──
+// The drawing-edit photo strip tags photos on the ENTRY (photoTypes[id] ===
+// 'material_tag' — the old make-a-photo-a-seed-tag path, and what the seeding
+// exports count). The Photos page amber 🌱 runs off the photo RECORD's seedTag.
+// Mirror entry tags into the record at entry save so both paths agree.
+// Untagging here clears the amber only when no OTHER live entry still tags the
+// photo — one drawing's untag can't strip a tag another drawing owns. A 🌱 set
+// directly on the Photos page has no entry context and is left alone.
+function phSyncSeedTagsFromEntry(prevTypes, entry, pid){
+  if(!entry) return;
+  const types=entry.photoTypes||{};
+  const ids=new Set([...Object.keys(prevTypes||{}),...Object.keys(types)]);
+  const changed=[];
+  ids.forEach(id=>{
+    const was=(prevTypes||{})[id]==='material_tag';
+    const now=types[id]==='material_tag';
+    if(was===now) return;
+    const p=(window._phPhotos||[]).find(x=>x.id===id);
+    if(!p) return;
+    if(now){
+      if(!p.seedTag){ p.seedTag=true; changed.push(id); }
+    } else {
+      const others=(typeof trGetEntriesForProject==='function')?trGetEntriesForProject(pid):[];
+      const still=others.some(e=>e&&e.id!==entry.id&&e.photoTypes&&e.photoTypes[id]==='material_tag');
+      if(!still&&p.seedTag){ p.seedTag=false; changed.push(id); }
+    }
+  });
+  if(changed.length){ phMarkDirty(changed); phSave(); phRender(); }
+}
+window.phSyncSeedTagsFromEntry=phSyncSeedTagsFromEntry;
 
 // ── Lightbox Share / Unshare toggle (own photos in the active project) ──
 async function phShareCurrent(){

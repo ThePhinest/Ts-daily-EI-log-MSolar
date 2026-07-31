@@ -2832,6 +2832,11 @@ Anticipated rain — AM weather monitoring expected"></textarea>
   <div class="ph-lb-date" id="ph-lb-date"></div>
   <div class="ph-lb-count" id="ph-lb-count"></div>
   <div class="ph-lb-caption-wrap">
+    <!-- Camera photos only: locLabel is a record field (feeds the stamp + SWPPP Location column) -->
+    <div id="ph-lb-loc-row" style="display:none;gap:6px">
+      <input type="text" class="ph-lb-caption" id="ph-lb-loc" placeholder="Location label (e.g. W21)" style="min-height:0;flex:1">
+      <button class="btn btn-outline" id="ph-lb-loc-hist" title="Pick a previous location" style="flex-shrink:0;width:38px;font-size:16px;font-weight:700;padding:0;border-color:var(--amber);color:var(--amber)">＋</button>
+    </div>
     <textarea class="ph-lb-caption" id="ph-lb-caption" placeholder="Add a caption…" rows="2"></textarea>
     <!-- Row 1: actions on the photo -->
     <div class="ph-lb-row" style="justify-content:center;flex-wrap:wrap;gap:6px">

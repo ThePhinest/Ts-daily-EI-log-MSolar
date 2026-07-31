@@ -4206,10 +4206,15 @@ function mapSaveTrackerEntry(){
       entry.archivedFromMap=false;
     }
   }
+  // #48 seed-tag sync: snapshot the stored entry's photo types BEFORE the save
+  // overwrites them, so newly-(un)tagged photos can mirror to the photo record.
+  const _prevPhotoTypes=(_editingEntryId&&typeof trGetEntry==='function')
+    ?((trGetEntry(_editingEntryId,pid)||{}).photoTypes||{}):{};
   _editingEntryId=null;
   _pendingPhotoIds=[];
   const saved=(typeof trSaveEntry==='function')?trSaveEntry(entry,pid):null;
   if(saved) _showUndoToast(saved,pid);
+  if(saved&&typeof phSyncSeedTagsFromEntry==='function') phSyncSeedTagsFromEntry(_prevPhotoTypes,saved,pid);
   _pendingDrawFeature=null;
   mapCloseTrackerModal();
   if(_drawInstance) _drawInstance.deleteAll();

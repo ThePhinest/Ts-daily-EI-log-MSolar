@@ -806,6 +806,8 @@ function _showStrip(entry,blob){
 // Previously-used values for the ＋ quick-pick (Solocator's little + beside the
 // fields). Derived LIVE from this project's camera records, most-recent first —
 // no separate history store to maintain or migrate.
+// Exported for the Photos-page lightbox editors (photos.js lazy-imports camera.js).
+export function camHistVals(field){ return _histVals(field); }
 function _histVals(field){
   const pid=_pid();
   const seen=new Set(), out=[];
