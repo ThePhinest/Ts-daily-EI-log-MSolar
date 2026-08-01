@@ -3913,6 +3913,7 @@ function showPage(name){
   if(name!=='map' && typeof mapCancelFlagPlacement==='function') mapCancelFlagPlacement();
   if(name!=='map' && typeof mapCancelLabelPlacement==='function') mapCancelLabelPlacement();
   if(name!=='map' && typeof mapShapeEditCancel==='function') mapShapeEditCancel();
+  if(name!=='map' && typeof mapBulkDelCancel==='function') mapBulkDelCancel();
   // Always land at the top of a freshly-opened page — #scroll-root keeps its scroll
   // position across page swaps, so without this Photos (and others) could open
   // mid-page or at the bottom.

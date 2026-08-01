@@ -1908,10 +1908,112 @@ function mapTcCatSheet(catId){
   _glActionSheet(name,[
     {icon:'✨', label:'Highlight on map', fn:()=>mapHighlightCategory(catId)},
     {icon:'📁', label:inFolder?`Move to folder… (now in "${inFolder}")`:'Move to folder…', fn:()=>mapTcMoveCatToFolder(catId)},
+    {icon:'🗑', label:'Select & delete drawings…', fn:()=>mapTcBulkDeleteStart(catId)},
     {icon:'↑', label:'Bring forward', fn:()=>mapMoveCatLayerOrder(catId,'up')},
     {icon:'↓', label:'Send back', fn:()=>mapMoveCatLayerOrder(catId,'down')},
   ]);
 }
+
+// ---- Select & delete (bulk) — tap drawings of one category, delete in one go.
+// Born from the adopted-KML cleanup pain (940 fiber-roll runs, popup-per-delete).
+let _bulkDel=null;   // {cid, ids:Set}
+window.trBulkDelActive=()=>!!_bulkDel;
+
+function mapTcBulkDeleteStart(catId){
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  if(typeof tcIsClosed==='function'&&tcIsClosed(catId,pid)){ if(typeof mapTcClosedNotice==='function') mapTcClosedNotice(catId); return; }
+  if(_drawMode){ if(typeof showCloudBanner==='function') showCloudBanner('Finish the current drawing first.'); return; }
+  if(_shapeEdit&&typeof mapShapeEditCancel==='function') mapShapeEditCancel();
+  mapClearHighlight();
+  if(_trackerPopup){_trackerPopup.remove();_trackerPopup=null;}
+  _bulkDel={cid:catId, ids:new Set()};
+  if(_layerPanelOpen) mapToggleLayerPanel();   // map must be tappable
+  _showBulkDelBar(catId);
+}
+
+function _showBulkDelBar(catId){
+  _removeBulkDelBar();
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const name=(typeof tcGetName==='function')?tcGetName(catId,pid):catId;
+  const bar=document.createElement('div');
+  bar.id='_gl-bulkdel-bar';
+  bar.style.cssText='position:fixed;left:50%;transform:translateX(-50%);bottom:calc(110px + env(safe-area-inset-bottom));z-index:4800;background:#12202e;border:1px solid var(--amber,#C9A84C);border-radius:10px;padding:10px 12px;font-family:var(--mono);font-size:12px;color:#e8e8e8;box-shadow:0 4px 16px rgba(0,0,0,.45);display:flex;flex-direction:column;gap:8px;max-width:92vw';
+  const btn='padding:10px 8px;border-radius:8px;font-family:var(--mono);font-size:12px;cursor:pointer;flex:1;white-space:nowrap';
+  bar.innerHTML=`<div style="display:flex;align-items:center;gap:8px"><span>🗑</span><b>Select &amp; delete</b><span id="_bd-count" style="color:#9fb2c4">— tap ${name} drawings</span></div>
+    <div style="display:flex;gap:8px">
+      <button id="_bd-del" onclick="mapBulkDelConfirm()" style="${btn};border:none;background:#c0392b;color:#fff;font-weight:700" disabled>🗑 Delete 0</button>
+      <button onclick="mapBulkDelCancel()" style="${btn};background:var(--s2,#1a2a38);border:1px solid var(--border,#334);color:#e8e8e8">✕ Done</button>
+    </div>`;
+  document.body.appendChild(bar);
+}
+function _removeBulkDelBar(){ document.getElementById('_gl-bulkdel-bar')?.remove(); }
+
+function _bulkDelSync(){
+  if(!_bulkDel) return;
+  const n=_bulkDel.ids.size;
+  const c=document.getElementById('_bd-count');
+  if(c) c.textContent=n?`— ${n} selected`:'— tap drawings to select';
+  const d=document.getElementById('_bd-del');
+  if(d){ d.textContent=`🗑 Delete ${n}`; d.disabled=!n; d.style.opacity=n?'1':'0.55'; }
+  if(n){ _highlightIds=[..._bulkDel.ids]; _startHighlight(); _hideHighlightChip(); }
+  else {
+    // keep the session, just clear the glow (mapClearHighlight would also do,
+    // but it resets _highlightIds which is exactly what we want here)
+    mapClearHighlight();
+  }
+}
+
+function _bulkDelToggle(id){
+  if(!_bulkDel||!id) return;
+  if(_bulkDel.ids.has(id)) _bulkDel.ids.delete(id); else _bulkDel.ids.add(id);
+  _bulkDelSync();
+}
+
+function mapBulkDelCancel(){
+  if(!_bulkDel) return;
+  _bulkDel=null;
+  _removeBulkDelBar();
+  mapClearHighlight();
+}
+window.mapBulkDelCancel=mapBulkDelCancel;
+
+function mapBulkDelConfirm(){
+  if(!_bulkDel||!_bulkDel.ids.size) return;
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const ids=[..._bulkDel.ids];
+  const n=ids.length;
+  const entries=(typeof trGetEntriesForProject==='function')?trGetEntriesForProject(pid):[];
+  let kids=0;
+  ids.forEach(id=>{ kids+=entries.filter(e=>e.parentId===id).length; });
+  const kidNote=kids?`<div style="font-family:var(--mono);font-size:11px;color:var(--amber);margin-bottom:10px;padding:8px;background:rgba(201,168,76,0.1);border:1px solid rgba(201,168,76,0.3);border-radius:6px">⚠ ${kids} linked installation${kids===1?'':'s'} will be unlinked (not deleted).</div>`:'';
+  const ov=document.createElement('div');
+  ov.className='modal-overlay';
+  ov.style.cssText='z-index:9600';
+  ov.innerHTML=`<div class="modal-box" style="max-width:300px;width:88%">
+    <div class="modal-title" style="margin-bottom:10px">Delete ${n} Drawing${n===1?'':'s'}</div>
+    ${kidNote}
+    <div style="font-family:var(--mono);font-size:12px;color:var(--muted);margin-bottom:16px;line-height:1.5">The ${n} selected drawing${n===1?'':'s'} will be deleted (soft-delete — nothing is destroyed).</div>
+    <div class="modal-btns" style="flex-direction:column;gap:8px">
+      <button id="_bdcDel" class="modal-confirm" style="width:100%;background:#c0392b;">🗑 Delete ${n}</button>
+      <button id="_bdcCancel" class="modal-cancel" style="width:100%">Cancel</button>
+    </div>
+  </div>`;
+  document.body.appendChild(ov);
+  document.getElementById('_bdcCancel').onclick=()=>ov.remove();
+  document.getElementById('_bdcDel').onclick=()=>{
+    ov.remove();
+    let done=0;
+    ids.forEach(id=>{ if(typeof trDeleteEntry==='function'&&trDeleteEntry(id,pid)) done++; });
+    // stay in select mode (cleanup comes in batches) — ✕ Done exits
+    if(_bulkDel){ _bulkDel.ids.clear(); _bulkDelSync(); }
+    mapRenderTrackerLayers();
+    mapUpdateKmlLayerList();
+    if(typeof mapRefreshDateLabels==='function') mapRefreshDateLabels();
+    if(typeof clRenderTrackerCard==='function') clRenderTrackerCard();
+    if(typeof showCloudBanner==='function') showCloudBanner(`${done} drawing${done===1?'':'s'} deleted`);
+  };
+}
+window.mapBulkDelConfirm=mapBulkDelConfirm;
 
 function mapTcFolderSheet(fname){
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
@@ -3412,6 +3514,8 @@ function mapActivateDrawMode(categoryId){
   }
   // A reshape session shares the draw instance — close it before a real draw starts.
   if(_shapeEdit&&typeof mapShapeEditCancel==='function') mapShapeEditCancel();
+  // Same for an open Select & delete session — its tap handling owns the map.
+  if(_bulkDel) mapBulkDelCancel();
   _pauseGpsForDraw();
   if(!_mapInstance) return;
   _drawCategory=categoryId;
@@ -6240,9 +6344,19 @@ function mapRenderTrackerLayers(){
         cands=_mapInstance.queryRenderedFeatures(bbox,{layers:lids});
       }
       if(!cands.length) return;
+      const _pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+      // Select & delete mode: taps toggle selection on the session category's
+      // own drawings — no popups until the session ends.
+      if(_bulkDel){
+        cands=cands.filter(fp=>{
+          const ent=(fp&&fp.properties&&typeof trGetEntry==='function')?trGetEntry(fp.properties.id,_pid):null;
+          if(!ent||(ent.categoryId||ent.category)!==_bulkDel.cid) return false;
+          return !ent.ownerUid||!window._currentUser||ent.ownerUid===_currentUser.uid;
+        });
+        if(!cands.length) return;
+      }
       let best=cands[0];
       if(cands.length>1){
-        const _pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
         const areaOf=fp=>{
           const ent=(fp&&fp.properties&&typeof trGetEntry==='function')?trGetEntry(fp.properties.id,_pid):null;
           return _geomPickArea((ent&&ent.geometry)||fp.geometry);
@@ -6250,6 +6364,7 @@ function mapRenderTrackerLayers(){
         let bestA=areaOf(best);
         for(let i=1;i<cands.length;i++){ const a=areaOf(cands[i]); if(a<bestA){ bestA=a; best=cands[i]; } }
       }
+      if(_bulkDel){ _bulkDelToggle(best.properties&&best.properties.id); return; }
       _showTrackerEntryPopup(e.lngLat,best.properties);
     });
   }
