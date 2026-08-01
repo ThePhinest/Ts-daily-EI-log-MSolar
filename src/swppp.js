@@ -357,6 +357,8 @@ function swSeg(groupId, value){
   // segment (collapse state is preserved by _swRenderSection).
   if(keys[0]==='drainageAreas'){ _swRenderSection('sw-sec-da2'); return; }
   if(keys[0]==='dischargePoints'){ _swRenderSection('sw-sec-dp'); return; }
+  // Cert banner + card-head ⚠ track the escVerified state — re-render the section.
+  if(keys[0]==='escVerified'){ _swRenderSection('sw-sec-bmp'); return; }
   const el = document.getElementById(groupId);
   if(el) el.outerHTML = _swSegHtml(groupId, o[leaf], _swSegOpts[groupId]||[], keys);
 }
@@ -849,8 +851,16 @@ function _swRenderForm(){
         <input type="text" placeholder="Status / notes…" value="${esc(st.status||'')}" ${dis} oninput="swInp(event,'bmps','${esc(b.name)}','status')">
       </div>`;
     }).join('');
-    return `<div class="card collapsed" id="sw-sec-bmp"><div class="card-head" onclick="toggleSection('sw-sec-bmp')"><span class="card-num">5</span><span class="card-title">E&amp;SC / BMP Inspection</span><span class="card-chevron">▾</span></div><div class="card-body">
-      ${field(esc(cfg.escCondition4||'Condition 4 — ESC verified installed prior to disturbance'), seg([{v:'verified',l:'✓ Verified'},{v:'na',l:'N/A this inspection'}], i.escVerified, ['escVerified']))}
+    // Phase-start ESC certification: promoted to an amber banner (Tim 7/31 —
+    // the plain field row blended in and went unnoticed for three weeks).
+    // Unset = orange + ⚠ on the collapsed card head so it can't be missed.
+    const certUnset=!i.escVerified;
+    return `<div class="card collapsed" id="sw-sec-bmp"><div class="card-head" onclick="toggleSection('sw-sec-bmp')"><span class="card-num">5</span><span class="card-title">E&amp;SC / BMP Inspection</span>${certUnset?'<span style="margin-left:auto;color:#e67e22;font-size:13px" title="ESC certification not marked">⚠</span>':''}<span class="card-chevron">▾</span></div><div class="card-body">
+      <div class="sw-cert${certUnset?' sw-cert-unset':''}">
+        <div class="sw-cert-head">🛡️ PHASE-START ESC CERTIFICATION${certUnset?' — ⚠ NOT MARKED':''}</div>
+        <div class="sw-cert-text">${esc(cfg.escCondition4||'Condition 4 — ESC verified installed prior to disturbance')}</div>
+        ${seg([{v:'verified',l:'✓ Verified'},{v:'na',l:'N/A this inspection'}], i.escVerified, ['escVerified'])}
+      </div>
       <p class="sw-static-note">${esc(cfg.escNote||'')}</p>
       ${rows}
     </div></div>`;
@@ -1416,6 +1426,11 @@ async function swpppBuildDocx(insp,cfg){
   .sw-tools .btn{font-size:10px;padding:4px 12px}
   .sw-static-note{font-size:10.5px;color:var(--muted);font-style:italic;margin:4px 0 10px;line-height:1.45}
   .sw-total-row{font-size:13px;padding:8px 10px;margin:6px 0 10px;background:rgba(230,160,30,.10);border:1px solid var(--amber);border-radius:8px}
+  .sw-cert{padding:10px 12px;margin:2px 0 12px;border:1px solid var(--amber);border-left:4px solid var(--amber);border-radius:8px;background:rgba(230,160,30,.10)}
+  .sw-cert.sw-cert-unset{border-color:#e67e22;border-left-color:#e67e22;background:rgba(230,126,34,.12)}
+  .sw-cert-head{font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.08em;color:var(--amber);margin-bottom:5px}
+  .sw-cert.sw-cert-unset .sw-cert-head{color:#e67e22}
+  .sw-cert-text{font-size:11.5px;color:var(--text);font-style:italic;line-height:1.45;margin-bottom:8px}
   .sw-seg{display:inline-flex;flex-wrap:wrap;gap:5px}
   .sw-seg-btn{background:var(--s1);border:1px solid var(--s1);border-radius:14px;color:var(--muted);font-size:11px;padding:5px 11px;cursor:pointer;min-height:30px}
   .sw-seg-btn.on{border-color:var(--amber);color:var(--text);background:rgba(230,160,30,.16);font-weight:600}
