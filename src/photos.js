@@ -966,7 +966,7 @@ function _phBindCaptionLive(){
     if(!vals.length||!loc||loc.readOnly){ if(loc&&!loc.readOnly) loc.focus(); return; }
     const list=document.createElement('div');
     list.className='ph-lb-hist';
-    list.style.cssText='border:1px solid var(--amber);border-radius:8px;background:var(--s1);overflow:hidden';
+    list.style.cssText='border:1px solid var(--amber);border-radius:8px;background:var(--s1);overflow:hidden;max-height:38vh;overflow-y:auto;-webkit-overflow-scrolling:touch';
     list.innerHTML=vals.map(v=>`<button style="display:block;width:100%;text-align:left;background:none;border:none;border-bottom:1px solid var(--border);color:var(--text);font-family:var(--body);font-size:14px;padding:9px 12px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${v.replace(/</g,'&lt;')}</button>`).join('');
     list.querySelectorAll('button').forEach((b,i)=>{ b.onclick=()=>{ loc.value=vals[i]; list.remove(); persist('locLabel',loc); }; });
     document.getElementById('ph-lb-loc-row').insertAdjacentElement('afterend',list);

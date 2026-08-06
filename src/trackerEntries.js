@@ -241,6 +241,30 @@ function trSetMapVisibility(entryId, visible, projectId){
   return true;
 }
 
+// Assign/clear the entry's drawing folder (panel sub-grouping within its
+// category — "LD1", "LD6", … ; Tim 8/2). Empty/null folder = ungrouped.
+// Same persist pattern as trSetMapVisibility.
+function trSetDrawFolder(entryId, folderName, projectId){
+  const pid = projectId || ((typeof _activeProjectId === 'function') ? _activeProjectId() : 'default');
+  if(_trReviewerBlocked(pid)) return false;
+  const data = _trLoadRaw(pid);
+  const idx = data.entries.findIndex(e => e.id === entryId);
+  if(idx < 0) return false;
+  const f = (folderName || '').trim();
+  if(f) data.entries[idx].drawFolder = f;
+  else delete data.entries[idx].drawFolder;
+  data.entries[idx].updatedAt = Date.now();
+  _trSaveRaw(pid, data);
+  if(!_trForeign(data.entries[idx]) && _trCloudOk(pid)){
+    try {
+      _projData(pid).collection('trackerEntries').doc(entryId)
+        .set(_trToFs(data.entries[idx]))
+        .catch(e => console.warn('trSetDrawFolder Firestore:', e.message));
+    } catch(e){ /* silent */ }
+  }
+  return true;
+}
+
 // Soft-delete: stamps deletedAt + updatedAt. Returns true if found.
 function trDeleteEntry(entryId, projectId){
   const pid = projectId || ((typeof _activeProjectId === 'function') ? _activeProjectId() : 'default');
@@ -652,6 +676,7 @@ if(typeof window !== 'undefined'){
   window.trAddPhotoLink = trAddPhotoLink;
   window.trRemovePhotoLink = trRemovePhotoLink;
   window.trSaveEntry = trSaveEntry;
+  window.trSetDrawFolder = trSetDrawFolder;
   window.trDeleteEntry = trDeleteEntry;
   window.trLoadFromFirestore = trLoadFromFirestore;
   window.trSetPublished = trSetPublished;

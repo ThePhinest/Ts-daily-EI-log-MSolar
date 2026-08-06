@@ -816,7 +816,7 @@ function _histVals(field){
     .sort((a,b)=>(b.uploadedAt||0)-(a.uploadedAt||0));
   for(const p of list){
     const v=(p[field]||'').trim();
-    if(v&&!seen.has(v)){ seen.add(v); out.push(v); if(out.length>=8) break; }
+    if(v&&!seen.has(v)){ seen.add(v); out.push(v); if(out.length>=30) break; }
   }
   return out;
 }
@@ -828,7 +828,7 @@ function _histPick(ov,inputId,field){
   if(!vals.length){ inp.focus(); return; }
   const list=document.createElement('div');
   list.className='glc-hist'; list.dataset.for=inputId;
-  list.style.cssText='margin:-8px 0 12px;border:1px solid var(--amber);border-radius:8px;background:var(--s1);overflow:hidden';
+  list.style.cssText='margin:-8px 0 12px;border:1px solid var(--amber);border-radius:8px;background:var(--s1);overflow:hidden;max-height:38vh;overflow-y:auto;-webkit-overflow-scrolling:touch';
   list.innerHTML=vals.map(v=>`<button style="display:block;width:100%;text-align:left;background:none;border:none;border-bottom:1px solid var(--border);color:var(--text);font-family:var(--body);font-size:14px;padding:9px 12px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${v.replace(/</g,'&lt;')}</button>`).join('');
   list.querySelectorAll('button').forEach((b,i)=>{ b.onclick=()=>{ inp.value=vals[i]; list.remove(); }; });
   // After the flex ROW (input + ＋ live in one), not inside it.

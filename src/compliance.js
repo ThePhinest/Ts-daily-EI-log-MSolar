@@ -1067,7 +1067,7 @@ function clShowTrackerLog(){
   ov.className='modal-overlay _tlog-modal';
   ov.style.cssText='z-index:4500;align-items:flex-end;padding:0';
   ov.innerHTML=`
-    <div style="width:100%;max-height:92dvh;background:var(--bg);border-top:1px solid var(--border);border-radius:16px 16px 0 0;display:flex;flex-direction:column;overflow:hidden;padding-bottom:env(safe-area-inset-bottom)">
+    <div style="width:100%;max-height:calc(100dvh - var(--app-bar-h,58px) - 8px);background:var(--bg);border-top:1px solid var(--border);border-radius:16px 16px 0 0;display:flex;flex-direction:column;overflow:hidden;padding-bottom:env(safe-area-inset-bottom)">
       <!-- Header -->
       <div style="display:flex;align-items:center;gap:8px;padding:14px 16px 12px;border-bottom:1px solid var(--border);flex-shrink:0">
         <span style="font-family:var(--cond);font-weight:700;font-size:15px;letter-spacing:.06em;text-transform:uppercase;flex:1">Tracker Log</span>
@@ -1482,10 +1482,10 @@ function _showTlogExportModal(getEntries, pid){
   const render=()=>{
     const nSel=selected.size;
     ov.innerHTML=`
-      <div class="modal-box" style="max-width:360px;width:92%">
-        <div class="modal-title" style="margin-bottom:4px">Export Deliverable</div>
-        <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-bottom:16px">Select one or more categories — combined into one report</div>
-        <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px">
+      <div class="modal-box" style="max-width:360px;width:92%;max-height:calc(100dvh - var(--app-bar-h,58px) - 24px);display:flex;flex-direction:column;overflow:hidden">
+        <div class="modal-title" style="margin-bottom:4px;flex-shrink:0">Export Deliverable</div>
+        <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-bottom:16px;flex-shrink:0">Select one or more categories — combined into one report</div>
+        <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px;overflow-y:auto;-webkit-overflow-scrolling:touch;flex:1 1 auto;min-height:0">
           ${cats.length?cats.map(c=>`
             <button class="_exp-cat" data-key="${c.key}" style="${selected.has(c.key)?rowOn:rowBase}">
               <span style="font-size:15px;width:18px;flex-shrink:0;text-align:center;color:${selected.has(c.key)?'var(--amber)':'var(--muted)'}">${selected.has(c.key)?'☑':'☐'}</span>
@@ -1497,9 +1497,9 @@ function _showTlogExportModal(getEntries, pid){
             </button>`).join('')
           :`<div style="font-family:var(--mono);font-size:11px;color:var(--muted);padding:8px 0">No categories in the current filter.</div>`}
         </div>
-        <button id="_exp-go" ${nSel?'':'disabled'} style="width:100%;padding:12px;background:${nSel?'var(--amber)':'var(--s2,#1a2a38)'};color:${nSel?'#000':'var(--muted)'};font-family:var(--cond);font-weight:700;font-size:14px;letter-spacing:.06em;border:none;border-radius:8px;cursor:${nSel?'pointer':'default'};margin-bottom:8px">⬇ Export${nSel?` (${nSel})`:''}</button>
-        <button class="_exp-zip" style="width:100%;padding:10px;background:none;color:var(--text);font-family:var(--mono);font-size:11px;border:1px solid var(--border);border-radius:8px;cursor:pointer;margin-bottom:8px">🖼 Photos (ZIP)</button>
-        <button id="_exp-cancel" style="width:100%;padding:9px;background:none;color:var(--muted);font-family:var(--mono);font-size:11px;border:1px solid var(--border);border-radius:8px;cursor:pointer">Cancel</button>
+        <button id="_exp-go" ${nSel?'':'disabled'} style="flex-shrink:0;width:100%;padding:12px;background:${nSel?'var(--amber)':'var(--s2,#1a2a38)'};color:${nSel?'#000':'var(--muted)'};font-family:var(--cond);font-weight:700;font-size:14px;letter-spacing:.06em;border:none;border-radius:8px;cursor:${nSel?'pointer':'default'};margin-bottom:8px">⬇ Export${nSel?` (${nSel})`:''}</button>
+        <button class="_exp-zip" style="flex-shrink:0;width:100%;padding:10px;background:none;color:var(--text);font-family:var(--mono);font-size:11px;border:1px solid var(--border);border-radius:8px;cursor:pointer;margin-bottom:8px">🖼 Photos (ZIP)</button>
+        <button id="_exp-cancel" style="flex-shrink:0;width:100%;padding:9px;background:none;color:var(--muted);font-family:var(--mono);font-size:11px;border:1px solid var(--border);border-radius:8px;cursor:pointer">Cancel</button>
       </div>`;
     ov.querySelectorAll('._exp-cat').forEach(btn=>{
       btn.onclick=()=>{ const k=btn.dataset.key; if(selected.has(k)) selected.delete(k); else selected.add(k); render(); };
@@ -1931,7 +1931,9 @@ async function _allSeedingSummarySheet(wb, srcs, entries, pid){
       const es=rows.filter(e=>stOf(e)===s.id); if(!es.length) return;
       // One line per Mix × Rate within the state (mirrors the source tabs' line items).
       const map=new Map();
-      es.forEach(e=>{ const f=e.fields||{}; const key=`${e.seedMix||''}__${f.appliedRate!=null?f.appliedRate:''}__${f.requiredUnit||''}`; if(!map.has(key)) map.set(key,[]); map.get(key).push(e); });
+      // Mix name normalized (trim + case-fold) so "Bedrock grazing seed mix" and
+      // "Bedrock Grazing Seed Mix" total as ONE seed kind, not two (Tim 8/3).
+      es.forEach(e=>{ const f=e.fields||{}; const key=`${(e.seedMix||'').trim().toLowerCase()}__${f.appliedRate!=null?f.appliedRate:''}__${f.requiredUnit||''}`; if(!map.has(key)) map.set(key,[]); map.get(key).push(e); });
       [...map.values()].forEach(g=>{
         const f0=g[0].fields||{};
         const cov=g.reduce((a,e)=>a+measure(e),0);
@@ -1944,7 +1946,7 @@ async function _allSeedingSummarySheet(wb, srcs, entries, pid){
         grandTags+=tags;
         const r=ws.addRow([
           first?srcName:'', s.label, fmt(cov), tags||'',
-          g[0].seedMix||'', f0.appliedRate!=null?(reqU?f0.appliedRate+' '+reqU+'/ac':String(f0.appliedRate)):'',
+          (g[0].seedMix||'').trim(), f0.appliedRate!=null?(reqU?f0.appliedRate+' '+reqU+'/ac':String(f0.appliedRate)):'',
           req?req.toLocaleString()+(reqU?' '+reqU:''):'', act?act.toLocaleString()+(actU?' '+actU:''):'',
         ]);
         r.eachCell({includeEmpty:true},c=>{ c.font={name:'Calibri',size:11}; c.alignment={vertical:'middle',wrapText:true}; });
@@ -2638,7 +2640,9 @@ async function _seedingSheetRender(wb, o){
     es.forEach(e=>{
       const f=e.fields||{};
       const rate=(f.appliedRate!=null)?f.appliedRate:'';
-      const key=`${e.seedMix||''}__${rate}__${f.requiredUnit||''}`;
+      // Same normalization as the per-state line items — case/whitespace variants
+      // of a mix name must never split into separate summary sections.
+      const key=`${(e.seedMix||'').trim().toLowerCase()}__${rate}__${f.requiredUnit||''}`;
       if(!map.has(key)) map.set(key,[]);
       map.get(key).push(e);
     });
@@ -2646,7 +2650,7 @@ async function _seedingSheetRender(wb, o){
       const f0=g[0].fields||{};
       const rateUnit=f0.requiredUnit?f0.requiredUnit+'/ac':'';
       return {
-        mix:g[0].seedMix||'',
+        mix:(g[0].seedMix||'').trim(),
         rate:f0.appliedRate!=null?(rateUnit?f0.appliedRate+' '+rateUnit:String(f0.appliedRate)):'',
         cov:g.reduce((a,e)=>a+measure(e),0),
         seedTags:g.reduce((a,e)=>a+((e.fields&&e.fields.seedTagCount)||0),0),

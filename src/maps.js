@@ -1713,7 +1713,7 @@ function mapUpdateKmlLayerList(){
       const kids=document.createElement('div');
       kids.id=fid+'-children';
       kids.style.cssText='padding:4px 6px 4px 16px;';
-      const _trEntryRow=(e)=>{
+      const _trEntryRow=(e,container)=>{
         const visible=!e.deletedFromMap;
         const row=document.createElement('div');
         row.style.cssText='display:flex;align-items:center;gap:6px;padding:5px 8px;background:var(--s1);border-radius:6px;margin-bottom:4px;';
@@ -1732,19 +1732,67 @@ function mapUpdateKmlLayerList(){
           </label>
           <button onclick="mapEditTrackerEntry('${e.id}')" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:11px;padding:0 4px;" title="Edit">✏</button>
           <button onclick="mapDeleteTrackerEntryFromPanel('${e.id}')" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;padding:0;" title="Delete">✕</button>`;
-        kids.appendChild(row);
+        (container||kids).appendChild(row);
       };
       // Visible drawings first, then hidden ones grouped under their own divider so
       // re-finding and re-adding hidden items is one glance + one tap (Tim 7/11).
-      catEntries.filter(e=>!e.deletedFromMap).forEach(_trEntryRow);
-      const hiddenEntries=catEntries.filter(e=>e.deletedFromMap);
-      if(hiddenEntries.length){
-        const div=document.createElement('div');
-        div.style.cssText='display:flex;align-items:center;gap:6px;margin:6px 0 4px;font-family:var(--mono);font-size:9px;color:var(--amber);letter-spacing:.06em;text-transform:uppercase;';
-        div.innerHTML=`<span style="flex-shrink:0;">Hidden (${hiddenEntries.length})</span><span style="flex:1;border-top:1px solid var(--border);"></span>`;
-        kids.appendChild(div);
-        hiddenEntries.forEach(_trEntryRow);
-      }
+      const _rowsInto=(arr,container)=>{
+        arr.filter(e=>!e.deletedFromMap).forEach(e=>_trEntryRow(e,container));
+        const hid=arr.filter(e=>e.deletedFromMap);
+        if(hid.length){
+          const div=document.createElement('div');
+          div.style.cssText='display:flex;align-items:center;gap:6px;margin:6px 0 4px;font-family:var(--mono);font-size:9px;color:var(--amber);letter-spacing:.06em;text-transform:uppercase;';
+          div.innerHTML=`<span style="flex-shrink:0;">Hidden (${hid.length})</span><span style="flex:1;border-top:1px solid var(--border);"></span>`;
+          container.appendChild(div);
+          hid.forEach(e=>_trEntryRow(e,container));
+        }
+      };
+      // Drawing sub-folders (Tim 8/2 — "break the fiber rolls into LD1/LD6 folders"):
+      // entries carrying e.drawFolder group under a collapsible header with a batch
+      // visibility checkbox (rides per-entry deletedFromMap — persisted + synced).
+      // Sub-folders default COLLAPSED (the whole point is not dumping hundreds of
+      // rows), so the collapse store is inverted here: presence = user expanded.
+      const _byDf={}, _dfLoose=[];
+      catEntries.forEach(e=>{ const f=(e.drawFolder||'').trim(); if(f) (_byDf[f]=_byDf[f]||[]).push(e); else _dfLoose.push(e); });
+      Object.keys(_byDf).sort((a,b)=>a.localeCompare(b,undefined,{numeric:true})).forEach(fname=>{
+        const g=_byDf[fname];
+        const dfid=fid+'-df-'+fname.replace(/[^a-z0-9]/gi,'_');
+        const gVis=g.filter(e=>!e.deletedFromMap).length;
+        const gw=document.createElement('div');
+        gw.style.cssText='margin-bottom:4px;border:1px solid var(--border2);border-radius:6px;overflow:hidden;';
+        const gh=document.createElement('div');
+        gh.style.cssText='display:flex;align-items:center;gap:6px;padding:5px 8px;background:var(--s2);cursor:pointer;';
+        gh.innerHTML=`
+          <span id="${dfid}-chev" style="font-size:10px;color:var(--muted2);">▸</span>
+          <input type="checkbox" ${gVis===g.length?'checked':''} style="accent-color:${cat.color||'#888'};width:13px;height:13px;flex-shrink:0;" id="${dfid}-cb">
+          <span style="font-family:var(--mono);font-size:10px;color:var(--text);font-weight:600;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${fname}">📁 ${fname}</span>
+          <span style="font-family:var(--mono);font-size:9px;color:${gVis<g.length?'var(--amber)':'var(--muted)'};flex-shrink:0;">${gVis<g.length?gVis+'/'+g.length:g.length}</span>`;
+        const gk=document.createElement('div');
+        gk.id=dfid+'-children';
+        gk.style.cssText='padding:4px 4px 2px 12px;';
+        _rowsInto(g,gk);
+        const _open=_isFolderCollapsed(dfid); // inverted: stored = expanded
+        if(!_open){ gk.style.display='none'; }
+        else { const ch=gh.querySelector(`#${dfid}-chev`); if(ch) ch.textContent='▾'; }
+        gh.addEventListener('click',function(ev){
+          if(ev.target.type==='checkbox') return;
+          const nowOpen=gk.style.display==='none';
+          gk.style.display=nowOpen?'':'none';
+          const chev=document.getElementById(dfid+'-chev');
+          if(chev) chev.textContent=nowOpen?'▾':'▸';
+          _setFolderCollapsed(dfid, nowOpen); // inverted store (see above)
+        });
+        gh.querySelector(`#${dfid}-cb`).addEventListener('click',function(ev){
+          ev.stopPropagation();
+          const on=this.checked;
+          g.forEach(e=>{ if(typeof trSetMapVisibility==='function') trSetMapVisibility(e.id,on,_trPid); });
+          mapRenderTrackerLayers();
+          mapUpdateKmlLayerList();
+          if(typeof mapRefreshDateLabels==='function') mapRefreshDateLabels();
+        });
+        gw.appendChild(gh); gw.appendChild(gk); kids.appendChild(gw);
+      });
+      _rowsInto(_dfLoose,kids);
       // Apply remembered collapse state.
       if(_isFolderCollapsed(fid)){
         kids.style.display='none';
@@ -1908,7 +1956,7 @@ function mapTcCatSheet(catId){
   _glActionSheet(name,[
     {icon:'✨', label:'Highlight on map', fn:()=>mapHighlightCategory(catId)},
     {icon:'📁', label:inFolder?`Move to folder… (now in "${inFolder}")`:'Move to folder…', fn:()=>mapTcMoveCatToFolder(catId)},
-    {icon:'🗑', label:'Select & delete drawings…', fn:()=>mapTcBulkDeleteStart(catId)},
+    {icon:'☑', label:'Select drawings… (delete · move to folder)', fn:()=>mapTcBulkDeleteStart(catId)},
     {icon:'↑', label:'Bring forward', fn:()=>mapMoveCatLayerOrder(catId,'up')},
     {icon:'↓', label:'Send back', fn:()=>mapMoveCatLayerOrder(catId,'down')},
   ]);
@@ -1939,8 +1987,9 @@ function _showBulkDelBar(catId){
   bar.id='_gl-bulkdel-bar';
   bar.style.cssText='position:fixed;left:50%;transform:translateX(-50%);bottom:calc(110px + env(safe-area-inset-bottom));z-index:4800;background:#12202e;border:1px solid var(--amber,#C9A84C);border-radius:10px;padding:10px 12px;font-family:var(--mono);font-size:12px;color:#e8e8e8;box-shadow:0 4px 16px rgba(0,0,0,.45);display:flex;flex-direction:column;gap:8px;max-width:92vw';
   const btn='padding:10px 8px;border-radius:8px;font-family:var(--mono);font-size:12px;cursor:pointer;flex:1;white-space:nowrap';
-  bar.innerHTML=`<div style="display:flex;align-items:center;gap:8px"><span>🗑</span><b>Select &amp; delete</b><span id="_bd-count" style="color:#9fb2c4">— tap ${name} drawings</span></div>
+  bar.innerHTML=`<div style="display:flex;align-items:center;gap:8px"><span>☑</span><b>Select drawings</b><span id="_bd-count" style="color:#9fb2c4">— tap ${name} drawings</span></div>
     <div style="display:flex;gap:8px">
+      <button id="_bd-mv" onclick="mapBulkMoveFolder()" style="${btn};border:1px solid var(--amber,#C9A84C);background:none;color:var(--amber,#C9A84C);font-weight:700" disabled>📁 Move 0</button>
       <button id="_bd-del" onclick="mapBulkDelConfirm()" style="${btn};border:none;background:#c0392b;color:#fff;font-weight:700" disabled>🗑 Delete 0</button>
       <button onclick="mapBulkDelCancel()" style="${btn};background:var(--s2,#1a2a38);border:1px solid var(--border,#334);color:#e8e8e8">✕ Done</button>
     </div>`;
@@ -1955,6 +2004,8 @@ function _bulkDelSync(){
   if(c) c.textContent=n?`— ${n} selected`:'— tap drawings to select';
   const d=document.getElementById('_bd-del');
   if(d){ d.textContent=`🗑 Delete ${n}`; d.disabled=!n; d.style.opacity=n?'1':'0.55'; }
+  const m=document.getElementById('_bd-mv');
+  if(m){ m.textContent=`📁 Move ${n}`; m.disabled=!n; m.style.opacity=n?'1':'0.55'; }
   if(n){ _highlightIds=[..._bulkDel.ids]; _startHighlight(); _hideHighlightChip(); }
   else {
     // keep the session, just clear the glow (mapClearHighlight would also do,
@@ -2014,6 +2065,58 @@ function mapBulkDelConfirm(){
   };
 }
 window.mapBulkDelConfirm=mapBulkDelConfirm;
+
+// 📁 Move the selected drawings into a drawing sub-folder (Tim 8/2 — LD1/LD6
+// fiber-roll organization). Folder = per-entry drawFolder, grouped in the layers
+// panel under the category. Stays in select mode between batches, like delete.
+function mapBulkMoveFolder(){
+  if(!_bulkDel||!_bulkDel.ids.size) return;
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const ids=[..._bulkDel.ids];
+  const n=ids.length;
+  const entries=(typeof trGetEntriesForProject==='function')?trGetEntriesForProject(pid):[];
+  const catEntries=entries.filter(e=>(e.categoryId||e.category)===_bulkDel.cid);
+  const existing=[...new Set(catEntries.map(e=>(e.drawFolder||'').trim()).filter(Boolean))]
+    .sort((a,b)=>a.localeCompare(b,undefined,{numeric:true}));
+  const anyFoldered=ids.some(id=>{ const e=catEntries.find(x=>x.id===id); return e&&(e.drawFolder||'').trim(); });
+  const esc=s=>String(s).replace(/</g,'&lt;').replace(/"/g,'&quot;');
+  const ov=document.createElement('div');
+  ov.className='modal-overlay';
+  ov.style.cssText='z-index:9600';
+  const rowStyle='display:block;width:100%;text-align:left;padding:10px 12px;border-radius:8px;cursor:pointer;border:1px solid var(--border);background:var(--s1);color:var(--text);font-family:var(--mono);font-size:12px;margin-bottom:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
+  ov.innerHTML=`<div class="modal-box" style="max-width:320px;width:90%;max-height:calc(100dvh - var(--app-bar-h,58px) - 24px);display:flex;flex-direction:column;overflow:hidden">
+    <div class="modal-title" style="margin-bottom:4px;flex-shrink:0">📁 Move ${n} Drawing${n===1?'':'s'}</div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-bottom:12px;flex-shrink:0">Pick a folder — grouped in the layers panel</div>
+    <div style="overflow-y:auto;-webkit-overflow-scrolling:touch;flex:1 1 auto;min-height:0;margin-bottom:10px">
+      ${existing.map(f=>`<button class="_bmv-f" data-f="${esc(f)}" style="${rowStyle}">📁 ${esc(f)}</button>`).join('')}
+      <div style="display:flex;gap:6px;margin-top:${existing.length?'4px':'0'}">
+        <input type="text" id="_bmv-new" placeholder="New folder (e.g. LD1)" maxlength="24" style="flex:1;min-width:0;box-sizing:border-box;background:var(--s1);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:var(--body);font-size:16px;padding:9px 12px;outline:none">
+        <button id="_bmv-mk" style="flex-shrink:0;padding:0 14px;background:var(--amber);border:none;border-radius:8px;color:#000;font-family:var(--cond);font-weight:700;font-size:13px;cursor:pointer">Move</button>
+      </div>
+      ${anyFoldered?`<button id="_bmv-out" style="${rowStyle};margin-top:6px;color:var(--muted)">⬆ Remove from folder</button>`:''}
+    </div>
+    <button id="_bmv-x" style="flex-shrink:0;width:100%;padding:9px;background:none;color:var(--muted);font-family:var(--mono);font-size:11px;border:1px solid var(--border);border-radius:8px;cursor:pointer">Cancel</button>
+  </div>`;
+  document.body.appendChild(ov);
+  const apply=(fname)=>{
+    let done=0;
+    ids.forEach(id=>{ if(typeof trSetDrawFolder==='function'&&trSetDrawFolder(id,fname,pid)) done++; });
+    ov.remove();
+    // stay in select mode (organizing comes in batches) — ✕ Done exits
+    if(_bulkDel){ _bulkDel.ids.clear(); _bulkDelSync(); }
+    mapUpdateKmlLayerList();
+    if(typeof showCloudBanner==='function') showCloudBanner(fname?`${done} moved to 📁 ${fname}`:`${done} removed from folder`);
+  };
+  ov.querySelectorAll('._bmv-f').forEach(b=>{ b.onclick=()=>apply(b.dataset.f); });
+  ov.querySelector('#_bmv-mk').onclick=()=>{
+    const v=(ov.querySelector('#_bmv-new').value||'').trim();
+    if(!v) { ov.querySelector('#_bmv-new').focus(); return; }
+    apply(v);
+  };
+  const out=ov.querySelector('#_bmv-out'); if(out) out.onclick=()=>apply('');
+  ov.querySelector('#_bmv-x').onclick=()=>ov.remove();
+}
+window.mapBulkMoveFolder=mapBulkMoveFolder;
 
 function mapTcFolderSheet(fname){
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
@@ -4319,6 +4422,8 @@ function mapSaveTrackerEntry(){
     if(_prev){
       if(_prev.labelSize!=null) entry.labelSize=_prev.labelSize;
       if(_prev.labelLng!=null){ entry.labelLng=_prev.labelLng; entry.labelLat=_prev.labelLat; }
+      // Drawing folder is assigned in the panel/select-mode, not this form.
+      if(_prev.drawFolder) entry.drawFolder=_prev.drawFolder;
     }
     if(_prev&&_prev.temporary){
       entry.temporary=true; entry.tempStatus=_prev.tempStatus||'open';
@@ -4875,8 +4980,16 @@ function mapRefreshDateLabels(){
             ? '🚩 '+(plTag||'Repair')   // punchlist framing: compact number tags only
             : '🚩 '+(plTag?plTag+' · ':'')+((e.tempLabel&&e.tempLabel.trim())||'Repair'))
         : _lblText(e);
-      const color=isOpenTemp ? '#C9A84C'
-        : ((e.labelColor&&/^#[0-9A-Fa-f]{6}$/.test(e.labelColor))?e.labelColor:'#ffffff');
+      // Label color: a custom pick wins; otherwise AUTO = the entry's state color
+      // (Tim 8/4 — tags read like the legend). Stored #ffffff is the form default,
+      // so it counts as auto, not a custom pick of white.
+      let color;
+      if(isOpenTemp) color='#C9A84C';
+      else if(e.labelColor&&/^#[0-9A-Fa-f]{6}$/.test(e.labelColor)&&e.labelColor.toLowerCase()!=='#ffffff') color=e.labelColor;
+      else {
+        const st=(typeof tcEntryState==='function')?tcEntryState(e,e.categoryId||e.category,pid):null;
+        color=(st&&st.color&&/^#[0-9A-Fa-f]{6}$/.test(st.color))?st.color:'#ffffff';
+      }
       const size=isOpenTemp ? 11 : ({S:9,M:11,L:14}[e.labelSize]||11);
       return {type:'Feature',geometry:{type:'Point',coordinates:c},properties:{label:text,color,size}};
     })
@@ -6072,7 +6185,9 @@ async function _doCaptureDist(cid){
   _showCaptureToast('☁️ Saving…');
   const catName=(typeof tcGetName==='function')?tcGetName(cid,pid):'Disturbance';
   const prefill=`${catName} status · ${_fmtLabelDate(today)}`;
-  const photoEntry=await phSaveCapturedImage(branded,today,prefill,{distCap:{cid}});
+  // Disturbance captures are SWPPP evidence by definition — auto-tag them (Tim 8/4),
+  // same as ESC status captures; the lightbox SWPPP toggle still un-tags cleanly.
+  const photoEntry=await phSaveCapturedImage(branded,today,prefill,{distCap:{cid},swppp:true});
   _distCapClear();
   _hideCaptureToast();
   if(!photoEntry){ console.warn('_doCaptureDist: save failed'); return; }
