@@ -12,8 +12,40 @@ if (!window.Capacitor?.isNativePlatform?.()) {
   // SKIP_WAITING + listen for controllerchange + 1.5s hard-reload fallback.
   let _swRegistration = null
 
+  // Message SKIP_WAITING to whatever worker can take it: the waiting one, or —
+  // when a newer deploy superseded the banner's version mid-flight — the
+  // installing one, as soon as it reaches 'installed'. Returns false if there's
+  // nothing to message (registration missing / already active).
+  const _postSkip = (reg) => {
+    if (!reg) return false
+    if (reg.waiting) { reg.waiting.postMessage({ type: 'SKIP_WAITING' }); return true }
+    const inst = reg.installing
+    if (inst) {
+      inst.addEventListener('statechange', () => {
+        if (inst.state === 'installed') inst.postMessage({ type: 'SKIP_WAITING' })
+      })
+      return true
+    }
+    return false
+  }
+
   const updateSW = registerSW({
-    onRegisteredSW(_, registration) { _swRegistration = registration },
+    onRegisteredSW(_, registration) {
+      _swRegistration = registration
+      // Sticky-banner heal (Tim 8/7): with several deploys a day, RELOAD can
+      // race a superseding install — the click messages a worker that's already
+      // redundant, the fallback reload fires, and the page comes back with the
+      // NEWER version parked in waiting → banner again. If we arrived from a
+      // RELOAD click, silently finish the job once instead of re-prompting.
+      if (sessionStorage.getItem('gl_sw_activating')) {
+        sessionStorage.removeItem('gl_sw_activating')
+        if (registration && registration.waiting && navigator.serviceWorker) {
+          navigator.serviceWorker.addEventListener('controllerchange',
+            () => window.location.reload(), { once: true })
+          registration.waiting.postMessage({ type: 'SKIP_WAITING' })
+        }
+      }
+    },
     onNeedRefresh() {
       if (document.getElementById('gl-update-banner')) return
       const banner = document.createElement('div')
@@ -51,22 +83,27 @@ if (!window.Capacitor?.isNativePlatform?.()) {
         let reloaded = false
         const doReload = () => { if (!reloaded) { reloaded = true; window.location.reload() } }
 
-        // 3. Listen for the new SW taking control — this is the "happy path"
+        // 3. Mark that this reload came from the RELOAD button — if activation
+        // races a superseding install, the boot-time heal in onRegisteredSW
+        // finishes it silently instead of re-showing the banner.
+        try { sessionStorage.setItem('gl_sw_activating', '1') } catch (_) {}
+
+        // 4. Listen for the new SW taking control — this is the "happy path"
         if (navigator.serviceWorker) {
           navigator.serviceWorker.addEventListener('controllerchange', doReload, { once: true })
         }
 
-        // 4. Tell the waiting worker to skip waiting (kicks off the activation)
-        if (_swRegistration?.waiting) {
-          _swRegistration.waiting.postMessage({ type: 'SKIP_WAITING' })
-        }
+        // 5. Skip-waiting the waiting worker — or the superseding installing one
+        _postSkip(_swRegistration)
 
-        // 5. Also call updateSW(true) for vite-plugin-pwa's own reload path
+        // 6. Also call updateSW(true) for vite-plugin-pwa's own reload path
         try { updateSW(true) } catch (_) { /* swallow — fallback handles it */ }
 
-        // 6. Hard-reload fallback — fires if controllerchange never lands
-        // (waiting SW couldn't activate, multi-tab lock, browser quirk, etc.)
-        setTimeout(doReload, 1500)
+        // 7. Hard-reload fallback — fires if controllerchange never lands.
+        // 3s (was 1.5s): activation + clientsClaim on the ~16 MB precache can
+        // outrun the shorter window, which forced reloads BEFORE handover —
+        // the old worker stayed in control and the banner returned.
+        setTimeout(doReload, 3000)
       })
     },
     onOfflineReady() {
