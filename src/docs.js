@@ -229,21 +229,31 @@ async function glRenderDocsPage(){
   await _docRefreshOfflineSet();
   _docRenderLibrary();
 
-  // 2. Refresh from cloud.
+  // 2. Refresh from cloud. #52 airplane-mode lesson (Tim: "showed the library
+  // for 5-10 seconds, then it all disappeared"): offline, get() times out
+  // against the server then falls back to the Firestore PERSISTENCE cache —
+  // which is empty until the query has run online — and that empty-but-
+  // "successful" snapshot overwrote the good instant-paint list AND clobbered
+  // the gl_docs:: cache. A from-cache result may only ever be partial: never
+  // let it REPLACE local state — only genuine server reads do that.
   if(_docReady() && pid && pid !== 'default'){
     try{
       const fsnap = await _udb().collection('docFolders').where('projectId','==',pid).get();
-      const flist = []; fsnap.forEach(f => flist.push(f.data()));
-      window._docFoldersList = flist;
-      _docCacheFolders();
+      if(!(fsnap.metadata && fsnap.metadata.fromCache)){
+        const flist = []; fsnap.forEach(f => flist.push(f.data()));
+        window._docFoldersList = flist;
+        _docCacheFolders();
+      }
     }catch(e){ console.warn('docFolders load:', e && e.message); }
     try{
       const snap = await _udb().collection('docs').where('projectId','==',pid).get();
-      const list = []; snap.forEach(d => list.push(d.data()));
-      window._docs = list;
-      await _docMigrateFolders();   // old folder-name string → folderId (one-time, idempotent)
-      _docCacheDocs();
-      _docRenderLibrary();
+      if(!(snap.metadata && snap.metadata.fromCache)){
+        const list = []; snap.forEach(d => list.push(d.data()));
+        window._docs = list;
+        await _docMigrateFolders();   // old folder-name string → folderId (one-time, idempotent)
+        _docCacheDocs();
+        _docRenderLibrary();
+      }
     }catch(e){ console.warn('docLoad:', e && e.message); }
     _docLoadShared(pid);
   }
@@ -1113,13 +1123,18 @@ async function docToggleShare(id){
 }
 
 async function _docLoadShared(pid){
-  window._docsShared = [];
-  if(!_docReady() || !pid || pid==='default') return;
+  if(!_docReady() || !pid || pid==='default'){ window._docsShared = []; _docRenderSharedBody(); return; }
   try{
     const snap = await db.collection('projects').doc(pid).collection('docs').get();
-    const mine = window._currentUser.uid;
-    snap.forEach(s => { const m = s.data(); if(m.ownerUid !== mine) window._docsShared.push(m); });
-  }catch(e){ /* not a member / nothing shared */ }
+    // Same #52 rule as the library load: a from-cache snapshot may be empty/
+    // partial offline — don't wipe what's already showing.
+    if(!(snap.metadata && snap.metadata.fromCache) || snap.size){
+      const mine = window._currentUser.uid;
+      const shared = [];
+      snap.forEach(s => { const m = s.data(); if(m.ownerUid !== mine) shared.push(m); });
+      window._docsShared = shared;
+    } else if(!Array.isArray(window._docsShared)) window._docsShared = [];
+  }catch(e){ if(!Array.isArray(window._docsShared)) window._docsShared = []; /* not a member / nothing shared */ }
   _docRenderSharedBody();
 }
 
