@@ -1683,6 +1683,7 @@ function mapUpdateKmlLayerList(){
   const _trPid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
   const _trCats=(typeof tcGetCategories==='function')?tcGetCategories(_trPid):[];
   const _trAllEntries=(typeof trGetEntriesForProject==='function')?trGetEntriesForProject(_trPid).filter(e=>!e.archivedFromMap):[];
+  const _trById=new Map(_trAllEntries.map(e=>[e.id,e]));
   if(_trCats.length>0 && _trAllEntries.length>0){
     const sep=document.createElement('div');
     sep.style.cssText='margin:10px 0 6px;border-top:1px solid var(--border);padding-top:8px;font-family:var(--mono);font-size:9px;color:var(--muted);letter-spacing:.08em;text-transform:uppercase;';
@@ -1752,8 +1753,21 @@ function mapUpdateKmlLayerList(){
       // visibility checkbox (rides per-entry deletedFromMap — persisted + synced).
       // Sub-folders default COLLAPSED (the whole point is not dumping hundreds of
       // rows), so the collapse store is inverted here: presence = user expanded.
+      // Effective folder: own drawFolder wins; otherwise INHERIT the parent's
+      // (walk up the parentId chain, capped) — a state drawn over a foldered
+      // fiber roll files under the same folder automatically, and moving the
+      // parent moves its stacked states with it (Tim 8/6).
+      const _dfOf=(e)=>{
+        let cur=e, hops=0;
+        while(cur&&hops++<4){
+          const f=(cur.drawFolder||'').trim();
+          if(f) return f;
+          cur=cur.parentId?_trById.get(cur.parentId):null;
+        }
+        return '';
+      };
       const _byDf={}, _dfLoose=[];
-      catEntries.forEach(e=>{ const f=(e.drawFolder||'').trim(); if(f) (_byDf[f]=_byDf[f]||[]).push(e); else _dfLoose.push(e); });
+      catEntries.forEach(e=>{ const f=_dfOf(e); if(f) (_byDf[f]=_byDf[f]||[]).push(e); else _dfLoose.push(e); });
       Object.keys(_byDf).sort((a,b)=>a.localeCompare(b,undefined,{numeric:true})).forEach(fname=>{
         const g=_byDf[fname];
         const dfid=fid+'-df-'+fname.replace(/[^a-z0-9]/gi,'_');
