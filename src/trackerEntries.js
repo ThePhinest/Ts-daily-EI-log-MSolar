@@ -453,6 +453,14 @@ async function trLoadFromFirestore(projectId){
     }));
     const local = _trLoadRaw(pid).entries;
     if(remote.length === 0 && local.length === 0) return;
+    // #52 offline rule: with Firestore persistence on, an offline get() falls
+    // back to the local cache and can be EMPTY/PARTIAL instead of rejecting.
+    // The newest-wins merge below is absence-safe, but the foreign-revocation
+    // filter is not — an empty offline cache would read as "everything was
+    // unshared" and drop teammates' drawings locally. Only a genuine SERVER
+    // read may revoke.
+    const fromCache = !!((ownSnap.metadata && ownSnap.metadata.fromCache) ||
+                         (pubSnap.metadata && pubSnap.metadata.fromCache));
     // Merge: prefer the higher updatedAt on conflict.
     const byId = new Map();
     [...local, ...remote].forEach(e => {
@@ -462,7 +470,7 @@ async function trLoadFromFirestore(projectId){
     });
     // A foreign entry that no longer comes back was unpublished or removed by
     // its owner — revocation is real, so it leaves the local cache too.
-    const merged = Array.from(byId.values()).filter(e =>
+    const merged = fromCache ? Array.from(byId.values()) : Array.from(byId.values()).filter(e =>
       !e.ownerUid || e.ownerUid === uid || remoteIds.has(e.id));
     _trSaveRaw(pid, { entries: merged });
     // Push own local-only/newer entries to Firestore (recovery for silent write
@@ -473,7 +481,10 @@ async function trLoadFromFirestore(projectId){
     // write behind max backoff. Chunk size is kept small because each doc carries
     // its full traced geometry as a JSON string — the constraint is request
     // payload, not the 500-op batch cap.
-    const toPush = merged.filter(e => {
+    // (Repair decisions also need server truth — a partial offline cache would
+    // queue re-pushes of entries the cache simply hadn't seen, and those
+    // deferred writes could overwrite newer cross-device versions on reconnect.)
+    const toPush = fromCache ? [] : merged.filter(e => {
       if(e.ownerUid && e.ownerUid !== uid) return false;
       if(_trPushDenied.has(e.id)) return false;   // rules denied it this session — don't re-spam every refocus
       const rem = remote.find(r => r.id === e.id);

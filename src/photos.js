@@ -330,6 +330,11 @@ async function phLoadCloud(){
   }
   try{
     const snap = await _udb().collection('photos').get();
+    // #52 offline rule: a from-cache snapshot (offline fallback with Firestore
+    // persistence on) can be partial — letting it repartition the list would
+    // vanish photos it never saw AND persist the pruned list. Local IDB copy
+    // stands; the next genuine server read reconciles.
+    if(snap.metadata && snap.metadata.fromCache) return false;
     if(!snap.empty){
       const cloud = snap.docs.map(d => d.data());
       // Photos with a PENDING cloud write (dirty set) keep their LOCAL record —
