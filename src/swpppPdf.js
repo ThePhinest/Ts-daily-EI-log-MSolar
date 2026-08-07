@@ -503,6 +503,64 @@ export async function punchlistBuildPdf(opts){
   return doc.getBlob();
 }
 
+// ═══ AGENCY VISIT REPORT / LOG PDF (#54) ═══
+// One visit (record photos included) or the full running log (notes-only lean
+// file for forwarding to the contractor). Same house chrome as everything else.
+export async function avBuildPdf(visits, cfg, opts){
+  opts=opts||{};
+  const pdfMake=await _getPdfMake();
+  const pretty=(d)=>{ const p=String(d||'').split('-'); return p.length===3?`${parseInt(p[1])}/${parseInt(p[2])}/${p[0]}`:String(d||''); };
+  const content=[
+    {table:{widths:['*'],body:[[{
+      stack:[
+        {text:opts.single?'AGENCY VISIT REPORT':'AGENCY VISIT LOG',bold:true,fontSize:16,color:'#FFFFFF'},
+        {text:cfg.projectName||'',fontSize:10,color:'#D9E2F3',margin:[0,2,0,0]}
+      ],fillColor:BLUE,border:[false,false,false,false],margin:[0,4,0,4]
+    }]]},layout:{hLineWidth:()=>0,vLineWidth:()=>0,paddingLeft:()=>8,paddingRight:()=>8,paddingTop:()=>4,paddingBottom:()=>4},margin:[0,0,0,6]},
+    infoTable([
+      infoRow('Generated', pretty(new Date().toLocaleDateString('en-CA'))),
+      infoRow('Prepared by', cfg.preparedBy||''),
+      ...(opts.single?[]:[infoRow('Visits on record', String(visits.length))])
+    ])
+  ];
+  for(const v of visits){
+    content.push(h1(`${pretty(v.date)} — ${v.agency||'Agency visit'}${v.inspector?' · '+v.inspector:''}`));
+    const rows=[];
+    if(v.inspector) rows.push(infoRow('Inspector(s)', v.inspector));
+    if(v.weatherLine) rows.push(infoRow('Site conditions', v.weatherLine));
+    if(v.preparedBy) rows.push(infoRow('Recorded by', v.preparedBy));
+    if(rows.length) content.push(infoTable(rows));
+    if(v.legacy) content.push(note('Recorded in the daily log (pre-dates visit records).'));
+    content.push(body(v.notes||'—'));
+    if(v.followUps){
+      content.push({table:{widths:['*'],body:[[{
+        stack:[{text:'FOLLOW-UP ITEMS',bold:true,fontSize:8,color:'#7A5C00'},{text:v.followUps,fontSize:10,margin:[0,2,0,0]}],
+        fillColor:AMBER,border:[false,false,false,false]
+      }]]},layout:{hLineWidth:()=>0,vLineWidth:()=>0,paddingLeft:()=>6,paddingRight:()=>6,paddingTop:()=>4,paddingBottom:()=>4},margin:[0,4,0,4]});
+    }
+    if(Array.isArray(v.photoIds)&&v.photoIds.length){
+      const items=[];
+      for(const pId of v.photoIds){
+        const im=await _imgFor(pId,320);
+        const p=(window._phPhotos||[]).find(x=>x.id===pId);
+        items.push({im,cap:(p&&p.caption)||''});
+      }
+      if(items.length) content.push({table:{widths:['*','*'],body:_imgPairRows(items)},layout:imgGridLayout,margin:[0,4,0,6]});
+    }
+  }
+  const dd={
+    pageSize:'LETTER', pageMargins:[MARG,MARG,MARG,MARG],
+    defaultStyle:{font:'Roboto',fontSize:10},
+    footer:(page,total)=>({columns:[
+      {text:cfg.projectName||'',fontSize:7,color:'#888888',margin:[MARG,0,0,0]},
+      {text:`${page} / ${total}`,alignment:'right',fontSize:7,color:'#888888',margin:[0,0,MARG,0]}
+    ],margin:[0,10,0,0]}),
+    content
+  };
+  const doc=pdfMake.createPdf(dd);
+  return doc.getBlob();
+}
+
 export async function punchlistExportPdfNow(opts){
   const blob=await punchlistBuildPdf(opts);
   const cfg=(typeof loadProjectConfig==='function')?loadProjectConfig():{};

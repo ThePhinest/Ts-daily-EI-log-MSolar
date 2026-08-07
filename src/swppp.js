@@ -615,7 +615,9 @@ function _swRenderReportsInner(host, pid){
         <div class="gl-es-actions">
           <button class="gl-es-btn gl-es-btn-primary" onclick="swpppShowSetup()">⚙ Set up QI report</button>
         </div>
-      </div>`;
+      </div>
+      <div id="av-reports-sec"></div>`;
+    if(typeof window.avRenderReportsSec==='function') window.avRenderReportsSec();
     return;
   }
   const uid = _swUid();
@@ -672,7 +674,9 @@ function _swRenderReportsInner(host, pid){
     <div class="sw-sec-sub">Generated daily-report archive — re-export any date, no AI call</div>
     ${_swDaily===null
       ? '<p style="color:var(--muted);font-size:12px;padding:6px 2px">Loading archive…</p>'
-      : (dailyRows ? dailyRows+moreDaily : '<p style="color:var(--muted);font-size:12px;padding:6px 2px">No generated reports yet — they archive here automatically when you Generate Report on the Daily Log.</p>')}`;
+      : (dailyRows ? dailyRows+moreDaily : '<p style="color:var(--muted);font-size:12px;padding:6px 2px">No generated reports yet — they archive here automatically when you Generate Report on the Daily Log.</p>')}
+    <div id="av-reports-sec"></div>`;
+  if(typeof window.avRenderReportsSec==='function') window.avRenderReportsSec();
 }
 
 // Section re-render (keeps text-input focus intact elsewhere). The section

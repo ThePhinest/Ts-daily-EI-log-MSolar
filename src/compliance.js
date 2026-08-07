@@ -265,6 +265,7 @@ function clRender(){
   if(openTile) openTile.classList.toggle('active',_clOpenDefaultActive());
 
   clRenderTrackerCard();
+  if(typeof window.avRenderComplianceCard==='function') window.avRenderComplianceCard();
   const list = document.getElementById('cl-list');
   if(!list) return;
 
