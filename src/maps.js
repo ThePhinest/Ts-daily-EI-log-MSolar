@@ -1780,7 +1780,8 @@ function mapUpdateKmlLayerList(){
           <span id="${dfid}-chev" style="font-size:10px;color:var(--muted2);">▸</span>
           <input type="checkbox" ${gVis===g.length?'checked':''} style="accent-color:${cat.color||'#888'};width:13px;height:13px;flex-shrink:0;" id="${dfid}-cb">
           <span style="font-family:var(--mono);font-size:10px;color:var(--text);font-weight:600;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${fname}">📁 ${fname}</span>
-          <span style="font-family:var(--mono);font-size:9px;color:${gVis<g.length?'var(--amber)':'var(--muted)'};flex-shrink:0;">${gVis<g.length?gVis+'/'+g.length:g.length}</span>`;
+          <span style="font-family:var(--mono);font-size:9px;color:${gVis<g.length?'var(--amber)':'var(--muted)'};flex-shrink:0;">${gVis<g.length?gVis+'/'+g.length:g.length}</span>
+          <button onclick="event.stopPropagation();mapTrackerDfSheet('${cat.id}','${fname.replace(/'/g,"\\'")}')" title="Folder actions" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;padding:0 4px;line-height:1;flex-shrink:0">⋯</button>`;
         const gk=document.createElement('div');
         gk.id=dfid+'-children';
         gk.style.cssText='padding:4px 4px 2px 12px;';
@@ -2131,6 +2132,59 @@ function mapBulkMoveFolder(){
   ov.querySelector('#_bmv-x').onclick=()=>ov.remove();
 }
 window.mapBulkMoveFolder=mapBulkMoveFolder;
+
+// ── Drawing sub-folder actions (⋯ on a 📁 group header inside a category) ──
+// Rename/ungroup rewrite the EXPLICIT drawFolder stamps only — children that
+// inherit via parentId follow their parent automatically either way.
+function mapTrackerDfSheet(cid,fname){
+  _glActionSheet('📁 '+fname,[
+    {icon:'✏', label:'Rename folder', fn:()=>mapTrackerDfRename(cid,fname)},
+    {icon:'⬆', label:'Ungroup (move all out)', fn:()=>mapTrackerDfUngroup(cid,fname)},
+  ]);
+}
+function _dfExplicitMembers(cid,fname,pid){
+  const entries=(typeof trGetEntriesForProject==='function')?trGetEntriesForProject(pid):[];
+  return entries.filter(e=>(e.categoryId||e.category)===cid&&(e.drawFolder||'').trim()===fname);
+}
+function mapTrackerDfRename(cid,oldName){
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  document.getElementById('_dfr-ov')?.remove();
+  const ov=document.createElement('div');
+  ov.className='modal-overlay'; ov.id='_dfr-ov';
+  ov.style.cssText='z-index:9600';
+  ov.innerHTML=`<div class="modal-box" style="max-width:340px;width:90%">
+    <div class="modal-title" style="margin-bottom:8px">✏ Rename folder</div>
+    <label style="${_LABEL_STYLE}">Folder name</label>
+    <input id="_dfr-name" maxlength="24" style="${_INPUT_STYLE};margin-bottom:12px">
+    <div class="modal-btns">
+      <button class="modal-confirm" id="_dfr-go">✏ Rename</button>
+      <button class="modal-cancel" id="_dfr-cancel">Cancel</button>
+    </div>
+  </div>`;
+  document.body.appendChild(ov);
+  const nameInput=ov.querySelector('#_dfr-name');
+  nameInput.value=oldName;
+  ov.querySelector('#_dfr-cancel').onclick=()=>ov.remove();
+  ov.addEventListener('click',ev=>{ if(ev.target===ov) ov.remove(); });
+  ov.querySelector('#_dfr-go').onclick=()=>{
+    const newName=_kmlSanitizeFolderName(nameInput.value);
+    if(!newName){ nameInput.style.borderColor='#ff4444'; nameInput.focus(); return; }
+    ov.remove();
+    if(newName===oldName) return;
+    let done=0;
+    _dfExplicitMembers(cid,oldName,pid).forEach(e=>{ if(typeof trSetDrawFolder==='function'&&trSetDrawFolder(e.id,newName,pid)) done++; });
+    mapUpdateKmlLayerList();
+    if(typeof showCloudBanner==='function') showCloudBanner(`✏ Folder renamed to "${newName}" (${done} drawing${done===1?'':'s'}).`);
+  };
+}
+function mapTrackerDfUngroup(cid,fname){
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  let done=0;
+  _dfExplicitMembers(cid,fname,pid).forEach(e=>{ if(typeof trSetDrawFolder==='function'&&trSetDrawFolder(e.id,'',pid)) done++; });
+  mapUpdateKmlLayerList();
+  if(typeof showCloudBanner==='function') showCloudBanner(`⬆ ${done} drawing${done===1?'':'s'} moved out of "${fname}".`);
+}
+window.mapTrackerDfSheet=mapTrackerDfSheet;
 
 function mapTcFolderSheet(fname){
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
