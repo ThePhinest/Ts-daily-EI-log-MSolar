@@ -243,16 +243,17 @@ function avRenderComplianceCard(){
       <span style="font-family:var(--mono);font-size:12px;color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_avEsc(v.agency||'Agency')}${v.inspector?' — '+_avEsc(v.inspector):''}${v.legacy?' <span style="font-size:9px;color:var(--muted)">(log)</span>':''}</span>
       ${v.followUps?'<span title="Has follow-up items" style="font-size:11px;flex-shrink:0">📌</span>':''}
     </div>`).join('');
-  host.innerHTML=`<div class="card">
-    <div class="card-head" onclick="showPage('reports')" style="cursor:pointer">
+  const collapsed=(typeof window._clCardCollapsed==='function')&&window._clCardCollapsed('agency');
+  host.innerHTML=`<div class="card${collapsed?' collapsed':''}">
+    <div class="card-head" onclick="clToggleCard('agency')">
       <span class="card-num">🏛</span>
       <span class="card-title">Agency Visits</span>
       <span class="head-fade"></span>
       <span class="card-badge">${all.length}</span>
-      <span class="card-chevron">›</span>
+      <span class="card-chevron">▾</span>
     </div>
     <div class="card-body" style="padding-top:4px">${rows}
-      ${all.length>5?`<div style="font-family:var(--mono);font-size:10px;color:var(--muted);padding:8px 6px 2px">+ ${all.length-5} more on the Reports page</div>`:''}
+      <div onclick="showPage('reports')" style="font-family:var(--mono);font-size:10px;color:var(--amber);padding:9px 6px 2px;cursor:pointer">Manage &amp; export on the Reports page ›${all.length>5?` (+ ${all.length-5} more)`:''}</div>
     </div>
   </div>`;
 }
@@ -275,11 +276,17 @@ function avRenderReportsSec(){
       <button class="sw-list-btn" title="Export visit PDF" onclick="avExportPdf('${v.id}')">${window.glPdfIcon?window.glPdfIcon(12):'PDF'}</button>
       ${v.legacy?'':`<button class="sw-list-btn" title="Delete" onclick="avDelete('${v.id}')">🗑</button>`}
     </div>`).join('');
+  const head=(typeof window._swSecHead==='function')
+    ? window._swSecHead('av','Agency Visits','Document each agency walk — export one visit or the full log to forward to the contractor','<button class="btn" onclick="avShowForm()">＋ New Visit</button>')
+    : `<div class="sw-sec-label sw-sec-next">Agency Visits<span class="sw-sec-line"></span><button class="btn" onclick="avShowForm()">＋ New Visit</button></div>
+       <div class="sw-sec-sub">Document each agency walk — export one visit or the full log to forward to the contractor</div>`;
+  const avCollapsed=(typeof window.swSecCollapsed==='function')&&window.swSecCollapsed('av');
   host.innerHTML=`
-    <div class="sw-sec-label sw-sec-next">Agency Visits<span class="sw-sec-line"></span><button class="btn" onclick="avShowForm()">＋ New Visit</button></div>
-    <div class="sw-sec-sub">Document each agency walk — export one visit or the full log to forward to the contractor</div>
-    ${rows || '<p style="color:var(--muted);font-size:12px;padding:10px 2px">No agency visits recorded yet — add one when an inspector walks the site.</p>'}
-    ${all.length?`<div style="margin-top:10px;text-align:right"><button class="btn btn-outline" onclick="avExportPdf()">⬇ Full Visit Log (PDF)</button></div>`:''}`;
+    ${head}
+    <div id="sw-sec-body-av" style="display:${avCollapsed?'none':''}">
+      ${rows || '<p style="color:var(--muted);font-size:12px;padding:10px 2px">No agency visits recorded yet — add one when an inspector walks the site.</p>'}
+      ${all.length?`<div style="margin-top:10px;text-align:right"><button class="btn btn-outline" onclick="avExportPdf()">⬇ Full Visit Log (PDF)</button></div>`:''}
+    </div>`;
 }
 
 // ═══ PDF export — one visit (photos included) or the full log (notes-only) ═══

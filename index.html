@@ -440,6 +440,11 @@ textarea.auto-expand{overflow:hidden}
    past the right edge (left stays anchored) — worst in nested grids like sec-03.
    Let them shrink to their track. */
 .g>*{min-width:0}
+/* Every plain textarea gets the browser's drag-to-resize handle (vertical only —
+   horizontal would break layouts). Desktop/web affordance; iOS ignores it and
+   relies on auto-expand growth instead. auto-expand keeps resize:none below —
+   its JS sets height on input and would fight a manual drag. (Tim 8/7) */
+textarea{resize:vertical}
 textarea.auto-expand{overflow-y:hidden;resize:none;touch-action:manipulation}
 select{cursor:pointer}
 

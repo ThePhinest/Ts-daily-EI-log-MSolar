@@ -595,6 +595,34 @@ function swpppShowMore(kind){
 // RENDERING
 // ═══════════════════════════════════════════
 var _swQiLimit = 5, _swDailyLimit = 5, _swTrashOpen = false;
+
+// ── Collapsible report sections (Tim 8/7) — persisted per section key ──
+const _SW_SECS_KEY='gl_rpt_secs';
+function swSecCollapsed(key){
+  try{ return !!(JSON.parse(localStorage.getItem(_SW_SECS_KEY)||'{}')[key]); }catch{ return false; }
+}
+function swToggleSec(key){
+  let s={}; try{ s=JSON.parse(localStorage.getItem(_SW_SECS_KEY)||'{}'); }catch{}
+  s[key]=!s[key];
+  try{ localStorage.setItem(_SW_SECS_KEY,JSON.stringify(s)); }catch{}
+  const body=document.getElementById('sw-sec-body-'+key);
+  if(body) body.style.display=s[key]?'none':'';
+  const ch=document.getElementById('sw-sec-chev-'+key);
+  if(ch) ch.textContent=s[key]?'▸':'▾';
+}
+window.swToggleSec=swToggleSec;
+window.swSecCollapsed=swSecCollapsed;
+// Section header — chevron + title, whole label toggles; action buttons stop propagation.
+function _swSecHead(key, title, sub, btnHtml){
+  const c=swSecCollapsed(key);
+  return `<div class="sw-sec-label${key==='qi'?'':' sw-sec-next'}" onclick="swToggleSec('${key}')" style="cursor:pointer">
+      <span id="sw-sec-chev-${key}" style="font-family:var(--mono);font-size:11px;color:var(--muted)">${c?'▸':'▾'}</span>
+      ${title}<span class="sw-sec-line"></span><span onclick="event.stopPropagation()">${btnHtml||''}</span>
+    </div>
+    <div class="sw-sec-sub">${sub}</div>`;
+}
+window._swSecHead=_swSecHead;
+
 function glRenderReportsPage(){
   const pid = _swPid();
   const host = document.getElementById('reports-page-body');
@@ -664,17 +692,19 @@ function _swRenderReportsInner(host, pid){
   const moreDaily = daily.length>_swDailyLimit
     ? `<div class="sw-more"><button class="btn btn-outline" onclick="swpppShowMore('daily')">⌄ Show ${daily.length-_swDailyLimit} more</button></div>` : '';
   host.innerHTML = `
-    <div class="sw-sec-label">SWPPP QI Inspections<span class="sw-sec-line"></span><button class="btn" onclick="swpppNewInspection()">＋ New Inspection</button></div>
-    <div class="sw-sec-sub">SPDES GP-0-25-001 — Qualified Inspector stormwater inspection reports</div>
-    ${rows || '<p style="color:var(--muted);font-size:12px;padding:10px 2px">No inspections yet — start your first one.</p>'}
-    ${moreQi}
-    ${trashHtml}
-    <div style="margin-top:10px;text-align:right"><button class="btn btn-outline" style="font-size:10px;padding:4px 10px" onclick="swpppShowSetup()">⚙ Edit configuration</button></div>
-    <div class="sw-sec-label sw-sec-next">Daily Reports<span class="sw-sec-line"></span><button class="btn btn-outline" onclick="showPage('log')">📋 Generate today's</button></div>
-    <div class="sw-sec-sub">Generated daily-report archive — re-export any date, no AI call</div>
-    ${_swDaily===null
-      ? '<p style="color:var(--muted);font-size:12px;padding:6px 2px">Loading archive…</p>'
-      : (dailyRows ? dailyRows+moreDaily : '<p style="color:var(--muted);font-size:12px;padding:6px 2px">No generated reports yet — they archive here automatically when you Generate Report on the Daily Log.</p>')}
+    ${_swSecHead('qi','SWPPP QI Inspections','SPDES GP-0-25-001 — Qualified Inspector stormwater inspection reports','<button class="btn" onclick="swpppNewInspection()">＋ New Inspection</button>')}
+    <div id="sw-sec-body-qi" style="display:${swSecCollapsed('qi')?'none':''}">
+      ${rows || '<p style="color:var(--muted);font-size:12px;padding:10px 2px">No inspections yet — start your first one.</p>'}
+      ${moreQi}
+      ${trashHtml}
+      <div style="margin-top:10px;text-align:right"><button class="btn btn-outline" style="font-size:10px;padding:4px 10px" onclick="swpppShowSetup()">⚙ Edit configuration</button></div>
+    </div>
+    ${_swSecHead('daily','Daily Reports','Generated daily-report archive — re-export any date, no AI call','<button class="btn btn-outline" onclick="showPage(\'log\')">📋 Generate today\'s</button>')}
+    <div id="sw-sec-body-daily" style="display:${swSecCollapsed('daily')?'none':''}">
+      ${_swDaily===null
+        ? '<p style="color:var(--muted);font-size:12px;padding:6px 2px">Loading archive…</p>'
+        : (dailyRows ? dailyRows+moreDaily : '<p style="color:var(--muted);font-size:12px;padding:6px 2px">No generated reports yet — they archive here automatically when you Generate Report on the Daily Log.</p>')}
+    </div>
     <div id="av-reports-sec"></div>`;
   if(typeof window.avRenderReportsSec==='function') window.avRenderReportsSec();
 }

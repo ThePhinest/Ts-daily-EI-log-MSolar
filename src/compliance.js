@@ -534,10 +534,11 @@ function clToggleCard(key){
   try{ localStorage.setItem(_CL_CARDS_KEY,JSON.stringify(s)); }catch{}
   const el=key==='log'?document.getElementById('cl-log-card')
     :key==='punch'?document.getElementById('cl-punchlist-card')?.firstElementChild
+    :key==='agency'?document.getElementById('cl-agency-card')?.firstElementChild
     :document.getElementById('cl-tracker-card')?.firstElementChild;
   if(el) el.classList.toggle('collapsed',!!s[key]);
 }
-if(typeof window!=='undefined') window.clToggleCard=clToggleCard;
+if(typeof window!=='undefined'){ window.clToggleCard=clToggleCard; window._clCardCollapsed=_clCardCollapsed; }
 
 function clRenderPunchlist(){
   const el=document.getElementById('cl-punchlist-card');
