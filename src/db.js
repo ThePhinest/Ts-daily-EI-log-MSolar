@@ -25,6 +25,15 @@ document.addEventListener('DOMContentLoaded', function _initFirebase() {
     try {
       const _fbApp = firebase.apps.length ? firebase.apps[0] : firebase.initializeApp(_fbConfig);
       window.db = _fbApp.firestore();
+      // #52: Firestore offline persistence (IndexedDB). Without it every
+      // cold-offline .get() rejects/hangs — obCheck()'s read failure then
+      // walled the whole app behind the onboarding overlay when opened with
+      // no service. Must be the first Firestore call after init; failure is
+      // non-fatal (multi-tab conflict / private mode → in-memory cache only).
+      try {
+        window.db.enablePersistence({ synchronizeTabs: true })
+          .catch(function(e){ console.warn('Firestore persistence unavailable:', e && (e.code || e.message)); });
+      } catch(e) { console.warn('Firestore persistence unavailable:', e && e.message); }
       window.storage = _fbApp.storage();
       window.auth = _fbApp.auth();
       console.log('Phinest EI: Firebase initialized OK');

@@ -88,6 +88,16 @@ const _docBlobStore = createStore('groundlog-docs', 'blobs');
 const _docNative = () => !!(window.Capacitor?.isNativePlatform?.());
 const _DOC_PIN_DIR = 'groundlog-docs';
 const _docPinPath = id => `${_DOC_PIN_DIR}/${id}.pdf`;
+// bare base64 (Filesystem.readFile result) → Blob, for offline pin read-back.
+function _b64ToBlob(b64, mime){
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++) bytes[i] = bin.charCodeAt(i);
+  return new Blob([bytes], { type: mime || 'application/octet-stream' });
+}
+const _DOC_MIMES = { pdf:'application/pdf', png:'image/png', jpg:'image/jpeg', jpeg:'image/jpeg', gif:'image/gif', webp:'image/webp', heic:'image/heic' };
+function _docMimeOf(d){ return _DOC_MIMES[(d && d.ext || '').toLowerCase()] || 'application/octet-stream'; }
+
 // blob → bare base64 (no data: prefix) for Filesystem.writeFile binary writes.
 function _blobToBase64(blob){
   return new Promise((resolve, reject)=>{
@@ -631,13 +641,26 @@ function docOpen(id){
 }
 
 // Resolve the bytes/URL to read: pinned blob (offline) wins, else stream the URL.
+// Returns { blob } | { url } | { offline:true } (pin unreadable AND no network —
+// callers surface the banner instead of hanging on a dead fetch).
 async function _docSource(d){
   if(_docOfflineIds.has(d.id)){
-    try{
-      const blob = await idbKvGet(d.id, _docBlobStore);
-      if(blob) return { blob };
-    }catch(e){}
+    if(_docNative()){
+      // #52: native pins live in the Filesystem (docToggleOffline writes them
+      // there), NOT the web IDB blob store — read them back from the same
+      // place, else a pinned image can never open offline on iOS.
+      try{
+        const rf = await Filesystem.readFile({ path: _docPinPath(d.id), directory: Directory.LibraryNoCloud });
+        if(rf && rf.data) return { blob: _b64ToBlob(rf.data, _docMimeOf(d)) };
+      }catch(e){}
+    } else {
+      try{
+        const blob = await idbKvGet(d.id, _docBlobStore);
+        if(blob) return { blob };
+      }catch(e){}
+    }
   }
+  if(navigator.onLine === false) return { offline: true };
   return { url: d.downloadUrl };
 }
 
@@ -669,7 +692,9 @@ async function _docOpenPdf(d){
         if(st && st.uri) arg = { path: st.uri };
       }catch(e){ arg = null; }
     }
-    if(!arg && d.downloadUrl) arg = { url: d.downloadUrl };
+    // #52: don't silently stream over a dead network when the pin read failed —
+    // offline with no local file is a clear "not available offline", not a spinner.
+    if(!arg && d.downloadUrl && navigator.onLine !== false) arg = { url: d.downloadUrl };
     if(!arg){
       if(typeof showCloudBanner==='function') showCloudBanner('⚠ Not available offline — pin it for offline first.');
       return;
@@ -943,6 +968,11 @@ async function _docOpenPdf(d){
   try{
     const pdfjsLib = await _loadPdfjs();
     const src = await _docSource(d);
+    if(src.offline){
+      cleanup();
+      if(typeof showCloudBanner==='function') showCloudBanner('⚠ Not available offline — pin it for offline first.');
+      return;
+    }
     let params;
     if(src.blob){ params = { data: new Uint8Array(await src.blob.arrayBuffer()), ..._PDF_DOC_OPTS }; }
     else { params = { url: src.url, ..._PDF_DOC_OPTS }; }
@@ -991,6 +1021,11 @@ async function _docOpenImage(d){
   ov.addEventListener('click', e=>{ if(e.target===ov) cleanup(); });
   const img = document.getElementById('_dv-img');
   const src = await _docSource(d);
+  if(src.offline){
+    cleanup();
+    if(typeof showCloudBanner==='function') showCloudBanner('⚠ Not available offline — pin it for offline first.');
+    return;
+  }
   img.src = src.blob ? URL.createObjectURL(src.blob) : src.url;
 }
 
@@ -1036,6 +1071,9 @@ async function docToggleOffline(id){
         await idbKvSet(id, blob, _docBlobStore);
       }
       _docOfflineIds.add(id);
+      // #52: pin the METADATA too — the cold-offline docs page paints from the
+      // gl_docs:: cache; a pinned blob whose doc row isn't cached is invisible.
+      _docCacheDocs(); _docCacheFolders();
       if(window.glHaptic && window.glHaptic.success) window.glHaptic.success();
       if(typeof showCloudBanner==='function') showCloudBanner('✓ Saved for offline.');
     }catch(e){

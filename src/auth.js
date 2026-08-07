@@ -11,6 +11,7 @@ let _obTotalSlides = 12; // fallback — recomputed from the DOM at carousel ini
 // ═══════════════════════════════════════════
 
 async function obCheck() {
+  let unverifiable = false;
   try {
     const udb = _udb();
     if (udb) {
@@ -22,8 +23,21 @@ async function obCheck() {
         if (typeof glMaybeFirstRunSetup === 'function') glMaybeFirstRunSetup();
         return;
       }
+      // Doc definitively read and NOT complete → genuinely show onboarding.
+    } else {
+      unverifiable = true;
     }
-  } catch(e) {}
+  } catch(e) { unverifiable = true; }
+  // #52 fail-safe: a SIGNED-IN user whose onboarding doc can't be verified
+  // (cold-offline start, Firestore unreachable) must never be walled behind
+  // the full-screen onboarding overlay — it covers every page ("documents
+  // page wouldn't load at all"). A read FAILURE is not a "not onboarded"
+  // verdict; a brand-new account can't exist offline anyway (signup needs
+  // network), so proceeding into the app is always right here.
+  if (unverifiable && window._currentUser) {
+    initFirebaseLoad();
+    return;
+  }
   obShow();
 }
 
