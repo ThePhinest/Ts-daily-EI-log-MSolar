@@ -3140,16 +3140,21 @@ function _cdRenderStates(isLinear){
   // Per-state material shows when the category tracks material (area only); the plan
   // baseline has no material. Each state can be its own amendment (Lime/Fert/Seed).
   const showMat=!isLinear && !!document.getElementById('_cd-trackmat')?.checked;
-  // countMode picker shows only for running modes (it only affects those totals).
+  // countMode picker: running modes (disturbed total) AND per-state BMP categories
+  // (#53 — a "Removed" state that subtracts from the installed total; the plan
+  // denominator never changes). Labels adapt to what the sign means in each mode.
   const running=['running-balance','running-total'].includes(document.getElementById('_cd-progmode')?.value);
+  const cmOpts=running
+    ?[['add','＋ Adds (open disturbance)'],['subtract','－ Subtracts (stabilized)'],['none','· Track only (don’t count)']]
+    :[['add','＋ Counts toward plan'],['subtract','－ Removed (subtracts from installed)'],['none','· Track only (don’t count)']];
   // Two-line rows so the name field stays readable (single-line overflowed/squeezed it).
   wrap.innerHTML=_cdStates.map((s,i)=>{
     const col=/^#[0-9A-Fa-f]{6}$/.test(s.color)?s.color:'#888888';
-    const cmLine=(running && !s.isPlanned)?`
+    const cmLine=(!s.isPlanned)?`
       <div style="display:flex;align-items:center;gap:6px;margin-top:5px">
         <span style="font-family:var(--mono);font-size:10px;color:var(--muted);flex-shrink:0">counts as</span>
-        <select onchange="_cdSetStateCount(${i},this.value)" title="How this state affects the disturbed total" style="flex:1;min-width:0;${_INPUT_STYLE}">
-          ${[['add','＋ Adds (open disturbance)'],['subtract','－ Subtracts (stabilized)'],['none','· Track only (don’t count)']].map(([v,l])=>`<option value="${v}"${((s.countMode||'add')===v)?' selected':''}>${l}</option>`).join('')}
+        <select onchange="_cdSetStateCount(${i},this.value)" title="${running?'How this state affects the disturbed total':'How this state affects the installed total'}" style="flex:1;min-width:0;${_INPUT_STYLE}">
+          ${cmOpts.map(([v,l])=>`<option value="${v}"${((s.countMode||'add')===v)?' selected':''}>${l}</option>`).join('')}
         </select>
       </div>`:'';
     const matLine=(showMat && !s.isPlanned)?`
@@ -3178,7 +3183,16 @@ function _cdRenderStates(isLinear){
     </div>`;
   }).join('');
 }
-function _cdSetStateCount(i,v){ if(_cdStates[i]) _cdStates[i].countMode=v; }
+function _cdSetStateCount(i,v){
+  if(!_cdStates[i]) return;
+  _cdStates[i].countMode=v;
+  // #53 nicety: a freshly-marked Removed state defaults to dashed so removed
+  // spans read differently from live BMP on the map. Still editable.
+  if(v==='subtract'&&(!_cdStates[i].style||_cdStates[i].style==='solid')){
+    _cdStates[i].style='dashed';
+    _cdRenderStates(_cdIsLinear);
+  }
+}
 function _cdSetStateColor(i,v){ if(_cdStates[i]) _cdStates[i].color=v; }
 function _cdSetStateLabel(i,v){ if(_cdStates[i]) _cdStates[i].label=v; }
 function _cdSetStateStyle(i,v){ if(_cdStates[i]) _cdStates[i].style=v; }

@@ -1012,9 +1012,21 @@ function _catStateBars(cid, g, pid){
     </div>`;
   }
 
-  // per-state-vs-plan / simple-count: bar per state + overall
-  const rows=childStates.map(st=>{
-    const tot=stateTotal(st.id);
+  // per-state-vs-plan / simple-count: bar per state + overall.
+  // #53: subtract-marked states are REMOVALS — their footage deducts from the
+  // TERMINAL (installed) state's bar and the Overall %, and they get their own
+  // removal-progress row (removed vs gross installed — the closeout readout;
+  // ALL temporary BMPs eventually come out). The plan denominator never changes.
+  let remStates=childStates.filter((s,i)=>((typeof tcStateCountMode==='function')?tcStateCountMode(s,i,childStates,mode):'add')==='subtract');
+  let addStates=childStates.filter(s=>!remStates.includes(s));
+  if(!addStates.length){ addStates=childStates; remStates=[]; }  // all-subtract is nonsense — behave as before
+  const removedTotal=remStates.reduce((a,s)=>a+stateTotal(s.id),0);
+  const termState=addStates[addStates.length-1];
+  const grossTerm=stateTotal(termState.id);
+  const overRemoved=removedTotal>grossTerm;
+  const netOf=(st)=>(st===termState&&removedTotal>0)?Math.max(0,grossTerm-removedTotal):stateTotal(st.id);
+  const rows=addStates.map(st=>{
+    const tot=netOf(st);
     if(tot<=0 && planTotal<=0) return '';
     const pct=planTotal>0?Math.min(100,(tot/planTotal)*100):null;
     const col=(st.color&&/^#[0-9A-Fa-f]{6}$/.test(st.color))?st.color:'var(--amber)';
@@ -1025,21 +1037,34 @@ function _catStateBars(cid, g, pid){
       <div style="width:54px;height:4px;background:var(--border);border-radius:2px;overflow:hidden;flex-shrink:0"><div style="height:100%;width:${pct!=null?pct.toFixed(1):0}%;background:${col};border-radius:2px"></div></div>
     </div>`;
   }).filter(Boolean).join('');
-  if(!rows) return '';
+  // Removal row: removed vs GROSS installed (you can't remove what was never
+  // installed; plan includes BMP not yet built). ⚠ when removals exceed installed.
+  let remRow='';
+  if(remStates.length&&removedTotal>0){
+    const rpct=grossTerm>0?Math.min(100,(removedTotal/grossTerm)*100):null;
+    const rcol=(remStates[0].color&&/^#[0-9A-Fa-f]{6}$/.test(remStates[0].color))?remStates[0].color:'#8E9BA3';
+    remRow=`<div style="display:flex;align-items:center;gap:6px;margin-bottom:3px">
+      <span style="width:8px;height:8px;border-radius:2px;background:${rcol};flex-shrink:0"></span>
+      <span style="font-family:var(--mono);font-size:9px;color:var(--muted);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">− Removed: ${fmt(removedTotal)}${grossTerm>0?` / ${fmt(grossTerm)} installed`:''}${overRemoved?' ⚠ exceeds installed':''}</span>
+      ${rpct!=null?`<span style="font-family:var(--mono);font-size:9px;color:${overRemoved?'#e74c3c':rcol};flex-shrink:0">${rpct.toFixed(0)}%</span>`:''}
+      <div style="width:54px;height:4px;background:var(--border);border-radius:2px;overflow:hidden;flex-shrink:0"><div style="height:100%;width:${rpct!=null?rpct.toFixed(1):0}%;background:${overRemoved?'#e74c3c':rcol};border-radius:2px"></div></div>
+    </div>`;
+  }
+  if(!rows&&!remRow) return '';
   let overall='';
   if(planTotal>0){
     const overMode=(typeof tcOverallMode==='function')?tcOverallMode(cid,pid):'terminal';
     let opct;
     if(overMode==='average'){
-      const ps=childStates.map(st=>Math.min(100,(stateTotal(st.id)/planTotal)*100));
+      const ps=addStates.map(st=>Math.min(100,(netOf(st)/planTotal)*100));
       opct=ps.length?ps.reduce((a,b)=>a+b,0)/ps.length:0;
     } else {
-      opct=Math.min(100,(stateTotal(childStates[childStates.length-1].id)/planTotal)*100);
+      opct=Math.min(100,(netOf(termState)/planTotal)*100);
     }
     const ocol=opct>=100?'var(--green)':'var(--amber)';
     overall=`<div style="display:flex;justify-content:space-between;font-family:var(--mono);font-size:9px;color:var(--text);margin-top:4px;padding-top:4px;border-top:1px solid var(--border)"><span>Overall complete</span><span style="color:${ocol};font-weight:700">${opct.toFixed(0)}%</span></div>`;
   }
-  return `<div style="padding:6px 16px 8px;background:var(--s1)">${rows}${overall}</div>`;
+  return `<div style="padding:6px 16px 8px;background:var(--s1)">${rows}${remRow}${overall}</div>`;
 }
 
 // ── Tracker Log modal ── full searchable database of all tracker entries
@@ -1539,6 +1564,48 @@ function _tlogLightenHex(hex, t){
   }).join('');
 }
 
+// #53: Removal — Summary front tab. The whole-project decommissioning overview:
+// one row per BMP category with removals (gross installed, removed, %, net in
+// ground). Units stay per-category (ft vs ac) so there's no cross-unit total.
+function _removalSummarySheet(wb, rows, pid){
+  const TEAL='006B75', WHITE='FFFFFF';
+  const ws=wb.addWorksheet('Removal — Summary');
+  ws.columns=[{width:30},{width:18},{width:16},{width:13},{width:18}];
+  ws.addRow(['BMP REMOVAL — SUMMARY']); ws.mergeCells(1,1,1,5);
+  const tc=ws.getCell('A1');
+  tc.font={name:'Calibri',bold:true,size:18,color:{argb:WHITE}};
+  tc.fill={type:'pattern',pattern:'solid',fgColor:{argb:'5D6D7E'}};
+  tc.alignment={vertical:'middle',horizontal:'left',indent:1}; ws.getRow(1).height=34;
+  const cfg=JSON.parse(localStorage.getItem('msf_projectconfig')||'{}');
+  [['Project',cfg.projectName||''],['Snapshot date',new Date().toLocaleDateString('en-CA')]].forEach(([l,v])=>{
+    const r=ws.addRow([l,v]); ws.mergeCells(r.number,2,r.number,5);
+    r.getCell(1).font={name:'Consolas',size:9,bold:true,color:{argb:'FF'+TEAL}};
+    r.getCell(2).font={name:'Calibri',size:10}; r.height=15;
+  });
+  ws.addRow([]);
+  const hdr=ws.addRow(['Category','Installed (gross)','Removed','% Removed','In ground (net)']);
+  hdr.eachCell({includeEmpty:true},c=>{ c.font={bold:true,size:10,color:{argb:WHITE}}; c.fill={type:'pattern',pattern:'solid',fgColor:{argb:TEAL}}; });
+  hdr.height=18;
+  rows.forEach(x=>{
+    const fmt=(v)=>(typeof tcFormatMeasurement==='function')?tcFormatMeasurement(v,x.defUnit):`${(v||0).toFixed(0)} ${x.defUnit}`;
+    const pct=x.grossTerm>0?Math.round((x.removedTotal/x.grossTerm)*100):null;
+    const over=x.removedTotal>x.grossTerm;
+    const r=ws.addRow([x.name, fmt(x.grossTerm), '− '+fmt(x.removedTotal), pct!=null?pct:'', fmt(x.net)]);
+    r.getCell(1).font={name:'Calibri',size:11,bold:true};
+    r.getCell(3).font={name:'Calibri',size:11,bold:true,color:{argb:'FFC0392B'}};
+    r.getCell(5).font={name:'Calibri',size:11,bold:true,color:{argb:'FF006B75'}};
+    if(pct!=null){
+      r.getCell(4).numFmt='0"%"';
+      r.getCell(4).font={name:'Calibri',size:11,bold:true,color:{argb:over?'FFC0392B':'FF5D6D7E'}};
+      ws.addConditionalFormatting({ ref:`D${r.number}`, rules:[{type:'dataBar',cfvo:[{type:'num',value:0},{type:'num',value:100}],color:{argb:over?'FFC0392B':'FF5D6D7E'}}] });
+    }
+    r.height=20;
+  });
+  const note=ws.addRow(['ℹ  Full removal records (dates, locations, notes) are in each category\'s REMOVED section.']);
+  ws.mergeCells(note.number,1,note.number,5);
+  note.getCell(1).font={italic:true,size:9,color:{argb:'FF666666'}}; note.height=18;
+}
+
 // Build + download ONE report workbook for one OR MORE selections — a tab per selection.
 // Selections are {cid, seedOnly}: seedOnly → the gold-standard seeding-on-stabilization
 // tab alone; otherwise the tab branches on progress mode (running → SWPPP net-disturbed
@@ -1562,6 +1629,19 @@ async function _exportCategoriesDeliverable(sels, entries, pid){
   // stay on the source tabs).
   const seedSrcs=meta.filter(m=>m.isSeeding);
   if(seedSrcs.length>=2) await _allSeedingSummarySheet(wb, seedSrcs, entries, pid);
+  // #53: removal overview front tab — the project-wide decommissioning picture,
+  // when 2+ tabs are exported and any selected BMP has removals recorded.
+  // (A single-category export already carries its own REMOVED section.)
+  if(meta.length>=2){
+    const remRows=[];
+    for(const m of meta){
+      if(m.seedOnly||m.isRunning) continue;
+      const ri=_catRemovalInfo(m.cid, entries, pid);
+      if(ri&&ri.remStates.length&&ri.removedTotal>0)
+        remRows.push({ name:(typeof tcGetName==='function')?tcGetName(m.cid,pid):'BMP', ...ri });
+    }
+    if(remRows.length) _removalSummarySheet(wb, remRows, pid);
+  }
   for(const m of meta){
     if(m.seedOnly) await _stabSeedingSheet(wb, m.cid, entries, pid);
     else if(m.isRunning) await _disturbanceSheet(wb, m.cid, entries, pid);
@@ -2363,6 +2443,32 @@ async function _embedStatusCapRows(ws, wb, caps, NC, lblFor, fillArgb){
   }
 }
 
+// #53: removal picture for a per-state category — subtract-marked states are
+// removals; gross installed = the terminal add state's total (you can't remove
+// what was never installed). Shared by the BMP sheet + the removal summary tab.
+function _catRemovalInfo(cid, allEntries, pid){
+  const cat=(typeof tcGetCategory==='function')?tcGetCategory(cid,pid):null;
+  if(!cat) return null;
+  const defUnit=(typeof tcGetDefaultUnit==='function')?tcGetDefaultUnit(cid,pid):'ft';
+  const mode=(typeof tcProgressMode==='function')?tcProgressMode(cid,pid):'per-state-vs-plan';
+  const states=(typeof tcGetStates==='function')?tcGetStates(cat,pid):[];
+  const childStates=states.filter(s=>!s.isPlanned);
+  let remStates=childStates.filter((s,i)=>((typeof tcStateCountMode==='function')?tcStateCountMode(s,i,childStates,mode):'add')==='subtract');
+  let addStates=childStates.filter(s=>!remStates.includes(s));
+  if(!addStates.length){ addStates=childStates; remStates=[]; }
+  const dcs=(typeof tcDefaultChildState==='function')?tcDefaultChildState(cat,pid):null;
+  const measure=(e)=>(typeof trEntryMeasure==='function')?trEntryMeasure(e,defUnit,pid):0;
+  const stOf=(e)=>e.state||(dcs?dcs.id:null);
+  const installed=allEntries.filter(e=>(e.categoryId===cid)&&e.entryType!=='planned'&&!e.temporary&&!e.deletedAt);
+  const remIds=new Set(remStates.map(s=>s.id));
+  const removedEntries=installed.filter(e=>remIds.has(stOf(e)));
+  const removedTotal=removedEntries.reduce((a,e)=>a+measure(e),0);
+  const termState=addStates[addStates.length-1]||null;
+  const grossTerm=termState?installed.filter(e=>stOf(e)===termState.id).reduce((a,e)=>a+measure(e),0):0;
+  return { remStates, addStates, removedEntries, removedTotal, grossTerm,
+           net:Math.max(0,grossTerm-removedTotal), defUnit };
+}
+
 // Linear-BMP deliverable sheet (silt fence & friends) — installed ft vs the plan per
 // state, a 🚩 punchlist section (open repair flags w/ field photos + fixed history),
 // and the itemized drawings with inline captures. The contractor-facing read: WHERE
@@ -2423,7 +2529,10 @@ async function _linearSheet(wb, cid, allEntries, pid){
   const hdr=ws.addRow(['','State','Length','% of Plan']);
   hdr.eachCell({includeEmpty:true},c=>{ c.font={bold:true,size:10,color:{argb:WHITE}}; c.fill={type:'pattern',pattern:'solid',fgColor:{argb:TEAL}}; });
   hdr.height=18;
-  childStates.forEach(s=>{
+  // #53: removal-aware summary — add-state rows stay GROSS, then the explicit
+  // arithmetic (− Removed → In ground net) so the deduction is visible evidence.
+  const ri=_catRemovalInfo(cid, allEntries, pid)||{remStates:[],addStates:childStates,removedEntries:[],removedTotal:0,grossTerm:0,net:0};
+  ri.addStates.forEach(s=>{
     const tot=installed.filter(e=>stOf(e)===s.id).reduce((a,e)=>a+measure(e),0);
     const pct=planTotal>0?(tot/planTotal)*100:null;
     const r=ws.addRow(['', s.label, fmt(tot), pct!=null?Math.round(pct):'' ]);
@@ -2440,6 +2549,24 @@ async function _linearSheet(wb, cid, allEntries, pid){
     r.height=20;
   });
   if(!childStates.length){ const r=ws.addRow(['','—','No states defined']); r.getCell(3).font={italic:true,size:10,color:{argb:'FF999999'}}; }
+  if(ri.remStates.length&&ri.removedTotal>0){
+    const over=ri.removedTotal>ri.grossTerm;
+    const rr=ws.addRow(['','Removed (to date)','− '+fmt(ri.removedTotal),
+      ri.grossTerm>0?`${Math.round((ri.removedTotal/ri.grossTerm)*100)}% of installed${over?' ⚠':''}`:'' ]);
+    rr.getCell(2).font={name:'Calibri',size:11,bold:true,color:{argb:'FFC0392B'}};
+    rr.getCell(3).font={name:'Calibri',size:11,bold:true,color:{argb:'FFC0392B'}};
+    rr.getCell(4).font={name:'Calibri',size:10,color:{argb:over?'FFC0392B':'FF555555'}};
+    rr.height=20;
+    const nr=ws.addRow(['','In ground (net)', fmt(ri.net), planTotal>0?Math.round((ri.net/planTotal)*100):'' ]);
+    nr.getCell(2).font={bold:true,size:12};
+    nr.getCell(3).font={bold:true,size:12,color:{argb:'FF006B75'}};
+    nr.getCell(4).font={bold:true,size:12};
+    if(planTotal>0){
+      nr.getCell(4).numFmt='0"%"';
+      ws.addConditionalFormatting({ ref:`D${nr.number}`, rules:[{type:'dataBar',cfvo:[{type:'num',value:0},{type:'num',value:100}],color:{argb:'FF006B75'}}] });
+    }
+    nr.height=22;
+  }
   // Planned total — banded headline (the denominator).
   const pr=ws.addRow(['','Planned (total)', fmt(planTotal)]);
   pr.getCell(2).font={bold:true,size:14}; pr.getCell(3).font={bold:true,size:14,color:{argb:'FF006B75'}};
@@ -2488,6 +2615,37 @@ async function _linearSheet(wb, cid, allEntries, pid){
     });
   }
   ws.addRow([]);
+
+  // ── ⛏ Removed — decommissioning record (#53) ── only when the category has
+  // a removal state. Photos stay in Itemized Drawings (no double-embedding).
+  if(ri.remStates.length){
+    const rh2=ws.addRow([`⛏ REMOVED — ${ri.removedEntries.length}`]); ws.mergeCells(rh2.number,1,rh2.number,NC);
+    rh2.getCell(1).font={bold:true,size:15,color:{argb:WHITE}};
+    rh2.getCell(1).fill={type:'pattern',pattern:'solid',fgColor:{argb:'5D6D7E'}};
+    rh2.getCell(1).alignment={vertical:'middle',horizontal:'left',indent:1}; rh2.height=28;
+    if(ri.removedEntries.length){
+      const rhd=ws.addRow(['Date','State','Length','Location','Notes','Photos','Contractor']);
+      rhd.eachCell({includeEmpty:true},c=>{ c.font={bold:true,size:10,color:{argb:WHITE}}; c.fill={type:'pattern',pattern:'solid',fgColor:{argb:TEAL}}; });
+      rhd.height=18;
+      const remById={}; ri.remStates.forEach(s=>remById[s.id]=s);
+      ri.removedEntries.slice().sort((a,b)=>String(a.date||'').localeCompare(String(b.date||''))).forEach(e=>{
+        const s=remById[stOf(e)];
+        const r=ws.addRow([e.date||'', s?s.label:'Removed', '− '+fmt(measure(e)), e.location||'', e.notes||'', Array.isArray(e.photoIds)?e.photoIds.length:'', e.contractor||'']);
+        r.eachCell({includeEmpty:true},c=>{ c.font={name:'Calibri',size:11}; c.alignment={vertical:'top',wrapText:true}; });
+        r.getCell(3).font={name:'Calibri',size:11,bold:true,color:{argb:'FFC0392B'}};
+        r.height=18;
+      });
+      const rt=ws.addRow(['','Removed total','− '+fmt(ri.removedTotal), ri.grossTerm>0?`of ${fmt(ri.grossTerm)} installed (${Math.round((ri.removedTotal/ri.grossTerm)*100)}%)`:'' ]);
+      rt.getCell(2).font={bold:true,size:11};
+      rt.getCell(3).font={bold:true,size:11,color:{argb:'FFC0392B'}};
+      rt.getCell(4).font={name:'Calibri',size:10,color:{argb:'FF555555'}};
+      rt.height=20;
+    } else {
+      const r=ws.addRow(['','Nothing removed yet.']);
+      r.getCell(2).font={italic:true,size:10,color:{argb:'FF999999'}};
+    }
+    ws.addRow([]);
+  }
 
   // ── Itemized drawings ──
   const ih=ws.addRow(['Itemized Drawings']); ws.mergeCells(ih.number,1,ih.number,NC);
