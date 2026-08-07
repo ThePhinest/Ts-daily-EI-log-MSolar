@@ -1800,10 +1800,12 @@ function mapUpdateKmlLayerList(){
         gh.querySelector(`#${dfid}-cb`).addEventListener('click',function(ev){
           ev.stopPropagation();
           const on=this.checked;
-          g.forEach(e=>{ if(typeof trSetMapVisibility==='function') trSetMapVisibility(e.id,on,_trPid); });
-          mapRenderTrackerLayers();
+          // #57: one blob write + chunked cloud batches — the per-entry loop
+          // re-parsed and re-serialized the ENTIRE tracker blob per drawing.
+          if(typeof trSetMapVisibilityBulk==='function') trSetMapVisibilityBulk(g.map(e=>e.id),on,_trPid);
+          else g.forEach(e=>{ if(typeof trSetMapVisibility==='function') trSetMapVisibility(e.id,on,_trPid); });
+          _trRefreshCatSources([cat.id]);
           mapUpdateKmlLayerList();
-          if(typeof mapRefreshDateLabels==='function') mapRefreshDateLabels();
         });
         gw.appendChild(gh); gw.appendChild(gk); kids.appendChild(gw);
       });
@@ -2301,12 +2303,12 @@ function mapTcFolderSetVisibility(fname, visible){
   const map=_getTcFolderMap(pid);
   const catIds=Object.keys(map).filter(k=>map[k]===fname);
   const entries=(typeof trGetEntriesForProject==='function')?trGetEntriesForProject(pid):[];
-  catIds.forEach(catId=>{
-    entries.filter(e=>e.categoryId===catId).forEach(e=>{
-      if(typeof trSetMapVisibility==='function') trSetMapVisibility(e.id,visible,pid);
-    });
-  });
-  mapRenderTrackerLayers();
+  const ids=entries.filter(e=>catIds.includes(e.categoryId)).map(e=>e.id);
+  // #57: one blob write + chunked cloud batches instead of a full-blob rewrite
+  // and an individual Firestore write per entry.
+  if(typeof trSetMapVisibilityBulk==='function') trSetMapVisibilityBulk(ids,visible,pid);
+  else ids.forEach(id=>{ if(typeof trSetMapVisibility==='function') trSetMapVisibility(id,visible,pid); });
+  _trRefreshCatSources(catIds);
   mapUpdateKmlLayerList();
 }
 
@@ -3009,10 +3011,12 @@ function _renderTrackerSheet(){
 }
 
 function mapTrackerToggleLayer(catId){
-  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
   _tcLayerVisible[catId]=(_tcLayerVisible[catId]===false)?true:false;
   _renderTrackerSheet();
-  mapRenderTrackerLayers();
+  // #57: refresh ONLY this category's source — the old full re-render rebuilt
+  // every category + the disturbance net clip + all ~90 layers per toggle, and
+  // that allocation spike jetsam-killed WKWebView on linework-heavy projects.
+  _trRefreshCatSources([catId]);
 }
 function mapMoveCatLayerOrder(catId, dir){
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
@@ -6473,6 +6477,94 @@ function _showHighlightChip(){
 }
 function _hideHighlightChip(){ const c=document.getElementById('_gl-highlight-chip'); if(c) c.remove(); }
 
+// The entries eligible to render at all (soft-deleted / archived / mid-reshape /
+// flag-toggle-hidden drop here) — shared by the full render and the
+// single-category refresh so the two paths can never disagree (#57).
+function _trRenderableEntries(pid){
+  // Repair flags honor the FAB visibility toggle (open temporaries only — resolved
+  // ones are archived and never reach the map anyway).
+  const _flagsOn=_flagsEffVisible();
+  return (typeof trGetEntriesForProject==='function')?trGetEntriesForProject(pid).filter(e=>!e.deletedFromMap&&!e.archivedFromMap&&(!_shapeEdit||e.id!==_shapeEdit.id)&&(_flagsOn||!(e.temporary&&e.tempStatus!=='resolved'))):[];
+}
+
+// Build ONE category's render FeatureCollection — the ● visibility flag, capture
+// solo filters, running-mode net clip, and per-state render props all live here.
+// Shared by the full render loop and _trRefreshCatSources (#57: a visibility
+// toggle must never rebuild every category — that full-map re-render spike is
+// what jetsam-killed WKWebView on hide).
+function _trackerCatGeojson(cat,catRaw,pid){
+  const color=cat.color||'#888';
+  const visible=_tcLayerVisible[cat.id]!==false;
+  const catEntries=visible?_distCapEntries(_seedCapEntries(_escCapEntries(catRaw,cat,pid),cat,pid),cat,pid):[];
+  // Running-mode categories (SWPPP disturbance): later-drawn work covers earlier
+  // work, so stacked translucent fills alpha-blend (yellow over red reads orange —
+  // colliding with a real orange state). Render fills AND outlines from the NET
+  // geometry (each drawing minus later drawings, same chronological clip as the
+  // totals) so every overlap region shows ONLY the top drawing's color and no
+  // covered border cuts through it (#41). Planned entries and open repair flags
+  // aren't clipped.
+  const _mode=(typeof tcProgressMode==='function')?tcProgressMode(cat,pid):'';
+  let _netGeoms=null;
+  if((_mode==='running-balance'||_mode==='running-total')&&typeof glEntryNetGeoms==='function'){
+    const clipList=catEntries.filter(e=>{
+      if(e.temporary&&e.tempStatus!=='resolved') return false;
+      const st=(typeof tcEntryState==='function')?tcEntryState(e,cat,pid):null;
+      return !(st?!!st.isPlanned:(e.entryType==='planned'));
+    });
+    try{ _netGeoms=glEntryNetGeoms(clipList); }catch(err){ console.warn('net-geom clip failed, falling back to raw fills:', err); }
+  }
+  return {type:'FeatureCollection',features:catEntries.flatMap(e=>{
+    // Per-state render props: stateColor drives fill/line color; faint = plan baseline.
+    // Open repair flags render attention-amber regardless of state colors.
+    const _openTemp=!!(e.temporary&&e.tempStatus!=='resolved');
+    const st=(typeof tcEntryState==='function')?tcEntryState(e,cat,pid):null;
+    const faint=_openTemp?false:(st?!!st.isPlanned:(e.entryType==='planned'));
+    const stateColor=_openTemp?'#C9A84C':((st&&/^#[0-9A-Fa-f]{6}$/.test(st.color))?st.color:color);
+    // Per-state line style for the data-driven dasharray (schema editor's Style
+    // dropdown); falls back to the category-level lineStyle.
+    const stateStyle=_openTemp?'solid':((st&&st.style)||cat.lineStyle||'solid');
+    const props={id:e.id,categoryId:e.categoryId||e.category,categoryName:e.categoryName||e.category,date:e.date,acres:e.acres,measurementValue:e.measurementValue??null,measurementUnit:e.measurementUnit||null,notes:e.notes,location:e.location,phase:e.phase||null,method:e.method||null,status:e.status||null,contractor:e.contractor||null,entryType:e.entryType||'installed',state:e.state||null,stateColor,stateStyle,faint,temporary:!!(e.temporary&&e.tempStatus!=='resolved')};
+    const base={type:'Feature',id:e.id,properties:props,geometry:e.geometry};
+    // Net-clipped twin: carries BOTH the clipped fill and the clipped outline
+    // (#41 — Tim: covered stretches of an older drawing's border must not cut
+    // through the top state's fill). The full-extent base feature renders
+    // nothing in running categories; a fully-covered drawing disappears from
+    // the map entirely (still in the tracker log) and the tap target is the
+    // visible region only.
+    if(_netGeoms&&Object.prototype.hasOwnProperty.call(_netGeoms,e.id)){
+      base.properties=Object.assign({},props,{_noFill:true,_noLine:true});
+      const net=_netGeoms[e.id];
+      if(!net) return [base];
+      return [base,{type:'Feature',id:e.id,properties:Object.assign({},props,{_netFill:true}),geometry:net}];
+    }
+    return [base];
+  })};
+}
+
+// #57: refresh specific categories' sources IN PLACE — setData only; layers,
+// stacking order, and every other category untouched. Falls back to the full
+// render when a target source/layer doesn't exist yet (never-rendered category).
+function _trRefreshCatSources(catIds){
+  if(!_mapInstance) return;
+  if(!_mapInstance.isStyleLoaded()){ _queueOnIdle(mapRenderTrackerLayers); return; }
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const all=_trRenderableEntries(pid);
+  let needFull=false;
+  (catIds||[]).forEach(cid=>{
+    const cat=(typeof tcGetCategory==='function')?tcGetCategory(cid,pid):null;
+    const src='tracker-'+cid;
+    if(!cat||!_mapInstance.getSource(src)||!_mapInstance.getLayer(src+'-fill')){ needFull=true; return; }
+    const catRaw=all.filter(e=>((e.categoryId||e.category)===cid)&&e.geometry);
+    _ensureCategoryPatternImages([cat]);
+    _mapInstance.getSource(src).setData(_trackerCatGeojson(cat,catRaw,pid));
+  });
+  if(needFull){ mapRenderTrackerLayers(); return; }
+  mapRefreshDateLabels();
+  // Same safety net as the full render: setData can transiently flip
+  // isStyleLoaded() false, self-aborting the label refresh above.
+  if(!_mapInstance.isStyleLoaded()) _mapInstance.once('idle',mapRefreshDateLabels);
+}
+
 function mapRenderTrackerLayers(){
   if(!_mapInstance) return;
   // THE 7/30 field bug: a reshape/entry save re-renders through here, and under
@@ -6553,10 +6645,7 @@ function mapRenderTrackerLayers(){
   }
 
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
-  // Repair flags honor the FAB visibility toggle (open temporaries only — resolved
-  // ones are archived and never reach the map anyway).
-  const _flagsOn=_flagsEffVisible();
-  const entries=(typeof trGetEntriesForProject==='function')?trGetEntriesForProject(pid).filter(e=>!e.deletedFromMap&&!e.archivedFromMap&&(!_shapeEdit||e.id!==_shapeEdit.id)&&(_flagsOn||!(e.temporary&&e.tempStatus!=='resolved'))):[];
+  const entries=_trRenderableEntries(pid);
   const cats=_sortCatsByOrder((typeof tcGetCategories==='function')?tcGetCategories(pid):[],pid);
 
   const byCategory={};
@@ -6572,53 +6661,7 @@ function mapRenderTrackerLayers(){
   const _rtPid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
   cats.forEach(cat=>{
     const src='tracker-'+cat.id;
-    const color=cat.color||'#888';
-    const visible=_tcLayerVisible[cat.id]!==false;
-    const catEntries=visible?_distCapEntries(_seedCapEntries(_escCapEntries(byCategory[cat.id],cat,_rtPid),cat,_rtPid),cat,_rtPid):[];
-    // Running-mode categories (SWPPP disturbance): later-drawn work covers earlier
-    // work, so stacked translucent fills alpha-blend (yellow over red reads orange —
-    // colliding with a real orange state). Render fills AND outlines from the NET
-    // geometry (each drawing minus later drawings, same chronological clip as the
-    // totals) so every overlap region shows ONLY the top drawing's color and no
-    // covered border cuts through it (#41). Planned entries and open repair flags
-    // aren't clipped.
-    const _mode=(typeof tcProgressMode==='function')?tcProgressMode(cat,_rtPid):'';
-    let _netGeoms=null;
-    if((_mode==='running-balance'||_mode==='running-total')&&typeof glEntryNetGeoms==='function'){
-      const clipList=catEntries.filter(e=>{
-        if(e.temporary&&e.tempStatus!=='resolved') return false;
-        const st=(typeof tcEntryState==='function')?tcEntryState(e,cat,_rtPid):null;
-        return !(st?!!st.isPlanned:(e.entryType==='planned'));
-      });
-      try{ _netGeoms=glEntryNetGeoms(clipList); }catch(err){ console.warn('net-geom clip failed, falling back to raw fills:', err); }
-    }
-    const geojson={type:'FeatureCollection',features:catEntries.flatMap(e=>{
-      // Per-state render props: stateColor drives fill/line color; faint = plan baseline.
-      // Open repair flags render attention-amber regardless of state colors.
-      const _openTemp=!!(e.temporary&&e.tempStatus!=='resolved');
-      const st=(typeof tcEntryState==='function')?tcEntryState(e,cat,_rtPid):null;
-      const faint=_openTemp?false:(st?!!st.isPlanned:(e.entryType==='planned'));
-      const stateColor=_openTemp?'#C9A84C':((st&&/^#[0-9A-Fa-f]{6}$/.test(st.color))?st.color:color);
-      // Per-state line style for the data-driven dasharray (schema editor's Style
-      // dropdown); falls back to the category-level lineStyle.
-      const stateStyle=_openTemp?'solid':((st&&st.style)||cat.lineStyle||'solid');
-      const props={id:e.id,categoryId:e.categoryId||e.category,categoryName:e.categoryName||e.category,date:e.date,acres:e.acres,measurementValue:e.measurementValue??null,measurementUnit:e.measurementUnit||null,notes:e.notes,location:e.location,phase:e.phase||null,method:e.method||null,status:e.status||null,contractor:e.contractor||null,entryType:e.entryType||'installed',state:e.state||null,stateColor,stateStyle,faint,temporary:!!(e.temporary&&e.tempStatus!=='resolved')};
-      const base={type:'Feature',id:e.id,properties:props,geometry:e.geometry};
-      // Net-clipped twin: carries BOTH the clipped fill and the clipped outline
-      // (#41 — Tim: covered stretches of an older drawing's border must not cut
-      // through the top state's fill). The full-extent base feature renders
-      // nothing in running categories; a fully-covered drawing disappears from
-      // the map entirely (still in the tracker log) and the tap target is the
-      // visible region only.
-      if(_netGeoms&&Object.prototype.hasOwnProperty.call(_netGeoms,e.id)){
-        base.properties=Object.assign({},props,{_noFill:true,_noLine:true});
-        const net=_netGeoms[e.id];
-        if(!net) return [base];
-        return [base,{type:'Feature',id:e.id,properties:Object.assign({},props,{_netFill:true}),geometry:net}];
-      }
-      return [base];
-    })};
-
+    const geojson=_trackerCatGeojson(cat,byCategory[cat.id]||[],_rtPid);
     _ensureCategoryPatternImages([cat]);
     if(_mapInstance.getSource(src)){
       _mapInstance.getSource(src).setData(geojson);
@@ -7303,27 +7346,35 @@ function mapTrackerCalcInsert(){
   const line=`${rate} ${unit} × ${acres} ac = ${total} ${unit.split('/')[0]}`;
   notesEl.value=notesEl.value?(notesEl.value+'\n'+line):line;
 }
+// #57: single-entry map changes refresh only that entry's category source.
+function _trEntryCatId(entryId,pid){
+  const e=(typeof trGetEntry==='function')?trGetEntry(entryId,pid):null;
+  return e?(e.categoryId||e.category):null;
+}
 function mapDeleteTrackerEntry(entryId){
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const cid=_trEntryCatId(entryId,pid);
   if(typeof trMarkDeletedFromMap==='function') trMarkDeletedFromMap(entryId,pid);
   if(_trackerPopup){_trackerPopup.remove();_trackerPopup=null;}
-  mapRenderTrackerLayers();
+  if(cid) _trRefreshCatSources([cid]); else mapRenderTrackerLayers();
   mapUpdateKmlLayerList();
   if(typeof clRenderTrackerCard==='function') clRenderTrackerCard();
 }
 function mapToggleTrackerEntryVisibility(entryId, visible){
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const cid=_trEntryCatId(entryId,pid);
   if(typeof trSetMapVisibility==='function') trSetMapVisibility(entryId,visible,pid);
-  mapRenderTrackerLayers();
+  if(cid) _trRefreshCatSources([cid]); else mapRenderTrackerLayers();
   mapUpdateKmlLayerList();
 }
 function mapToggleTrackerCategoryVisibility(catId, visible){
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
   const entries=(typeof trGetEntriesForProject==='function')?trGetEntriesForProject(pid):[];
-  entries.filter(e=>e.categoryId===catId).forEach(e=>{
-    if(typeof trSetMapVisibility==='function') trSetMapVisibility(e.id,visible,pid);
-  });
-  mapRenderTrackerLayers();
+  const ids=entries.filter(e=>e.categoryId===catId).map(e=>e.id);
+  // #57: one blob write + chunked cloud batches instead of per-entry rewrites.
+  if(typeof trSetMapVisibilityBulk==='function') trSetMapVisibilityBulk(ids,visible,pid);
+  else ids.forEach(id=>{ if(typeof trSetMapVisibility==='function') trSetMapVisibility(id,visible,pid); });
+  _trRefreshCatSources([catId]);
   mapUpdateKmlLayerList();
 }
 function mapDeleteTrackerEntryFromPanel(entryId){
@@ -7352,14 +7403,16 @@ function mapDeleteTrackerEntryFromPanel(entryId){
   const _closePopup=()=>{if(_trackerPopup){_trackerPopup.remove();_trackerPopup=null;}};
   document.getElementById('_trpHide').onclick=()=>{
     ov.remove(); _closePopup();
+    const cid=_trEntryCatId(entryId,pid);
     if(typeof trMarkDeletedFromMap==='function') trMarkDeletedFromMap(entryId,pid);
-    mapRenderTrackerLayers();
+    if(cid) _trRefreshCatSources([cid]); else mapRenderTrackerLayers();
     mapUpdateKmlLayerList();
   };
   document.getElementById('_trpArchive').onclick=()=>{
     ov.remove(); _closePopup();
+    const cid=_trEntryCatId(entryId,pid);
     if(typeof trArchiveFromMap==='function') trArchiveFromMap(entryId,pid);
-    mapRenderTrackerLayers();
+    if(cid) _trRefreshCatSources([cid]); else mapRenderTrackerLayers();
     mapUpdateKmlLayerList();
   };
   document.getElementById('_trpDel').onclick=()=>{

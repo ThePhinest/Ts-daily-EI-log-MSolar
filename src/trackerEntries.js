@@ -241,6 +241,40 @@ function trSetMapVisibility(entryId, visible, projectId){
   return true;
 }
 
+// Bulk map-visibility flip (#57): folder checkboxes toggle hundreds of entries at
+// once, and the per-entry path re-parses + re-serializes the ENTIRE tracker blob
+// per entry (N full-blob rewrites + N individual Firestore writes) — enough
+// transient allocation to jetsam-kill WKWebView on big categories. One load, one
+// save, chunked batches — the trSetPublished shape.
+function trSetMapVisibilityBulk(entryIds, visible, projectId){
+  const pid = projectId || ((typeof _activeProjectId === 'function') ? _activeProjectId() : 'default');
+  const ids = new Set(Array.isArray(entryIds) ? entryIds : [entryIds]);
+  const data = _trLoadRaw(pid);
+  const ts = Date.now();
+  const touched = [];
+  data.entries.forEach(e => {
+    if(!ids.has(e.id)) return;
+    if(!!e.deletedFromMap === !visible) return; // already in the desired state
+    e.deletedFromMap = !visible;
+    e.updatedAt = ts;
+    touched.push(e);
+  });
+  if(!touched.length) return 0;
+  _trSaveRaw(pid, data);
+  const cloud = touched.filter(e => !_trForeign(e));
+  if(cloud.length && _trCloudOk(pid)){
+    (async () => {
+      const ref = _projData(pid).collection('trackerEntries');
+      for(let i = 0; i < cloud.length; i += 400){
+        const batch = db.batch();
+        cloud.slice(i, i + 400).forEach(e => batch.set(ref.doc(e.id), _trToFs(e)));
+        await batch.commit().catch(e => console.warn('trSetMapVisibilityBulk:', e.message));
+      }
+    })();
+  }
+  return touched.length;
+}
+
 // Assign/clear the entry's drawing folder (panel sub-grouping within its
 // category — "LD1", "LD6", … ; Tim 8/2). Empty/null folder = ungrouped.
 // Same persist pattern as trSetMapVisibility.
@@ -665,6 +699,7 @@ if(typeof window !== 'undefined'){
   window.trMarkDeletedFromMap = trMarkDeletedFromMap;
   window.trArchiveFromMap = trArchiveFromMap;
   window.trSetMapVisibility = trSetMapVisibility;
+  window.trSetMapVisibilityBulk = trSetMapVisibilityBulk;
   window.trGetEntriesForDate = trGetEntriesForDate;
   window.trGetEntriesForCategory = trGetEntriesForCategory;
   window.trGetChildEntries = trGetChildEntries;
