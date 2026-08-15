@@ -782,8 +782,10 @@ async function phOpenLightbox(id, listIds){
   _phLbList = (Array.isArray(listIds) && listIds.length) ? listIds.slice() : _phFilteredSorted().map(p=>p.id);
   _phLbIndex = _phLbList.indexOf(id);
   if(_phLbIndex < 0){ _phLbList = [id]; _phLbIndex = 0; } // opened on a photo outside the current filter
-  document.getElementById('ph-lightbox').classList.remove('hidden');
+  const lb = document.getElementById('ph-lightbox');
+  lb.classList.remove('hidden','sheet-open','chrome-hide');   // always open CLEAN (Tim 8/15)
   _phBindCaptionLive();
+  _phLbBindGestures();
   await _phLbShow(_phLbIndex);
 }
 
@@ -844,6 +846,8 @@ async function _phLbShow(index){
   if(locRow) locRow.style.display = isCam ? 'flex' : 'none';
   if(locInp){ locInp.value = p.locLabel||''; locInp.readOnly = !own; }
   document.querySelectorAll('.ph-lb-hist').forEach(el=>el.remove()); // stale ＋ list from the prior photo
+  _phLbResetZoom();
+  _phLbRenderMeta(p);
   _phLbUpdateNav();
   const full = await phGetFull(id);
   if(_phLbId === id) img.src = full;   // only swap in full-res if still on this photo
@@ -897,12 +901,233 @@ function _phLbPreloadNeighbors(){
   });
 }
 
+// ── Lightbox v2 (8/15): full-screen gestures + details sheet + drawing links ──
+// The stage owns every photo gesture via Pointer Events (touch-action:none):
+// pinch/double-tap zoom with focal anchoring, one-finger pan when zoomed,
+// swipe left/right to navigate at 1×, swipe down to close, swipe up for the
+// details sheet. Chrome toggles on single tap (count chip always stays).
+// img transform = translate(tx,ty) scale(s) about center → tx/ty are screen px.
+let _phLbG=null, _phLbGBound=false;
+
+function _phLbSetSheet(open){
+  const lb=document.getElementById('ph-lightbox'); if(!lb) return;
+  lb.classList.toggle('sheet-open',!!open);
+  if(open) lb.classList.remove('chrome-hide');   // chrome is part of the editing context
+}
+function phLbToggleSheet(){
+  const lb=document.getElementById('ph-lightbox'); if(!lb) return;
+  _phLbSetSheet(!lb.classList.contains('sheet-open'));
+}
+
+function _phLbApplyT(instant){
+  const img=document.getElementById('ph-lb-img'); if(!img||!_phLbG) return;
+  img.style.transition=instant?'none':'transform .18s ease';
+  img.style.transform=`translate(${_phLbG.tx}px,${_phLbG.ty}px) scale(${_phLbG.s})`;
+}
+function _phLbResetZoom(){
+  if(!_phLbG){ _phLbG={s:1,tx:0,ty:0}; }
+  _phLbG.s=1; _phLbG.tx=0; _phLbG.ty=0;
+  _phLbApplyT(true);
+  const st=document.getElementById('ph-lb-stage'); if(st) st.style.opacity='';
+}
+// Keep the zoomed image covering the stage — no gaps past the fitted edges.
+function _phLbClampPan(){
+  const g=_phLbG, st=document.getElementById('ph-lb-stage'), img=document.getElementById('ph-lb-img');
+  if(!g||!st||!img) return;
+  const r=st.getBoundingClientRect();
+  const mx=Math.max(0,(img.clientWidth*g.s-r.width)/2);
+  const my=Math.max(0,(img.clientHeight*g.s-r.height)/2);
+  g.tx=Math.min(mx,Math.max(-mx,g.tx));
+  g.ty=Math.min(my,Math.max(-my,g.ty));
+}
+// Zoom to `ns` keeping the stage-relative point (mx,my) anchored (focal zoom).
+function _phLbZoomAt(ns,mx,my,instant){
+  const g=_phLbG; if(!g) return;
+  ns=Math.min(6,Math.max(1,ns));
+  const cx=(mx-g.tx)/g.s, cy=(my-g.ty)/g.s;
+  g.s=ns; g.tx=mx-ns*cx; g.ty=my-ns*cy;
+  if(ns<=1.01){ g.s=1; g.tx=0; g.ty=0; }
+  else _phLbClampPan();
+  _phLbApplyT(instant);
+}
+
+function _phLbBindGestures(){
+  if(_phLbGBound) return; _phLbGBound=true;
+  const st=document.getElementById('ph-lb-stage'); if(!st) return;
+  if(!_phLbG) _phLbG={s:1,tx:0,ty:0};
+  const g=_phLbG;
+  const pts=new Map();
+  let start=null, mode=null, tapTimer=null, lastTap=0, lastTapXY=null;
+  const mid=(x,y)=>{ const r=st.getBoundingClientRect(); return {x:x-r.left-r.width/2, y:y-r.top-r.height/2}; };
+
+  st.addEventListener('pointerdown',e=>{
+    if(document.getElementById('ph-lightbox').classList.contains('hidden')) return;
+    try{ st.setPointerCapture(e.pointerId); }catch(_){}
+    pts.set(e.pointerId,{x:e.clientX,y:e.clientY});
+    if(pts.size===1){
+      start={s:g.s,tx:g.tx,ty:g.ty,x:e.clientX,y:e.clientY,t:Date.now()};
+      mode=null;
+    } else if(pts.size===2){
+      const [a,b]=[...pts.values()];
+      start={s:g.s,tx:g.tx,ty:g.ty,dist:Math.hypot(a.x-b.x,a.y-b.y)||1,mid:mid((a.x+b.x)/2,(a.y+b.y)/2)};
+      mode='pinch';
+      clearTimeout(tapTimer); tapTimer=null;
+    }
+  });
+
+  st.addEventListener('pointermove',e=>{
+    if(!pts.has(e.pointerId)||!start) return;
+    pts.set(e.pointerId,{x:e.clientX,y:e.clientY});
+    if(mode==='pinch'&&pts.size>=2){
+      const [a,b]=[...pts.values()];
+      const d=Math.hypot(a.x-b.x,a.y-b.y)||1;
+      const m=mid((a.x+b.x)/2,(a.y+b.y)/2);
+      const ns=Math.min(6,Math.max(1,start.s*d/start.dist));
+      const cx=(start.mid.x-start.tx)/start.s, cy=(start.mid.y-start.ty)/start.s;
+      g.s=ns; g.tx=m.x-ns*cx; g.ty=m.y-ns*cy;
+      if(ns<=1.01){ g.s=1; g.tx=0; g.ty=0; } else _phLbClampPan();
+      _phLbApplyT(true);
+      return;
+    }
+    if(pts.size!==1) return;
+    const dx=e.clientX-start.x, dy=e.clientY-start.y;
+    if(!mode){
+      if(Math.hypot(dx,dy)<8) return;
+      clearTimeout(tapTimer); tapTimer=null;
+      mode = g.s>1.01 ? 'pan' : (Math.abs(dx)>Math.abs(dy) ? 'swipe' : 'vert');
+    }
+    if(mode==='pan'){
+      g.tx=start.tx+dx; g.ty=start.ty+dy; _phLbClampPan(); _phLbApplyT(true);
+    } else if(mode==='swipe'){
+      g.tx=dx; _phLbApplyT(true);
+    } else if(mode==='vert'&&dy>0){
+      g.ty=dy; _phLbApplyT(true);
+      st.style.opacity=String(Math.max(.35,1-dy/450));
+    }
+  });
+
+  const finish=e=>{
+    if(!pts.has(e.pointerId)) return;
+    pts.delete(e.pointerId);
+    if(mode==='pinch'){
+      if(pts.size<2){ mode=null; start=null; if(g.s<=1.01) _phLbResetZoom(); }
+      return;
+    }
+    if(!start) return;
+    const dx=e.clientX-start.x, dy=e.clientY-start.y;
+    const held=Date.now()-start.t;
+    const m=mode; mode=null; start=null;
+    if(m==='pan') return;
+    if(m==='swipe'){
+      const fling=held<250&&Math.abs(dx)>40;
+      if((dx<-70||(dx<0&&fling))&&_phLbIndex<_phLbList.length-1){ g.tx=0; _phLbShow(_phLbIndex+1); }
+      else if((dx>70||(dx>0&&fling))&&_phLbIndex>0){ g.tx=0; _phLbShow(_phLbIndex-1); }
+      else { g.tx=0; _phLbApplyT(false); }
+      return;
+    }
+    if(m==='vert'){
+      if(dy>90||(held<250&&dy>50)){ phCloseLightbox(); return; }
+      if(dy<-60){ g.ty=0; _phLbApplyT(false); st.style.opacity=''; _phLbSetSheet(true); return; }
+      g.ty=0; _phLbApplyT(false); st.style.opacity='';
+      return;
+    }
+    // No movement: tap. Double-tap = focal zoom toggle; single (after the
+    // double-tap window) = close sheet if open, else toggle chrome.
+    const now=Date.now(), xy={x:e.clientX,y:e.clientY};
+    if(now-lastTap<300&&lastTapXY&&Math.hypot(xy.x-lastTapXY.x,xy.y-lastTapXY.y)<28){
+      lastTap=0; lastTapXY=null;
+      clearTimeout(tapTimer); tapTimer=null;
+      const p=mid(xy.x,xy.y);
+      _phLbZoomAt(g.s>1.01?1:2.5,p.x,p.y,false);
+      return;
+    }
+    lastTap=now; lastTapXY=xy;
+    clearTimeout(tapTimer);
+    tapTimer=setTimeout(()=>{
+      tapTimer=null;
+      const lb=document.getElementById('ph-lightbox');
+      if(lb.classList.contains('sheet-open')) _phLbSetSheet(false);
+      else lb.classList.toggle('chrome-hide');
+    },300);
+  };
+  st.addEventListener('pointerup',finish);
+  st.addEventListener('pointercancel',e=>{ pts.delete(e.pointerId); mode=null; start=null; if(g.s<=1.01) _phLbResetZoom(); });
+
+  // Desktop wheel zoom around the cursor.
+  st.addEventListener('wheel',e=>{
+    e.preventDefault();
+    const p=mid(e.clientX,e.clientY);
+    _phLbZoomAt(g.s*(e.deltaY<0?1.15:1/1.15),p.x,p.y,true);
+  },{passive:false});
+
+  // Sheet grip: drag down to dismiss.
+  const grip=document.getElementById('ph-lb-grip');
+  if(grip){
+    let gy=null;
+    grip.addEventListener('pointerdown',e=>{ gy=e.clientY; try{ grip.setPointerCapture(e.pointerId); }catch(_){} });
+    grip.addEventListener('pointerup',e=>{ if(gy!=null&&e.clientY-gy>40) _phLbSetSheet(false); gy=null; });
+    grip.addEventListener('pointercancel',()=>{ gy=null; });
+    grip.addEventListener('click',()=>_phLbSetSheet(false));
+  }
+
+  // Web keyboard: arrows navigate, Escape closes sheet-then-lightbox.
+  document.addEventListener('keydown',e=>{
+    const lb=document.getElementById('ph-lightbox');
+    if(!lb||lb.classList.contains('hidden')) return;
+    if(e.target&&/^(INPUT|TEXTAREA)$/.test(e.target.tagName)) return;   // typing in the sheet
+    if(e.key==='ArrowRight') phLbNext();
+    else if(e.key==='ArrowLeft') phLbPrev();
+    else if(e.key==='Escape'){ if(lb.classList.contains('sheet-open')) _phLbSetSheet(false); else phCloseLightbox(); }
+  });
+}
+
+// Badges (top chrome) + linked-drawings block (#30) for the current photo.
+function _phLbLinkedEntries(photoId){
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  if(typeof trGetEntriesForProject!=='function') return [];
+  try{
+    return trGetEntriesForProject(pid).filter(e=>!e.deletedAt&&Array.isArray(e.photoIds)&&e.photoIds.includes(photoId));
+  }catch(_){ return []; }
+}
+function _phLbRenderMeta(p){
+  const links=_phLbLinkedEntries(p.id);
+  const b=document.getElementById('ph-lb-badges');
+  if(b) b.textContent=[p.swppp?'🌊':'',p.seedTag?'🌱':'',p.repairTag?'🚩':'',links.length?'📐':''].filter(Boolean).join(' ');
+  const box=document.getElementById('ph-lb-links');
+  if(!box) return;
+  if(!links.length){ box.style.display='none'; box.innerHTML=''; return; }
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const esc=s=>String(s||'').replace(/</g,'&lt;');
+  box.style.cssText='display:flex;flex-direction:column;gap:6px';
+  box.innerHTML='<div style="font-family:var(--mono);font-size:9px;color:var(--muted);letter-spacing:.06em;text-align:center">📐 LINKED DRAWINGS · TAP TO VIEW ON MAP</div>'+
+    links.map(e=>{
+      const cid=e.categoryId||e.category;
+      const cat=(typeof tcGetName==='function')?tcGetName(cid,e.projectId||pid):'';
+      let stateLbl='';
+      try{ const s=(typeof tcEntryState==='function')?tcEntryState(e,cid,e.projectId||pid):null; if(s&&s.label) stateLbl=s.label; }catch(_){}
+      const name=e.tempLabel
+        ? ((e.plNum&&typeof trPlFmt==='function')?trPlFmt(e.plNum)+' · ':'')+e.tempLabel
+        : (stateLbl||'Drawing');
+      return `<div class="ph-lb-link-row" onclick="phLbGotoEntry('${e.id}')">📐<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(name)} · ${esc(cat)}${e.date?` · ${esc(e.date)}`:''}</span><span style="color:var(--muted)">›</span></div>`;
+    }).join('');
+}
+// Jump: close the viewer, land on the map, glow the drawing (punchlist pattern).
+function phLbGotoEntry(entryId){
+  phCloseLightbox();
+  if(typeof showPage==='function') showPage('map');
+  setTimeout(()=>{ if(typeof mapHighlightEntry==='function') mapHighlightEntry(entryId); },400);
+}
+
 function phCloseLightbox(){
-  document.getElementById('ph-lightbox').classList.add('hidden');
+  const lb=document.getElementById('ph-lightbox');
+  lb.classList.add('hidden');
+  lb.classList.remove('sheet-open','chrome-hide');
   document.querySelectorAll('.ph-lb-hist').forEach(el=>el.remove());
   _phLbId = null;
   _phLbList = [];
   _phLbIndex = -1;
+  _phLbResetZoom();
+  const st=document.getElementById('ph-lb-stage'); if(st) st.style.opacity='';
   if(_phLbStampUrl){ try{ URL.revokeObjectURL(_phLbStampUrl); }catch(e){} _phLbStampUrl=null; }
 }
 
@@ -945,18 +1170,21 @@ function _phBindCaptionLive(){
   // caption-edit → location-edit can't cancel the caption's pending write.
   const persist=(field,el)=>{
     if(!_phLbId||el.readOnly) return;
+    const id=_phLbId, val=el.value;   // captured NOW — auto-save is the only
+    // commit path (v2 dropped Save Caption), so the pending write must land
+    // even if the user closes or swipes to another photo inside the debounce.
     clearTimeout(_phCapDebs[field]);
     _phCapDebs[field]=setTimeout(()=>{
-      const p=window._phPhotos.find(x=>x.id===_phLbId);
+      const p=window._phPhotos.find(x=>x.id===id);
       if(!p) return;
       if(field==='locLabel' && p.type!=='camera') return;
-      p[field]=el.value.trim();
+      p[field]=val.trim();   // captured value — el may already show another photo
       phMarkDirty(p.id);
       phSave();
       phRender();
       if(p.published && typeof phSetPublished === 'function') phSetPublished([p.id], true, p.projectId);
       if(typeof mapRenderPhotoPins === 'function') mapRenderPhotoPins();
-      if(p.type==='camera') _phLbApplyStamp(p);
+      if(p.type==='camera' && _phLbId===id) _phLbApplyStamp(p);   // stamp refresh only if still viewing
     },600);
   };
   cap.addEventListener('input',()=>persist('caption',cap));
@@ -1454,6 +1682,8 @@ window.phOpenCamera = phOpenCamera;
 window.phStampCurrent = phStampCurrent;
 window.phDeleteCurrent = phDeleteCurrent;
 window.phOpenLightbox = phOpenLightbox;
+window.phLbToggleSheet = phLbToggleSheet;
+window.phLbGotoEntry = phLbGotoEntry;
 window.phCloseLightbox = phCloseLightbox;
 window.phLbNext = phLbNext;
 window.phLbPrev = phLbPrev;
