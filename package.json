@@ -36,7 +36,7 @@
     "@capacitor/status-bar": "^8.0.2",
     "@capgo/camera-preview": "8.11.2",
     "@mapbox/mapbox-gl-draw": "^1.5.1",
-    "@sentry/browser": "10.43.0",
+    "@sentry/browser": "10.60.0",
     "@sentry/capacitor": "^4.0.0",
     "@tmcw/togeojson": "^7.1.2",
     "@turf/area": "^7.3.5",
