@@ -858,25 +858,54 @@ async function _phLbShow(index){
   _phLbPreloadNeighbors();
 }
 
-// Render the stamped preview into the lightbox (race-guarded, object-URL managed).
-let _phLbStampUrl=null;
+// ── Stamped-render cache (8/15, field-swipe perf) ──
+// Every landing used to re-fetch full-res + re-run the canvas stamp — even for
+// a photo viewed seconds ago — which made swiping feel slow, worst on bad
+// service. Small LRU of object URLs keyed by the stamp INPUTS (so caption/tag/
+// pill edits naturally miss and re-render). Bounded at 6 entries and cleared
+// on lightbox close: stamped full-res JPEGs are several MB each and lingering
+// blobs feed exactly the memory-pressure reloads the iPad already shows.
+let _phStampCache=new Map();
+function _phStampKey(p){
+  return [p.id,p.caption||'',p.locLabel||'',p.swppp?1:0,p.seedTag?1:0,p.repairTag?1:0,
+    p.storageUrl?1:0,JSON.stringify(_stampDefaults())].join('|');
+}
+function _phStampCacheClear(){
+  _phStampCache.forEach(u=>{ try{ URL.revokeObjectURL(u); }catch(e){} });
+  _phStampCache.clear();
+}
+// Render (or fetch from cache) the stamped object URL for a camera photo.
+// Touches recency on hit; evicts oldest past 6.
+async function _phStampRender(p){
+  const key=_phStampKey(p);
+  if(_phStampCache.has(key)){
+    const u=_phStampCache.get(key);
+    _phStampCache.delete(key); _phStampCache.set(key,u);
+    return u;
+  }
+  // Best-available bytes (#59): offline-pending ORIGINAL first, then Storage,
+  // thumb last — the pending original exists precisely in the bad-service case.
+  let blob=await _phFullBlob(p);
+  if(!blob) return null;
+  if(!_camMod) _camMod=await import('./camera.js');
+  blob=(await _camMod.camStampBlob(p,blob,_stampDefaults()))||blob;
+  const url=URL.createObjectURL(blob);
+  _phStampCache.set(key,url);
+  while(_phStampCache.size>6){
+    const k=_phStampCache.keys().next().value;
+    try{ URL.revokeObjectURL(_phStampCache.get(k)); }catch(e){}
+    _phStampCache.delete(k);
+  }
+  return url;
+}
 async function _phLbApplyStamp(p){
   if(!p||p.type!=='camera') return;
   const id=p.id;
   try{
-    // Best-available bytes (8/15, #59): the offline-pending ORIGINAL (IDB
-    // cam_pending::) first, then Storage, thumb last — phGetFull returned the
-    // 280px thumb whenever the upload was still deferred (bad service), and
-    // stamping that base rendered the overlay oversized, covering the photo.
-    let blob=await _phFullBlob(p);
-    if(!blob) return;
-    if(!_camMod) _camMod=await import('./camera.js');
-    blob=(await _camMod.camStampBlob(p,blob,_stampDefaults()))||blob;
-    if(_phLbId!==id) return;             // navigated away mid-render
+    const url=await _phStampRender(p);
+    if(!url||_phLbId!==id) return;       // navigated away mid-render
     const img=document.getElementById('ph-lb-img');
-    if(_phLbStampUrl){ try{ URL.revokeObjectURL(_phLbStampUrl); }catch(e){} _phLbStampUrl=null; }
-    _phLbStampUrl=URL.createObjectURL(blob);
-    img.src=_phLbStampUrl;
+    if(img) img.src=url;
   }catch(e){ console.warn('lightbox stamp preview failed:',e); }
 }
 
@@ -893,12 +922,25 @@ function _phLbUpdateNav(){
   if(cnt)  cnt.textContent = _phLbList.length > 1 ? `${_phLbIndex+1} / ${_phLbList.length}` : '';
 }
 
-// Warm the browser cache for the neighbours so swipes feel instant.
+// Warm the neighbours so swipes feel instant: HTTP cache for the full-res
+// bytes, and (8/15) the stamped rendering itself for camera photos — the
+// stamp pass was the real swipe latency, and pre-rendering it means landing
+// on a neighbour is a cache hit. Deferred a beat so the CURRENT photo's
+// render always wins the CPU first.
 function _phLbPreloadNeighbors(){
-  [_phLbIndex-1, _phLbIndex+1].forEach(async i=>{
-    if(i < 0 || i >= _phLbList.length) return;
-    try{ const url = await phGetFull(_phLbList[i]); if(url){ const im = new Image(); im.src = url; } }catch(e){}
-  });
+  const centerId=_phLbId;
+  setTimeout(()=>{
+    if(_phLbId!==centerId) return;   // already moved on — that show preloads its own
+    [_phLbIndex-1, _phLbIndex+1].forEach(async i=>{
+      if(i < 0 || i >= _phLbList.length) return;
+      try{
+        const p=_phById(_phLbList[i]);
+        const url = await phGetFull(_phLbList[i]);
+        if(url){ const im = new Image(); im.src = url; }
+        if(p&&p.type==='camera') await _phStampRender(p);
+      }catch(e){}
+    });
+  },350);
 }
 
 // ── Lightbox v2 (8/15): full-screen gestures + details sheet + drawing links ──
@@ -1128,7 +1170,7 @@ function phCloseLightbox(){
   _phLbIndex = -1;
   _phLbResetZoom();
   const st=document.getElementById('ph-lb-stage'); if(st) st.style.opacity='';
-  if(_phLbStampUrl){ try{ URL.revokeObjectURL(_phLbStampUrl); }catch(e){} _phLbStampUrl=null; }
+  _phStampCacheClear();   // stamped full-res blobs are MBs each — never outlive the viewer
 }
 
 function phSaveCaption(){

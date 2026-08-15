@@ -29,24 +29,47 @@ if (!window.Capacitor?.isNativePlatform?.()) {
     return false
   }
 
+  // ── Sticky-banner heal v2 (Tim 8/15 — the 8/7 heal had two gaps) ──
+  // Gap 1: the boot heal only messaged a WAITING worker; a superseding version
+  // still INSTALLING at that instant (or whose update check hadn't landed yet)
+  // was missed, parked as waiting moments later, and re-raised the banner.
+  // Gap 2: nothing suppressed that re-raise — the user who just hit RELOAD got
+  // prompted again for a version they already asked for.
+  // v2: a hop counter rides sessionStorage. While a heal chain is live (≤3
+  // hops — loop breaker), BOTH the boot heal and onNeedRefresh finish updates
+  // silently via _postSkip (waiting AND installing covered); the banner only
+  // shows for genuinely new updates outside a chain.
+  const HOPS_KEY = 'gl_sw_activating'
+  let _healHops = 0
+  try { _healHops = parseInt(sessionStorage.getItem(HOPS_KEY) || '0', 10) || 0; sessionStorage.removeItem(HOPS_KEY) } catch (_) {}
+  let _healing = false
+  const _silentActivate = (reg) => {
+    if (_healing) return true            // a chain is already driving a reload
+    if (!_postSkip(reg)) return false    // nothing to activate — chain is done
+    _healing = true
+    let reloaded = false
+    const doReload = () => {
+      if (reloaded) return
+      reloaded = true
+      try { sessionStorage.setItem(HOPS_KEY, String(_healHops + 1)) } catch (_) {}
+      window.location.reload()
+    }
+    if (navigator.serviceWorker) {
+      navigator.serviceWorker.addEventListener('controllerchange', doReload, { once: true })
+    }
+    setTimeout(doReload, 3000)
+    return true
+  }
+
   const updateSW = registerSW({
     onRegisteredSW(_, registration) {
       _swRegistration = registration
-      // Sticky-banner heal (Tim 8/7): with several deploys a day, RELOAD can
-      // race a superseding install — the click messages a worker that's already
-      // redundant, the fallback reload fires, and the page comes back with the
-      // NEWER version parked in waiting → banner again. If we arrived from a
-      // RELOAD click, silently finish the job once instead of re-prompting.
-      if (sessionStorage.getItem('gl_sw_activating')) {
-        sessionStorage.removeItem('gl_sw_activating')
-        if (registration && registration.waiting && navigator.serviceWorker) {
-          navigator.serviceWorker.addEventListener('controllerchange',
-            () => window.location.reload(), { once: true })
-          registration.waiting.postMessage({ type: 'SKIP_WAITING' })
-        }
-      }
+      if (_healHops > 0 && _healHops <= 3) _silentActivate(registration)
     },
     onNeedRefresh() {
+      // Mid-chain: the superseding version just reached waiting — the user
+      // already asked for "latest", finish silently instead of re-prompting.
+      if (_healHops > 0 && _healHops <= 3 && _silentActivate(_swRegistration)) return
       if (document.getElementById('gl-update-banner')) return
       const banner = document.createElement('div')
       banner.id = 'gl-update-banner'
