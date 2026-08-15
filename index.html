@@ -212,7 +212,12 @@ html.camera-live body>*:not(#gl-camera){visibility:hidden}
 #glc-shutter{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(28px + env(safe-area-inset-bottom));z-index:3;width:74px;height:74px;border-radius:50%;background:rgba(255,255,255,.92);border:5px solid rgba(201,168,76,.95);cursor:pointer;padding:0}
 #glc-shutter:active{transform:translateX(-50%) scale(.93)}
 #glc-shutter:disabled{opacity:.55}
-#glc-strip{position:absolute;left:12px;right:12px;bottom:calc(116px + env(safe-area-inset-bottom));z-index:4;display:flex;gap:10px;align-items:center;background:rgba(10,18,26,.88);border:1px solid var(--amber);border-radius:12px;padding:8px 10px;cursor:pointer}
+#glc-strip{position:absolute;left:12px;right:12px;bottom:calc(152px + env(safe-area-inset-bottom));z-index:4;display:flex;gap:10px;align-items:center;background:rgba(10,18,26,.88);border:1px solid var(--amber);border-radius:12px;padding:8px 10px;cursor:pointer}
+/* post-shot strip follows the hold (8/15, #45): rides the user-bottom edge of the
+   landscape view (cw = portrait-left edge, ccw = portrait-right), rotated upright.
+   Raised base position (116→152px) clears the shutter ring in portrait too. */
+#gl-camera.glc-cw #glc-strip{left:46px;right:auto;top:50%;bottom:auto;width:min(72dvh,380px);transform:translate(-50%,-50%) rotate(-90deg)}
+#gl-camera.glc-ccw #glc-strip{left:auto;right:46px;top:50%;bottom:auto;width:min(72dvh,380px);transform:translate(50%,-50%) rotate(90deg)}
 #glc-strip img{width:44px;height:44px;object-fit:cover;border-radius:8px;flex-shrink:0}
 #glc-strip .glc-strip-txt{min-width:0;font-family:var(--mono);font-size:11px;color:#dce8f4;line-height:1.5}
 #glc-strip .glc-strip-txt .sub{color:#9fb2c4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -1528,7 +1533,7 @@ body.is-native select { font-size: 16px !important; }
           <div class="ob-slide-text">
             <div class="ob-eyebrow">FEATURE 04</div>
             <div class="ob-slide-title">PHOTO LOG</div>
-            <div class="ob-slide-desc">Shoot with the <span class="ob-hi-amber">built-in camera</span> — live GPS, compass and tags, with a <span class="ob-hi-teal">branded stamp you control</span> on every shared copy — or upload <span class="ob-hi-amber">Solocator-tagged photos</span>. Auto-compressed, date-stamped, and embedded in your report.</div>
+            <div class="ob-slide-desc">Shoot with the <span class="ob-hi-amber">built-in camera</span> — live GPS, compass and tags, with a <span class="ob-hi-teal">branded stamp you control</span> on every shared copy and optional <span class="ob-hi-teal">auto-save to your camera roll</span> — or upload <span class="ob-hi-amber">Solocator-tagged photos</span>. Auto-compressed, date-stamped, and embedded in your report.</div>
           </div>
         </div>
 

@@ -77,6 +77,19 @@ export function camStampSetDefaults(t){
 window.camStampDefaults=camStampDefaults;
 window.camStampSetDefaults=camStampSetDefaults;
 
+// ── #49 Auto-save to camera roll (8/15) — Solocator parity ──
+// Per-shot background save to the iOS Photos library ("GroundLog" album):
+// off | stamped | original | both. Default off. Native-only at save time;
+// offline-safe (Photos writes are local — serves the report-day iPad flow
+// with zero service). Rides the cameraPrefs cross-device doc.
+const AUTOSAVE_KEY='gl_cam_autosave';
+const AUTOSAVE_MODES=[['off','Off'],['stamped','Stamped'],['original','Original'],['both','Both']];
+function camAutoSave(){ try{ return localStorage.getItem(AUTOSAVE_KEY)||'off'; }catch{ return 'off'; } }
+function _setAutoSave(v){
+  try{ localStorage.setItem(AUTOSAVE_KEY,v); }catch{}
+  _camCloudWrite('cameraPrefs',{autoSave:v});
+}
+
 // ── Cross-device stamp prefs (settings-doc seam — the 7/28 tcfMap pattern) ──
 // localStorage stays the fast synchronous cache; the user-subtree settings docs
 // carry the cross-device copy. Stamp element toggles are user-global (doc
@@ -105,6 +118,11 @@ export function camStampHydrate(){
           }
         } else if(localStorage.getItem(STAMP_KEY)){
           _camCloudWrite('cameraPrefs',{stampDefaults:localStorage.getItem(STAMP_KEY)});
+        }
+        if(typeof d.autoSave==='string'){
+          if(d.autoSave!==camAutoSave()){ try{ localStorage.setItem(AUTOSAVE_KEY,d.autoSave); }catch{} }
+        } else if(camAutoSave()!=='off'){
+          _camCloudWrite('cameraPrefs',{autoSave:camAutoSave()});
         }
       }).catch(()=>{ _camHydrated.delete('prefs'); });
     }catch{ _camHydrated.delete('prefs'); }
@@ -198,7 +216,12 @@ export async function camStampBlob(p, blob, toggles){
   const c=document.createElement('canvas'); c.width=W; c.height=H;
   const ctx=c.getContext('2d');
   ctx.drawImage(bmp,0,0); bmp.close();
-  const S=Math.max(18,Math.round(W*0.022));   // base type size ≈ half Timemark's weight
+  // Base type ≈ half Timemark's weight, STRICTLY proportional (8/15, #59): the
+  // old 18px floor only ever bound below W=820 — i.e. exactly when a degraded
+  // base (the 280px thumb, upload still deferred on bad service) was being
+  // stamped, blowing the overlay to ~3× and covering the photo. Full-res bases
+  // (W≥820) render identically with or without the floor.
+  const S=Math.max(8,Math.round(W*0.022));
   const pad=Math.round(S*0.9), lh=Math.round(S*1.45);
   ctx.textBaseline='alphabetic';
   ctx.shadowColor='rgba(0,0,0,0.85)'; ctx.shadowBlur=Math.round(S*0.25); ctx.shadowOffsetY=Math.round(S*0.06);
@@ -423,16 +446,26 @@ function _onReframe(){
 }
 
 // ── Physical-hold tracking (interface is locked; sensors tell us the truth) ──
-// From the same deviceorientation events that carry the compass. The roll about
-// the view axis is atan2(gamma, beta): 0 upright, +90 rotated clockwise, -90
-// counterclockwise — and the RATIO survives pitching the phone down at a
-// subject (the failure mode of raw thresholds: both axes shrink together, the
-// desk-shot bug from Tim's device test). Near-flat is genuinely ambiguous
+// From the same deviceorientation events that carry the compass. Roll about the
+// view axis comes from the reconstructed gravity vector (see below): 0 upright,
+// +90 rotated clockwise, -90 counterclockwise. Near-flat is genuinely ambiguous
 // (same as the native camera) — keep the current state. Snap bands with dead
 // zones between them stop the UI flapping mid-rotation.
 let _rotCand=null,_rotCandN=0;
 function _calcUiRot(beta,gamma){
   if(typeof beta!=='number'||typeof gamma!=='number') return _uiRot;
+  // Roll from the RECONSTRUCTED GRAVITY VECTOR, not raw Euler angles (8/15,
+  // Tim 8/12 field: overlay snapped back to portrait and STAYED while holding
+  // steady in landscape). atan2(gamma,beta) breaks when the phone pitches past
+  // vertical: iOS flips to the equivalent Euler representation (beta→180-side,
+  // gamma sign flips) and the raw-angle ratio reads ~0° — a STABLE wrong answer
+  // the 5-vote debounce can't reject because it isn't noise. Both representations
+  // describe the same physical rotation, so any function of the actual rotation
+  // is flip-invariant: rebuild gravity's screen-plane components and take the
+  // roll from those. Same sensor, same events, no new permissions.
+  const _b=beta*Math.PI/180, _g=gamma*Math.PI/180;
+  const gvx=Math.cos(_b)*Math.sin(_g);   // device-x share of "down"
+  const gvy=Math.sin(_b);                // device-y share of "down"
   // Pitched down at a subject BOTH axes shrink toward the noise floor and the
   // atan2 ratio goes unstable — 7/30 field: overlay flapped portrait↔landscape
   // while tilting forward in landscape, no real rotation. Two defenses: a
@@ -440,8 +473,9 @@ function _calcUiRot(beta,gamma){
   // the native camera), and a consecutive-agree debounce: a band switch needs
   // 5 matching readings in a row (~80 ms at sensor rate — imperceptible on a
   // real rotation, but noise almost never votes the same way 5 times).
-  if(Math.hypot(beta,gamma)<30){ _rotCand=null; _rotCandN=0; return _uiRot; }
-  const a=Math.atan2(gamma,beta)*180/Math.PI;
+  // (sin 30° — same near-flat ambiguity guard as before, in gravity units)
+  if(Math.hypot(gvx,gvy)<0.5){ _rotCand=null; _rotCandN=0; return _uiRot; }
+  const a=Math.atan2(gvx,gvy)*180/Math.PI;
   let band=null;
   if(a>65&&a<115) band=90;
   else if(a<-65&&a>-115) band=-90;
@@ -678,6 +712,10 @@ function _stampSheet(){
             <span style="color:${t[e.key]?'var(--amber)':'var(--muted)'}">${t[e.key]?'☑':'☐'}</span>${e.label}
           </button>`).join('')}
       </div>
+      <label style="font-family:var(--mono);font-size:10px;color:var(--muted)">AUTO-SAVE TO CAMERA ROLL (iOS app — saves each shot to Photos)</label>
+      <div id="glc-st-as" style="display:flex;gap:6px;margin:4px 0 14px">
+        ${AUTOSAVE_MODES.map(([v,l])=>`<button data-as="${v}" style="flex:1;padding:9px 0;border-radius:8px;cursor:pointer;font-family:var(--mono);font-size:12px;background:var(--s1);color:${camAutoSave()===v?'var(--amber)':'var(--muted)'};border:1px solid ${camAutoSave()===v?'var(--amber)':'var(--border)'}">${l}</button>`).join('')}
+      </div>
       <label style="font-family:var(--mono);font-size:10px;color:var(--muted)">DEFAULT CAPTION (this project — used until you type your own)</label>
       <input type="text" id="glc-st-defcap" value="${_defCap().replace(/"/g,'&quot;')}" placeholder="e.g. Daily SWPPP inspection" style="width:100%;box-sizing:border-box;background:var(--s1);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--body);font-size:16px;padding:9px 12px;outline:none;margin:4px 0 16px">
       <div class="modal-btns"><button class="modal-confirm" id="glc-st-done">Done</button></div>
@@ -694,6 +732,16 @@ function _stampSheet(){
       chk.style.color=cur[k]?'var(--amber)':'var(--muted)';
       camStampSetDefaults(cur);
       _renderOverlay();
+    };
+  });
+  ov.querySelectorAll('#glc-st-as button').forEach(btn=>{
+    btn.onclick=()=>{
+      _setAutoSave(btn.dataset.as);
+      ov.querySelectorAll('#glc-st-as button').forEach(b=>{
+        const on=b.dataset.as===btn.dataset.as;
+        b.style.color=on?'var(--amber)':'var(--muted)';
+        b.style.borderColor=on?'var(--amber)':'var(--border)';
+      });
     };
   });
   ov.querySelector('#glc-st-done').onclick=()=>{
@@ -773,12 +821,57 @@ async function _shoot(){
     // attach to yet): hand every shot back so the caller can bank the photo ids.
     if(_ctx&&typeof _ctx.onSaved==='function'){ try{ _ctx.onSaved(entry); }catch{} }
     _showStrip(entry,blob);
+    _autoRollSave(entry,blob);   // #49: fire-and-forget per-shot camera-roll save
   }catch(e){
     console.warn('camera capture failed:',e);
     _toast('✗ Capture failed');
   }finally{
     _busy=false;
     const sh2=document.getElementById('glc-shutter'); if(sh2) sh2.disabled=false;
+  }
+}
+
+// ── #49 auto-save to camera roll (fire-and-forget) ──
+// Runs AFTER the record + in-app copy are safe — a Photos failure can never
+// cost the shot. Stamped variant renders from the full-res capture bytes in
+// hand (no fetch, no service dependency). Album resolve is cached per session.
+let _rollAlbum=null;
+async function _rollAlbumId(Media){
+  if(_rollAlbum!==null) return _rollAlbum||undefined;
+  try{
+    let a=((await Media.getAlbums()).albums||[]).find(x=>x.name==='GroundLog');
+    if(!a){
+      await Media.createAlbum({name:'GroundLog'});
+      a=((await Media.getAlbums()).albums||[]).find(x=>x.name==='GroundLog');
+    }
+    _rollAlbum=a?a.identifier:'';
+  }catch(e){ console.warn('camera-roll album resolve failed (saving to library root):',e); _rollAlbum=''; }
+  return _rollAlbum||undefined;
+}
+async function _autoRollSave(entry,blob){
+  const mode=camAutoSave();
+  if(mode==='off'||!_isNative()) return;
+  try{
+    const outs=[];
+    if(mode==='original'||mode==='both') outs.push({b:blob,tag:'original'});
+    if(mode==='stamped'||mode==='both'){
+      try{ const sb=await camStampBlob(entry,blob); if(sb) outs.push({b:sb,tag:'stamped'}); }
+      catch(e){ console.warn('auto-save stamp render failed (skipping stamped copy):',e); }
+    }
+    if(!outs.length) return;
+    const [{Filesystem,Directory},{Media}]=await Promise.all([import('@capacitor/filesystem'),import('@capacitor-community/media')]);
+    const albumIdentifier=await _rollAlbumId(Media);
+    for(const o of outs){
+      const b64=await new Promise((res,rej)=>{ const r=new FileReader(); r.onloadend=()=>res(String(r.result).split(',')[1]); r.onerror=()=>rej(r.error); r.readAsDataURL(o.b); });
+      const path=`glroll/${entry.id}-${o.tag}.jpg`;
+      await Filesystem.writeFile({path,data:b64,directory:Directory.Cache,recursive:true});
+      const uri=(await Filesystem.getUri({path,directory:Directory.Cache})).uri;
+      await Media.savePhoto(albumIdentifier?{path:uri,albumIdentifier}:{path:uri});
+      try{ await Filesystem.deleteFile({path,directory:Directory.Cache}); }catch{}
+    }
+  }catch(e){
+    console.warn('auto-save to camera roll failed:',e);
+    _toast('✗ Camera-roll save failed — photo is safe in the app');
   }
 }
 

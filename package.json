@@ -21,6 +21,7 @@
     "vitest": "^4.1.9"
   },
   "dependencies": {
+    "@capacitor-community/media": "^9.1.0",
     "@capacitor-firebase/authentication": "^8.2.0",
     "@capacitor/app": "^8.1.0",
     "@capacitor/core": "^8.3.1",

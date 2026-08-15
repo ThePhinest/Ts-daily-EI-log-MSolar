@@ -860,9 +860,12 @@ async function _phLbApplyStamp(p){
   if(!p||p.type!=='camera') return;
   const id=p.id;
   try{
-    const url=await phGetFull(id);
-    const resp=await fetch(url); if(!resp.ok) return;
-    let blob=await resp.blob();
+    // Best-available bytes (8/15, #59): the offline-pending ORIGINAL (IDB
+    // cam_pending::) first, then Storage, thumb last — phGetFull returned the
+    // 280px thumb whenever the upload was still deferred (bad service), and
+    // stamping that base rendered the overlay oversized, covering the photo.
+    let blob=await _phFullBlob(p);
+    if(!blob) return;
     if(!_camMod) _camMod=await import('./camera.js');
     blob=(await _camMod.camStampBlob(p,blob,_stampDefaults()))||blob;
     if(_phLbId!==id) return;             // navigated away mid-render
