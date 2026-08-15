@@ -1430,33 +1430,12 @@ async function _phSweepTrash(){
   phSaveLocal();
 }
 
-// ── Close lightbox on backdrop tap ──
-document.getElementById('ph-lightbox')?.addEventListener('click', function(e){
-  if(e.target===this) phCloseLightbox();
-});
-
-// ── Swipe left/right on the image to navigate ──
-(function(){
-  const img = document.getElementById('ph-lb-img');
-  if(!img) return;
-  let sx=null, sy=null;
-  img.addEventListener('touchstart', e=>{ const t=e.changedTouches[0]; sx=t.clientX; sy=t.clientY; }, {passive:true});
-  img.addEventListener('touchend', e=>{
-    if(sx===null) return;
-    const t=e.changedTouches[0], dx=t.clientX-sx, dy=t.clientY-sy;
-    sx=sy=null;
-    if(Math.abs(dx)>40 && Math.abs(dx)>Math.abs(dy)){ dx<0 ? phLbNext() : phLbPrev(); }
-  }, {passive:true});
-})();
-
-// ── Keyboard navigation (desktop) ──
-document.addEventListener('keydown', e=>{
-  const lb=document.getElementById('ph-lightbox');
-  if(!lb || lb.classList.contains('hidden')) return;
-  if(e.key==='ArrowRight') phLbNext();
-  else if(e.key==='ArrowLeft') phLbPrev();
-  else if(e.key==='Escape') phCloseLightbox();
-});
+// ── (v1 lightbox interaction handlers REMOVED 8/15) ──
+// Backdrop-tap close, the img touchend swipe, and the standalone keyboard
+// handler all moved into the v2 gesture controller (_phLbBindGestures).
+// The old touchend swipe was the "skips every other photo" bug: touch events
+// fire ALONGSIDE pointer events, so v1 and v2 each navigated once per swipe.
+// Any future lightbox interaction belongs IN the controller, never beside it.
 
 // ── Phase D migration: tag existing photos with active projectId ──
 async function _glMigratePhaseD() {
