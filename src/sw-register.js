@@ -57,7 +57,13 @@ if (!window.Capacitor?.isNativePlatform?.()) {
     if (navigator.serviceWorker) {
       navigator.serviceWorker.addEventListener('controllerchange', doReload, { once: true })
     }
-    setTimeout(doReload, 3000)
+    // NO blind timeout here (8/15 loop lesson): the ~16 MB precache can take
+    // well over 3s to install, and a timer reload lands with the worker STILL
+    // installing — boot heals again, reloads again, loops to the hop cap
+    // ("auto reloaded like 4 times"). controllerchange is the only truthful
+    // "new version took over" signal. If it never comes, stay put: the page
+    // keeps working on the current version and the chain resolves at the next
+    // boot or update check.
     return true
   }
 
@@ -122,11 +128,13 @@ if (!window.Capacitor?.isNativePlatform?.()) {
         // 6. Also call updateSW(true) for vite-plugin-pwa's own reload path
         try { updateSW(true) } catch (_) { /* swallow — fallback handles it */ }
 
-        // 7. Hard-reload fallback — fires if controllerchange never lands.
-        // 3s (was 1.5s): activation + clientsClaim on the ~16 MB precache can
-        // outrun the shorter window, which forced reloads BEFORE handover —
-        // the old worker stayed in control and the banner returned.
-        setTimeout(doReload, 3000)
+        // 7. Hard-reload fallback — ONLY when a waiting worker existed at
+        // click time (activation of a waiting worker is sub-second; 3s covers
+        // the v1.3.0 controllerchange-misfire case). When the new version is
+        // still INSTALLING, a timer reload fires before handover and seeds the
+        // reload loop (8/15) — so we wait for controllerchange instead; the
+        // button honestly shows RELOADING… until the install lands.
+        if (_swRegistration && _swRegistration.waiting) setTimeout(doReload, 3000)
       })
     },
     onOfflineReady() {
