@@ -269,7 +269,12 @@ function oiCkAdd(id){
 function oiCkToggle(id, idx){
   const it=_oiItems.find(x=>x.id===id);
   if(!it||!it.checkItems||!it.checkItems[idx]) return;
-  it.checkItems[idx].done=!it.checkItems[idx].done;
+  const step=it.checkItems[idx];
+  step.done=!step.done;
+  // Checking a step sinks it to the bottom of the list — PERSISTENTLY (array
+  // order is the stored order). Unchecking flips the flag in place: the step
+  // stays where it sank, which doubles as a quick way to reorder a checklist.
+  if(step.done){ it.checkItems.splice(idx,1); it.checkItems.push(step); }
   _oiTouch(it);
   oiRender();
   window.glHaptic && window.glHaptic.light && window.glHaptic.light();
@@ -479,10 +484,11 @@ function oiRender(){
         // Checklist editor (check kind only)
         let ckHtml='';
         if(kind==='check'){
-          // Checked steps sink to the bottom (stable sort — unchecked keep their
-          // entry order and float back up on uncheck). Handlers carry the ORIGINAL
-          // stored index so toggle/edit/delete always hit the right item.
-          const ckOrd=ck.map((c,i)=>({c,i})).sort((a,b)=>(a.c.done?1:0)-(b.c.done?1:0));
+          // Steps render in STORED order — the sink lives in oiCkToggle, which
+          // moves a step to the end of the array when checked and leaves it in
+          // place when unchecked (Tim 8/16: staying put after uncheck doubles as
+          // a cheap reorder trick).
+          const ckOrd=ck.map((c,i)=>({c,i}));
           ckHtml='<div class="field"><label>Steps</label>'
             +ckOrd.map(({c,i})=>'<div class="oi-ck-row">'
               +'<input type="checkbox"'+(c.done?' checked':'')+' onchange="oiCkToggle(\''+it.id+'\','+i+')">'

@@ -12,6 +12,30 @@ if (!window.Capacitor?.isNativePlatform?.()) {
   // SKIP_WAITING + listen for controllerchange + 1.5s hard-reload fallback.
   let _swRegistration = null
 
+  // ── SW lifecycle breadcrumbs (8/16) — ring buffer in localStorage so a sticky
+  // banner recurrence stops being a guessing game: paste localStorage.gl_sw_log
+  // and we read what actually happened (shown / suppressed / skip / reload / hops).
+  const _swLog = (ev) => {
+    try {
+      const l = JSON.parse(localStorage.getItem('gl_sw_log') || '[]')
+      l.push(new Date().toISOString().slice(5, 19) + ' ' + ev)
+      while (l.length > 30) l.shift()
+      localStorage.setItem('gl_sw_log', JSON.stringify(l))
+    } catch (_) {}
+  }
+
+  // ── Post-reload cooldown (8/16, banner v4). Root-cause hypothesis for every
+  // sticky-banner sighting since 8/7: GitHub Pages' CDN caches sw.js (~10-min
+  // TTL) across multiple edges — minutes after a deploy, an update check can
+  // fetch the PREVIOUS sw.js from a stale edge, the browser sees "different =
+  // new", parks it waiting, and re-prompts for the version the user just left.
+  // Our web-first cadence (push → Tim tests 1–2 min later) sits inside that
+  // window every time. So: for 10 min after a banner-driven reload, park any
+  // "new" version silently (no banner, no activation churn); a genuinely newer
+  // deploy re-prompts after the window or at the next natural boot.
+  const COOL_KEY = 'gl_sw_cooldown_until'
+  const _inCooldown = () => Date.now() < (parseInt(localStorage.getItem(COOL_KEY) || '0', 10) || 0)
+
   // Message SKIP_WAITING to whatever worker can take it: the waiting one, or —
   // when a newer deploy superseded the banner's version mid-flight — the
   // installing one, as soon as it reaches 'installed'. Returns false if there's
@@ -52,6 +76,7 @@ if (!window.Capacitor?.isNativePlatform?.()) {
       if (reloaded) return
       reloaded = true
       try { sessionStorage.setItem(HOPS_KEY, String(_healHops + 1)) } catch (_) {}
+      _swLog('silent-activate reload hops→' + (_healHops + 1))
       window.location.reload()
     }
     if (navigator.serviceWorker) {
@@ -70,13 +95,20 @@ if (!window.Capacitor?.isNativePlatform?.()) {
   const updateSW = registerSW({
     onRegisteredSW(_, registration) {
       _swRegistration = registration
+      _swLog('registered hops=' + _healHops + ' waiting=' + !!registration?.waiting + ' installing=' + !!registration?.installing)
       if (_healHops > 0 && _healHops <= 3) _silentActivate(registration)
     },
     onNeedRefresh() {
       // Mid-chain: the superseding version just reached waiting — the user
       // already asked for "latest", finish silently instead of re-prompting.
-      if (_healHops > 0 && _healHops <= 3 && _silentActivate(_swRegistration)) return
+      if (_healHops > 0 && _healHops <= 3 && _silentActivate(_swRegistration)) { _swLog('needRefresh mid-chain silent hops=' + _healHops) ; return }
+      // Post-reload cooldown: park CDN ping-pong versions without prompting or
+      // activating (activating could ping the OLD version back in and would
+      // also let cleanupOutdatedCaches pull hashed chunks out from under the
+      // running page). The waiting worker just sits; a newer install replaces it.
+      if (_inCooldown()) { _swLog('needRefresh SUPPRESSED (cooldown)'); return }
       if (document.getElementById('gl-update-banner')) return
+      _swLog('needRefresh banner shown')
       const banner = document.createElement('div')
       banner.id = 'gl-update-banner'
       banner.style.cssText = [
@@ -110,12 +142,15 @@ if (!window.Capacitor?.isNativePlatform?.()) {
 
         // 2. Reload-once latch (prevents double-reload between controllerchange + fallback)
         let reloaded = false
-        const doReload = () => { if (!reloaded) { reloaded = true; window.location.reload() } }
+        const doReload = (src) => { if (!reloaded) { reloaded = true; _swLog('reload via ' + (src || 'controllerchange')); window.location.reload() } }
 
         // 3. Mark that this reload came from the RELOAD button — if activation
         // races a superseding install, the boot-time heal in onRegisteredSW
-        // finishes it silently instead of re-showing the banner.
+        // finishes it silently instead of re-showing the banner. Arm the 10-min
+        // CDN-ping-pong cooldown at the same time (banner v4).
         try { sessionStorage.setItem('gl_sw_activating', '1') } catch (_) {}
+        try { localStorage.setItem(COOL_KEY, String(Date.now() + 10 * 60 * 1000)) } catch (_) {}
+        _swLog('RELOAD click waiting=' + !!_swRegistration?.waiting + ' installing=' + !!_swRegistration?.installing)
 
         // 4. Listen for the new SW taking control — this is the "happy path"
         if (navigator.serviceWorker) {
@@ -134,7 +169,7 @@ if (!window.Capacitor?.isNativePlatform?.()) {
         // still INSTALLING, a timer reload fires before handover and seeds the
         // reload loop (8/15) — so we wait for controllerchange instead; the
         // button honestly shows RELOADING… until the install lands.
-        if (_swRegistration && _swRegistration.waiting) setTimeout(doReload, 3000)
+        if (_swRegistration && _swRegistration.waiting) setTimeout(() => doReload('3s-fallback'), 3000)
       })
     },
     onOfflineReady() {
