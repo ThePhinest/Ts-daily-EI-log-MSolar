@@ -397,6 +397,14 @@ html.camera-live body>*:not(#gl-camera){visibility:hidden}
 .card.collapsed .card-chevron{transform:rotate(-90deg)}
 .card.collapsed .card-body{display:none}
 .card.collapsed .card-head{border-bottom:none}
+/* ── Sticky section headers (8/16 prototype, #18) — DAILY LOG ONLY. The active
+   section's header pins to the top of the scrollport until its card scrolls off
+   (iOS Contacts pattern). .card must be overflow:clip NOT hidden here: hidden
+   makes the card its own sticky containing scrollport so sticking never happens;
+   clip clips to the border-radius without creating a scroll context.
+   Delete these two rules to fully revert the prototype. ── */
+#page-log .card{overflow:clip}
+#page-log .card-head{position:sticky;top:0;z-index:5}
 /* Gold fading divider inside a card/config head (photos-page date-label pattern) —
    drop <span class="head-fade"></span> after the title. Reusable app-wide. */
 .head-fade{flex:1 1 12px;min-width:12px;height:1px;background:linear-gradient(90deg,rgba(201,168,76,.5),rgba(201,168,76,.08) 70%,transparent)}
