@@ -17,7 +17,7 @@
 <style>
 :root {
   /* GroundLog — Dark */
-  --bg:#121212;--s1:#1a1a1a;--s2:rgba(0,107,117,0.2);--s3:#006B75;
+  --bg:#121212;--s1:#1f1f1f;--s2:rgba(0,107,117,0.2);--s3:#006B75; /* --s1 lifted 1a→1f 8/16: cards separate from the page ground (#124) */
   --border:#2e2e2e;--border2:rgba(0,107,117,0.35);
   --amber:#C9A84C;--amber2:#e0c070;--amber-bg:rgba(201,168,76,0.1);
   --text:#F5F5F0;--muted:#5a8a8a;--muted2:#7aacac;--ph:#8a8a8a;
@@ -258,7 +258,7 @@ html.camera-live body>*:not(#gl-camera){visibility:hidden}
 .tc-type-btn.active{background:var(--amber);color:#111;border-color:var(--amber);font-weight:700}
 .map-tc-unit-sel{background:var(--s1);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--mono);font-size:13px;padding:6px 8px;cursor:pointer;min-width:0}
 .gl-tracker-popup{z-index:5100!important}
-.gl-tracker-popup .mapboxgl-popup-content{background:rgba(0,0,0,0.82);color:#e8e8e8;padding:12px;border-radius:8px;border:1px solid rgba(255,255,255,.12)}
+.gl-tracker-popup .mapboxgl-popup-content{background:rgba(0,0,0,0.82);color:#e8e8e8;padding:12px;border-radius:8px;border:1px solid rgba(255,255,255,.12);max-height:min(60dvh,calc(100dvh - var(--app-bar-h) - 120px));overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch} /* cap + internal scroll (8/16, #11): fully-expanded sections can no longer push the popup bottom off-screen */
 .gl-tracker-popup.mapboxgl-popup-anchor-bottom .mapboxgl-popup-tip{border-top-color:rgba(0,0,0,0.82)}
 .gl-tracker-popup.mapboxgl-popup-anchor-top .mapboxgl-popup-tip{border-bottom-color:rgba(0,0,0,0.82)}
 .gl-tracker-popup .mapboxgl-popup-close-button{color:#e8e8e8;font-size:20px;width:28px;height:28px;line-height:28px;padding:0;top:4px;right:4px}
@@ -297,6 +297,7 @@ html.camera-live body>*:not(#gl-camera){visibility:hidden}
 .cal-cell-num{font-family:var(--mono);font-size:13px;color:var(--text);font-weight:600;line-height:1;padding:2px}
 .cal-cell.empty .cal-cell-num,.cal-cell.no-log:not(.today) .cal-cell-num{color:var(--border2)}
 .cal-cell-dots{display:flex;flex-wrap:wrap;gap:2px;justify-content:center;max-width:44px}
+.cal-cell-wx{font-family:var(--mono);font-size:8.5px;color:var(--muted2);line-height:1.1;white-space:nowrap;max-width:100%;overflow:hidden} /* recorded-weather glance line on logged days (8/16, #21) */
 .cal-dot{font-size:9px;line-height:1}
 
 /* CALENDAR LIST */
@@ -386,7 +387,7 @@ html.camera-live body>*:not(#gl-camera){visibility:hidden}
 
 /* CARD */
 .card{background:var(--s1);border:1px solid var(--border);border-radius:var(--r);margin-bottom:16px;overflow:hidden}
-.card-head{background:var(--header-bg);border-bottom:1px solid var(--border);padding:10px 17px;display:flex;align-items:center;gap:10px;cursor:pointer;user-select:none;-webkit-user-select:none}
+.card-head{background:var(--header-bg);border-bottom:1px solid var(--border);border-left:3px solid var(--amber);padding:10px 17px 10px 14px;display:flex;align-items:center;gap:10px;cursor:pointer;user-select:none;-webkit-user-select:none} /* amber left rail (8/16, #18): section starts read at a glance while scrolling; 3px rail + 14px pad keeps the old 17px text inset */
 @media(hover:hover){.card-head:hover{background:var(--bg)}}
 .card-num{font-family:var(--mono);font-size:var(--fs-xs);color:var(--muted);padding:2px 7px;border:1px solid var(--border2);border-radius:4px}
 .card-title{font-family:var(--cond);font-weight:700;font-size:var(--fs-md);letter-spacing:.12em;text-transform:uppercase;color:var(--amber2)}
@@ -555,7 +556,7 @@ button:disabled,button[disabled]{opacity:.45;cursor:not-allowed}
    Patterns mirror .config-section but with .ab- prefix to keep them
    independent (the editor isn't an "expand/collapse settings card"). */
 .ab-section{background:var(--s1);border:1px solid var(--border);border-radius:var(--r);margin-bottom:16px;overflow:hidden}
-.ab-section-head{background:var(--header-bg);border-bottom:1px solid var(--border);padding:10px 17px;display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px}
+.ab-section-head{background:var(--header-bg);border-bottom:1px solid var(--border);border-left:3px solid var(--amber);padding:10px 17px 10px 14px;display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px} /* same amber rail as .card-head (8/16) */
 /* Color logic inside the AI & Branding subpage:
    - Section title (header):  teal  — matches the .nav-card pattern that
                                        opened the subpage. Section identity.

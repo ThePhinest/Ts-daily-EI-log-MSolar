@@ -442,6 +442,28 @@ function calGetDotIndicators(record){
   return dots.join('');
 }
 
+// Compact recorded-weather line for month-grid day cells (delta 7/17): one
+// emoji + temp derived from the day's stored log (sky checkboxes + temp/precip
+// fields). The full snapshot stays in the day view — this is the at-a-glance tier.
+function _calWxCell(rec){
+  try{
+    const f=(rec&&rec.fields)||{};
+    const sky=(Array.isArray(rec.sky)?rec.sky.join(' '):(rec.sky||'')).toLowerCase();
+    const precip=parseFloat(f.precip)||0;
+    let ico='';
+    if(/snow|flurr/.test(sky)) ico='❄';
+    else if(/storm|thunder/.test(sky)) ico='⛈';
+    else if(precip>0||/rain|shower|drizzl/.test(sky)) ico='🌧';
+    else if(/fog|mist|haz/.test(sky)) ico='🌫';
+    else if(/partly/.test(sky)) ico='⛅';
+    else if(/cloud|overcast/.test(sky)) ico='☁';
+    else if(/sun|clear/.test(sky)) ico='☀';
+    const t=String(f.tempPM||f.tempAM||'').trim().replace(/[<>&"']/g,'');
+    const txt=[ico,t?t+'°':''].filter(Boolean).join(' ');
+    return txt?'<div class="cal-cell-wx">'+txt+'</div>':'';
+  }catch{ return ''; }
+}
+
 function calRenderGrid(){
   const months=['January','February','March','April','May','June','July','August','September','October','November','December'];
   const label=document.getElementById('cal-month-label');
@@ -473,6 +495,7 @@ function calRenderGrid(){
       cells+=`<div class="cal-cell has-log${isToday?' today':''}" onclick="${_click}">
         <div class="cal-cell-num">${d}</div>
         <div class="cal-cell-dots">${calGetDotIndicators(rec)}${subChips}</div>
+        ${_calWxCell(rec)}
       </div>`;
     } else if(subChips){
       // No own log, but teammates submitted this day — open their summaries.

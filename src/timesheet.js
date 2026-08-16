@@ -292,7 +292,10 @@ function tsPushFromDailyLog(){
   if(!existing._manualHours){
     const tin=document.getElementById('p-timeIn')?.value||'';
     const tout=document.getElementById('p-timeOut')?.value||'';
-    if(tin&&tout){const[ih,im]=tin.split(':').map(Number);const[oh,om]=tout.split(':').map(Number);const hrs=((oh*60+om)-(ih*60+im))/60;if(hrs>0)update.hours=Math.round(hrs*10)/10;}
+    // Break must come off the timesheet hours too — daily-log calcHours already
+    // subtracts it; this sync path missing it was the "break not deducting" bug.
+    const brk=parseInt(document.getElementById('p-break')?.value||'0')||0;
+    if(tin&&tout){const[ih,im]=tin.split(':').map(Number);const[oh,om]=tout.split(':').map(Number);const hrs=((oh*60+om)-(ih*60+im)-brk)/60;if(hrs>0)update.hours=Math.round(hrs*10)/10;}
   }
   if(!existing._manualMiles){
     const s=parseFloat(document.getElementById('p-odoStart')?.value)||0;

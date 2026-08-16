@@ -479,8 +479,12 @@ function oiRender(){
         // Checklist editor (check kind only)
         let ckHtml='';
         if(kind==='check'){
+          // Checked steps sink to the bottom (stable sort — unchecked keep their
+          // entry order and float back up on uncheck). Handlers carry the ORIGINAL
+          // stored index so toggle/edit/delete always hit the right item.
+          const ckOrd=ck.map((c,i)=>({c,i})).sort((a,b)=>(a.c.done?1:0)-(b.c.done?1:0));
           ckHtml='<div class="field"><label>Steps</label>'
-            +ck.map((c,i)=>'<div class="oi-ck-row">'
+            +ckOrd.map(({c,i})=>'<div class="oi-ck-row">'
               +'<input type="checkbox"'+(c.done?' checked':'')+' onchange="oiCkToggle(\''+it.id+'\','+i+')">'
               +'<input type="text" value="'+_oiEsc(c.t)+'" placeholder="Step…" onchange="oiCkText(\''+it.id+'\','+i+',this.value)"'+(c.done?' style="text-decoration:line-through;color:var(--muted)"':'')+'>'
               +'<button class="oi-ck-del" onclick="oiCkDel(\''+it.id+'\','+i+')">✕</button>'
@@ -520,6 +524,11 @@ function oiRender(){
         +'</div>'+detail+'</div>';
     }).join('');
   }
+
+  // Pre-filled Details textareas must size to their content on render —
+  // programmatic value never fires 'input', so run the shared autoResize pass
+  // (same standing rule as the daily-log / settings / swppp renders).
+  requestAnimationFrame(()=>{ if(typeof autoResize==='function') list.querySelectorAll('textarea.auto-expand').forEach(autoResize); });
 
   // Resolved today — collapsed history strip
   const wrap=document.getElementById('oi-resolved-wrap');
