@@ -389,6 +389,7 @@ window.camOpen=camOpen;
 export async function camClose(){
   if(!_open&&!document.getElementById('gl-camera')){ return; }
   _open=false; _suspended=false;
+  _flushPendingRoll();
   clearInterval(_clockTimer); _clockTimer=null;
   clearTimeout(_stripTimer); _stripTimer=null;
   clearTimeout(_reframeT); _reframeT=null;
@@ -772,6 +773,7 @@ function _b64ToBlob(b64,type){
 
 async function _shoot(){
   if(_busy) return; _busy=true;
+  _flushPendingRoll();   // #51: previous shot's caption is now final — roll-save its stamp
   const sh=document.getElementById('glc-shutter'); if(sh) sh.disabled=true;
   try{
     const res=await CameraPreview.capture({quality:92});
@@ -848,31 +850,48 @@ async function _rollAlbumId(Media){
   }catch(e){ console.warn('camera-roll album resolve failed (saving to library root):',e); _rollAlbum=''; }
   return _rollAlbum||undefined;
 }
+async function _rollSaveOuts(entry,outs){
+  if(!outs.length) return;
+  const [{Filesystem,Directory},{Media}]=await Promise.all([import('@capacitor/filesystem'),import('@capacitor-community/media')]);
+  const albumIdentifier=await _rollAlbumId(Media);
+  for(const o of outs){
+    const b64=await new Promise((res,rej)=>{ const r=new FileReader(); r.onloadend=()=>res(String(r.result).split(',')[1]); r.onerror=()=>rej(r.error); r.readAsDataURL(o.b); });
+    const path=`glroll/${entry.id}-${o.tag}.jpg`;
+    await Filesystem.writeFile({path,data:b64,directory:Directory.Cache,recursive:true});
+    const uri=(await Filesystem.getUri({path,directory:Directory.Cache})).uri;
+    await Media.savePhoto(albumIdentifier?{path:uri,albumIdentifier}:{path:uri});
+    try{ await Filesystem.deleteFile({path,directory:Directory.Cache}); }catch{}
+  }
+}
 async function _autoRollSave(entry,blob){
   const mode=camAutoSave();
   if(mode==='off'||!_isNative()) return;
   try{
-    const outs=[];
-    if(mode==='original'||mode==='both') outs.push({b:blob,tag:'original'});
-    if(mode==='stamped'||mode==='both'){
-      try{ const sb=await camStampBlob(entry,blob); if(sb) outs.push({b:sb,tag:'stamped'}); }
-      catch(e){ console.warn('auto-save stamp render failed (skipping stamped copy):',e); }
-    }
-    if(!outs.length) return;
-    const [{Filesystem,Directory},{Media}]=await Promise.all([import('@capacitor/filesystem'),import('@capacitor-community/media')]);
-    const albumIdentifier=await _rollAlbumId(Media);
-    for(const o of outs){
-      const b64=await new Promise((res,rej)=>{ const r=new FileReader(); r.onloadend=()=>res(String(r.result).split(',')[1]); r.onerror=()=>rej(r.error); r.readAsDataURL(o.b); });
-      const path=`glroll/${entry.id}-${o.tag}.jpg`;
-      await Filesystem.writeFile({path,data:b64,directory:Directory.Cache,recursive:true});
-      const uri=(await Filesystem.getUri({path,directory:Directory.Cache})).uri;
-      await Media.savePhoto(albumIdentifier?{path:uri,albumIdentifier}:{path:uri});
-      try{ await Filesystem.deleteFile({path,directory:Directory.Cache}); }catch{}
-    }
+    if(mode==='original'||mode==='both') await _rollSaveOuts(entry,[{b:blob,tag:'original'}]);
   }catch(e){
     console.warn('auto-save to camera roll failed:',e);
     _toast('✗ Camera-roll save failed — photo is safe in the app');
   }
+  // The stamped copy DEFERS until the per-shot edit window closes (next shot /
+  // strip edit / strip hide / camera close). Rendering it here baked the
+  // carry-forward caption — i.e. the PREVIOUS photo's — into every rolled shot
+  // when captions are typed after the shutter; a Photos asset can't be
+  // silently replaced, so the wrong stamp was permanent.
+  if(mode==='stamped'||mode==='both') _pendingRoll={entry,blob};
+}
+let _pendingRoll=null;
+function _flushPendingRoll(){
+  const p=_pendingRoll; _pendingRoll=null;
+  if(!p||!_isNative()) return;
+  (async()=>{
+    try{
+      const sb=await camStampBlob(p.entry,p.blob);
+      if(sb) await _rollSaveOuts(p.entry,[{b:sb,tag:'stamped'}]);
+    }catch(e){
+      console.warn('auto-save to camera roll failed:',e);
+      _toast('✗ Camera-roll save failed — photo is safe in the app');
+    }
+  })();
 }
 
 // ── post-shot strip (non-blocking) ──
@@ -893,7 +912,7 @@ function _showStrip(entry,blob){
     </div>`;
   el.style.display='flex';
   el.onclick=()=>{ clearTimeout(_stripTimer); _stripEdit(entry,el,url); };
-  _stripTimer=setTimeout(()=>{ el.style.display='none'; URL.revokeObjectURL(url); },6000);
+  _stripTimer=setTimeout(()=>{ el.style.display='none'; URL.revokeObjectURL(url); _flushPendingRoll(); },6000);
 }
 
 // Previously-used values for the ＋ quick-pick (Solocator's little + beside the
@@ -957,7 +976,9 @@ function _stripEdit(entry,strip,objUrl){
   ov.querySelectorAll('[data-hist]').forEach(b=>{
     b.onclick=()=>_histPick(ov,b.dataset.hist,b.dataset.hist==='glc-ed-loc'?'locLabel':'caption');
   });
-  const done=()=>{ ov.remove(); if(objUrl) URL.revokeObjectURL(objUrl); };
+  // Save OR Cancel: the edit window is over either way — flush the deferred
+  // stamped roll copy (Save has already written the new caption onto entry).
+  const done=()=>{ ov.remove(); if(objUrl) URL.revokeObjectURL(objUrl); _flushPendingRoll(); };
   ov.querySelector('#glc-ed-x').onclick=done;
   ov.querySelector('#glc-ed-ok').onclick=()=>{
     const loc=ov.querySelector('#glc-ed-loc').value.trim();
