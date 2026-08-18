@@ -1666,7 +1666,7 @@ function _amendmentsSummarySheet(wb, rows, pid){
     if(app.actual!=null){ g.act+=app.actual; g.actUnit=app.actualUnit||g.actUnit||'lbs'; }
   });
   const order={lime:0,fertilizer:1,mulch:2,other:3};
-  [...map.values()].sort((a,b)=>(order[a.type]??9)-(order[b.type]??9)||a.product.localeCompare(b.product)).forEach(g=>{
+  [...map.values()].sort((a,b)=>(order[a.type]??9)-(order[b.type]??9)||a.product.localeCompare(b.product)).forEach((g,ri)=>{
     const ru=(g.rateUnit||'lbs/ac');
     const r=ws.addRow([
       _AM_LABEL[g.type]||g.type, g.product||'—',
@@ -1675,6 +1675,12 @@ function _amendmentsSummarySheet(wb, rows, pid){
       g.req?(+g.req.toFixed(g.req>=100?0:1)).toLocaleString('en-US')+' '+ru.split('/')[0]:'—',
       g.act?(+g.act.toFixed(1)).toLocaleString('en-US')+' '+g.actUnit:'—',
     ]);
+    // White/green banding + gold separators — matches the amendment type tabs.
+    const band=(ri%2===1)?'EAF5EA':null;
+    r.eachCell({includeEmpty:true},c=>{
+      if(band) c.fill={type:'pattern',pattern:'solid',fgColor:{argb:band}};
+      c.border={bottom:{style:'thin',color:{argb:'FFC9A84C'}}};
+    });
     r.getCell(1).font={name:'Calibri',size:11,bold:true};
     r.getCell(7).font={name:'Calibri',size:11,bold:true,color:{argb:'FF006B75'}};
     r.height=20;
@@ -1730,13 +1736,14 @@ function _amendmentTypeSheet(wb, type, rows, pid){
       app.actual!=null?app.actual+' '+(app.actualUnit||'lbs'):'',
       e.method||'', e.contractor||'', app.notes||'',
     ]);
-    // Alternating band fill — visual row separation (Tim 8/18), soft amber tint
-    // to match the amendments header family.
-    const band=(ri%2===1)?'FAF5E8':null;
+    // White/green alternating rows + a thin gold rule between them — the same
+    // visual language as the seeding tabs' tag-photo rows (Tim 8/18).
+    const band=(ri%2===1)?'EAF5EA':null;
     r.eachCell({includeEmpty:true},c=>{
       c.font={name:'Calibri',size:10};
       c.alignment={vertical:'top',wrapText:true};
       if(band) c.fill={type:'pattern',pattern:'solid',fgColor:{argb:band}};
+      c.border={bottom:{style:'thin',color:{argb:'FFC9A84C'}}};
     });
     r.getCell(1).font={name:'Calibri',size:10,bold:true};
     _xlFitRowHeight(r,COLW,10,20);

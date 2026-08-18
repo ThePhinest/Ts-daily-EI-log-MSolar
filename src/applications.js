@@ -75,30 +75,25 @@ function glEntryApplications(entry, pid){
 }
 
 // Deterministic one-line summary — the old "↓ Append to notes" line, per
-// application, generated as-you-go so nobody has to remember a button.
+// application, generated as-you-go so nobody has to remember a button. Compact
+// (Tim 8/18): mix/tags/actual live in their own columns, so the note is just
+// the calc line — "100 lbs/ac × 0.43 ac = 43 lbs" — with a type prefix on
+// non-seed lines only (readable in entry notes; the seed tab filters on it).
 function glAppSummaryLine(app, acres){
   if(!app) return '';
-  // No meaningful data yet → no line (a bare "Seed:" must never count as content).
   if(!app.product&&(app.rate==null||app.rate==='')&&(app.actual==null||app.actual==='')) return '';
-  const parts=[];
-  const t=GL_APP_TYPE_LABELS[app.type]||'Material';
-  let head=t+':';
-  if(app.product) head+=' '+app.product;
-  parts.push(head);
   const ru=app.rateUnit||'lbs/ac';
-  if(app.rate!=null&&app.rate!==''){
-    let seg='@ '+app.rate+' '+ru;
-    if(acres>0){
-      const req=app.rate*acres;
-      seg+=' × '+(+acres.toFixed(2))+' ac = '+(+req.toFixed(req>=100?0:1)).toLocaleString('en-US')+' '+ru.split('/')[0];
-    }
-    parts.push(seg);
+  const prefix=(app.type&&app.type!=='seed')?((GL_APP_TYPE_LABELS[app.type]||'Material')+': '):'';
+  if(app.rate!=null&&app.rate!==''&&acres>0){
+    const req=app.rate*acres;
+    return prefix+app.rate+' '+ru+' × '+(+acres.toFixed(2))+' ac = '
+      +(+req.toFixed(req>=100?0:1)).toLocaleString('en-US')+' '+ru.split('/')[0];
   }
-  const extras=[];
-  if(app.actual!=null&&app.actual!=='') extras.push('used '+app.actual+' '+(app.actualUnit||'lbs'));
-  if(app.type==='seed'&&app.seedTags) extras.push(app.seedTags+' seed tag'+(app.seedTags>1?'s':''));
-  if(extras.length) parts.push('('+extras.join(', ')+')');
-  return parts.join(' ').trim();
+  // No rate/area yet — fall back to what IS known.
+  const bits=[];
+  if(app.product) bits.push(app.product);
+  if(app.actual!=null&&app.actual!=='') bits.push('used '+app.actual+' '+(app.actualUnit||'lbs'));
+  return bits.length?(prefix+bits.join(' — ')):'';
 }
 
 // ═══ Seed-bag weights (product → lbs per bag) + tag-photo ledger ═══
@@ -113,6 +108,15 @@ function sbWeightFor(product, pid){
   if(!n) return null;
   const hit=sbGetProducts(pid).find(p=>_sbNorm(p.product)===n);
   return (hit&&hit.weightLbs>0)?hit.weightLbs:null;
+}
+// Default application rate (lbs/ac) for a material — the lime/fert half of the
+// list (bulk totes / truck drops have no bags to count; the useful number is
+// the rate, auto-filled onto the row the moment the product matches).
+function sbRateFor(product, pid){
+  const n=_sbNorm(product);
+  if(!n) return null;
+  const hit=sbGetProducts(pid).find(p=>_sbNorm(p.product)===n);
+  return (hit&&hit.rateLbsAc>0)?hit.rateLbsAc:null;
 }
 async function sbEnsureCfg(pid){
   pid=pid||_sbPid();
@@ -341,6 +345,10 @@ function _appEsc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/
 function appRowsRender(){
   const host=document.getElementById('map-tr-apps');
   if(!host) return;
+  // Product suggestions from the materials list (Settings 🎒) — tap "Lime"
+  // instead of typing it; matching also triggers the lbs/ac rate autofill.
+  // Datalist goes AFTER the rows — host.children[i] must stay the i-th row box.
+  const matList=`<datalist id="gl-mat-list">${sbGetProducts().map(p=>`<option value="${_appEsc(p.product)}"></option>`).join('')}</datalist>`;
   host.innerHTML=_appRows.map((r,i)=>{
     const chips=GL_APP_TYPES.map(t=>{
       const on=r.type===t.id;
@@ -357,12 +365,12 @@ function appRowsRender(){
         ${_appRows.length>1?`<button type="button" onclick="appRowRemove(${i})" title="Remove application" style="background:none;border:none;color:var(--muted);font-size:14px;cursor:pointer;padding:2px 4px;flex-shrink:0">✕</button>`:''}
       </div>
       <div style="display:grid;grid-template-columns:1fr;gap:8px;margin-bottom:8px">
-        <input type="text" value="${_appEsc(r.product)}" oninput="appRowField(${i},'product',this.value)" placeholder="${isSeed?'Seed mix / product':'Product (e.g. ag lime, 10-10-10)'}" style="width:100%;${_APP_IN}">
+        <input type="text" list="gl-mat-list" value="${_appEsc(r.product)}" oninput="appRowField(${i},'product',this.value)" placeholder="${isSeed?'Seed mix / product':'Product (e.g. ag lime, 10-10-10)'}" style="width:100%;${_APP_IN}">
       </div>
       <div style="display:grid;grid-template-columns:1fr auto auto;gap:8px;align-items:end">
         <div>
           <label style="font-family:var(--mono);font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:3px">Rate</label>
-          <input type="number" step="0.1" min="0" value="${_appEsc(r.rate)}" oninput="appRowField(${i},'rate',this.value)" placeholder="0" style="width:100%;${_APP_IN}">
+          <input type="number" data-f="rate" step="0.1" min="0" value="${_appEsc(r.rate)}" oninput="appRowField(${i},'rate',this.value)" placeholder="0" style="width:100%;${_APP_IN}">
         </div>
         <select onchange="appRowField(${i},'rateUnit',this.value)" style="${_APP_IN}">${_APP_RATE_UNITS.map(u=>`<option${r.rateUnit===u?' selected':''}>${u}</option>`).join('')}</select>
         <div style="text-align:right;min-width:74px">
@@ -394,7 +402,7 @@ function appRowsRender(){
       </div>
       ${specWarn}
     </div>`;
-  }).join('');
+  }).join('')+matList;
 }
 
 // ── Row event handlers ──
@@ -413,8 +421,19 @@ function appRowField(i,k,v){
   // A hand-typed product/rate ends its auto stamp (never re-clobbered after).
   if(k==='product'&&v!==r._autoProduct) r._autoProduct='';
   if(k==='rate'&&v!==r._autoRate) r._autoRate='';
+  // Materials-list rate default (lime 2000 lbs/ac etc.): product matches a line
+  // with lbs/ac → the rate fills itself, never clobbering a hand-entered one.
+  if(k==='product'){
+    const rt=sbRateFor(v);
+    if(rt!=null&&(!r.rate||r.rate===r._autoRate)){
+      r.rate=String(rt); r._autoRate=r.rate;
+      const box=document.getElementById('map-tr-apps')?.children[i];
+      const rEl=box?box.querySelector('input[data-f="rate"]'):null;
+      if(rEl&&document.activeElement!==rEl) rEl.value=r.rate;
+    }
+  }
   if(k!=='notes') _appRowAutoNotes(r);
-  if(k==='rate'||k==='rateUnit') _appRowsRenderSoft(i);   // required readout updates live
+  if(k==='product'||k==='rate'||k==='rateUnit') _appRowsRenderSoft(i);   // required readout updates live
   appSyncEntryNotes();
   if(typeof _trSeedSectionSync==='function') _trSeedSectionSync();
 }
@@ -537,26 +556,32 @@ function appAmendmentsSync(){
 function sbShowWeights(){
   const pid=_sbPid();
   const render=()=>{
-    const list=sbGetProducts(pid).map((p,i)=>`
+    const list=sbGetProducts(pid).map((p,i)=>{
+      const bits=[];
+      if(p.weightLbs>0) bits.push(p.weightLbs+' lbs/bag');
+      if(p.rateLbsAc>0) bits.push(p.rateLbsAc+' lbs/ac');
+      return `
       <div style="display:flex;gap:8px;align-items:center;border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin-bottom:6px">
         <div style="flex:1;min-width:0;font-family:var(--mono);font-size:12px;color:var(--text)">${_appEsc(p.product)}</div>
-        <div style="font-family:var(--mono);font-size:12px;color:var(--amber);white-space:nowrap">${p.weightLbs} lbs/bag</div>
+        <div style="font-family:var(--mono);font-size:12px;color:var(--amber);white-space:nowrap">${bits.join(' · ')||'—'}</div>
         <button onclick="sbDeleteWeight(${i})" style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--muted);font-size:11px;padding:5px 8px;cursor:pointer">🗑</button>
-      </div>`).join('')
-      ||'<div style="font-family:var(--mono);font-size:11px;color:var(--muted);padding:8px 0">No bag weights yet — add your mixes below (e.g. Annual rye — 50).</div>';
+      </div>`;
+    }).join('')
+      ||'<div style="font-family:var(--mono);font-size:11px;color:var(--muted);padding:8px 0">No materials yet — e.g. "Annual rye · 50 lbs/bag" or "Lime · 2000 lbs/ac".</div>';
     const box=document.getElementById('sb-wt-body');
     if(box) box.innerHTML=list;
   };
   const ov=document.createElement('div');
   ov.className='modal-overlay';
-  ov.innerHTML=`<div class="modal-box" style="max-width:420px">
-    <h3 style="margin:0 0 4px">🎒 Bag Weights</h3>
-    <p style="font-size:11px;color:var(--muted);margin:0 0 10px">One line per material — seed mixes, lime, fertilizer: how many lbs a bag holds. Tag photos then track themselves — a tag photo's capacity is tags-in-photo × bag weight, and every entry it's attached to draws it down. Nothing else to enter in the field.</p>
+  ov.innerHTML=`<div class="modal-box" style="max-width:440px">
+    <h3 style="margin:0 0 4px">🎒 Materials — Bags &amp; Rates</h3>
+    <p style="font-size:11px;color:var(--muted);margin:0 0 10px">One line per material. <b>lbs/bag</b> (seed mixes): tag photos track their own remaining pounds. <b>lbs/ac</b> (lime, fertilizer — bulk totes &amp; truck drops have no bags): the rate auto-fills on the entry the moment the product matches. Fill either or both.</p>
     <div id="sb-wt-body" style="max-height:44vh;overflow-y:auto"></div>
     <div style="border-top:1px solid var(--border);margin-top:10px;padding-top:10px">
-      <div style="display:grid;grid-template-columns:1fr 100px;gap:6px">
-        <input type="text" id="sb-wt-product" placeholder="Product / mix (matches entry mix)" style="width:100%;${_APP_IN}">
+      <div style="display:grid;grid-template-columns:1fr 86px 86px;gap:6px">
+        <input type="text" id="sb-wt-product" placeholder="Product / mix" style="width:100%;${_APP_IN}">
         <input type="number" id="sb-wt-lbs" step="0.1" min="0" placeholder="lbs/bag" style="width:100%;${_APP_IN}">
+        <input type="number" id="sb-wt-rate" step="0.1" min="0" placeholder="lbs/ac" style="width:100%;${_APP_IN}">
       </div>
       <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:10px">
         <button class="btn btn-outline" onclick="this.closest('.modal-overlay').remove()">Close</button>
@@ -573,14 +598,20 @@ async function sbAddWeight(){
   const pid=_sbPid();
   const product=document.getElementById('sb-wt-product')?.value.trim();
   const w=parseFloat(document.getElementById('sb-wt-lbs')?.value);
-  if(!product||isNaN(w)||w<=0) return;
-  // Same product again = update its weight, never a duplicate line.
+  const rt=parseFloat(document.getElementById('sb-wt-rate')?.value);
+  const hasW=!isNaN(w)&&w>0, hasR=!isNaN(rt)&&rt>0;
+  if(!product||(!hasW&&!hasR)) return;
+  // Same product again = update its line, never a duplicate.
   const products=sbGetProducts(pid).filter(p=>_sbNorm(p.product)!==_sbNorm(product));
-  products.push({product,weightLbs:w});
+  const rec={product};
+  if(hasW) rec.weightLbs=w;
+  if(hasR) rec.rateLbsAc=rt;
+  products.push(rec);
   await sbSaveProducts(products,pid);
-  ['sb-wt-product','sb-wt-lbs'].forEach(id=>{const el=document.getElementById(id); if(el) el.value='';});
+  ['sb-wt-product','sb-wt-lbs','sb-wt-rate'].forEach(id=>{const el=document.getElementById(id); if(el) el.value='';});
   if(window._sbWtRender) window._sbWtRender();
   if(typeof mapRefreshEntryPhotoStrip==='function') mapRefreshEntryPhotoStrip();
+  appRowsRender();   // product datalist suggestions update
 }
 async function sbDeleteWeight(i){
   const pid=_sbPid();
