@@ -3891,18 +3891,8 @@ function mapShowTrackerModal(feat,category){
   // Seed calculator — area categories that track material only (toggled below via
   // _setEntryFieldVisibility, which also handles planned/linear/phase visibility).
   const trackMat=(typeof tcTrackMaterial==='function')?tcTrackMaterial(catDetails,pid):true;
-  const rateEl=document.getElementById('map-tr-rate');
-  const calcEl=document.getElementById('map-tr-calc-result');
-  if(rateEl){ rateEl.value=catDetails?.targetRate||''; rateEl.dataset.auto=rateEl.value; }
-  if(calcEl) calcEl.textContent='—';
-  const actualAmtEl=document.getElementById('map-tr-actual-amt');
-  const actualUnitEl=document.getElementById('map-tr-actual-unit');
-  const seedTagsEl=document.getElementById('map-tr-seed-tags');
-  if(actualAmtEl) actualAmtEl.value='';
-  if(actualUnitEl) actualUnitEl.value='lbs';
-  if(seedTagsEl) seedTagsEl.value='';
-  const mixProductEl=document.getElementById('map-tr-mix-product');
-  if(mixProductEl){ mixProductEl.value=''; mixProductEl.dataset.auto=''; }
+  // 🌱 Application rows (applications.js) — fresh seed row, category rate as the auto prefill.
+  if(typeof appRowsReset==='function') appRowsReset({rate:(measType!=='linear'&&catDetails?.targetRate)?catDetails.targetRate:null});
   _trWhereReset();
   const newLabelBtn=document.getElementById('map-tr-date-label-btn');
   if(newLabelBtn){newLabelBtn.dataset.on='0';newLabelBtn.style.background='none';newLabelBtn.style.borderColor='rgba(255,255,255,0.15)';newLabelBtn.style.color='rgba(255,255,255,0.35)';newLabelBtn.textContent='🔖 Label';}
@@ -3910,7 +3900,6 @@ function mapShowTrackerModal(feat,category){
   const newLabelColor=document.getElementById('map-tr-label-color'); if(newLabelColor) newLabelColor.value='#ffffff';
   const newLabelCfg=document.getElementById('map-tr-label-config'); if(newLabelCfg) newLabelCfg.style.display='none';
   _trLblSetChips({date:true,meas:false,custom:false});
-  if(catDetails?.targetRate&&measType!=='linear') mapTrackerCalc();
   const catColor=(typeof tcGetColor==='function')?tcGetColor(category,pid):'#888';
   const catName=(typeof tcGetName==='function')?tcGetName(category,pid):(category||'Unknown');
   document.getElementById('map-tracker-cat-dot').style.background=catColor;
@@ -3983,19 +3972,12 @@ function mapTrStateChanged(){
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
   const cat=(typeof tcGetCategory==='function')?tcGetCategory(_drawCategory,pid):null;
   const st=_trSelectedState();
-  const rate=(st&&st.targetRate!=null)?st.targetRate:(cat?.targetRate??'');
-  const rateEl=document.getElementById('map-tr-rate');
-  // Rate follows the state's material only while it's still the auto-filled value —
-  // a user-entered rate must survive a state change (same rule as the Mix prefill).
-  if(rateEl && (!rateEl.value || rateEl.value===rateEl.dataset.auto)){
-    rateEl.value=rate||'';
-    rateEl.dataset.auto=rateEl.value;
-  }
-  // Prefill Mix/Product from the state's product (only if the field is empty,
-  // so we never clobber what the user already typed).
-  const mixEl=document.getElementById('map-tr-mix-product');
-  if(mixEl && !mixEl.value && st && st.productName) mixEl.value=st.productName;
-  if(typeof mapTrackerCalc==='function') mapTrackerCalc();
+  // Per-state material → the seed application row (never-clobber auto stamps live
+  // in applications.js; a user-entered rate/product survives a state change).
+  if(typeof appStatePrefill==='function') appStatePrefill({
+    targetRate:(st&&st.targetRate!=null)?st.targetRate:(cat?.targetRate??null),
+    productName:st?st.productName:null,
+  });
   _trSeedSectionSync();   // 🌱 offer/hide seeding details as the state changes
   _trSpecSync(true);      // 🌱 state purpose feeds the seeding-specs rule
 }
@@ -4061,8 +4043,7 @@ function _trSeedSectionSync(){
   if(!calcSection||!btn) return;
   if(calcSection.dataset.base==='shown'){ btn.style.display='none'; return; }
   if(_drawEntryType==='planned'||!_trSeedStateEligible()){ btn.style.display='none'; calcSection.style.display='none'; _trSeedMethodReveal(false); return; }
-  const hasVals=['map-tr-rate','map-tr-actual-amt','map-tr-seed-tags','map-tr-mix-product']
-    .some(id=>{ const el=document.getElementById(id); return el&&el.value; });
+  const hasVals=(typeof appRowsHasData==='function')&&appRowsHasData();
   calcSection.style.display=hasVals?'':'none';
   btn.style.display=hasVals?'none':'';
   _trSeedMethodReveal(hasVals);
@@ -4166,17 +4147,10 @@ function _trSpecSync(fill){
     return;
   }
   if(fill){
-    // Same never-clobber stamps as the state prefill: fill only while the field
-    // is empty or still holds the last auto-filled value.
-    const rateEl=document.getElementById('map-tr-rate');
-    if(rateEl&&res.rate!=null&&(!rateEl.value||rateEl.value===rateEl.dataset.auto)){
-      rateEl.value=res.rate; rateEl.dataset.auto=rateEl.value;
-      if(typeof mapTrackerCalc==='function') mapTrackerCalc();
-    }
-    const mixEl=document.getElementById('map-tr-mix-product');
-    if(mixEl&&res.product&&(!mixEl.value||mixEl.value===mixEl.dataset.auto)){
-      mixEl.value=res.product; mixEl.dataset.auto=mixEl.value;
-    }
+    // Never-clobber stamps live per-row in applications.js — the resolved rule
+    // fills the seed row; amendment rules re-fill lime/fert rows.
+    if(typeof appSpecFill==='function') appSpecFill(res);
+    if(typeof appAmendmentsSync==='function') appAmendmentsSync();
   }
   const esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;');
   const rows=[];
@@ -4447,24 +4421,28 @@ function mapSaveTrackerEntry(){
     method:isLinear?null:(document.getElementById('map-tr-method')?.value||'N/A'),
     status:isLinear?(document.getElementById('map-tr-status')?.value||'Installed'):null,
     contractor:document.getElementById('map-tr-contractor')?.value.trim()||null,
-    fields:(()=>{
-      if(isLinear) return {};
-      const rateVal=parseFloat(document.getElementById('map-tr-rate')?.value)||null;
-      const requiredAmt=rateVal&&acres?Math.round(rateVal*acres):null;
-      const requiredUnit=rateVal?_catUnit().split('/')[0]:null;
-      const rawActual=document.getElementById('map-tr-actual-amt')?.value;
-      const actualAmt=rawActual!==''&&rawActual!=null?parseFloat(rawActual):null;
-      const actualUnitVal=document.getElementById('map-tr-actual-unit')?.value||'lbs';
-      const rawTags=document.getElementById('map-tr-seed-tags')?.value;
-      const seedTagVal=rawTags!==''&&rawTags!=null?parseInt(rawTags):null;
+    // 🌱 applications[] (applications.js) + legacy mirror: the first seed
+    // application writes back into fields/seedMix so every existing reader
+    // (exports, popups, KMZ, photo ZIP, daily log) stays truthful untouched.
+    ...(()=>{
+      // Planned areas carry no per-application data (#5.1) — and linear categories
+      // have no application UI at all.
+      if(isLinear||_drawEntryType==='planned') return {fields:{},seedMix:null,applications:null};
+      const apps=(typeof appRowsGet==='function')?appRowsGet():[];
+      const m=(typeof appMirrorRow==='function')?appMirrorRow(apps):null;
+      const requiredAmt=(m&&m.rate!=null&&acres)?Math.round(m.rate*acres):null;
+      const requiredUnit=(m&&m.rate!=null)?(m.rateUnit||'lbs/ac').split('/')[0]:null;
       return {
-        ...(rateVal!=null?{appliedRate:rateVal}:{}),
-        ...(requiredAmt!=null?{requiredAmount:requiredAmt,requiredUnit}:{}),
-        ...(actualAmt!=null?{actualAmount:actualAmt,actualUnit:actualUnitVal}:{}),
-        ...(seedTagVal!=null?{seedTagCount:seedTagVal}:{}),
+        applications:apps.length?apps:null,
+        fields:m?{
+          ...(m.rate!=null?{appliedRate:m.rate}:{}),
+          ...(requiredAmt!=null?{requiredAmount:requiredAmt,requiredUnit}:{}),
+          ...(m.actual!=null?{actualAmount:m.actual,actualUnit:m.actualUnit||'lbs'}:{}),
+          ...(m.seedTags!=null?{seedTagCount:m.seedTags}:{}),
+        }:{},
+        seedMix:(m&&m.product)?m.product:null,
       };
     })(),
-    seedMix:document.getElementById('map-tr-mix-product')?.value.trim()||null,
     // 🌱 seeding-specs location — stored from day one, not in any export yet.
     seedWhere:document.getElementById('map-tr-where')?.value||null,
     showDateLabel:document.getElementById('map-tr-date-label-btn')?.dataset.on==='1'||false,
@@ -6857,12 +6835,27 @@ function _showTrackerEntryPopup(lngLat,props){
   // Per-application fields (material, rate, amounts) belong to the LAYERS drawn on a
   // plan, not the plan itself — so a planned drawing's popup omits them (#5.1).
   if(!_isPlanned){
-    if(_hasV(entry?.seedMix)) _detailRows.push(['Mix / Product',entry.seedMix]);
+    // Multi-application entries list one line per application; single/legacy
+    // entries keep the original per-field rows (derive returns exactly one row).
+    const _apps=(typeof glEntryApplications==='function')?glEntryApplications(entry,pid):[];
+    if(_apps.length>1){
+      _apps.forEach(a=>{
+        const lbl=(window.GL_APP_TYPE_LABELS&&GL_APP_TYPE_LABELS[a.type])||'Material';
+        const bits=[];
+        if(a.product) bits.push(a.product);
+        if(a.rate!=null) bits.push('@ '+a.rate+' '+(a.rateUnit||'lbs/ac'));
+        if(a.actual!=null) bits.push('used '+a.actual+' '+(a.actualUnit||'lbs'));
+        if(a.date&&a.date!==entry.date) bits.push(a.date);
+        _detailRows.push([lbl,bits.join(' · ')||'—']);
+      });
+    } else {
+      if(_hasV(entry?.seedMix)) _detailRows.push(['Mix / Product',entry.seedMix]);
+      if(_hasV(_f.appliedRate)) _detailRows.push(['Applied rate',_f.appliedRate]);
+      if(_hasV(_f.requiredAmount)) _detailRows.push(['Required',_f.requiredAmount+(_f.requiredUnit?(' '+_f.requiredUnit):'')]);
+      if(_hasV(_f.actualAmount)) _detailRows.push(['Actual',_f.actualAmount+(_f.actualUnit?(' '+_f.actualUnit):'')]);
+    }
     if(_hasV(entry?.seedWhere)) _detailRows.push(['Seeded where',
       (typeof ssWhereLabel==='function'&&typeof ssGetCfg==='function')?ssWhereLabel(ssGetCfg(pid),entry.seedWhere):entry.seedWhere]);
-    if(_hasV(_f.appliedRate)) _detailRows.push(['Applied rate',_f.appliedRate]);
-    if(_hasV(_f.requiredAmount)) _detailRows.push(['Required',_f.requiredAmount+(_f.requiredUnit?(' '+_f.requiredUnit):'')]);
-    if(_hasV(_f.actualAmount)) _detailRows.push(['Actual',_f.actualAmount+(_f.actualUnit?(' '+_f.actualUnit):'')]);
   }
   if(entry&&!_isTemp) _detailRows.push(['Type',_isPlanned?'Planned':'Installed']);
   const detailsBlock=_detailRows.length?`<div style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,.12)">
@@ -7267,20 +7260,9 @@ function mapEditTrackerEntry(entryId){
   if(measInput){ measInput.value=entryValue||''; measInput.dataset.unit=entryUnit; }
   const editTrackMat=(typeof tcTrackMaterial==='function')?tcTrackMaterial(editCat,editPid):true;
   _setEntryFieldVisibility(_drawEntryType==='planned', editMeasType, editHasDesc, editTrackMat, _drawCategory, editPid);
-  const rateEl=document.getElementById('map-tr-rate');
-  // Stored rate = user data — dataset.auto stays empty so a state tap never clobbers it.
-  if(rateEl){ rateEl.value=entry.fields?.appliedRate||''; rateEl.dataset.auto=''; }
-  const calcEl=document.getElementById('map-tr-calc-result');
-  if(calcEl) calcEl.textContent='—';
-  const editActualAmtEl=document.getElementById('map-tr-actual-amt');
-  const editActualUnitEl=document.getElementById('map-tr-actual-unit');
-  const editSeedTagsEl=document.getElementById('map-tr-seed-tags');
-  if(editActualAmtEl) editActualAmtEl.value=entry.fields?.actualAmount!=null?entry.fields.actualAmount:'';
-  if(editActualUnitEl) editActualUnitEl.value=entry.fields?.actualUnit||'lbs';
-  if(editSeedTagsEl) editSeedTagsEl.value=entry.fields?.seedTagCount!=null?entry.fields.seedTagCount:'';
-  const editMixEl=document.getElementById('map-tr-mix-product');
-  // Stored mix = user data — dataset.auto stays empty so a spec fill never clobbers it.
-  if(editMixEl){ editMixEl.value=entry.seedMix||''; editMixEl.dataset.auto=''; }
+  // 🌱 Stored applications (or the legacy-derived row) populate the app rows.
+  // Stored values = user data — auto stamps stay empty so prefills never clobber.
+  if(typeof appRowsSet==='function') appRowsSet((typeof glEntryApplications==='function')?glEntryApplications(entry,editPid):[], entry.id);
   _trSeedSectionSync();   // values are in — re-run so seed-carrying stab entries open revealed
   _trWhereInit(entry.seedWhere||'');   // 🌱 notes re-render; stored values never re-filled
   const editLabelBtn=document.getElementById('map-tr-date-label-btn');
@@ -7337,28 +7319,11 @@ function mapTrackerUnitChange(){
   measInput.dataset.unit=newUnit;
   mapTrackerCalc();
 }
+// 🌱 The single-material calc + "Append to notes" button became the application
+// rows (applications.js): per-row required totals recompute live and the summary
+// lines fill the notes as-you-go — nothing to remember to tap.
 function mapTrackerCalc(){
-  const acres=parseFloat(document.getElementById('map-tr-acres')?.value)||0;
-  const rate=parseFloat(document.getElementById('map-tr-rate')?.value)||0;
-  const el=document.getElementById('map-tr-calc-result');
-  if(!el) return;
-  if(acres>0&&rate>0){
-    const unit=_catUnit();
-    el.textContent=Math.round(acres*rate).toLocaleString('en-US')+' '+unit.split('/')[0];
-  } else {
-    el.textContent='—';
-  }
-}
-function mapTrackerCalcInsert(){
-  const rate=parseFloat(document.getElementById('map-tr-rate')?.value)||0;
-  const acres=parseFloat(document.getElementById('map-tr-acres')?.value)||0;
-  if(!rate||!acres) return;
-  const unit=_catUnit();
-  const total=Math.round(acres*rate).toLocaleString('en-US');
-  const notesEl=document.getElementById('map-tr-notes');
-  if(!notesEl) return;
-  const line=`${rate} ${unit} × ${acres} ac = ${total} ${unit.split('/')[0]}`;
-  notesEl.value=notesEl.value?(notesEl.value+'\n'+line):line;
+  if(typeof appRowsRecalc==='function') appRowsRecalc();
 }
 // #57: single-entry map changes refresh only that entry's category source.
 function _trEntryCatId(entryId,pid){
@@ -7753,4 +7718,5 @@ window.mapToggleTrackerCategoryVisibility = mapToggleTrackerCategoryVisibility;
 window.mapDeleteTrackerEntryFromPanel = mapDeleteTrackerEntryFromPanel;
 window.mapEditTrackerEntry = mapEditTrackerEntry;
 window.mapTrackerCalc = mapTrackerCalc;
-window.mapTrackerCalcInsert = mapTrackerCalcInsert;
+window._trSeedSectionSync = _trSeedSectionSync;   // applications.js re-syncs the 🌱 reveal on row edits
+window._glEntryIsPlanned = ()=>_drawEntryType==='planned';   // planned notes double as export group labels — never auto-fill them

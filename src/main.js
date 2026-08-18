@@ -93,6 +93,7 @@ import './report.js'
 import './swppp.js'
 import './agencyVisits.js'
 import './seedingSpecs.js'
+import './applications.js'
 
 window.firebase = firebase
 window.mapboxgl = mapboxgl

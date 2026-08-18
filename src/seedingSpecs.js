@@ -130,6 +130,29 @@ function ssResolve(cfg, sel){
   };
 }
 
+// ── Amendment rules (lime / fertilizer / mulch) ──
+// cfg.amendments = [{type:'lime'|'fertilizer'|'mulch'|'other', where:[locIds]?,
+//   windows:[{from,to}]?, product, rate, rateUnit:'tons/ac'|…, cite?, notes?}]
+// Same scoring shape as ssResolve: where-constrained beats generic, in-window
+// beats out-of-window fallback. Feeds the lime/fert application-row autofill +
+// the amber out-of-spec warning (applications.js).
+function ssResolveAmendment(cfg, sel){
+  const list=(cfg&&cfg.amendments)||[];
+  if(!list.length||!sel||!sel.type) return null;
+  const md=(sel.date||'').slice(5);
+  let best=null,bestScore=-Infinity;
+  for(const r of list){
+    if(r.type!==sel.type) continue;
+    if(r.where&&r.where.length&&(!sel.where||!r.where.includes(sel.where))) continue;
+    let score=(r.where&&r.where.length?2:0);
+    if(r.windows&&r.windows.length&&md) score+=r.windows.some(w=>_ssInWindow(md,w))?2:-100;
+    if(score>bestScore){ best=r; bestScore=score; }
+  }
+  if(!best) return null;
+  return {product:best.product||null, rate:best.rate!=null?best.rate:null,
+    rateUnit:best.rateUnit||null, cite:best.cite||null, notes:best.notes||[]};
+}
+
 // ── Setup (paste-JSON, one time per project — QI config pattern) ──
 function ssShowSetup(){
   const ov = document.createElement('div');
@@ -164,6 +187,7 @@ window.ssGetCfg = ssGetCfg;
 window._ssRateText = _ssRateText;
 window.ssEnsureCfg = ssEnsureCfg;
 window.ssResolve = ssResolve;
+window.ssResolveAmendment = ssResolveAmendment;
 window.ssStatePurpose = ssStatePurpose;
 window.ssWhereLabel = ssWhereLabel;
 window.ssShowSetup = ssShowSetup;

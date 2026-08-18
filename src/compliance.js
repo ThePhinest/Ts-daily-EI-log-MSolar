@@ -1608,6 +1608,130 @@ function _removalSummarySheet(wb, rows, pid){
   note.getCell(1).font={italic:true,size:9,color:{argb:'FF666666'}}; note.height=18;
 }
 
+// ── 🌱 Amendments (lime / fertilizer / mulch / other) ──
+// Rows come from BOTH recording styles: typed application rows on any entry
+// (applications.js) AND state-based recordings (Limed / Fertilized states —
+// glEntryApplications derives those, bare extents included). Per-application
+// notes ride these tabs; they are never lumped into the seed notes.
+function _glAmendmentRows(cids, entries, pid){
+  const rows=[];
+  (entries||[]).forEach(e=>{
+    if(!e||e.temporary||e.deletedAt||e.entryType==='planned') return;
+    if(!cids.has(e.categoryId||e.category)) return;
+    const apps=(typeof glEntryApplications==='function')?glEntryApplications(e,pid):[];
+    apps.forEach(a=>{ if(a&&a.type&&a.type!=='seed') rows.push({e,app:a,type:a.type}); });
+  });
+  rows.sort((a,b)=>String(a.app.date||a.e.date||'').localeCompare(String(b.app.date||b.e.date||'')));
+  return rows;
+}
+const _AM_LABEL={lime:'Lime',fertilizer:'Fertilizer',mulch:'Mulch',other:'Other Materials'};
+
+// Amendments — Summary front tab (removal-summary house pattern): one line per
+// type × product × rate with coverage, required, and actual totals. Record-only —
+// parcels and requirements vary too much for a fake %-progress bar (Tim 8/17).
+function _amendmentsSummarySheet(wb, rows, pid){
+  const TEAL='006B75', WHITE='FFFFFF';
+  const ws=wb.addWorksheet('Amendments — Summary');
+  ws.columns=[{width:14},{width:30},{width:16},{width:16},{width:10},{width:18},{width:18}];
+  ws.addRow(['SOIL AMENDMENTS — SUMMARY']); ws.mergeCells(1,1,1,7);
+  const tc=ws.getCell('A1');
+  tc.font={name:'Calibri',bold:true,size:18,color:{argb:WHITE}};
+  tc.fill={type:'pattern',pattern:'solid',fgColor:{argb:'7D6608'}};
+  tc.alignment={vertical:'middle',horizontal:'left',indent:1}; ws.getRow(1).height=34;
+  const cfg=JSON.parse(localStorage.getItem('msf_projectconfig')||'{}');
+  [['Project',cfg.projectName||''],['Snapshot date',new Date().toLocaleDateString('en-CA')]].forEach(([l,v])=>{
+    const r=ws.addRow([l,v]); ws.mergeCells(r.number,2,r.number,7);
+    r.getCell(1).font={name:'Consolas',size:9,bold:true,color:{argb:'FF'+TEAL}};
+    r.getCell(2).font={name:'Calibri',size:10}; r.height=15;
+  });
+  ws.addRow([]);
+  const hdr=ws.addRow(['Type','Product','Rate','Coverage (ac)','Events','Required','Actual']);
+  hdr.eachCell({includeEmpty:true},c=>{ c.font={bold:true,size:10,color:{argb:WHITE}}; c.fill={type:'pattern',pattern:'solid',fgColor:{argb:TEAL}}; });
+  hdr.height=18;
+  // type → product × rate roll-up (same normalization as the seed summary: name
+  // case/whitespace variants total as one line).
+  const map=new Map();
+  rows.forEach(({e,app,type})=>{
+    const key=type+'__'+String(app.product||'').trim().toLowerCase()+'__'+(app.rate!=null?app.rate:'')+'__'+(app.rateUnit||'');
+    if(!map.has(key)) map.set(key,{type,product:(app.product||'').trim(),rate:app.rate,rateUnit:app.rateUnit||'lbs/ac',ac:0,n:0,req:0,act:0,actUnit:''});
+    const g=map.get(key);
+    const ac=(e.acres!=null)?e.acres:0;
+    g.ac+=ac; g.n++;
+    if(app.rate!=null&&ac) g.req+=app.rate*ac;
+    if(app.actual!=null){ g.act+=app.actual; g.actUnit=app.actualUnit||g.actUnit||'lbs'; }
+  });
+  const order={lime:0,fertilizer:1,mulch:2,other:3};
+  [...map.values()].sort((a,b)=>(order[a.type]??9)-(order[b.type]??9)||a.product.localeCompare(b.product)).forEach(g=>{
+    const ru=(g.rateUnit||'lbs/ac');
+    const r=ws.addRow([
+      _AM_LABEL[g.type]||g.type, g.product||'—',
+      g.rate!=null?g.rate+' '+ru:'—',
+      g.ac?+g.ac.toFixed(2):'—', g.n,
+      g.req?(+g.req.toFixed(g.req>=100?0:1)).toLocaleString('en-US')+' '+ru.split('/')[0]:'—',
+      g.act?(+g.act.toFixed(1)).toLocaleString('en-US')+' '+g.actUnit:'—',
+    ]);
+    r.getCell(1).font={name:'Calibri',size:11,bold:true};
+    r.getCell(7).font={name:'Calibri',size:11,bold:true,color:{argb:'FF006B75'}};
+    r.height=20;
+  });
+  const note=ws.addRow(['ℹ  Record-only: application requirements vary by parcel, so no % progress is implied. Full per-event records are on each type\'s tab.']);
+  ws.mergeCells(note.number,1,note.number,7);
+  note.getCell(1).font={italic:true,size:9,color:{argb:'FF666666'}};
+  note.getCell(1).alignment={wrapText:true}; note.height=22;
+}
+
+// Per-type tab (Lime / Fertilizer / …): one row per application event, date-sorted,
+// with that application's OWN notes.
+function _amendmentTypeSheet(wb, type, rows, pid){
+  const TEAL='006B75', WHITE='FFFFFF';
+  let base=String(_AM_LABEL[type]||type).replace(/[\\\/\?\*\[\]:]/g,'').slice(0,31);
+  let nm=base, n=2;
+  while(wb.getWorksheet(nm)){ nm=base.slice(0,28)+' '+n; n++; }
+  const ws=wb.addWorksheet(nm);
+  const COLW=[13,22,20,22,13,24,14,14,14,18,20,40];
+  ws.columns=COLW.map(w=>({width:w}));
+  const NC=COLW.length;
+  ws.addRow([(_AM_LABEL[type]||type).toUpperCase()+' — APPLICATION RECORD']); ws.mergeCells(1,1,1,NC);
+  const tc=ws.getCell('A1');
+  tc.font={name:'Calibri',bold:true,size:18,color:{argb:WHITE}};
+  tc.fill={type:'pattern',pattern:'solid',fgColor:{argb:'7D6608'}};
+  tc.alignment={vertical:'middle',horizontal:'left',indent:1}; ws.getRow(1).height=34;
+  const cfg=JSON.parse(localStorage.getItem('msf_projectconfig')||'{}');
+  [['Project',cfg.projectName||''],['Snapshot date',new Date().toLocaleDateString('en-CA')]].forEach(([l,v])=>{
+    const r=ws.addRow([l,v]); ws.mergeCells(r.number,2,r.number,NC);
+    r.getCell(1).font={name:'Consolas',size:9,bold:true,color:{argb:'FF'+TEAL}};
+    r.getCell(2).font={name:'Calibri',size:10}; r.height=15;
+  });
+  ws.addRow([]);
+  const COLS=['Date','Category','State','Location','Coverage','Product','Rate','Required','Actual','Method','Contractor','Notes'];
+  const hdr=ws.addRow(COLS);
+  hdr.eachCell({includeEmpty:true},c=>{ c.font={bold:true,size:10,color:{argb:WHITE}}; c.fill={type:'pattern',pattern:'solid',fgColor:{argb:TEAL}}; c.alignment={vertical:'middle',wrapText:true}; });
+  hdr.height=20;
+  ws.views=[{state:'frozen',ySplit:hdr.number}];
+  rows.forEach(({e,app})=>{
+    const cid=e.categoryId||e.category;
+    const catName=e.categoryName||((typeof tcGetName==='function')?tcGetName(cid,pid):'');
+    const st=(e.state&&typeof tcGetState==='function')?tcGetState(cid,e.state,pid):null;
+    const defUnit=(typeof tcGetDefaultUnit==='function')?tcGetDefaultUnit(cid,pid):'ac';
+    const cov=(typeof trEntryMeasure==='function')?trEntryMeasure(e,defUnit,pid):(e.acres||0);
+    const covTxt=(typeof tcFormatMeasurement==='function')?tcFormatMeasurement(cov,defUnit):(cov+' '+defUnit);
+    const ru=app.rateUnit||'lbs/ac';
+    const req=(app.rate!=null&&e.acres)?app.rate*e.acres:null;
+    const r=ws.addRow([
+      app.date||e.date||'', catName, st?st.label:(e.state||''), e.location||'',
+      covTxt, app.product||'',
+      app.rate!=null?app.rate+' '+ru:'',
+      req!=null?(+req.toFixed(req>=100?0:1)).toLocaleString('en-US')+' '+ru.split('/')[0]:'',
+      app.actual!=null?app.actual+' '+(app.actualUnit||'lbs'):'',
+      e.method||'', e.contractor||'', app.notes||'',
+    ]);
+    r.eachCell({includeEmpty:true},c=>{ c.font={name:'Calibri',size:10}; c.alignment={vertical:'top',wrapText:true}; });
+    r.getCell(1).font={name:'Calibri',size:10,bold:true};
+    _xlFitRowHeight(r,COLW,10,20);
+  });
+  if(!rows.length){ const r=ws.addRow(['—','No applications recorded']); r.getCell(2).font={italic:true,size:10,color:{argb:'FF999999'}}; }
+}
+
 // Build + download ONE report workbook for one OR MORE selections — a tab per selection.
 // Selections are {cid, seedOnly}: seedOnly → the gold-standard seeding-on-stabilization
 // tab alone; otherwise the tab branches on progress mode (running → SWPPP net-disturbed
@@ -1644,18 +1768,29 @@ async function _exportCategoriesDeliverable(sels, entries, pid){
     }
     if(remRows.length) _removalSummarySheet(wb, remRows, pid);
   }
+  // 🌱 Amendments: lime/fert/mulch applications across the selected sources (typed
+  // rows + state-based recordings). Summary front tab + one tab per type with data.
+  const amRows=_glAmendmentRows(new Set(meta.filter(m=>!m.isLinear).map(m=>m.cid)), entries, pid);
+  if(amRows.length) _amendmentsSummarySheet(wb, amRows, pid);
   for(const m of meta){
     if(m.seedOnly) await _stabSeedingSheet(wb, m.cid, entries, pid);
     else if(m.isRunning) await _disturbanceSheet(wb, m.cid, entries, pid);
     else if(m.isLinear) await _linearSheet(wb, m.cid, entries, pid);
     else await _seedingSheet(wb, m.cid, entries, pid);
   }
+  if(amRows.length){
+    const amTypes=[...new Set(amRows.map(r=>r.type))];
+    for(const t of amTypes) _amendmentTypeSheet(wb, t, amRows.filter(r=>r.type===t), pid);
+  }
   const allSeeding=meta.every(m=>m.isSeeding);
   // Body font ≥ 12 across the workbook (titles/headline keep their larger size). Skip
   // hidden rows (the collapsed capture-image ranges) so their reserved height holds.
   wb.eachSheet(sheet=>{
     sheet.eachRow(row=>{
-      if(row.hidden) return;
+      // Hidden EMPTY rows = collapsed capture images (reserved heights must hold).
+      // Hidden rows WITH values = collapsed month groups — they still get the font
+      // pass so expanding a month matches the rest of the sheet.
+      if(row.hidden && !row.hasValues) return;
       if(!row.height || row.height<16) row.height=16;
       row.eachCell({includeEmpty:false},c=>{ const f=c.font||{}; if((f.size||11)<12) c.font={...f,size:12}; });
     });
@@ -2062,7 +2197,8 @@ async function _allSeedingSummarySheet(wb, srcs, entries, pid){
 // Shared by the export modal (to derive the "Seeding on …" row), the seeding-on-stab tab,
 // and the all-seeding summary.
 function _seedHasData(e){
-  return !!(e.seedMix||e.fields?.appliedRate!=null||e.fields?.seedTagCount!=null||e.fields?.actualAmount!=null);
+  return !!(e.seedMix||e.fields?.appliedRate!=null||e.fields?.seedTagCount!=null||e.fields?.actualAmount!=null
+    ||(Array.isArray(e.applications)&&e.applications.some(a=>a&&(a.product||a.rate!=null||a.actual!=null||a.seedTags!=null))));
 }
 window._seedHasData=_seedHasData;
 
@@ -2331,6 +2467,9 @@ async function _embedCapturesInline(ws, wb, owners, NC, opts){
     lbl.getCell(1).fill={type:'pattern',pattern:'solid',fgColor:{argb:fillArgb}};
     lbl.getCell(1).border={top:{style:'thin',color:{argb:'FFC9A84C'}}};
     lbl.height=18;
+    // Nested inside a collapsed month group (seeding tabs' monthly collapse): the
+    // label row rides the month's outline level and hides with it.
+    if(opts&&opts.baseLevel){ lbl.outlineLevel=opts.baseLevel; lbl.hidden=!!opts.startHidden; }
     try{
       const resp=await fetch(ph.storageUrl); if(!resp.ok) continue;
       const blob=await resp.blob();
@@ -2356,10 +2495,11 @@ async function _embedCapturesInline(ws, wb, owners, NC, opts){
       const jblob=await new Promise(res=>cv.toBlob(res,'image/jpeg',0.72));
       const dataUrl=await _blobToDataURL(jblob);
       const raw=dataUrl.substring(dataUrl.indexOf(',')+1);
-      // K grouped rows, all collapsed by default (outline level 1 + hidden) so the photo
-      // hides/expands as one unit under the dated toggle row above it.
+      // K grouped rows, all collapsed by default (one level deeper than the month
+      // group when nested) so the photo hides/expands as one unit under its toggle row.
       let firstNum=null;
-      for(let k=0;k<K;k++){ const ir=ws.addRow([]); ir.height=perRowPt; ir.outlineLevel=1; ir.hidden=true; if(k===0) firstNum=ir.number; }
+      const imgLevel=((opts&&opts.baseLevel)||0)+1;
+      for(let k=0;k<K;k++){ const ir=ws.addRow([]); ir.height=perRowPt; ir.outlineLevel=imgLevel; ir.hidden=true; if(k===0) firstNum=ir.number; }
       const r0=firstNum-1; // 0-indexed
       const imgId=wb.addImage({base64:raw, extension:'jpeg'});
       // twoCellAnchor across the full span + all K rows → sizes/collapses with the group.
@@ -2760,7 +2900,7 @@ async function _seedingSheetRender(wb, o){
   // outlineLevelRow=1 marks the level-1 image rows collapsed so the sheet opens tidy —
   // expand with + (after Protected View's "Enable Editing", which disables outline toggles).
   ws.properties.outlineProperties={summaryBelow:false,summaryRight:false};
-  ws.properties.outlineLevelRow=1;
+  ws.properties.outlineLevelRow=2;   // 1 = months / photos · 2 = photos nested in a month group
   // State, Coverage, %, Date, Seed Tags, Mix/Product, Applied Rate, Required, Actual, Method, Contractor, Notes, Photos
   const COLW=[26,14,10,13,11,24,18,18,18,20,22,40,9];
   ws.columns=COLW.map(w=>({width:w}));
@@ -2910,12 +3050,20 @@ async function _seedingSheetRender(wb, o){
       ?(a,b)=>String(a.date||'').localeCompare(String(b.date||''))
       :(a,b)=>(stOrd(a)-stOrd(b))||String(a.date||'').localeCompare(String(b.date||'')));
     if(!sorted.length){ const r=ws.addRow(['—','No layers drawn yet']); r.getCell(2).font={italic:true,size:9,color:{argb:'FF999999'}}; r.height=20; }
-    for(const e of sorted){
+    // One event row (+ optional inline captures). mLevel/mHidden nest it inside a
+    // collapsed month group on long tabs.
+    const writeEvent=async (e, mLevel, mHidden)=>{
       const s=stById[stOf(e)]||null;
       const f=e.fields||{};
       const rateUnit=f.requiredUnit?f.requiredUnit+'/ac':'';
       const cov=measure(e);
       const pct=(planArea>0)?(cov/planArea)*100:null; // uncapped (truthful over-coverage)
+      // 🌱 Multi-application entries append their non-seed applications to the Notes
+      // cell as typed lines (per-app notes ride the Amendments tabs; this keeps the
+      // seed row's own note clean while the extra materials stay visible in context).
+      let noteTxt=e.notes||'';
+      const apps=(typeof glEntryApplications==='function')?glEntryApplications(e,pid):[];
+      const seedApp=apps.find(a=>a.type==='seed')||null;
       const r=ws.addRow([
         s?s.label:(e.state||''),
         fmt(cov),
@@ -2926,7 +3074,8 @@ async function _seedingSheetRender(wb, o){
         f.appliedRate!=null?(rateUnit?f.appliedRate+' '+rateUnit:f.appliedRate):'',
         f.requiredAmount!=null?f.requiredAmount+' '+(f.requiredUnit||''):'',
         f.actualAmount!=null?f.actualAmount+' '+(f.actualUnit||''):'',
-        e.method||'', e.contractor||'', e.notes||'',
+        e.method||'', e.contractor||'',
+        (seedApp&&seedApp.notes&&!noteTxt.includes(seedApp.notes))?(noteTxt?noteTxt+'\n'+seedApp.notes:seedApp.notes):noteTxt,
         Array.isArray(e.photoIds)?e.photoIds.length:'',
       ]);
       r.eachCell({includeEmpty:true},c=>{ c.font={name:'Calibri',size:10}; c.alignment={vertical:'top',wrapText:true}; });
@@ -2935,8 +3084,32 @@ async function _seedingSheetRender(wb, o){
       else r.getCell(1).font={name:'Calibri',size:10,bold:true};
       r.getCell(3).font={name:'Calibri',size:10,bold:true}; if(pct!=null) r.getCell(3).numFmt='0"%"';
       _xlFitRowHeight(r,COLW,10,30); // grows past the 30px padding when notes/mix/method wrap
+      if(mLevel){ r.outlineLevel=mLevel; r.hidden=mHidden; }
       // Flat event lists carry each event's captures/photos right under its own row.
-      if(perRowCaptures) await _embedCapturesInline(ws, wb, [e], NC);
+      if(perRowCaptures) await _embedCapturesInline(ws, wb, [e], NC, mLevel?{baseLevel:mLevel,startHidden:mHidden}:undefined);
+    };
+    // 📅 Monthly collapsible groups (Tim 8/17) — only when a group spans 2+ months:
+    // latest month opens expanded, older months collapsed under their band row.
+    const mKey=e=>String(e.date||'').slice(0,7);
+    const months=[...new Set(sorted.map(mKey))].filter(m=>m&&m.length===7).sort();
+    if(months.length>=2){
+      const latest=months[months.length-1];
+      const noDate=sorted.filter(e=>!mKey(e)||mKey(e).length!==7);
+      for(const m of months){
+        const inMonth=sorted.filter(e=>mKey(e)===m);
+        const collapsed=m!==latest;
+        const label=(()=>{ const [y,mo]=m.split('-'); const d=new Date(+y,+mo-1,1); return d.toLocaleString('en-US',{month:'long',year:'numeric'}); })();
+        const covSum=inMonth.reduce((a,e)=>a+measure(e),0);
+        const mh=ws.addRow([`📅 ${label} — ${inMonth.length} event${inMonth.length>1?'s':''} · ${fmt(covSum)}${collapsed?'   ( + expands ↓ )':''}`]);
+        ws.mergeCells(mh.number,1,mh.number,NC);
+        mh.getCell(1).font={bold:true,size:11,color:{argb:'FF0F1F2E'}};
+        mh.getCell(1).fill={type:'pattern',pattern:'solid',fgColor:{argb:'F0E6C8'}};
+        mh.height=20;
+        for(const e of inMonth) await writeEvent(e,1,collapsed);
+      }
+      for(const e of noDate) await writeEvent(e,0,false);
+    } else {
+      for(const e of sorted) await writeEvent(e,0,false);
     }
     // Plan groups embed the drawing's captures once, after its layer rows (no separate list).
     if(!perRowCaptures) await _embedCapturesInline(ws, wb, owners, NC);

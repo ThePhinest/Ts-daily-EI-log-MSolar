@@ -2704,15 +2704,18 @@ Anticipated rain — AM weather monitoring expected"></textarea>
         <input type="text" id="map-tr-contractor" placeholder="Name or company" style="width:100%;box-sizing:border-box;background:var(--s1);border:1px solid var(--border);border-radius:6px;padding:7px 9px;color:var(--text);font-family:var(--mono);font-size:12px">
       </div>
       <div style="margin-bottom:14px">
-        <label style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;display:block;margin-bottom:4px">Notes</label>
-        <textarea id="map-tr-notes" rows="2" placeholder="Seed mix, applicator, conditions…" style="width:100%;box-sizing:border-box;background:var(--s1);border:1px solid var(--border);border-radius:6px;padding:7px 9px;color:var(--text);font-family:var(--mono);font-size:12px;resize:vertical"></textarea>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+          <label style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em">Notes</label>
+          <button type="button" onclick="if(typeof appEntryNotesRegen==='function')appEntryNotesRegen()" title="Refill from the application rows" style="background:none;border:none;color:var(--muted);font-size:12px;cursor:pointer;padding:0 2px">⟲</button>
+        </div>
+        <textarea id="map-tr-notes" rows="2" placeholder="Auto-fills from applications — or type your own" style="width:100%;box-sizing:border-box;background:var(--s1);border:1px solid var(--border);border-radius:6px;padding:7px 9px;color:var(--text);font-family:var(--mono);font-size:12px;resize:vertical"></textarea>
       </div>
       <!-- 🌱 Seeding on stabilization states — opt-in reveal of the calc section
            below; offered only on subtract/none states of running-mode categories -->
-      <button id="map-tr-seed-btn" onclick="mapTrSeedOpen()" style="display:none;margin-bottom:14px;width:100%;background:none;border:1px dashed var(--border);color:var(--muted);padding:9px;border-radius:8px;font-family:var(--mono);font-size:11px;cursor:pointer;letter-spacing:.04em">🌱 Add seeding details (mix, rate, seed tags)</button>
+      <button id="map-tr-seed-btn" onclick="mapTrSeedOpen()" style="display:none;margin-bottom:14px;width:100%;background:none;border:1px dashed var(--border);color:var(--muted);padding:9px;border-radius:8px;font-family:var(--mono);font-size:11px;cursor:pointer;letter-spacing:.04em">🌱 Add seeding details (seed, lime, fertilizer…)</button>
       <!-- Seed / material calculator -->
       <div id="map-tr-calc-section" style="margin-bottom:14px;background:var(--s1);border:1px solid var(--border);border-radius:8px;padding:10px 12px">
-        <div style="font-family:var(--mono);font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">Seed / Material Calc</div>
+        <div style="font-family:var(--mono);font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">Applications — Seed · Lime · Fertilizer</div>
         <!-- 🌱 Seeding specs engine — row renders only when the project has a
              seedingSpecs config; resolves where × state purpose × date × method
              into autofill + read-only spec notes. Entry-form only, no export. -->
@@ -2731,41 +2734,11 @@ Anticipated rain — AM weather monitoring expected"></textarea>
             </div>
           </div>
         </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;align-items:center">
-          <div>
-            <label style="font-family:var(--mono);font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:3px">Rate (lbs/ac)</label>
-            <input type="number" id="map-tr-rate" step="0.1" min="0" placeholder="e.g. 30" oninput="mapTrackerCalc()" style="width:100%;box-sizing:border-box;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:7px 9px;color:var(--text);font-family:var(--mono);font-size:12px">
-          </div>
-          <div>
-            <div style="font-family:var(--mono);font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">Total</div>
-            <div id="map-tr-calc-result" style="font-family:var(--mono);font-size:17px;font-weight:700;color:var(--amber)">—</div>
-          </div>
-        </div>
-        <button onclick="mapTrackerCalcInsert()" style="margin-top:8px;width:100%;background:none;border:1px solid var(--border);color:var(--muted);padding:5px;border-radius:6px;font-family:var(--mono);font-size:10px;cursor:pointer;letter-spacing:.04em">↓ Append to notes</button>
-        <!-- Actual applied + seed tags -->
-        <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border)">
-          <div style="font-family:var(--mono);font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">Actual Applied</div>
-          <div style="display:grid;grid-template-columns:1fr auto;gap:8px">
-            <input type="number" id="map-tr-actual-amt" step="0.1" min="0" placeholder="Amount used" style="width:100%;box-sizing:border-box;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:7px 9px;color:var(--text);font-family:var(--mono);font-size:12px">
-            <select id="map-tr-actual-unit" style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:7px 9px;color:var(--text);font-family:var(--mono);font-size:12px">
-              <option value="lbs">lbs</option>
-              <option value="kg">kg</option>
-              <option value="bags">bags</option>
-              <option value="tons">tons</option>
-              <option value="gal">gal</option>
-            </select>
-          </div>
-          <div style="margin-top:8px;display:flex;gap:12px;align-items:flex-end">
-            <div>
-              <div style="font-family:var(--mono);font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px">Seed Tags 🏷️</div>
-              <input type="number" id="map-tr-seed-tags" step="1" min="0" placeholder="0" style="width:80px;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:7px 9px;color:var(--text);font-family:var(--mono);font-size:12px">
-            </div>
-            <div style="flex:1">
-              <div style="font-family:var(--mono);font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px">Mix / Product</div>
-              <input type="text" id="map-tr-mix-product" placeholder="seed mix, lime, fertilizer…" style="width:100%;box-sizing:border-box;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:7px 9px;color:var(--text);font-family:var(--mono);font-size:12px">
-            </div>
-          </div>
-        </div>
+        <!-- 🌱 Application rows (seed / lime / fert / mulch / other) — rendered by
+             src/applications.js; per-row product · rate · actual · date · auto-notes,
+             seed rows add tags + the bag picker. One drawing, N applications. -->
+        <div id="map-tr-apps"></div>
+        <button type="button" onclick="if(typeof appRowAdd==='function')appRowAdd()" style="width:100%;background:none;border:1px dashed var(--border);color:var(--muted);padding:8px;border-radius:8px;font-family:var(--mono);font-size:11px;cursor:pointer;letter-spacing:.04em">＋ Add application (lime, fertilizer…)</button>
         <!-- Read-only spec notes + amber warnings from the resolved seeding rule -->
         <div id="map-tr-spec-notes" style="display:none;margin-top:10px;border-top:1px dashed var(--border);padding-top:8px;font-family:var(--mono);font-size:10px;line-height:1.55;color:var(--muted)"></div>
       </div>
