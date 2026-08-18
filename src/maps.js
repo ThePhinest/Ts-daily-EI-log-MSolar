@@ -7424,12 +7424,21 @@ function mapShowEntryPhotoPicker(){
     document.body.appendChild(ov);
     return;
   }
+  // 🌱 photos already serving as seed-tag bags elsewhere show their remaining lbs.
+  const _led=(typeof sbPhotoLedger==='function')?sbPhotoLedger(pid):new Map();
   const thumbs=projectPhotos.map(p=>{
     const linked=_pendingPhotoIds.includes(p.id);
+    const L=_led.get(p.id);
+    let ledHtml='';
+    if(L&&L.capacity!=null){
+      const rem=+(L.capacity-L.used).toFixed(1);
+      ledHtml=`<div style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.62);font-family:var(--mono);font-size:8px;color:${rem<=0?'var(--amber)':'#cfe8cf'};text-align:center;padding:1px 0;white-space:nowrap;overflow:hidden">${rem<=0?'⚠ used up':'🌱 '+rem.toLocaleString('en-US')+' lbs'}</div>`;
+    }
     return `<div id="mtrph-${p.id}" onclick="mapToggleEntryPhoto('${p.id}',this)"
       style="position:relative;cursor:pointer;border-radius:6px;border:2px solid ${linked?'var(--amber)':'transparent'};overflow:hidden;flex-shrink:0;width:80px;height:60px">
       <img src="${p.thumb}" style="width:80px;height:60px;object-fit:cover;display:block">
       <div id="mtrph-chk-${p.id}" style="position:absolute;top:2px;right:2px;width:16px;height:16px;border-radius:50%;background:${linked?'var(--amber)':'rgba(0,0,0,.45)'};display:flex;align-items:center;justify-content:center;font-size:9px;color:#fff">${linked?'✓':''}</div>
+      ${ledHtml}
     </div>`;
   }).join('');
   ov.innerHTML=`<div class="modal-box" style="max-width:360px;width:92%;max-height:80vh;display:flex;flex-direction:column">
@@ -7446,6 +7455,11 @@ function mapToggleEntryPhoto(photoId, el){
     const chk=document.getElementById('mtrph-chk-'+photoId);
     if(chk){chk.style.background='rgba(0,0,0,.45)';chk.textContent='';}
   } else {
+    // 🌱 soft lock: attaching a tag photo whose bag ledger reads empty asks first —
+    // never blocks (the math can trail the field; the record always wins).
+    const info=(typeof sbPhotoInfo==='function')?sbPhotoInfo(photoId):null;
+    if(info&&info.remaining!=null&&info.remaining<=0
+      &&!confirm(`This seed tag's bag reads ${(+info.remaining.toFixed(1)).toLocaleString('en-US')} lbs remaining — attach it anyway?`)) return;
     _pendingPhotoIds.push(photoId);
     el.style.borderColor='var(--amber)';
     const chk=document.getElementById('mtrph-chk-'+photoId);
@@ -7458,11 +7472,24 @@ function mapRefreshEntryPhotoStrip(){
   if(typeof _rfRefreshStrip==='function') _rfRefreshStrip();
   const strip=document.getElementById('map-tr-photo-strip');
   if(!strip) return;
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  // 🌱 tag-photo bag ledger — one pass for the whole strip (derived from saved entries).
+  const _led=(typeof sbPhotoLedger==='function')?sbPhotoLedger(pid):new Map();
   const photos=_pendingPhotoIds.map(id=>(window._phPhotos||[]).find(p=>p.id===id)).filter(Boolean);
   strip.innerHTML=photos.map(p=>{
     const isTag=(_pendingPhotoTypes[p.id]||'general')==='material_tag';
     const cap=_pendingPhotoCaptions[p.id]||'';
     const badgeLabel=isTag?(cap?cap.slice(0,12)+(cap.length>12?'…':''):'🏷 Mat. Tag'):'General';
+    let ledHtml='';
+    if(isTag){
+      const L=_led.get(p.id);
+      if(L&&L.capacity!=null){
+        const rem=+(L.capacity-L.used).toFixed(1);
+        ledHtml=`<div style="font-family:var(--mono);font-size:8px;color:${rem<=0?'var(--amber)':'var(--muted)'};white-space:nowrap">${rem<=0?'⚠ bag used up':'🌱 '+rem.toLocaleString('en-US')+' lbs left'}</div>`;
+      } else if(L){
+        ledHtml=`<div onclick="if(typeof sbShowWeights==='function')sbShowWeights()" style="font-family:var(--mono);font-size:8px;color:var(--muted);white-space:nowrap;cursor:pointer;text-decoration:underline dotted">⚖ set bag wt</div>`;
+      }
+    }
     return `
       <div style="display:inline-flex;flex-direction:column;align-items:center;flex-shrink:0;gap:3px">
         <div style="position:relative">
@@ -7472,6 +7499,7 @@ function mapRefreshEntryPhotoStrip(){
         <button onclick="mapTogglePhotoType('${p.id}')" style="font-family:var(--mono);font-size:8px;padding:2px 4px;border-radius:3px;border:1px solid ${isTag?'var(--amber)':'var(--border)'};background:${isTag?'rgba(201,168,76,0.15)':'var(--s1)'};color:${isTag?'var(--amber)':'var(--muted)'};cursor:pointer;width:64px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:center" title="${cap||''}">
           ${badgeLabel}
         </button>
+        ${ledHtml}
       </div>`;
   }).join('');
 }
@@ -7484,14 +7512,31 @@ function _showPhotoCaptionModal(photoId){
   const isTag=(_pendingPhotoTypes[photoId]||'general')==='material_tag';
   const photo=(window._phPhotos||[]).find(p=>p.id===photoId);
   const existing=_pendingPhotoCaptions[photoId]||photo?.caption||'';
+  // 🌱 bag-ledger context: tags-in-photo count (override > inferred-from-entry > 1)
+  // + the photo's current capacity/remaining line when the ledger knows it.
+  const info=(isTag&&typeof sbPhotoInfo==='function')?sbPhotoInfo(photoId):null;
+  const curCount=(photo&&photo.tagCount>0)?photo.tagCount:(info?info.count:1);
+  let ledLine='';
+  if(isTag){
+    if(info&&info.capacity!=null){
+      const rem=+(info.capacity-info.used).toFixed(1);
+      ledLine=`<div style="font-family:var(--mono);font-size:10px;color:${rem<=0?'var(--amber)':'var(--muted)'};margin-bottom:10px;line-height:1.5">${info.count} tag${info.count>1?'s':''} × ${info.weight} lbs (${(info.product||'').replace(/</g,'&lt;')}) = ${info.capacity.toLocaleString('en-US')} lbs · ${info.used.toLocaleString('en-US')} used · <b>${rem.toLocaleString('en-US')} left</b></div>`;
+    } else {
+      ledLine=`<div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:10px;line-height:1.5">No bag weight set for this mix yet — <span onclick="if(typeof sbShowWeights==='function')sbShowWeights()" style="text-decoration:underline dotted;cursor:pointer">add it in Seed Bag Weights</span> and this tag photo starts counting down on its own.</div>`;
+    }
+  }
   const ov=document.createElement('div');
   ov.className='modal-overlay';
   ov.style.cssText='z-index:9600';
   ov.innerHTML=`
     <div class="modal-box" style="max-width:300px;width:88%">
-      <div class="modal-title" style="margin-bottom:6px">${isTag?'Edit export label':'Label for export'}</div>
+      <div class="modal-title" style="margin-bottom:6px">${isTag?'Seed tag photo':'Label for export'}</div>
       <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:14px;line-height:1.5">Used as the filename in the material tag photo ZIP. Leave blank to use the photo caption.</div>
       <input type="text" id="_phcap-input" value="${existing.replace(/"/g,'&quot;').replace(/'/g,'&#39;')}" placeholder="e.g. Seed tag east section 3" style="width:100%;box-sizing:border-box;background:var(--s1);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--body);font-size:16px;padding:9px 12px;outline:none;margin-bottom:14px">
+      ${isTag?`<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+        <label style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;flex:1">Tags in this photo</label>
+        <input type="number" id="_phcap-tags" min="1" step="1" value="${curCount}" style="width:64px;box-sizing:border-box;background:var(--s1);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--mono);font-size:14px;padding:7px 9px;outline:none">
+      </div>${ledLine}`:''}
       <div class="modal-btns">
         <button class="modal-confirm" id="_phcap-ok">Save</button>
         ${isTag?`<button class="modal-cancel" id="_phcap-remove" style="color:#c0392b">Remove Tag</button>`:''}
@@ -7505,6 +7550,12 @@ function _showPhotoCaptionModal(photoId){
     const val=input.value.trim();
     if(val) _pendingPhotoCaptions[photoId]=val;
     else delete _pendingPhotoCaptions[photoId];
+    // Tag-count override persists on the photo record (only when it changed).
+    const tEl=ov.querySelector('#_phcap-tags');
+    if(tEl&&isTag&&typeof sbSetPhotoTagCount==='function'){
+      const n=parseInt(tEl.value);
+      if(n>0&&n!==curCount) sbSetPhotoTagCount(photoId,n);
+    }
     ov.remove(); mapRefreshEntryPhotoStrip();
   };
   ov.querySelector('#_phcap-ok').onclick=save;

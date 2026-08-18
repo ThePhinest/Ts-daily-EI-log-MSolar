@@ -284,6 +284,9 @@ function _phDocFor(p){
   if(p.seedCap) doc.seedCap = p.seedCap;
   if(p.distCap) doc.distCap = p.distCap;
   if(p.plCap) doc.plCap = true;
+  // 🌱 seed-bag ledger (applications.js): tags-in-photo override. Explicit null
+  // when cleared — merge:true would otherwise resurrect an old override.
+  doc.tagCount = (p.tagCount>0) ? p.tagCount : null;
   // 📸 in-app camera fields (src/camera.js): the metadata record half of the
   // two-layer model — the stamp overlay renders from these on demand.
   if(p.locLabel != null) doc.locLabel = p.locLabel;

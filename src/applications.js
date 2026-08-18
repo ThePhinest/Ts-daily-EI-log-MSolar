@@ -11,10 +11,14 @@
 //   write — the first seed application mirrors back into seedMix/fields.* so
 //           every existing reader (exports, popups, KMZ, photo ZIP) is untouched.
 //
-// Seed-bag ledger (minimal v1): bags live in projects/{pid}/config/seedBags
-// (member-read / lead-write — same doc pattern as seedingSpecs); remaining lbs
-// is DERIVED (bag weight − Σ actual lbs of rows referencing it), never stored.
-// Exhausted bags soft-lock: amber + confirm, nothing ever blocks a field entry.
+// Seed-bag ledger (Tim's design, 8/18): the SEED TAG PHOTO is the bag — no
+// per-bag records, no entry-time picking. Setup = one per-project list of
+// product → bag weight (config/seedBags, lead-write). A tag photo's capacity =
+// tags-in-photo × bag weight (count defaults from the entry's Tags 🏷️ field
+// when it's the entry's only tag photo); remaining = capacity − Σ seed lbs of
+// every entry the photo is attached to, drained in attachment order across
+// entries chronologically. All DERIVED, nothing stored but an optional per-photo
+// count override. Exhausted tags go amber + confirm — nothing blocks an entry.
 
 // ── Types ──
 const GL_APP_TYPES=[
@@ -64,7 +68,6 @@ function glEntryApplications(entry, pid){
     actual:f.actualAmount!=null?f.actualAmount:null,
     actualUnit:f.actualUnit||'lbs',
     seedTags:f.seedTagCount!=null?f.seedTagCount:null,
-    bagId:null,
     date:entry.date||null,
     notes:null,
     _derived:true,
@@ -94,19 +97,23 @@ function glAppSummaryLine(app, acres){
   const extras=[];
   if(app.actual!=null&&app.actual!=='') extras.push('used '+app.actual+' '+(app.actualUnit||'lbs'));
   if(app.type==='seed'&&app.seedTags) extras.push(app.seedTags+' seed tag'+(app.seedTags>1?'s':''));
-  if(app.type==='seed'&&app.bagId){
-    const b=_sbById(app.bagId); if(b) extras.push('bag: '+(b.label||b.product||app.bagId));
-  }
   if(extras.length) parts.push('('+extras.join(', ')+')');
   return parts.join(' ').trim();
 }
 
-// ═══ Seed-bag registry ═══
-var _sbCfg={};      // pid → {bags:[...]} | null
+// ═══ Seed-bag weights (product → lbs per bag) + tag-photo ledger ═══
+var _sbCfg={};      // pid → {products:[{product,weightLbs}]} | null
 var _sbLoading={};
 function _sbPid(){ return (typeof _activeProjectId==='function')?_activeProjectId():'default'; }
-function sbGetBags(pid){ const v=_sbCfg[pid||_sbPid()]; return (v&&Array.isArray(v.bags))?v.bags:[]; }
-function _sbById(id, pid){ return sbGetBags(pid).find(b=>b.id===id)||null; }
+function _sbNorm(s){ return String(s||'').trim().toLowerCase(); }
+function sbGetProducts(pid){ const v=_sbCfg[pid||_sbPid()]; return (v&&Array.isArray(v.products))?v.products:[]; }
+// Same normalization as the export summaries — name variants match as one product.
+function sbWeightFor(product, pid){
+  const n=_sbNorm(product);
+  if(!n) return null;
+  const hit=sbGetProducts(pid).find(p=>_sbNorm(p.product)===n);
+  return (hit&&hit.weightLbs>0)?hit.weightLbs:null;
+}
 async function sbEnsureCfg(pid){
   pid=pid||_sbPid();
   if(_sbCfg[pid]!==undefined) return _sbCfg[pid];
@@ -124,37 +131,80 @@ async function sbEnsureCfg(pid){
   })();
   return _sbLoading[pid];
 }
-async function sbSaveBags(bags, pid){
+async function sbSaveProducts(products, pid){
   pid=pid||_sbPid();
-  const cfg={bags:bags,updatedAtMs:Date.now()};
+  const cfg={products:products,updatedAtMs:Date.now()};
   _sbCfg[pid]=cfg;
   idbSet('sb_cfg::'+pid,cfg);
   try{
     if(typeof db!=='undefined'&&db&&_fbReady)
       await db.collection('projects').doc(pid).collection('config').doc('seedBags').set(cfg);
   }catch(e){
-    console.warn('seed bags cloud save failed (kept locally):',e.message);
+    console.warn('seed bag weights cloud save failed (kept locally):',e.message);
     if(typeof showCloudBanner==='function'&&/permission/i.test(e.message||''))
-      showCloudBanner('Only a project lead can edit seed bags — kept on this device only.');
+      showCloudBanner('Only a project lead can edit seed bag weights — kept on this device only.');
   }
 }
-// Derived draw-down: Σ actual lbs across every live entry's applications rows
-// that reference the bag (lbs rows only — other units don't decrement).
-function sbUsedLbs(bagId, pid, exceptEntryId){
+// ── Tag-photo ledger — the whole bag tracker, fully derived ──
+// Every live entry, chronologically: its seed lbs drain into its attached tag
+// photos in attachment order. A photo's capacity = tags-in-photo × bag weight;
+// count comes from the photo's override (tagCount) or infers from the entry's
+// Tags 🏷️ field when the photo is the entry's ONLY tag photo (Tim's 6-tags-in-
+// one-shot workflow), else 1. Overflow lands on the last tag so over-usage
+// reads truthfully as negative remaining.
+function sbPhotoLedger(pid){
   pid=pid||_sbPid();
-  const entries=(typeof trGetEntriesForProject==='function')?trGetEntriesForProject(pid):[];
-  let used=0;
-  entries.forEach(e=>{
-    if(!e||e.deletedAt||e.id===exceptEntryId) return;
-    (Array.isArray(e.applications)?e.applications:[]).forEach(a=>{
-      if(a&&a.bagId===bagId&&a.actual!=null&&(a.actualUnit||'lbs')==='lbs') used+=(+a.actual||0);
+  const entries=((typeof trGetEntriesForProject==='function')?trGetEntriesForProject(pid):[])
+    .filter(e=>e&&!e.deletedAt&&!e.temporary&&e.entryType!=='planned')
+    .sort((a,b)=>String(a.date||'').localeCompare(String(b.date||''))||((a.createdAt||0)-(b.createdAt||0)));
+  const led=new Map();
+  for(const e of entries){
+    const types=e.photoTypes||{};
+    const tagIds=(e.photoIds||[]).filter(id=>types[id]==='material_tag');
+    if(!tagIds.length) continue;
+    const seedApp=((typeof glEntryApplications==='function')?glEntryApplications(e,pid):[]).find(a=>a&&a.type==='seed')||null;
+    const product=(seedApp&&seedApp.product)||e.seedMix||null;
+    tagIds.forEach(id=>{
+      if(led.has(id)) return;
+      const ph=(window._phPhotos||[]).find(p=>p.id===id);
+      const tags=(seedApp&&seedApp.seedTags!=null)?seedApp.seedTags:((e.fields&&e.fields.seedTagCount!=null)?e.fields.seedTagCount:null);
+      const count=(ph&&ph.tagCount>0)?ph.tagCount:((tagIds.length===1&&tags>0)?tags:1);
+      const w=sbWeightFor(product,pid);
+      led.set(id,{product,count,weight:w,capacity:(w!=null)?count*w:null,used:0,countInferred:!(ph&&ph.tagCount>0)});
     });
-  });
-  return used;
+    let lbs=(seedApp&&seedApp.actual!=null&&(seedApp.actualUnit||'lbs')==='lbs')?(+seedApp.actual||0):0;
+    if(!lbs) continue;
+    for(let i=0;i<tagIds.length&&lbs>0;i++){
+      const L=led.get(tagIds[i]);
+      const last=(i===tagIds.length-1);
+      const take=last?lbs:(L.capacity!=null?Math.min(lbs,Math.max(0,L.capacity-L.used)):lbs);
+      L.used+=take; lbs-=take;
+    }
+  }
+  return led;
 }
-function sbRemaining(bag, pid, exceptEntryId){
-  if(!bag||bag.weightLbs==null) return null;
-  return bag.weightLbs-sbUsedLbs(bag.id,pid,exceptEntryId);
+function sbPhotoInfo(photoId, pid){
+  const L=sbPhotoLedger(pid).get(photoId);
+  if(!L) return null;
+  return {...L, remaining:(L.capacity!=null)?(L.capacity-L.used):null};
+}
+// Badge text for a tag photo — remaining when computable, setup hints otherwise.
+function sbPhotoBadge(photoId, pid){
+  const info=sbPhotoInfo(photoId,pid);
+  if(!info) return null;
+  if(info.remaining==null) return {txt:'⚖ set bag wt',amber:false,info};
+  const r=+info.remaining.toFixed(1);
+  return {txt:(r<=0?'⚠ ':'🌱 ')+r.toLocaleString('en-US')+' lbs left',amber:r<=0,info};
+}
+// Per-photo tag-count override — synced through the photos dirty-ID pipeline
+// (phSaveCloudOne routes through the dirty flush so a failed write stays pending).
+function sbSetPhotoTagCount(photoId, count){
+  const ph=(window._phPhotos||[]).find(p=>p.id===photoId);
+  if(!ph) return;
+  const n=parseInt(count);
+  if(n>0) ph.tagCount=n; else delete ph.tagCount;
+  if(typeof phSaveLocal==='function') phSaveLocal();
+  if(typeof phSaveCloudOne==='function') phSaveCloudOne(ph);
 }
 
 // ═══ Entry-form application rows ═══
@@ -166,7 +216,7 @@ var _appEditingEntryId=null;   // excluded from bag draw-down while editing
 
 function _appNewRow(type){
   return {type:type||'seed',product:'',rate:'',rateUnit:'lbs/ac',actual:'',actualUnit:'lbs',
-    seedTags:'',bagId:'',date:'',notes:'',_autoProduct:'',_autoRate:'',_autoNotes:''};
+    seedTags:'',date:'',notes:'',_autoProduct:'',_autoRate:'',_autoNotes:''};
 }
 function appRowsReset(opts){
   _appRows=[_appNewRow('seed')];
@@ -177,7 +227,8 @@ function appRowsReset(opts){
   _appRows.forEach(r=>_appRowAutoNotes(r));
   appRowsRender();
   appSyncEntryNotes();
-  sbEnsureCfg().then(()=>appRowsRender());
+  // Bag-weight config loads async — the tag-photo badges (strip) depend on it.
+  sbEnsureCfg().then(()=>{ if(typeof mapRefreshEntryPhotoStrip==='function') mapRefreshEntryPhotoStrip(); });
 }
 function appRowsSet(apps, entryId){
   _appEditingEntryId=entryId||null;
@@ -189,7 +240,6 @@ function appRowsSet(apps, entryId){
     actual:a.actual!=null?String(a.actual):'',
     actualUnit:a.actualUnit||'lbs',
     seedTags:a.seedTags!=null?String(a.seedTags):'',
-    bagId:a.bagId||'',
     date:a.date&&a.date!==(document.getElementById('map-tr-date')?.value||'')?a.date:'',
     notes:a.notes||'',
     // Stored values are user data — auto stamps stay empty so prefills never clobber.
@@ -199,13 +249,13 @@ function appRowsSet(apps, entryId){
   const n=document.getElementById('map-tr-notes');
   if(n) n.dataset.auto='';
   appRowsRender();
-  sbEnsureCfg().then(()=>appRowsRender());
+  sbEnsureCfg().then(()=>{ if(typeof mapRefreshEntryPhotoStrip==='function') mapRefreshEntryPhotoStrip(); });
 }
 // Rows → storable applications array (empty rows dropped).
 function appRowsGet(){
   const out=[];
   _appRows.forEach(r=>{
-    const has=r.product||r.rate!==''||r.actual!==''||r.seedTags!==''||r.bagId||r.notes;
+    const has=r.product||r.rate!==''||r.actual!==''||r.seedTags!==''||r.notes;
     if(!has) return;
     const app={
       type:r.type,
@@ -218,16 +268,13 @@ function appRowsGet(){
       notesAuto:(r.notes.trim()&&r.notes===r._autoNotes)?r.notes:null,
       date:r.date||null,
     };
-    if(r.type==='seed'){
-      if(r.seedTags!=='') app.seedTags=parseInt(r.seedTags)||0;
-      if(r.bagId) app.bagId=r.bagId;
-    }
+    if(r.type==='seed'&&r.seedTags!=='') app.seedTags=parseInt(r.seedTags)||0;
     out.push(app);
   });
   return out;
 }
 function appRowsHasData(){
-  return _appRows.some(r=>r.product||r.rate!==''||r.actual!==''||r.seedTags!==''||r.bagId||r.notes);
+  return _appRows.some(r=>r.product||r.rate!==''||r.actual!==''||r.seedTags!==''||r.notes);
 }
 // The application legacy readers mirror from: first seed row, else the FIRST row.
 // The fallback matters — a Limed-state entry records lime through the same legacy
@@ -254,8 +301,6 @@ function _appEsc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/
 function appRowsRender(){
   const host=document.getElementById('map-tr-apps');
   if(!host) return;
-  const pid=_sbPid();
-  const bags=sbGetBags(pid);
   host.innerHTML=_appRows.map((r,i)=>{
     const chips=GL_APP_TYPES.map(t=>{
       const on=r.type===t.id;
@@ -265,26 +310,6 @@ function appRowsRender(){
     const req=(r.rate!==''&&acres>0)?(parseFloat(r.rate)*acres):null;
     const reqTxt=req!=null?((+req.toFixed(req>=100?0:1)).toLocaleString('en-US')+' '+(r.rateUnit||'lbs/ac').split('/')[0]):'—';
     const isSeed=r.type==='seed';
-    // Bag picker (seed rows) — derived remaining, amber at ≤0.
-    let bagHtml='';
-    if(isSeed){
-      const opts=['<option value="">— no bag —</option>'].concat(bags.map(b=>{
-        const rem=sbRemaining(b,pid,_appEditingEntryId);
-        const remTxt=rem!=null?` (${+rem.toFixed(1)} lbs left)`:'';
-        return `<option value="${_appEsc(b.id)}"${r.bagId===b.id?' selected':''}>${_appEsc(b.label||b.product||b.id)}${remTxt}</option>`;
-      }));
-      const sel=_sbById(r.bagId,pid);
-      const rem=sel?sbRemaining(sel,pid,_appEditingEntryId):null;
-      const warn=(sel&&rem!=null&&rem<=0)?`<div style="color:var(--amber);font-family:var(--mono);font-size:10px;margin-top:3px">⚠ Bag exhausted (${+rem.toFixed(1)} lbs) — confirm it's really this bag, or adjust its weight in Manage bags.</div>`:'';
-      bagHtml=`<div style="margin-top:8px">
-        <div style="display:flex;gap:8px;align-items:center">
-          <div style="flex:1;min-width:0">
-            <label style="font-family:var(--mono);font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:3px">Seed bag / tag</label>
-            <select onchange="appRowBag(${i},this)" style="width:100%;${_APP_IN}">${opts.join('')}</select>
-          </div>
-          <button type="button" onclick="sbShowManage()" title="Manage bags" style="align-self:flex-end;background:none;border:1px solid var(--border);border-radius:6px;color:var(--muted);font-family:var(--mono);font-size:10px;padding:8px 9px;cursor:pointer;white-space:nowrap">🎒 Bags</button>
-        </div>${warn}</div>`;
-    }
     const specWarn=r._specWarn?`<div style="color:var(--amber);font-family:var(--mono);font-size:10px;margin-top:6px">⚠ ${_appEsc(r._specWarn)}</div>`:'';
     return `<div style="border:1px solid var(--border);border-radius:8px;padding:9px 10px;margin-bottom:8px;background:var(--bg)">
       <div style="display:flex;gap:5px;align-items:center;margin-bottom:8px">
@@ -314,7 +339,6 @@ function appRowsRender(){
         ${isSeed?`<div><label style="font-family:var(--mono);font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:3px">Tags 🏷️</label>
           <input type="number" step="1" min="0" value="${_appEsc(r.seedTags)}" oninput="appRowField(${i},'seedTags',this.value)" placeholder="0" style="width:64px;${_APP_IN}"></div>`:''}
       </div>
-      ${bagHtml}
       <div style="margin-top:8px">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:3px">
           <label style="font-family:var(--mono);font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em">Application date <span style="text-transform:none;opacity:.6">(blank = entry date)</span></label>
@@ -337,7 +361,7 @@ function appRowsRender(){
 function appRowType(i,type){
   const r=_appRows[i]; if(!r) return;
   r.type=type;
-  if(type!=='seed'){ r.seedTags=''; r.bagId=''; }
+  if(type!=='seed') r.seedTags='';
   _appRowAutoNotes(r);
   _appAmendmentFill(r);
   appRowsRender(); appSyncEntryNotes();
@@ -353,22 +377,6 @@ function appRowField(i,k,v){
   if(k==='rate'||k==='rateUnit') _appRowsRenderSoft(i);   // required readout updates live
   appSyncEntryNotes();
   if(typeof _trSeedSectionSync==='function') _trSeedSectionSync();
-}
-function appRowBag(i,sel){
-  const r=_appRows[i]; if(!r) return;
-  const pid=_sbPid();
-  const b=_sbById(sel.value,pid);
-  if(b){
-    const rem=sbRemaining(b,pid,_appEditingEntryId);
-    if(rem!=null&&rem<=0&&!confirm(`"${b.label||b.product||'This bag'}" shows ${+rem.toFixed(1)} lbs remaining — use it anyway?`)){
-      sel.value=r.bagId||''; return;
-    }
-    // Bag carries its product onto an untouched product field.
-    if(b.product&&(!r.product||r.product===r._autoProduct)){ r.product=b.product; r._autoProduct=b.product; }
-  }
-  r.bagId=sel.value;
-  _appRowAutoNotes(r);
-  appRowsRender(); appSyncEntryNotes();
 }
 function appRowRemove(i){
   _appRows.splice(i,1);
@@ -406,7 +414,7 @@ function _appRowsRenderSoft(i){
 function _rowAsApp(r){
   return {type:r.type,product:r.product.trim()||null,rate:r.rate!==''?parseFloat(r.rate):null,
     rateUnit:r.rateUnit,actual:r.actual!==''?parseFloat(r.actual):null,actualUnit:r.actualUnit,
-    seedTags:r.seedTags!==''?parseInt(r.seedTags):null,bagId:r.bagId||null};
+    seedTags:r.seedTags!==''?parseInt(r.seedTags):null};
 }
 // Fill-as-you-go notes: regenerate while untouched (empty or still the last auto value).
 function _appRowAutoNotes(r){
@@ -485,90 +493,63 @@ function appAmendmentsSync(){
   appRowsRender(); appSyncEntryNotes();
 }
 
-// ── 🎒 Manage bags (lead-write; minimal v1) ──
-function sbShowManage(){
+// ── 🌱 Seed bag weights (Settings → one list per project, done once a season) ──
+function sbShowWeights(){
   const pid=_sbPid();
   const render=()=>{
-    const bags=sbGetBags(pid);
-    const list=bags.map((b,i)=>{
-      const rem=sbRemaining(b,pid,_appEditingEntryId);
-      const remTxt=rem!=null?`${+rem.toFixed(1)} / ${b.weightLbs} lbs left`:'no weight set';
-      const amber=rem!=null&&rem<=0;
-      return `<div style="display:flex;gap:8px;align-items:center;border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin-bottom:6px">
-        <div style="flex:1;min-width:0">
-          <div style="font-family:var(--mono);font-size:12px;color:var(--text)">${_appEsc(b.label||b.product||b.id)}</div>
-          <div style="font-family:var(--mono);font-size:10px;color:${amber?'var(--amber)':'var(--muted)'}">${_appEsc(b.product||'')}${b.product?' · ':''}${remTxt}${amber?' ⚠':''}</div>
-        </div>
-        <button onclick="sbEditBag(${i})" style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--muted);font-size:11px;padding:5px 8px;cursor:pointer">✏️</button>
-        <button onclick="sbDeleteBag(${i})" style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--muted);font-size:11px;padding:5px 8px;cursor:pointer">🗑</button>
-      </div>`;
-    }).join('')||'<div style="font-family:var(--mono);font-size:11px;color:var(--muted);padding:8px 0">No bags yet — add the first one below.</div>';
-    const box=document.getElementById('sb-manage-body');
+    const list=sbGetProducts(pid).map((p,i)=>`
+      <div style="display:flex;gap:8px;align-items:center;border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin-bottom:6px">
+        <div style="flex:1;min-width:0;font-family:var(--mono);font-size:12px;color:var(--text)">${_appEsc(p.product)}</div>
+        <div style="font-family:var(--mono);font-size:12px;color:var(--amber);white-space:nowrap">${p.weightLbs} lbs/bag</div>
+        <button onclick="sbDeleteWeight(${i})" style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--muted);font-size:11px;padding:5px 8px;cursor:pointer">🗑</button>
+      </div>`).join('')
+      ||'<div style="font-family:var(--mono);font-size:11px;color:var(--muted);padding:8px 0">No bag weights yet — add your mixes below (e.g. Annual rye — 50).</div>';
+    const box=document.getElementById('sb-wt-body');
     if(box) box.innerHTML=list;
   };
   const ov=document.createElement('div');
   ov.className='modal-overlay';
-  ov.id='sb-manage-ov';
-  ov.innerHTML=`<div class="modal-box" style="max-width:440px">
-    <h3 style="margin:0 0 4px">🎒 Seed Bags</h3>
-    <p style="font-size:11px;color:var(--muted);margin:0 0 10px">Each bag's remaining weight is computed from the seed entries that reference it. Editing bags requires project-lead access.</p>
-    <div id="sb-manage-body" style="max-height:40vh;overflow-y:auto"></div>
+  ov.innerHTML=`<div class="modal-box" style="max-width:420px">
+    <h3 style="margin:0 0 4px">🌱 Seed Bag Weights</h3>
+    <p style="font-size:11px;color:var(--muted);margin:0 0 10px">One line per product: how many lbs a bag holds. Seed-tag photos then track themselves — a tag photo's capacity is tags-in-photo × bag weight, and every entry it's attached to draws it down. Nothing else to enter in the field.</p>
+    <div id="sb-wt-body" style="max-height:44vh;overflow-y:auto"></div>
     <div style="border-top:1px solid var(--border);margin-top:10px;padding-top:10px">
-      <div style="display:grid;grid-template-columns:1fr;gap:6px">
-        <input type="text" id="sb-new-label" placeholder="Bag label / tag # (e.g. Bedrock bag 3)" style="width:100%;${_APP_IN}">
-        <div style="display:grid;grid-template-columns:1fr 110px;gap:6px">
-          <input type="text" id="sb-new-product" placeholder="Product / mix" style="width:100%;${_APP_IN}">
-          <input type="number" id="sb-new-weight" step="0.1" min="0" placeholder="Weight lbs" style="width:100%;${_APP_IN}">
-        </div>
+      <div style="display:grid;grid-template-columns:1fr 100px;gap:6px">
+        <input type="text" id="sb-wt-product" placeholder="Product / mix (matches entry mix)" style="width:100%;${_APP_IN}">
+        <input type="number" id="sb-wt-lbs" step="0.1" min="0" placeholder="lbs/bag" style="width:100%;${_APP_IN}">
       </div>
       <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:10px">
         <button class="btn btn-outline" onclick="this.closest('.modal-overlay').remove()">Close</button>
-        <button class="btn" onclick="sbAddBag()">＋ Add bag</button>
+        <button class="btn" onclick="sbAddWeight()">＋ Add</button>
       </div>
     </div>
   </div>`;
   document.body.appendChild(ov);
-  window._sbManageRender=render;
+  window._sbWtRender=render;
   render();
   sbEnsureCfg(pid).then(render);
 }
-async function sbAddBag(){
+async function sbAddWeight(){
   const pid=_sbPid();
-  const label=document.getElementById('sb-new-label')?.value.trim();
-  const product=document.getElementById('sb-new-product')?.value.trim();
-  const weight=parseFloat(document.getElementById('sb-new-weight')?.value);
-  if(!label&&!product) return;
-  const bags=sbGetBags(pid).slice();
-  bags.push({id:'bag-'+Date.now().toString(36),label:label||null,product:product||null,
-    weightLbs:isNaN(weight)?null:weight,addedAt:Date.now(),
-    addedBy:(typeof _currentUser!=='undefined'&&_currentUser)?_currentUser.uid:null});
-  await sbSaveBags(bags,pid);
-  ['sb-new-label','sb-new-product','sb-new-weight'].forEach(id=>{const el=document.getElementById(id); if(el) el.value='';});
-  if(window._sbManageRender) window._sbManageRender();
-  appRowsRender();
+  const product=document.getElementById('sb-wt-product')?.value.trim();
+  const w=parseFloat(document.getElementById('sb-wt-lbs')?.value);
+  if(!product||isNaN(w)||w<=0) return;
+  // Same product again = update its weight, never a duplicate line.
+  const products=sbGetProducts(pid).filter(p=>_sbNorm(p.product)!==_sbNorm(product));
+  products.push({product,weightLbs:w});
+  await sbSaveProducts(products,pid);
+  ['sb-wt-product','sb-wt-lbs'].forEach(id=>{const el=document.getElementById(id); if(el) el.value='';});
+  if(window._sbWtRender) window._sbWtRender();
+  if(typeof mapRefreshEntryPhotoStrip==='function') mapRefreshEntryPhotoStrip();
 }
-async function sbEditBag(i){
+async function sbDeleteWeight(i){
   const pid=_sbPid();
-  const bags=sbGetBags(pid).slice();
-  const b=bags[i]; if(!b) return;
-  const label=prompt('Bag label / tag #:',b.label||''); if(label===null) return;
-  const product=prompt('Product / mix:',b.product||''); if(product===null) return;
-  const w=prompt('Bag weight (lbs):',b.weightLbs!=null?b.weightLbs:''); if(w===null) return;
-  bags[i]={...b,label:label.trim()||null,product:product.trim()||null,weightLbs:w!==''&&!isNaN(parseFloat(w))?parseFloat(w):null};
-  await sbSaveBags(bags,pid);
-  if(window._sbManageRender) window._sbManageRender();
-  appRowsRender();
-}
-async function sbDeleteBag(i){
-  const pid=_sbPid();
-  const bags=sbGetBags(pid).slice();
-  const b=bags[i]; if(!b) return;
-  const used=sbUsedLbs(b.id,pid);
-  if(!confirm(`Delete "${b.label||b.product||'bag'}"?${used?` ${used} lbs of entries reference it — they keep their data, only the bag record goes.`:''}`)) return;
-  bags.splice(i,1);
-  await sbSaveBags(bags,pid);
-  if(window._sbManageRender) window._sbManageRender();
-  appRowsRender();
+  const products=sbGetProducts(pid).slice();
+  if(!products[i]) return;
+  products.splice(i,1);
+  await sbSaveProducts(products,pid);
+  if(window._sbWtRender) window._sbWtRender();
+  if(typeof mapRefreshEntryPhotoStrip==='function') mapRefreshEntryPhotoStrip();
 }
 
 // ── Window seams (Vite ESM cross-module pattern) ──
@@ -585,7 +566,6 @@ window.appRowsRecalc=appRowsRecalc;
 window.appRowsRender=appRowsRender;
 window.appRowType=appRowType;
 window.appRowField=appRowField;
-window.appRowBag=appRowBag;
 window.appRowRemove=appRowRemove;
 window.appRowAdd=appRowAdd;
 window.appRowNotesRegen=appRowNotesRegen;
@@ -594,11 +574,13 @@ window.appStatePrefill=appStatePrefill;
 window.appSpecFill=appSpecFill;
 window.appAmendmentsSync=appAmendmentsSync;
 window.appSyncEntryNotes=appSyncEntryNotes;
-window.sbShowManage=sbShowManage;
-window.sbAddBag=sbAddBag;
-window.sbEditBag=sbEditBag;
-window.sbDeleteBag=sbDeleteBag;
+window.sbShowWeights=sbShowWeights;
+window.sbAddWeight=sbAddWeight;
+window.sbDeleteWeight=sbDeleteWeight;
 window.sbEnsureCfg=sbEnsureCfg;
-window.sbGetBags=sbGetBags;
-window.sbRemaining=sbRemaining;
-window.sbUsedLbs=sbUsedLbs;
+window.sbGetProducts=sbGetProducts;
+window.sbWeightFor=sbWeightFor;
+window.sbPhotoLedger=sbPhotoLedger;
+window.sbPhotoInfo=sbPhotoInfo;
+window.sbPhotoBadge=sbPhotoBadge;
+window.sbSetPhotoTagCount=sbSetPhotoTagCount;
