@@ -145,13 +145,17 @@ async function sbSaveProducts(products, pid){
       showCloudBanner('Only a project lead can edit seed bag weights — kept on this device only.');
   }
 }
-// ── Tag-photo ledger — the whole bag tracker, fully derived ──
-// Every live entry, chronologically: its seed lbs drain into its attached tag
-// photos in attachment order. A photo's capacity = tags-in-photo × bag weight;
-// count comes from the photo's override (tagCount) or infers from the entry's
-// Tags 🏷️ field when the photo is the entry's ONLY tag photo (Tim's 6-tags-in-
-// one-shot workflow), else 1. Overflow lands on the last tag so over-usage
-// reads truthfully as negative remaining.
+// ── Tag-photo ledger — the whole bag tracker, fully derived, any material ──
+// Every live entry, chronologically: each attached tag photo resolves to a
+// PRODUCT (its stored tagProduct override, else the entry's seed mix — the
+// default material a tag photo means), and that product's application lbs
+// drain into its photos in attachment order. A photo's capacity =
+// tags-in-photo × bag weight; count comes from the photo's override (tagCount)
+// or infers from the entry's Tags 🏷️ field when it's the entry's only SEED tag
+// photo (Tim's 6-tags-in-one-shot workflow), else 1. Overflow lands on the
+// last tag so over-usage reads truthfully as negative remaining. Lime/fert
+// bags ride the same rails: weight-list line + tag photo assigned to that
+// material in the tag popup.
 function sbPhotoLedger(pid){
   pid=pid||_sbPid();
   const entries=((typeof trGetEntriesForProject==='function')?trGetEntriesForProject(pid):[])
@@ -162,23 +166,39 @@ function sbPhotoLedger(pid){
     const types=e.photoTypes||{};
     const tagIds=(e.photoIds||[]).filter(id=>types[id]==='material_tag');
     if(!tagIds.length) continue;
-    const seedApp=((typeof glEntryApplications==='function')?glEntryApplications(e,pid):[]).find(a=>a&&a.type==='seed')||null;
-    const product=(seedApp&&seedApp.product)||e.seedMix||null;
+    const apps=(typeof glEntryApplications==='function')?glEntryApplications(e,pid):[];
+    const seedApp=apps.find(a=>a&&a.type==='seed')||null;
+    const defProduct=(seedApp&&seedApp.product)||e.seedMix||null;
+    // Photo → product, then group the entry's tags per product.
+    const groups=new Map();   // normProduct → {product, app, ids:[]}
     tagIds.forEach(id=>{
-      if(led.has(id)) return;
       const ph=(window._phPhotos||[]).find(p=>p.id===id);
-      const tags=(seedApp&&seedApp.seedTags!=null)?seedApp.seedTags:((e.fields&&e.fields.seedTagCount!=null)?e.fields.seedTagCount:null);
-      const count=(ph&&ph.tagCount>0)?ph.tagCount:((tagIds.length===1&&tags>0)?tags:1);
-      const w=sbWeightFor(product,pid);
-      led.set(id,{product,count,weight:w,capacity:(w!=null)?count*w:null,used:0,countInferred:!(ph&&ph.tagCount>0)});
+      const product=(ph&&ph.tagProduct)?ph.tagProduct:defProduct;
+      const key=_sbNorm(product);
+      if(!groups.has(key)){
+        const app=apps.find(a=>a&&_sbNorm(a.product)===key)||((key===_sbNorm(defProduct))?seedApp:null);
+        groups.set(key,{product,app,ids:[]});
+      }
+      groups.get(key).ids.push(id);
     });
-    let lbs=(seedApp&&seedApp.actual!=null&&(seedApp.actualUnit||'lbs')==='lbs')?(+seedApp.actual||0):0;
-    if(!lbs) continue;
-    for(let i=0;i<tagIds.length&&lbs>0;i++){
-      const L=led.get(tagIds[i]);
-      const last=(i===tagIds.length-1);
-      const take=last?lbs:(L.capacity!=null?Math.min(lbs,Math.max(0,L.capacity-L.used)):lbs);
-      L.used+=take; lbs-=take;
+    for(const g of groups.values()){
+      const isSeedGroup=!!(g.app&&g.app.type==='seed');
+      g.ids.forEach(id=>{
+        if(led.has(id)) return;
+        const ph=(window._phPhotos||[]).find(p=>p.id===id);
+        const tags=isSeedGroup?((g.app.seedTags!=null)?g.app.seedTags:((e.fields&&e.fields.seedTagCount!=null)?e.fields.seedTagCount:null)):null;
+        const count=(ph&&ph.tagCount>0)?ph.tagCount:((isSeedGroup&&g.ids.length===1&&tags>0)?tags:1);
+        const w=sbWeightFor(g.product,pid);
+        led.set(id,{product:g.product,count,weight:w,capacity:(w!=null)?count*w:null,used:0,countInferred:!(ph&&ph.tagCount>0)});
+      });
+      let lbs=(g.app&&g.app.actual!=null&&(g.app.actualUnit||'lbs')==='lbs')?(+g.app.actual||0):0;
+      if(!lbs) continue;
+      for(let i=0;i<g.ids.length&&lbs>0;i++){
+        const L=led.get(g.ids[i]);
+        const last=(i===g.ids.length-1);
+        const take=last?lbs:(L.capacity!=null?Math.min(lbs,Math.max(0,L.capacity-L.used)):lbs);
+        L.used+=take; lbs-=take;
+      }
     }
   }
   return led;
@@ -196,8 +216,9 @@ function sbPhotoBadge(photoId, pid){
   const r=+info.remaining.toFixed(1);
   return {txt:(r<=0?'⚠ ':'🌱 ')+r.toLocaleString('en-US')+' lbs left',amber:r<=0,info};
 }
-// Per-photo tag-count override — synced through the photos dirty-ID pipeline
-// (phSaveCloudOne routes through the dirty flush so a failed write stays pending).
+// Per-photo tag-count + material overrides — synced through the photos dirty-ID
+// pipeline (phSaveCloudOne routes through the dirty flush so a failed write
+// stays pending).
 function sbSetPhotoTagCount(photoId, count){
   const ph=(window._phPhotos||[]).find(p=>p.id===photoId);
   if(!ph) return;
@@ -205,6 +226,25 @@ function sbSetPhotoTagCount(photoId, count){
   if(n>0) ph.tagCount=n; else delete ph.tagCount;
   if(typeof phSaveLocal==='function') phSaveLocal();
   if(typeof phSaveCloudOne==='function') phSaveCloudOne(ph);
+}
+function sbSetPhotoTagProduct(photoId, product){
+  const ph=(window._phPhotos||[]).find(p=>p.id===photoId);
+  if(!ph) return;
+  const v=String(product||'').trim();
+  if(v) ph.tagProduct=v; else delete ph.tagProduct;
+  if(typeof phSaveLocal==='function') phSaveLocal();
+  if(typeof phSaveCloudOne==='function') phSaveCloudOne(ph);
+}
+// The entry form's current application products (for the tag popup's material picker).
+function appRowProducts(){
+  const seen=new Set(); const out=[];
+  _appRows.forEach(r=>{
+    const p=r.product.trim();
+    if(!p||seen.has(_sbNorm(p))) return;
+    seen.add(_sbNorm(p));
+    out.push({type:r.type,product:p});
+  });
+  return out;
 }
 
 // ═══ Entry-form application rows ═══
@@ -510,8 +550,8 @@ function sbShowWeights(){
   const ov=document.createElement('div');
   ov.className='modal-overlay';
   ov.innerHTML=`<div class="modal-box" style="max-width:420px">
-    <h3 style="margin:0 0 4px">🌱 Seed Bag Weights</h3>
-    <p style="font-size:11px;color:var(--muted);margin:0 0 10px">One line per product: how many lbs a bag holds. Seed-tag photos then track themselves — a tag photo's capacity is tags-in-photo × bag weight, and every entry it's attached to draws it down. Nothing else to enter in the field.</p>
+    <h3 style="margin:0 0 4px">🎒 Bag Weights</h3>
+    <p style="font-size:11px;color:var(--muted);margin:0 0 10px">One line per material — seed mixes, lime, fertilizer: how many lbs a bag holds. Tag photos then track themselves — a tag photo's capacity is tags-in-photo × bag weight, and every entry it's attached to draws it down. Nothing else to enter in the field.</p>
     <div id="sb-wt-body" style="max-height:44vh;overflow-y:auto"></div>
     <div style="border-top:1px solid var(--border);margin-top:10px;padding-top:10px">
       <div style="display:grid;grid-template-columns:1fr 100px;gap:6px">
@@ -584,3 +624,5 @@ window.sbPhotoLedger=sbPhotoLedger;
 window.sbPhotoInfo=sbPhotoInfo;
 window.sbPhotoBadge=sbPhotoBadge;
 window.sbSetPhotoTagCount=sbSetPhotoTagCount;
+window.sbSetPhotoTagProduct=sbSetPhotoTagProduct;
+window.appRowProducts=appRowProducts;

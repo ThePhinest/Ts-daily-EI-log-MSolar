@@ -1508,11 +1508,14 @@ function _showTlogExportModal(getEntries, pid){
 
   const render=()=>{
     const nSel=selected.size;
+    // Rebuilding innerHTML resets the list's scroll — carry it across (Tim 8/18:
+    // "every time you select one it auto scrolls back to the top").
+    const prevScroll=ov.querySelector('#_exp-list')?.scrollTop||0;
     ov.innerHTML=`
       <div class="modal-box" style="max-width:360px;width:92%;max-height:calc(100dvh - var(--app-bar-h,58px) - 24px);display:flex;flex-direction:column;overflow:hidden">
         <div class="modal-title" style="margin-bottom:4px;flex-shrink:0">Export Deliverable</div>
         <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-bottom:16px;flex-shrink:0">Select one or more categories — combined into one report</div>
-        <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px;overflow-y:auto;-webkit-overflow-scrolling:touch;flex:1 1 auto;min-height:0">
+        <div id="_exp-list" style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px;overflow-y:auto;-webkit-overflow-scrolling:touch;flex:1 1 auto;min-height:0">
           ${cats.length?cats.map(c=>`
             <button class="_exp-cat" data-key="${c.key}" style="${selected.has(c.key)?rowOn:rowBase}">
               <span style="font-size:15px;width:18px;flex-shrink:0;text-align:center;color:${selected.has(c.key)?'var(--amber)':'var(--muted)'}">${selected.has(c.key)?'☑':'☐'}</span>
@@ -1528,6 +1531,8 @@ function _showTlogExportModal(getEntries, pid){
         <button class="_exp-zip" style="flex-shrink:0;width:100%;padding:10px;background:none;color:var(--text);font-family:var(--mono);font-size:11px;border:1px solid var(--border);border-radius:8px;cursor:pointer;margin-bottom:8px">🖼 Photos (ZIP)</button>
         <button id="_exp-cancel" style="flex-shrink:0;width:100%;padding:9px;background:none;color:var(--muted);font-family:var(--mono);font-size:11px;border:1px solid var(--border);border-radius:8px;cursor:pointer">Cancel</button>
       </div>`;
+    const listEl=ov.querySelector('#_exp-list');
+    if(listEl&&prevScroll) listEl.scrollTop=prevScroll;
     ov.querySelectorAll('._exp-cat').forEach(btn=>{
       btn.onclick=()=>{ const k=btn.dataset.key; if(selected.has(k)) selected.delete(k); else selected.add(k); render(); };
     });
@@ -1708,7 +1713,7 @@ function _amendmentTypeSheet(wb, type, rows, pid){
   hdr.eachCell({includeEmpty:true},c=>{ c.font={bold:true,size:10,color:{argb:WHITE}}; c.fill={type:'pattern',pattern:'solid',fgColor:{argb:TEAL}}; c.alignment={vertical:'middle',wrapText:true}; });
   hdr.height=20;
   ws.views=[{state:'frozen',ySplit:hdr.number}];
-  rows.forEach(({e,app})=>{
+  rows.forEach(({e,app},ri)=>{
     const cid=e.categoryId||e.category;
     const catName=e.categoryName||((typeof tcGetName==='function')?tcGetName(cid,pid):'');
     const st=(e.state&&typeof tcGetState==='function')?tcGetState(cid,e.state,pid):null;
@@ -1725,7 +1730,14 @@ function _amendmentTypeSheet(wb, type, rows, pid){
       app.actual!=null?app.actual+' '+(app.actualUnit||'lbs'):'',
       e.method||'', e.contractor||'', app.notes||'',
     ]);
-    r.eachCell({includeEmpty:true},c=>{ c.font={name:'Calibri',size:10}; c.alignment={vertical:'top',wrapText:true}; });
+    // Alternating band fill — visual row separation (Tim 8/18), soft amber tint
+    // to match the amendments header family.
+    const band=(ri%2===1)?'FAF5E8':null;
+    r.eachCell({includeEmpty:true},c=>{
+      c.font={name:'Calibri',size:10};
+      c.alignment={vertical:'top',wrapText:true};
+      if(band) c.fill={type:'pattern',pattern:'solid',fgColor:{argb:band}};
+    });
     r.getCell(1).font={name:'Calibri',size:10,bold:true};
     _xlFitRowHeight(r,COLW,10,20);
   });
@@ -2899,8 +2911,12 @@ async function _seedingSheetRender(wb, o){
   // each). summaryBelow:false puts the +/- toggle on the dated label row above each photo;
   // outlineLevelRow=1 marks the level-1 image rows collapsed so the sheet opens tidy —
   // expand with + (after Protected View's "Enable Editing", which disables outline toggles).
+  // outlineLevelRow=1 is load-bearing: ExcelJS derives each row's `collapsed`
+  // attribute from outlineLevel >= this value. At 2, the photo LABEL rows (level 1)
+  // lost their collapsed flag, so expanding a month auto-expanded every photo in it
+  // (Tim 8/18). At 1, months open with their photos still folded.
   ws.properties.outlineProperties={summaryBelow:false,summaryRight:false};
-  ws.properties.outlineLevelRow=2;   // 1 = months / photos · 2 = photos nested in a month group
+  ws.properties.outlineLevelRow=1;
   // State, Coverage, %, Date, Seed Tags, Mix/Product, Applied Rate, Required, Actual, Method, Contractor, Notes, Photos
   const COLW=[26,14,10,13,11,24,18,18,18,20,22,40,9];
   ws.columns=COLW.map(w=>({width:w}));
@@ -3058,12 +3074,14 @@ async function _seedingSheetRender(wb, o){
       const rateUnit=f.requiredUnit?f.requiredUnit+'/ac':'';
       const cov=measure(e);
       const pct=(planArea>0)?(cov/planArea)*100:null; // uncapped (truthful over-coverage)
-      // 🌱 Multi-application entries append their non-seed applications to the Notes
-      // cell as typed lines (per-app notes ride the Amendments tabs; this keeps the
-      // seed row's own note clean while the extra materials stay visible in context).
+      // 🌱 Seeding tabs carry SEED notes only — the auto-filled Lime:/Fertilizer:/…
+      // lines in the entry's notes belong to the Amendments tabs, so they're
+      // stripped here (Tim 8/18: "each one would only include its own section").
       let noteTxt=e.notes||'';
       const apps=(typeof glEntryApplications==='function')?glEntryApplications(e,pid):[];
       const seedApp=apps.find(a=>a.type==='seed')||null;
+      if(apps.length>1) noteTxt=noteTxt.split('\n')
+        .filter(l=>!/^(Lime|Fertilizer|Mulch|Other)\s*:/i.test(l.trim())).join('\n').trim();
       const r=ws.addRow([
         s?s.label:(e.state||''),
         fmt(cov),

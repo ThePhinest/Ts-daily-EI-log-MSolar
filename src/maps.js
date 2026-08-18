@@ -7516,6 +7516,16 @@ function _showPhotoCaptionModal(photoId){
   // + the photo's current capacity/remaining line when the ledger knows it.
   const info=(isTag&&typeof sbPhotoInfo==='function')?sbPhotoInfo(photoId):null;
   const curCount=(photo&&photo.tagCount>0)?photo.tagCount:(info?info.count:1);
+  // Material picker — only when this entry carries 2+ products (seed + lime…),
+  // so a lime-bag tag can be assigned to the lime application. Default = seed mix.
+  const rowProds=(isTag&&typeof appRowProducts==='function')?appRowProducts():[];
+  const curProd=(photo&&photo.tagProduct)?photo.tagProduct:(rowProds.find(p=>p.type==='seed')?.product||rowProds[0]?.product||'');
+  const prodPick=(isTag&&rowProds.length>=2)?`<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+      <label style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;flex:1">This tag is for</label>
+      <select id="_phcap-prod" style="max-width:170px;box-sizing:border-box;background:var(--s1);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--mono);font-size:12px;padding:7px 9px;outline:none">
+        ${rowProds.map(p=>`<option value="${p.product.replace(/"/g,'&quot;')}"${p.product===curProd?' selected':''}>${p.product.replace(/</g,'&lt;')}</option>`).join('')}
+      </select>
+    </div>`:'';
   let ledLine='';
   if(isTag){
     if(info&&info.capacity!=null){
@@ -7533,7 +7543,7 @@ function _showPhotoCaptionModal(photoId){
       <div class="modal-title" style="margin-bottom:6px">${isTag?'Seed tag photo':'Label for export'}</div>
       <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:14px;line-height:1.5">Used as the filename in the material tag photo ZIP. Leave blank to use the photo caption.</div>
       <input type="text" id="_phcap-input" value="${existing.replace(/"/g,'&quot;').replace(/'/g,'&#39;')}" placeholder="e.g. Seed tag east section 3" style="width:100%;box-sizing:border-box;background:var(--s1);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--body);font-size:16px;padding:9px 12px;outline:none;margin-bottom:14px">
-      ${isTag?`<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+      ${isTag?`${prodPick}<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
         <label style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;flex:1">Tags in this photo</label>
         <input type="number" id="_phcap-tags" min="1" step="1" value="${curCount}" style="width:64px;box-sizing:border-box;background:var(--s1);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--mono);font-size:14px;padding:7px 9px;outline:none">
       </div>${ledLine}`:''}
@@ -7550,11 +7560,17 @@ function _showPhotoCaptionModal(photoId){
     const val=input.value.trim();
     if(val) _pendingPhotoCaptions[photoId]=val;
     else delete _pendingPhotoCaptions[photoId];
-    // Tag-count override persists on the photo record (only when it changed).
+    // Tag-count + material overrides persist on the photo record (only on change).
     const tEl=ov.querySelector('#_phcap-tags');
     if(tEl&&isTag&&typeof sbSetPhotoTagCount==='function'){
       const n=parseInt(tEl.value);
       if(n>0&&n!==curCount) sbSetPhotoTagCount(photoId,n);
+    }
+    const pEl=ov.querySelector('#_phcap-prod');
+    if(pEl&&isTag&&typeof sbSetPhotoTagProduct==='function'&&pEl.value!==curProd){
+      // Picking the seed default clears the override (inference follows the entry).
+      const seedDef=(typeof appRowProducts==='function')?(appRowProducts().find(p=>p.type==='seed')?.product||''):'';
+      sbSetPhotoTagProduct(photoId, pEl.value===seedDef?'':pEl.value);
     }
     ov.remove(); mapRefreshEntryPhotoStrip();
   };
