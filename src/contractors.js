@@ -17,21 +17,38 @@
 const CTR_TIERS={epc:'EPC / GC',sub:'Subcontractor',subsub:'Sub-tier',owner:'Owner / Owner’s rep',other:'Other'};
 var _ctrCfg={};      // pid → {list:[...]} | null
 var _ctrLoading={};
+var _ctrCloudChecked={};   // pid → true once Firestore has actually been consulted this session
 function _ctrPid(){ return (typeof _activeProjectId==='function')?_activeProjectId():'default'; }
 function _ctrEsc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;'); }
 function _ctrId(){ return 'ctr-'+Date.now().toString(36)+Math.random().toString(36).slice(2,6); }
 function ctrGetList(pid){ const v=_ctrCfg[pid||_ctrPid()]; return (v&&Array.isArray(v.list))?v.list:[]; }
 
+// ⚠ 8/20 data-loss lesson: idbGet reads an in-memory mirror that hydrates ASYNC
+// (window.idbReady) and _fbReady is false at boot. The first cut cached "null" from
+// both, then the card's seed step saw an empty list and overwrote the real cloud
+// list with names-only. Rules now: (1) await idbReady before the local read;
+// (2) a result only counts as final once Firestore was actually consulted
+// (_ctrCloudChecked) — until then every ensure() retries the cloud; (3) newest
+// updatedAtMs wins between local and cloud, so a save made before the cloud check
+// resolves is never clobbered by an older cloud doc.
 async function ctrEnsureCfg(pid){
   pid=pid||_ctrPid();
-  if(_ctrCfg[pid]!==undefined) return _ctrCfg[pid];
+  if(_ctrCfg[pid]!==undefined&&_ctrCloudChecked[pid]) return _ctrCfg[pid];
   if(_ctrLoading[pid]) return _ctrLoading[pid];
   _ctrLoading[pid]=(async()=>{
-    try{ _ctrCfg[pid]=(await idbGet('ctr_cfg::'+pid))||null; }catch(e){ _ctrCfg[pid]=null; }
+    try{ if(window.idbReady) await window.idbReady; }catch(_){}
+    let local=null;
+    try{ local=idbGet('ctr_cfg::'+pid)||null; }catch(_){}
+    if(_ctrCfg[pid]===undefined||(_ctrCfg[pid]===null&&local)) _ctrCfg[pid]=local;
     if(typeof db!=='undefined'&&db&&typeof _fbReady!=='undefined'&&_fbReady){
       try{
         const snap=await db.collection('projects').doc(pid).collection('config').doc('contractors').get();
-        if(snap.exists){ _ctrCfg[pid]=snap.data(); idbSet('ctr_cfg::'+pid,_ctrCfg[pid]); }
+        if(snap.exists){
+          const cloud=snap.data();
+          const cur=_ctrCfg[pid];
+          if(!cur||((cloud.updatedAtMs||0)>=(cur.updatedAtMs||0))){ _ctrCfg[pid]=cloud; idbSet('ctr_cfg::'+pid,cloud); }
+        }
+        _ctrCloudChecked[pid]=true;
       }catch(e){ console.warn('contractors load failed:',e.message); }
     }
     delete _ctrLoading[pid];
@@ -80,6 +97,9 @@ function ctrSyncActiveField(){
 // (split on commas / slashes / ampersands) so nothing has to be retyped.
 function ctrSeedFromConfig(){
   if(ctrGetList().length) return false;
+  // Never seed until the cloud has been consulted — "empty" before that just
+  // means "not loaded yet", and seeding would overwrite the real list.
+  if(!_ctrCloudChecked[_ctrPid()]) return false;
   const raw=(document.getElementById('cfg-contractor')?.value||'').trim();
   if(!raw) return false;
   const names=raw.split(/\s*(?:,|\/|&|\band\b)\s*/i).map(s=>s.trim()).filter(Boolean);
@@ -126,7 +146,9 @@ function ctrRenderCard(){
         <button onclick="ctrDelete(${i})" style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--muted);font-size:11px;padding:5px 8px;cursor:pointer">🗑</button>
       </div>
     </div>`;
-  }).join('')||'<div style="font-family:var(--mono);font-size:11px;color:var(--muted);padding:6px 0">No contractors yet — add the EPC and each sub with what they do (e.g. "Supreme — clearing, grading, civil").</div>';
+  }).join('')||(_ctrCloudChecked[_ctrPid()]
+    ?'<div style="font-family:var(--mono);font-size:11px;color:var(--muted);padding:6px 0">No contractors yet — add the EPC and each sub with what they do (e.g. "Supreme — clearing, grading, civil").</div>'
+    :'<div style="font-family:var(--mono);font-size:11px;color:var(--muted);padding:6px 0">Loading the contractor list…</div>');
   box.innerHTML=rows;
   const st=document.getElementById('ctr-active-line');
   if(st) st.textContent=ctrActiveNames()?('Daily log Active Contractor → '+ctrActiveNames()):'No one marked on site — the Active Contractor line stays blank.';
@@ -204,7 +226,10 @@ function ctrEdit(i){
   let _lastPid=null;
   const kick=()=>{
     const pid=_ctrPid();
-    if(pid===_lastPid&&_ctrCfg[pid]!==undefined) return;
+    // Re-run on a project switch, or whenever the cloud still hasn't been
+    // consulted and Firebase is now ready (boot runs before _fbReady flips).
+    const need=(pid!==_lastPid)||(!_ctrCloudChecked[pid]&&window._fbReady&&!_ctrLoading[pid]);
+    if(!need) return;
     _lastPid=pid;
     ctrEnsureCfg().then(()=>{ ctrRenderDatalist(); ctrRenderCard(); }).catch(e=>console.warn('contractors boot:',e.message));
   };
