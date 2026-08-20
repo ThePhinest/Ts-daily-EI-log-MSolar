@@ -2701,7 +2701,7 @@ Anticipated rain — AM weather monitoring expected"></textarea>
       </div>
       <div style="margin-bottom:10px">
         <label style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;display:block;margin-bottom:4px">Contractor / Applicator</label>
-        <input type="text" id="map-tr-contractor" placeholder="Name or company" style="width:100%;box-sizing:border-box;background:var(--s1);border:1px solid var(--border);border-radius:6px;padding:7px 9px;color:var(--text);font-family:var(--mono);font-size:12px">
+        <input type="text" id="map-tr-contractor" list="gl-ctr-list" placeholder="Name or company" style="width:100%;box-sizing:border-box;background:var(--s1);border:1px solid var(--border);border-radius:6px;padding:7px 9px;color:var(--text);font-family:var(--mono);font-size:12px">
       </div>
       <div style="margin-bottom:14px">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
@@ -3111,12 +3111,22 @@ Anticipated rain — AM weather monitoring expected"></textarea>
         <div class="field"><label>Prepared By</label><input type="text" id="cfg-preparedBy" placeholder="Your full name"></div>
         <div class="field"><label>Organization</label><input type="text" id="cfg-org" placeholder="Your firm/employer"></div>
         <div class="field"><label>Current Activity</label><input type="text" id="cfg-activePhase" placeholder="e.g. Grading, Clearing &amp; Grubbing, Installation"></div>
-        <div class="field"><label>Active Contractor</label><input type="text" id="cfg-contractor" placeholder="Active contractor(s) on site"></div>
+        <div class="field"><label>Active Contractor</label><input type="text" id="cfg-contractor" placeholder="Set by the Contractors list below (on-site names)" title="Managed by the Contractors list below — toggle who's on site there"></div>
         <div class="field"><label>Town / County</label><input type="text" id="cfg-location" placeholder="Town, county, state"></div>
         <div class="field"><label>Reviewed By</label><input type="text" id="cfg-reviewedBy" placeholder="Reviewer / supervisor name"></div>
       </div>
       <button class="btn btn-amber" style="font-size:11px;padding:7px 14px" onclick="saveProjectConfig()">Save &amp; Apply</button>
       <span id="cfg-proj-status" style="font-family:var(--mono);font-size:11px;color:var(--green);margin-left:12px;opacity:0;transition:opacity .4s"></span>
+    </div>
+  </div>
+
+  <div class="config-section" id="cfg-ctr">
+    <div class="config-head" onclick="toggleSection('cfg-ctr');if(typeof ctrBootCard==='function')ctrBootCard()"><span class="config-title">🏗 Contractors</span><span class="head-fade"></span><span class="config-sub">Who's on this job, what they do, who to call</span><span class="card-chevron">▾</span></div>
+    <div class="config-body">
+      <p class="config-hint">One line per company with what they do here. <b>On site</b> names join the daily log's Active Contractor line; every company and contact becomes a pick in the crew-block and drawing contractor fields (free text still works). Descriptions and contacts are for reference only and never print on the report.</p>
+      <div id="ctr-card-body"></div>
+      <div id="ctr-active-line" style="font-family:var(--mono);font-size:10px;color:var(--muted);margin:4px 0 10px"></div>
+      <button class="btn btn-amber" style="font-size:11px;padding:7px 14px" onclick="ctrEdit(null)">＋ Add contractor</button>
     </div>
   </div>
 

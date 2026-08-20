@@ -303,7 +303,7 @@ function addCrew(){
     </div>
     <div class="crew-body">
       <div class="g g3" style="margin-bottom:11px">
-        <div class="field span2"><label>Contractor / Foreman Name</label><input type="text" id="crew-${id}-name" placeholder="Full name"></div>
+        <div class="field span2"><label>Contractor / Foreman Name</label><input type="text" id="crew-${id}-name" list="gl-ctr-list" placeholder="Company or contact — pick or type"></div>
         <div class="field"><label>Hours on Site</label><input type="text" id="crew-${id}-time" placeholder="e.g. 6:30 AM – 4:30 PM"></div>
         <div class="field full"><label>Work Location / Area</label><input type="text" id="crew-${id}-loc" placeholder="e.g. Station 00+00, laydown yard, etc."></div>
       </div>

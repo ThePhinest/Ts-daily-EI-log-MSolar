@@ -94,6 +94,7 @@ import './swppp.js'
 import './agencyVisits.js'
 import './seedingSpecs.js'
 import './applications.js'
+import './contractors.js'
 
 window.firebase = firebase
 window.mapboxgl = mapboxgl
