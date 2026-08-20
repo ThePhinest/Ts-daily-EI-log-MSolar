@@ -663,6 +663,16 @@ function sbShowWeights(){
     <h3 style="margin:0 0 4px">🎒 Materials — Bags &amp; Rates</h3>
     <p style="font-size:11px;color:var(--muted);margin:0 0 10px">One line per material. <b>lbs/bag</b> (seed mixes): tag photos track their own remaining pounds. <b>lbs/ac</b> (lime, fertilizer — bulk totes &amp; truck drops have no bags): the rate auto-fills on the entry the moment the product matches. Fill either or both.</p>
     <div id="sb-wt-body" style="max-height:44vh;overflow-y:auto"></div>
+    <div id="sb-wt-status" style="display:none;font-family:var(--mono);font-size:11px;color:var(--green,#27AE60);padding:8px 0 0;line-height:1.5"></div>
+    <div style="border-top:1px solid var(--border);margin-top:10px;padding-top:10px">
+      <div style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">🧹 Fresh start — retire old leftovers</div>
+      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+        <span style="font-size:11px;color:var(--muted)">Tag photos on drawings dated before</span>
+        <input type="date" id="sb-ret-date" value="${new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10)}" onchange="sbRetireBeforeCount()" style="${_APP_IN};width:auto">
+        <button class="btn btn-outline" id="sb-ret-btn" onclick="sbRetireBefore()" style="font-size:11px;white-space:nowrap">Retire leftovers</button>
+      </div>
+      <div id="sb-ret-hint" style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:6px;line-height:1.5">Retired tags keep their record; they just stop showing pounds left and drop out of "Continues from".</div>
+    </div>
     <div style="border-top:1px solid var(--border);margin-top:10px;padding-top:10px">
       <div style="display:grid;grid-template-columns:1fr 86px 86px;gap:6px">
         <input type="text" id="sb-wt-product" placeholder="Product / mix" style="width:100%;${_APP_IN}">
@@ -679,6 +689,44 @@ function sbShowWeights(){
   window._sbWtRender=render;
   render();
   sbEnsureCfg(pid).then(render);
+  sbRetireBeforeCount();
+}
+// Status line INSIDE the materials modal (the cloud banner sits under modal overlays).
+function _sbStatus(msg){
+  const el=document.getElementById('sb-wt-status');
+  if(!el) return;
+  el.innerHTML=msg; el.style.display=msg?'':'none';
+}
+// 🧹 Bulk retire (Tim 8/20: "how do I just retire the leftover old ones… so we're
+// fresh and starting from today going forward?"). Every OPEN tag photo with pounds
+// left whose drawing is dated before the cutoff gets tagClosed. Count previews on
+// the button; nothing is deleted, Reopen still works per photo.
+function _sbRetirable(dateStr){
+  const out=[];
+  if(!dateStr) return out;
+  sbPhotoLedger().forEach((L,id)=>{
+    if(L.closed||L.capacity==null) return;
+    if(L.capacity-L.used<=0) return;
+    if(String(L.entryDate||'')>=dateStr) return;
+    out.push(id);
+  });
+  return out;
+}
+function sbRetireBeforeCount(){
+  const d=document.getElementById('sb-ret-date')?.value||'';
+  const n=_sbRetirable(d).length;
+  const btn=document.getElementById('sb-ret-btn');
+  if(btn){ btn.textContent=n?`Retire ${n} leftover${n===1?'':'s'}`:'Nothing to retire'; btn.disabled=!n; btn.style.opacity=n?'':'.5'; }
+}
+function sbRetireBefore(){
+  const d=document.getElementById('sb-ret-date')?.value||'';
+  const ids=_sbRetirable(d);
+  if(!ids.length) return;
+  ids.forEach(id=>sbRetireTag(id));
+  sbRetireBeforeCount();
+  _sbStatus(`✔ Retired ${ids.length} leftover tag photo${ids.length===1?'':'s'} dated before ${d}.`);
+  if(typeof mapRefreshEntryPhotoStrip==='function') mapRefreshEntryPhotoStrip();
+  if(typeof phRender==='function') try{ phRender(); }catch(_){}
 }
 async function sbAddWeight(){
   const pid=_sbPid();
@@ -730,7 +778,7 @@ async function sbRenameProduct(i){
   if(typeof mapRefreshEntryPhotoStrip==='function') mapRefreshEntryPhotoStrip();
   if(typeof mapRenderTrackerLayers==='function') try{ mapRenderTrackerLayers(); }catch(_){}
   appRowsRender();
-  if(typeof showCloudBanner==='function') showCloudBanner(`Renamed to "${_appEsc(nn)}" — ${nE} drawing${nE===1?'':'s'}, ${nP} tag photo${nP===1?'':'s'} updated.`);
+  _sbStatus(`✔ Renamed "${_appEsc(cur.product)}" → "${_appEsc(nn)}" — ${nE} drawing${nE===1?'':'s'}, ${nP} tag photo${nP===1?'':'s'} updated.`);
 }
 async function sbDeleteWeight(i){
   const pid=_sbPid();
@@ -768,6 +816,8 @@ window.sbShowWeights=sbShowWeights;
 window.sbAddWeight=sbAddWeight;
 window.sbDeleteWeight=sbDeleteWeight;
 window.sbRenameProduct=sbRenameProduct;
+window.sbRetireBefore=sbRetireBefore;
+window.sbRetireBeforeCount=sbRetireBeforeCount;
 window.sbEnsureCfg=sbEnsureCfg;
 window.sbGetProducts=sbGetProducts;
 window.sbWeightFor=sbWeightFor;

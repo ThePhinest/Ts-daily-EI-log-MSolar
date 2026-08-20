@@ -1027,11 +1027,12 @@ function _catStateBars(cid, g, pid){
   const grossTerm=stateTotal(termState.id);
   const overRemoved=removedTotal>grossTerm;
   const netOf=(st)=>(st===termState&&removedTotal>0)?Math.max(0,grossTerm-removedTotal):stateTotal(st.id);
-  // #80 snap-to-100 (Tim 6/4, built 8/20): an overlay traced a hair inside/outside the
-  // plan boundary reads 99.x% or 101.x% — drawing precision, not ground truth. Within
-  // the band the BAR shows a clean 100% (the exact figures stay in the log/exports).
-  const _SNAP_LO=98, _SNAP_HI=102;
-  const snapPct=(raw)=>(raw>=_SNAP_LO&&raw<=_SNAP_HI)?100:Math.min(100,raw);
+  // #80 snap-to-100 (Tim 6/4, built 8/20, band tightened same day): an overlay traced a
+  // hair inside/outside the plan boundary reads 99.x% or 101.x% — drawing precision,
+  // not ground truth. ≥99.5% (and anything over) shows a clean 100% on the BAR; the
+  // exact figures stay in the log/exports. Tim: "99.5 and above… 98 is too low."
+  const _SNAP_LO=99.5;
+  const snapPct=(raw)=>(raw>=_SNAP_LO)?100:raw;
   const rows=addStates.map(st=>{
     const tot=netOf(st);
     if(tot<=0 && planTotal<=0) return '';
