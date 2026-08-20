@@ -1027,10 +1027,15 @@ function _catStateBars(cid, g, pid){
   const grossTerm=stateTotal(termState.id);
   const overRemoved=removedTotal>grossTerm;
   const netOf=(st)=>(st===termState&&removedTotal>0)?Math.max(0,grossTerm-removedTotal):stateTotal(st.id);
+  // #80 snap-to-100 (Tim 6/4, built 8/20): an overlay traced a hair inside/outside the
+  // plan boundary reads 99.x% or 101.x% — drawing precision, not ground truth. Within
+  // the band the BAR shows a clean 100% (the exact figures stay in the log/exports).
+  const _SNAP_LO=98, _SNAP_HI=102;
+  const snapPct=(raw)=>(raw>=_SNAP_LO&&raw<=_SNAP_HI)?100:Math.min(100,raw);
   const rows=addStates.map(st=>{
     const tot=netOf(st);
     if(tot<=0 && planTotal<=0) return '';
-    const pct=planTotal>0?Math.min(100,(tot/planTotal)*100):null;
+    const pct=planTotal>0?snapPct((tot/planTotal)*100):null;
     const col=(st.color&&/^#[0-9A-Fa-f]{6}$/.test(st.color))?st.color:'var(--amber)';
     return `<div style="display:flex;align-items:center;gap:6px;margin-bottom:3px">
       <span style="width:8px;height:8px;border-radius:2px;background:${col};flex-shrink:0"></span>
@@ -1058,10 +1063,10 @@ function _catStateBars(cid, g, pid){
     const overMode=(typeof tcOverallMode==='function')?tcOverallMode(cid,pid):'terminal';
     let opct;
     if(overMode==='average'){
-      const ps=addStates.map(st=>Math.min(100,(netOf(st)/planTotal)*100));
+      const ps=addStates.map(st=>snapPct((netOf(st)/planTotal)*100));
       opct=ps.length?ps.reduce((a,b)=>a+b,0)/ps.length:0;
     } else {
-      opct=Math.min(100,(netOf(termState)/planTotal)*100);
+      opct=snapPct((netOf(termState)/planTotal)*100);
     }
     const ocol=opct>=100?'var(--green)':'var(--amber)';
     overall=`<div style="display:flex;justify-content:space-between;font-family:var(--mono);font-size:9px;color:var(--text);margin-top:4px;padding-top:4px;border-top:1px solid var(--border)"><span>Overall complete</span><span style="color:${ocol};font-weight:700">${opct.toFixed(0)}%</span></div>`;

@@ -191,9 +191,14 @@ function sbPhotoLedger(pid){
         if(led.has(id)) return;
         const ph=(window._phPhotos||[]).find(p=>p.id===id);
         const tags=isSeedGroup?((g.app.seedTags!=null)?g.app.seedTags:((e.fields&&e.fields.seedTagCount!=null)?e.fields.seedTagCount:null)):null;
-        const count=(ph&&ph.tagCount>0)?ph.tagCount:((isSeedGroup&&g.ids.length===1&&tags>0)?tags:1);
+        // ↪ A carried-in tag's capacity IS the snapshot that was transferred to it
+        // (one leftover tag, re-photographed alone) — bag weight doesn't apply.
+        const carry=(ph&&ph.carryLbs>0)?+ph.carryLbs:null;
+        const count=carry!=null?1:((ph&&ph.tagCount>0)?ph.tagCount:((isSeedGroup&&g.ids.length===1&&tags>0)?tags:1));
         const w=sbWeightFor(g.product,pid);
-        led.set(id,{product:g.product,count,weight:w,capacity:(w!=null)?count*w:null,used:0,countInferred:!(ph&&ph.tagCount>0)});
+        const capacity=carry!=null?carry:((w!=null)?count*w:null);
+        led.set(id,{product:g.product,count,weight:w,capacity,used:0,countInferred:!(ph&&ph.tagCount>0),
+          carry,carryFrom:(ph&&ph.carryFrom)||null,closed:!!(ph&&ph.tagClosed),entryDate:e.date||null});
       });
       let lbs=(g.app&&g.app.actual!=null&&(g.app.actualUnit||'lbs')==='lbs')?(+g.app.actual||0):0;
       if(!lbs) continue;
@@ -210,15 +215,95 @@ function sbPhotoLedger(pid){
 function sbPhotoInfo(photoId, pid){
   const L=sbPhotoLedger(pid).get(photoId);
   if(!L) return null;
-  return {...L, remaining:(L.capacity!=null)?(L.capacity-L.used):null};
+  // leftover = the raw math; remaining = what's still usable (0 once retired/carried on).
+  const leftover=(L.capacity!=null)?(L.capacity-L.used):null;
+  return {...L, leftover, remaining:(leftover==null)?null:(L.closed?0:leftover)};
 }
 // Badge text for a tag photo — remaining when computable, setup hints otherwise.
+// Returns {txt, amber, info, closed}; every surface (entry strip, attach picker,
+// map popup, Photos grid, lightbox) renders from this one function.
 function sbPhotoBadge(photoId, pid){
   const info=sbPhotoInfo(photoId,pid);
   if(!info) return null;
-  if(info.remaining==null) return {txt:'⚖ set bag wt',amber:false,info};
+  if(info.remaining==null) return {txt:'⚖ set bag wt',amber:false,info,closed:false};
+  if(info.closed){
+    const lo=+(info.leftover||0).toFixed(1);
+    return {txt:'✔ retired'+(lo>0?' · '+lo.toLocaleString('en-US')+' lbs carried on':''),amber:false,info,closed:true};
+  }
   const r=+info.remaining.toFixed(1);
-  return {txt:(r<=0?'⚠ ':'🌱 ')+r.toLocaleString('en-US')+' lbs left',amber:r<=0,info};
+  return {txt:(r<=0?'⚠ ':(info.carry!=null?'↪ ':'🌱 '))+r.toLocaleString('en-US')+' lbs left',amber:r<=0,info,closed:false};
+}
+// Full ledger sentence for the tag modal / lightbox: "3 tags × 50 lbs (mix) = 150 lbs · 120 used · 30 left".
+function sbPhotoLedgerLine(photoId, pid){
+  const info=sbPhotoInfo(photoId,pid);
+  if(!info||info.capacity==null) return '';
+  const esc=s=>String(s||'').replace(/</g,'&lt;');
+  const src=info.carry!=null
+    ?`↪ ${info.carry.toLocaleString('en-US')} lbs carried in (${esc(info.product)})`
+    :`${info.count} tag${info.count>1?'s':''} × ${info.weight} lbs (${esc(info.product)})`;
+  const rem=+info.remaining.toFixed(1);
+  const tail=info.closed?`<b>retired</b>`:`<b>${rem.toLocaleString('en-US')} left</b>`;
+  return `${src} = ${info.capacity.toLocaleString('en-US')} lbs · ${info.used.toLocaleString('en-US')} used · ${tail}`;
+}
+// ── ↪ Leftover-tag transfer (Tim 8/20) ──
+// A 9-tag photo closing an area that only needed 1 tag leaves one bag's worth
+// on the ledger. Rather than re-using the 9-tag photo to burn it down, the EI
+// RETIRES that photo's leftover and photographs the single leftover tag on the
+// new area; the new photo CONTINUES FROM the old one and inherits the leftover
+// as a snapshot. One transfer per source (you only ever have one leftover tag —
+// otherwise you'd have used one less bag). Reopen/undo is symmetric.
+function _sbPhSave(ph){
+  if(typeof phSaveLocal==='function') phSaveLocal();
+  if(typeof phSaveCloudOne==='function') phSaveCloudOne(ph);
+}
+function sbRetireTag(photoId){
+  const ph=(window._phPhotos||[]).find(p=>p.id===photoId);
+  if(!ph) return false;
+  ph.tagClosed=true; _sbPhSave(ph); return true;
+}
+function sbReopenTag(photoId){
+  const ph=(window._phPhotos||[]).find(p=>p.id===photoId);
+  if(!ph) return false;
+  // A source that was carried on can't reopen while the carry stands — undo the carry instead.
+  if((window._phPhotos||[]).some(p=>p.carryFrom===photoId&&p.carryLbs>0)) return false;
+  delete ph.tagClosed; _sbPhSave(ph); return true;
+}
+// Tag photos this one could continue from: open, same product (when known), with leftover.
+function sbCarryCandidates(photoId, product, pid){
+  pid=pid||_sbPid();
+  const n=_sbNorm(product);
+  const out=[];
+  sbPhotoLedger(pid).forEach((L,id)=>{
+    if(id===photoId||L.closed||L.capacity==null) return;
+    const rem=L.capacity-L.used;
+    if(rem<=0) return;
+    if(n&&_sbNorm(L.product)!==n) return;
+    out.push({id,product:L.product,remaining:+rem.toFixed(1),date:L.entryDate});
+  });
+  return out.sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')));
+}
+function sbTransferCarry(fromId, toId){
+  const from=(window._phPhotos||[]).find(p=>p.id===fromId);
+  const to=(window._phPhotos||[]).find(p=>p.id===toId);
+  if(!from||!to||fromId===toId) return false;
+  const info=sbPhotoInfo(fromId);
+  if(!info||info.closed||info.remaining==null||info.remaining<=0) return false;
+  to.carryLbs=+info.remaining.toFixed(2);   // SNAPSHOT — never recomputed
+  to.carryFrom=fromId;
+  to.tagCount=1;
+  if(info.product) to.tagProduct=info.product;
+  from.tagClosed=true;
+  _sbPhSave(from); _sbPhSave(to);
+  return true;
+}
+function sbUndoCarry(toId){
+  const to=(window._phPhotos||[]).find(p=>p.id===toId);
+  if(!to||!to.carryFrom) return false;
+  const from=(window._phPhotos||[]).find(p=>p.id===to.carryFrom);
+  delete to.carryLbs; delete to.carryFrom;
+  _sbPhSave(to);
+  if(from){ delete from.tagClosed; _sbPhSave(from); }
+  return true;
 }
 // Per-photo tag-count + material overrides — synced through the photos dirty-ID
 // pipeline (phSaveCloudOne routes through the dirty flush so a failed write
@@ -564,6 +649,7 @@ function sbShowWeights(){
       <div style="display:flex;gap:8px;align-items:center;border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin-bottom:6px">
         <div style="flex:1;min-width:0;font-family:var(--mono);font-size:12px;color:var(--text)">${_appEsc(p.product)}</div>
         <div style="font-family:var(--mono);font-size:12px;color:var(--amber);white-space:nowrap">${bits.join(' · ')||'—'}</div>
+        <button onclick="sbRenameProduct(${i})" title="Rename everywhere (entries, tag photos, this list)" style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--muted);font-size:11px;padding:5px 8px;cursor:pointer">✏️</button>
         <button onclick="sbDeleteWeight(${i})" style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--muted);font-size:11px;padding:5px 8px;cursor:pointer">🗑</button>
       </div>`;
     }).join('')
@@ -613,6 +699,39 @@ async function sbAddWeight(){
   if(typeof mapRefreshEntryPhotoStrip==='function') mapRefreshEntryPhotoStrip();
   appRowsRender();   // product datalist suggestions update
 }
+// ✏️ Rename a material EVERYWHERE (#39, Tim 8/20: "Bedrock grazing seed mix",
+// "Annual rye"). Names live in project DATA, not code — the materials list, every
+// entry's seedMix + applications[].product, and tag photos' tagProduct — so a
+// rename has to cascade or exports split one product into two. Case-insensitive
+// match (same normalization the export roll-ups use); entries re-save through
+// trSaveEntry (cloud mirror + net-memo invalidation), photos through the dirty flush.
+async function sbRenameProduct(i){
+  const pid=_sbPid();
+  const products=sbGetProducts(pid).slice();
+  const cur=products[i]; if(!cur) return;
+  const next=prompt(`Rename "${cur.product}" everywhere — entries, tag photos, and this list:`,cur.product);
+  if(next==null) return;
+  const nn=String(next).trim();
+  if(!nn||nn===cur.product) return;
+  const key=_sbNorm(cur.product);
+  if(products.some((p,j)=>j!==i&&_sbNorm(p.product)===_sbNorm(nn))){ alert('A material with that name already exists.'); return; }
+  let nE=0,nP=0;
+  const entries=(typeof trGetEntriesForProject==='function')?trGetEntriesForProject(pid):[];
+  entries.forEach(e=>{
+    let hit=false;
+    if(_sbNorm(e.seedMix)===key){ e.seedMix=nn; hit=true; }
+    if(Array.isArray(e.applications)) e.applications.forEach(a=>{ if(a&&_sbNorm(a.product)===key){ a.product=nn; hit=true; } });
+    if(hit){ nE++; if(typeof trSaveEntry==='function') trSaveEntry(e,pid); }
+  });
+  (window._phPhotos||[]).forEach(ph=>{ if(_sbNorm(ph.tagProduct)===key){ ph.tagProduct=nn; nP++; _sbPhSave(ph); } });
+  products[i]={...cur,product:nn};
+  await sbSaveProducts(products,pid);
+  if(window._sbWtRender) window._sbWtRender();
+  if(typeof mapRefreshEntryPhotoStrip==='function') mapRefreshEntryPhotoStrip();
+  if(typeof mapRenderTrackerLayers==='function') try{ mapRenderTrackerLayers(); }catch(_){}
+  appRowsRender();
+  if(typeof showCloudBanner==='function') showCloudBanner(`Renamed to "${_appEsc(nn)}" — ${nE} drawing${nE===1?'':'s'}, ${nP} tag photo${nP===1?'':'s'} updated.`);
+}
 async function sbDeleteWeight(i){
   const pid=_sbPid();
   const products=sbGetProducts(pid).slice();
@@ -648,6 +767,7 @@ window.appSyncEntryNotes=appSyncEntryNotes;
 window.sbShowWeights=sbShowWeights;
 window.sbAddWeight=sbAddWeight;
 window.sbDeleteWeight=sbDeleteWeight;
+window.sbRenameProduct=sbRenameProduct;
 window.sbEnsureCfg=sbEnsureCfg;
 window.sbGetProducts=sbGetProducts;
 window.sbWeightFor=sbWeightFor;
@@ -656,4 +776,10 @@ window.sbPhotoInfo=sbPhotoInfo;
 window.sbPhotoBadge=sbPhotoBadge;
 window.sbSetPhotoTagCount=sbSetPhotoTagCount;
 window.sbSetPhotoTagProduct=sbSetPhotoTagProduct;
+window.sbPhotoLedgerLine=sbPhotoLedgerLine;
+window.sbRetireTag=sbRetireTag;
+window.sbReopenTag=sbReopenTag;
+window.sbCarryCandidates=sbCarryCandidates;
+window.sbTransferCarry=sbTransferCarry;
+window.sbUndoCarry=sbUndoCarry;
 window.appRowProducts=appRowProducts;

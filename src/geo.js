@@ -179,6 +179,63 @@ function _dropSlivers(geometry){
   return geometry;
 }
 
+// Area in m² of one polygon ring-set (for picking the largest piece of a split remainder).
+function glPolyAreaM2(coords){
+  return _safeArea({ type:'Feature', properties:{}, geometry:{ type:'Polygon', coordinates: coords } });
+}
+
+// #36 — remaining gaps along a PLANNED line: stretches of the plan not yet within
+// `tolM` meters of any installed child line. Sampled every `stepM` along the plan
+// (hand-traced installs never share vertices with the plan, so a tolerance walk
+// beats exact overlap math). Returns [{startFt,endFt,lengthFt}] — empty = fully
+// covered; null = not measurable.
+function glLineGapsFt(planGeom, installedGeoms, tolM, stepM){
+  tolM = tolM || 3; stepM = stepM || 2;
+  if(!planGeom || planGeom.type !== 'LineString' || !Array.isArray(installedGeoms)) return null;
+  const segs = [];
+  installedGeoms.forEach(g => {
+    if(!g) return;
+    const lines = g.type === 'LineString' ? [g.coordinates] : (g.type === 'MultiLineString' ? g.coordinates : []);
+    lines.forEach(cs => { for(let i = 1; i < cs.length; i++) segs.push([cs[i-1], cs[i]]); });
+  });
+  if(!segs.length) return null;
+  const lat0 = planGeom.coordinates[0][1] * Math.PI / 180;
+  const kx = 111320 * Math.cos(lat0), ky = 110540;
+  const toXY = p => [p[0] * kx, p[1] * ky];
+  const segXY = segs.map(s => [toXY(s[0]), toXY(s[1])]);
+  const dSeg = (p, a, b) => {
+    const vx = b[0]-a[0], vy = b[1]-a[1], wx = p[0]-a[0], wy = p[1]-a[1];
+    const L2 = vx*vx + vy*vy;
+    const t = L2 ? Math.max(0, Math.min(1, (wx*vx + wy*vy) / L2)) : 0;
+    const dx = p[0] - (a[0] + t*vx), dy = p[1] - (a[1] + t*vy);
+    return Math.sqrt(dx*dx + dy*dy);
+  };
+  const covered = p => { for(const s of segXY){ if(dSeg(p, s[0], s[1]) <= tolM) return true; } return false; };
+  // Walk the plan line at stepM, tagging each sample covered / open.
+  const pc = planGeom.coordinates.map(toXY);
+  const samples = [];   // [distM, covered]
+  let acc = 0;
+  for(let i = 1; i < pc.length; i++){
+    const a = pc[i-1], b = pc[i];
+    const segLen = Math.hypot(b[0]-a[0], b[1]-a[1]);
+    const n = Math.max(1, Math.ceil(segLen / stepM));
+    for(let k = 0; k < n; k++){
+      const t = k / n;
+      samples.push([acc + t*segLen, covered([a[0] + t*(b[0]-a[0]), a[1] + t*(b[1]-a[1])])]);
+    }
+    acc += segLen;
+  }
+  samples.push([acc, covered(pc[pc.length-1])]);
+  const gaps = [];
+  let open = null;
+  samples.forEach(([d, cov], i) => {
+    if(!cov && open == null) open = d;
+    if((cov || i === samples.length-1) && open != null){ const end = cov ? d : d; if(end - open >= tolM) gaps.push([open, end]); open = null; }
+  });
+  const FT = 3.28084;
+  return gaps.map(([s, e]) => ({ startFt: s*FT, endFt: e*FT, lengthFt: (e - s)*FT }));
+}
+
 function glEntryNetGeoms(entries){
   return _glMemo('G', entries || [], '', () => {
     const parsed = (entries || []).map(e => ({ e, f: _parseGeom(e) })).filter(x => x.f);
@@ -214,7 +271,9 @@ if(typeof window !== 'undefined'){
   window.glEntryNetGeoms   = glEntryNetGeoms;
   window.glAreaConvertM2   = glAreaConvertM2;
   window.glLineLengthFt    = glLineLengthFt;
+  window.glLineGapsFt      = glLineGapsFt;
+  window.glPolyAreaM2      = glPolyAreaM2;
   window.glGeoInvalidate   = glGeoInvalidate;
 }
 
-export { glStateNetAreasM2, glEntryNetAreasM2, glEntryNetGeoms, glAreaConvertM2, glLineLengthFt, glGeoInvalidate };
+export { glStateNetAreasM2, glEntryNetAreasM2, glEntryNetGeoms, glAreaConvertM2, glLineLengthFt, glLineGapsFt, glPolyAreaM2, glGeoInvalidate };

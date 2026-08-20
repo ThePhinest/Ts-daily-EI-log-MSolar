@@ -288,6 +288,12 @@ function _phDocFor(p){
   // null when cleared — merge:true would otherwise resurrect an old override.
   doc.tagCount = (p.tagCount>0) ? p.tagCount : null;
   doc.tagProduct = p.tagProduct || null;
+  // 🌱 leftover-tag transfer (8/20): tagClosed = this tag's leftover was retired
+  // (or carried on); carryLbs = SNAPSHOT of the pounds carried INTO this tag photo
+  // from carryFrom (never recomputed — Tim: live recompute "could create chaos").
+  doc.tagClosed = !!p.tagClosed;
+  doc.carryLbs = (p.carryLbs>0) ? p.carryLbs : null;
+  doc.carryFrom = p.carryFrom || null;
   // 📸 in-app camera fields (src/camera.js): the metadata record half of the
   // two-layer model — the stamp overlay renders from these on demand.
   if(p.locLabel != null) doc.locLabel = p.locLabel;
@@ -598,6 +604,16 @@ function phRender(){
   const visibleDates = sortedDates.slice(0, _phDaysShown);
   const hasMore = sortedDates.length > _phDaysShown;
 
+  // 🌱 bag-ledger badge on seed-tag thumbs (one derived pass for the grid; Tim 8/20).
+  const _ledBadge=(p)=>{
+    if(!p.seedTag||typeof sbPhotoBadge!=='function') return '';
+    const bd=sbPhotoBadge(p.id);
+    if(!bd) return '';
+    const top=p.swppp?44:24;
+    const bg=bd.amber?'rgba(201,168,76,.92)':(bd.closed?'rgba(90,100,110,.92)':'rgba(39,140,60,.92)');
+    return `<span class="ph-thumb-seed" style="top:${top}px;background:${bg};color:${bd.amber?'#111':'#fff'}">${bd.txt}</span>`;
+  };
+
   lib.innerHTML = visibleDates.map(date => `
     <div class="ph-day-group">
       <div class="ph-day-label">${phDayLabel(date)} <span class="ph-day-count">${grouped[date].length} photo${grouped[date].length>1?'s':''}</span>${_phSelMode?` <a onclick="phSelectDay('${date}')" style="margin-left:auto;color:var(--amber);cursor:pointer;font-size:10px;text-decoration:underline">select day</a>`:''}</div>
@@ -608,6 +624,7 @@ function phRender(){
             ${_phSelMode?`<span style="position:absolute;top:6px;right:6px;width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;background:${_phSel.has(p.id)?'var(--amber)':'rgba(10,18,26,0.6)'};color:${_phSel.has(p.id)?'#111':'#fff'};border:1.5px solid ${_phSel.has(p.id)?'var(--amber)':'rgba(255,255,255,0.6)'}">${_phSel.has(p.id)?'✓':''}</span>`:''}
             ${p.swppp?'<span class="ph-thumb-swppp">🌊 SWPPP</span>':''}
             ${p.seedTag?`<span class="ph-thumb-seed"${p.swppp?' style="top:24px"':''}>🌱 SEED</span>`:''}
+            ${_ledBadge(p)}
             <div class="ph-thumb-caption">${p.caption||'Tap to add caption'}</div>
             ${_phSelMode?'':`<button class="ph-thumb-del" onclick="event.stopPropagation();phConfirmDelete('${p.id}')">✕</button>`}
           </div>
@@ -1139,6 +1156,13 @@ function _phLbRenderMeta(p){
   const links=_phLbLinkedEntries(p.id);
   const b=document.getElementById('ph-lb-badges');
   if(b) b.textContent=[p.swppp?'🌊':'',p.seedTag?'🌱':'',p.repairTag?'🚩':'',links.length?'📐':''].filter(Boolean).join(' ');
+  // 🌱 bag-ledger line for seed-tag photos (Tim 8/20) — lives right under the badges.
+  let led=document.getElementById('ph-lb-ledger');
+  if(!led&&b){ led=document.createElement('div'); led.id='ph-lb-ledger'; led.style.cssText='font-family:var(--mono);font-size:10px;color:var(--muted);text-align:center;line-height:1.4;padding:0 12px'; b.insertAdjacentElement('afterend',led); }
+  if(led){
+    const line=(p.seedTag&&typeof sbPhotoLedgerLine==='function')?sbPhotoLedgerLine(p.id):'';
+    led.innerHTML=line; led.style.display=line?'':'none';
+  }
   const box=document.getElementById('ph-lb-links');
   if(!box) return;
   if(!links.length){ box.style.display='none'; box.innerHTML=''; return; }

@@ -4034,7 +4034,11 @@ function _trSeedStateEligible(){
   const cat=(typeof tcGetCategory==='function')?tcGetCategory(_drawCategory,pid):null;
   const kids=(typeof tcGetStates==='function')?tcGetStates(cat,pid).filter(s=>!s.isPlanned):[];
   const idx=kids.findIndex(s=>s.id===st.id);
-  const cm=st.countMode||((typeof tcStateCountMode==='function')?tcStateCountMode(st,idx,kids,mode):'add');
+  // `mode` was an undefined free variable here (latent ReferenceError for any state
+  // without an explicit countMode → the entry modal silently never opened). Resolve
+  // the category's progress mode the same way every other caller does.
+  const _pm=(typeof tcProgressMode==='function')?tcProgressMode(_drawCategory,pid):'per-state-vs-plan';
+  const cm=st.countMode||((typeof tcStateCountMode==='function')?tcStateCountMode(st,idx,kids,_pm):'add');
   return cm!=='add';   // stabilization = the states that reduce open disturbance
 }
 function _trSeedSectionSync(){
@@ -4221,7 +4225,36 @@ function mapCopyEntryShape(entryId){
   _drawEntryType='installed';
   // Copies stack on the source's plan: a plan copies onto itself; a child onto its parent.
   _activePlannedEntryId=entry.entryType==='planned'?entry.id:(entry.parentId||null);
-  const feat={type:'Feature',properties:{},geometry:JSON.parse(JSON.stringify(entry.geometry))};
+  // #56 (Tim 8/19): in running categories the copy is the drawing's CURRENT net
+  // remainder (what later states haven't covered), not its original gross extent —
+  // so "copy what's still disturbed" is one tap. Split remainders copy the largest
+  // piece (gl-draw edits a single ring) and say so. Plans/other modes copy verbatim.
+  let geom=JSON.parse(JSON.stringify(entry.geometry));
+  try{
+    const _pm=(typeof tcProgressMode==='function')?tcProgressMode(catId,pid):'';
+    if(gt==='Polygon'&&entry.entryType!=='planned'&&(_pm==='running-balance'||_pm==='running-total')&&typeof glEntryNetGeoms==='function'){
+      const cat=(typeof tcGetCategory==='function')?tcGetCategory(catId,pid):null;
+      const clipList=((typeof trGetEntriesForProject==='function')?trGetEntriesForProject(pid):[]).filter(e=>{
+        if((e.categoryId||e.category)!==catId||!e.geometry) return false;
+        if(e.temporary&&e.tempStatus!=='resolved') return false;
+        const st=(cat&&typeof tcEntryState==='function')?tcEntryState(e,cat,pid):null;
+        return !(st?!!st.isPlanned:(e.entryType==='planned'));
+      });
+      const nets=glEntryNetGeoms(clipList)||{};
+      if(Object.prototype.hasOwnProperty.call(nets,entry.id)){
+        const net=nets[entry.id];
+        if(!net){ if(typeof showCloudBanner==='function') showCloudBanner('Nothing left of this drawing to copy — later states cover all of it. Copied the original outline instead.'); }
+        else if(net.type==='Polygon'){ geom=net; }
+        else if(net.type==='MultiPolygon'){
+          let best=null,bestA=-1;
+          net.coordinates.forEach(c=>{ const a=(typeof glPolyAreaM2==='function')?glPolyAreaM2(c):c[0].length; if(a>bestA){bestA=a;best=c;} });
+          geom={type:'Polygon',coordinates:best};
+          if(typeof showCloudBanner==='function') showCloudBanner(`Remaining area is in ${net.coordinates.length} pieces — copied the largest. Copy again for the others.`);
+        }
+      }
+    }
+  }catch(err){ console.warn('copy net shape:',err.message); }
+  const feat={type:'Feature',properties:{},geometry:geom};
   _pendingDrawFeature=feat;
   mapShowTrackerModal(feat,catId);
 }
@@ -6798,7 +6831,15 @@ function _showTrackerEntryPopup(lngLat,props){
       <span class="_trp-chev" style="margin-left:auto;display:inline-block;transition:transform .15s;transform:rotate(90deg)">▸</span>
     </div>
     <div class="_trp-photos" style="display:flex;gap:4px;flex-wrap:wrap;margin-top:8px">
-      ${photos.map(p=>`<img src="${p.thumb}" onclick="phOpenLightbox('${p.id}',${photoIdsLiteral})" style="width:56px;height:56px;object-fit:cover;border-radius:4px;cursor:pointer;border:2px solid rgba(255,255,255,.15)">`).join('')}
+      ${photos.map(p=>{
+        // 🌱 seed-tag photos carry their bag-ledger readout here too (Tim 8/20: "more
+        // visibility on what's left per tag photo") — same badge fn as the entry strip.
+        const isTag=!!(entry&&entry.photoTypes&&entry.photoTypes[p.id]==='material_tag');
+        const bd=(isTag&&typeof sbPhotoBadge==='function')?sbPhotoBadge(p.id,pid):null;
+        const img=`<img src="${p.thumb}" onclick="phOpenLightbox('${p.id}',${photoIdsLiteral})" style="width:56px;height:56px;object-fit:cover;border-radius:4px;cursor:pointer;border:2px solid ${isTag?'rgba(201,168,76,.7)':'rgba(255,255,255,.15)'}">`;
+        if(!bd) return img;
+        return `<div style="display:inline-flex;flex-direction:column;align-items:center;gap:2px;width:56px">${img}<div style="font-size:8px;line-height:1.2;text-align:center;color:${bd.amber?'#C9A84C':(bd.closed?'#9fb2c4':'#cfe8cf')};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:56px" title="${bd.txt}">${bd.txt}</div></div>`;
+      }).join('')}
     </div>
   </div>`:'';
   const labelOn=entry?.showDateLabel||false;
@@ -6858,6 +6899,24 @@ function _showTrackerEntryPopup(lngLat,props){
       (typeof ssWhereLabel==='function'&&typeof ssGetCfg==='function')?ssWhereLabel(ssGetCfg(pid),entry.seedWhere):entry.seedWhere]);
   }
   if(entry&&!_isTemp) _detailRows.push(['Type',_isPlanned?'Planned':'Installed']);
+  // #36 (Tim 8/1): a planned LINE lists the stretches its installed children haven't
+  // covered yet — "how much silt fence is still left between the two installed runs".
+  if(_isPlanned&&entry?.geometry?.type==='LineString'&&typeof glLineGapsFt==='function'){
+    try{
+      const kids=((typeof trGetEntriesForProject==='function')?trGetEntriesForProject(pid):[])
+        .filter(e=>e.parentId===entry.id&&e.entryType!=='planned'&&!(e.temporary&&e.tempStatus!=='resolved')&&e.geometry);
+      if(kids.length){
+        const gaps=glLineGapsFt(entry.geometry,kids.map(e=>e.geometry));
+        if(gaps&&gaps.length){
+          const tot=gaps.reduce((a,g)=>a+g.lengthFt,0);
+          const parts=gaps.slice(0,6).map(g=>Math.round(g.lengthFt).toLocaleString('en-US')+' ft').join(' · ')+(gaps.length>6?` · +${gaps.length-6} more`:'');
+          _detailRows.push([`Remaining gaps (${gaps.length})`,`<b>${Math.round(tot).toLocaleString('en-US')} ft</b><br><span style="color:#9fb2c4">${parts}</span>`]);
+        } else if(gaps){
+          _detailRows.push(['Remaining gaps','<span style="color:#27AE60">none — fully covered</span>']);
+        }
+      }
+    }catch(err){ console.warn('line gaps:',err.message); }
+  }
   const detailsBlock=_detailRows.length?`<div style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,.12)">
     <div onclick="mapTogglePopupDetails(this)" style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:11px;color:#dce8f4;user-select:none">
       <span>ℹ️ Details</span>
@@ -7431,8 +7490,8 @@ function mapShowEntryPhotoPicker(){
     const L=_led.get(p.id);
     let ledHtml='';
     if(L&&L.capacity!=null){
-      const rem=+(L.capacity-L.used).toFixed(1);
-      ledHtml=`<div style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.62);font-family:var(--mono);font-size:8px;color:${rem<=0?'var(--amber)':'#cfe8cf'};text-align:center;padding:1px 0;white-space:nowrap;overflow:hidden">${rem<=0?'⚠ used up':'🌱 '+rem.toLocaleString('en-US')+' lbs'}</div>`;
+      const bd=sbPhotoBadge(p.id,pid);
+      ledHtml=`<div style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.62);font-family:var(--mono);font-size:8px;color:${bd.amber?'var(--amber)':(bd.closed?'#9fb2c4':'#cfe8cf')};text-align:center;padding:1px 0;white-space:nowrap;overflow:hidden">${bd.txt}</div>`;
     }
     return `<div id="mtrph-${p.id}" onclick="mapToggleEntryPhoto('${p.id}',this)"
       style="position:relative;cursor:pointer;border-radius:6px;border:2px solid ${linked?'var(--amber)':'transparent'};overflow:hidden;flex-shrink:0;width:80px;height:60px">
@@ -7484,8 +7543,8 @@ function mapRefreshEntryPhotoStrip(){
     if(isTag){
       const L=_led.get(p.id);
       if(L&&L.capacity!=null){
-        const rem=+(L.capacity-L.used).toFixed(1);
-        ledHtml=`<div style="font-family:var(--mono);font-size:8px;color:${rem<=0?'var(--amber)':'var(--muted)'};white-space:nowrap">${rem<=0?'⚠ bag used up':'🌱 '+rem.toLocaleString('en-US')+' lbs left'}</div>`;
+        const bd=sbPhotoBadge(p.id,pid);
+        ledHtml=`<div style="font-family:var(--mono);font-size:8px;color:${bd.amber?'var(--amber)':'var(--muted)'};white-space:nowrap;max-width:64px;overflow:hidden;text-overflow:ellipsis" title="${bd.txt}">${bd.txt}</div>`;
       } else if(L){
         ledHtml=`<div onclick="if(typeof sbShowWeights==='function')sbShowWeights()" style="font-family:var(--mono);font-size:8px;color:var(--muted);white-space:nowrap;cursor:pointer;text-decoration:underline dotted">⚖ set bag wt</div>`;
       }
@@ -7527,11 +7586,37 @@ function _showPhotoCaptionModal(photoId){
       </select>
     </div>`:'';
   let ledLine='';
+  // ↪ leftover transfer controls (Tim 8/20): retire this tag's leftover, continue a
+  // new single-tag photo from a retired-able source, or undo a carry. Candidates =
+  // open same-product tag photos with leftover (product = this photo's resolved one).
+  let carryUi='';
   if(isTag){
     if(info&&info.capacity!=null){
-      const rem=+(info.capacity-info.used).toFixed(1);
-      ledLine=`<div style="font-family:var(--mono);font-size:10px;color:${rem<=0?'var(--amber)':'var(--muted)'};margin-bottom:10px;line-height:1.5">${info.count} tag${info.count>1?'s':''} × ${info.weight} lbs (${(info.product||'').replace(/</g,'&lt;')}) = ${info.capacity.toLocaleString('en-US')} lbs · ${info.used.toLocaleString('en-US')} used · <b>${rem.toLocaleString('en-US')} left</b></div>`;
+      const rem=+info.remaining.toFixed(1);
+      ledLine=`<div style="font-family:var(--mono);font-size:10px;color:${(rem<=0&&!info.closed)?'var(--amber)':'var(--muted)'};margin-bottom:10px;line-height:1.5">${(typeof sbPhotoLedgerLine==='function')?sbPhotoLedgerLine(photoId):''}</div>`;
+    }
+    // Carry controls key off the PHOTO record (a just-attached tag has no ledger
+    // row until the entry saves — the "Continues from" pick must work right then).
+    const esc=s=>String(s||'').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+    const _carried=!!(photo&&photo.carryLbs>0), _closed=!!(photo&&photo.tagClosed);
+    if(_carried){
+      const src=(window._phPhotos||[]).find(p=>p.id===photo.carryFrom);
+      carryUi=`<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;font-family:var(--mono);font-size:10px;color:var(--muted)"><span style="flex:1">↪ ${(+photo.carryLbs).toLocaleString('en-US')} lbs carried in from the ${src?esc(src.date):'retired'} tag photo</span><button id="_phcap-undocarry" style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--muted);font-size:10px;padding:4px 8px;cursor:pointer">Undo</button></div>`;
+    } else if(_closed){
+      const canReopen=typeof sbReopenTag==='function'&&!(window._phPhotos||[]).some(p=>p.carryFrom===photoId&&p.carryLbs>0);
+      carryUi=`<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;font-family:var(--mono);font-size:10px;color:var(--muted)"><span style="flex:1">✔ Leftover retired${canReopen?'':' · carried on to a new tag photo'}</span>${canReopen?`<button id="_phcap-reopen" style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--muted);font-size:10px;padding:4px 8px;cursor:pointer">Reopen</button>`:''}</div>`;
     } else {
+      const prodFilter=curProd||(info&&info.product)||'';
+      const _cands=(typeof sbCarryCandidates==='function')?sbCarryCandidates(photoId,prodFilter):[];
+      if(_cands.length) carryUi+=`<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+          <label style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;flex:1">Continues from</label>
+          <select id="_phcap-carry" style="max-width:170px;box-sizing:border-box;background:var(--s1);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--mono);font-size:12px;padding:7px 9px;outline:none">
+            <option value="">— new bag —</option>
+            ${_cands.map(c=>`<option value="${esc(c.id)}">${esc(c.date||'')} · ${c.remaining.toLocaleString('en-US')} lbs left${prodFilter?'':' · '+esc(c.product)}</option>`).join('')}
+          </select></div>`;
+      if(info&&info.remaining>0) carryUi+=`<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;font-family:var(--mono);font-size:10px;color:var(--muted)"><span style="flex:1">Done with this bag? Retire the ${(+info.remaining.toFixed(1)).toLocaleString('en-US')} lbs leftover — then photograph the single leftover tag on its next area and pick "Continues from".</span><button id="_phcap-retire" style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--amber);font-size:10px;padding:4px 8px;cursor:pointer;white-space:nowrap">Retire</button></div>`;
+    }
+    if(!(info&&info.capacity!=null)){
       ledLine=`<div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:10px;line-height:1.5">No bag weight set for this mix yet — <span onclick="if(typeof sbShowWeights==='function')sbShowWeights()" style="text-decoration:underline dotted;cursor:pointer">add it in Seed Bag Weights</span> and this tag photo starts counting down on its own.</div>`;
     }
   }
@@ -7545,8 +7630,8 @@ function _showPhotoCaptionModal(photoId){
       <input type="text" id="_phcap-input" value="${existing.replace(/"/g,'&quot;').replace(/'/g,'&#39;')}" placeholder="e.g. Seed tag east section 3" style="width:100%;box-sizing:border-box;background:var(--s1);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--body);font-size:16px;padding:9px 12px;outline:none;margin-bottom:14px">
       ${isTag?`${prodPick}<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
         <label style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;flex:1">Tags in this photo</label>
-        <input type="number" id="_phcap-tags" min="1" step="1" value="${curCount}" style="width:64px;box-sizing:border-box;background:var(--s1);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--mono);font-size:14px;padding:7px 9px;outline:none">
-      </div>${ledLine}`:''}
+        <input type="number" id="_phcap-tags" min="1" step="1" value="${curCount}" style="width:64px;box-sizing:border-box;background:var(--s1);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--mono);font-size:14px;padding:7px 9px;outline:none"${(info&&info.carry!=null)?' disabled title="A carried-in tag is always 1 tag"':''}>
+      </div>${ledLine}${carryUi}`:''}
       <div class="modal-btns">
         <button class="modal-confirm" id="_phcap-ok">Save</button>
         ${isTag?`<button class="modal-cancel" id="_phcap-remove" style="color:#c0392b">Remove Tag</button>`:''}
@@ -7572,9 +7657,21 @@ function _showPhotoCaptionModal(photoId){
       const seedDef=(typeof appRowProducts==='function')?(appRowProducts().find(p=>p.type==='seed')?.product||''):'';
       sbSetPhotoTagProduct(photoId, pEl.value===seedDef?'':pEl.value);
     }
+    // ↪ carry-in picked: snapshot the source's leftover onto this photo, retire the source.
+    const cEl=ov.querySelector('#_phcap-carry');
+    if(cEl&&cEl.value&&typeof sbTransferCarry==='function'){
+      if(!sbTransferCarry(cEl.value,photoId)&&typeof showCloudBanner==='function') showCloudBanner('That tag photo has no leftover to carry.');
+    }
     ov.remove(); mapRefreshEntryPhotoStrip();
   };
   ov.querySelector('#_phcap-ok').onclick=save;
+  const _reopenModal=()=>{ ov.remove(); mapRefreshEntryPhotoStrip(); _showPhotoCaptionModal(photoId); };
+  const rtBtn=ov.querySelector('#_phcap-retire');
+  if(rtBtn) rtBtn.onclick=()=>{ if(typeof sbRetireTag==='function') sbRetireTag(photoId); _reopenModal(); };
+  const roBtn=ov.querySelector('#_phcap-reopen');
+  if(roBtn) roBtn.onclick=()=>{ if(typeof sbReopenTag==='function') sbReopenTag(photoId); _reopenModal(); };
+  const ucBtn=ov.querySelector('#_phcap-undocarry');
+  if(ucBtn) ucBtn.onclick=()=>{ if(typeof sbUndoCarry==='function') sbUndoCarry(photoId); _reopenModal(); };
   if(isTag) ov.querySelector('#_phcap-remove').onclick=()=>{
     _pendingPhotoTypes[photoId]='general';
     delete _pendingPhotoCaptions[photoId];
