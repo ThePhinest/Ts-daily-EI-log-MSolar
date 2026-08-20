@@ -123,8 +123,65 @@ function ctrRenderDatalist(){
     (c.contacts||[]).forEach(k=>{ if(k.name) opts.push(`<option value="${_ctrEsc(c.name+' · '+k.name)}">${_ctrEsc([k.title,k.phone].filter(Boolean).join(' · '))}</option>`); });
   });
   dl.innerHTML=opts.join('');
-  // Late-rendered inputs (crew blocks are built per day) pick the list up here.
-  document.querySelectorAll('input[id^="crew-"][id$="-name"], #map-tr-contractor').forEach(i=>{ if(!i.getAttribute('list')) i.setAttribute('list','gl-ctr-list'); });
+}
+
+// ── 📇 Picker modal (Tim 8/20: "I'd prefer a popup modal — keep that for
+// everything going forward"; native datalists are out). Fills the target input:
+// tap a company → company name; tap a contact → "Company · Contact". Search box
+// filters across names, contacts, titles, scope. On-site companies float first.
+function ctrPick(targetId){
+  const target=document.getElementById(targetId);
+  if(!target) return;
+  ctrEnsureCfg().then(()=>{
+    const list=ctrGetList().slice().sort((a,b)=>(b.onSite!==false)-(a.onSite!==false));
+    const ov=document.createElement('div');
+    ov.className='modal-overlay';
+    ov.style.cssText='z-index:9600';
+    const rowsHtml=(q)=>{
+      q=String(q||'').trim().toLowerCase();
+      const hit=s=>!q||String(s||'').toLowerCase().includes(q);
+      const out=list.map(c=>{
+        const contacts=(c.contacts||[]).filter(k=>k.name&&(hit(c.name)||hit(k.name)||hit(k.title)));
+        if(!(hit(c.name)||hit(c.desc)||contacts.length)) return '';
+        const val=c.name;
+        return `<div style="margin-bottom:6px">
+          <div class="ctr-pick-row" data-v="${_ctrEsc(val)}" style="display:flex;align-items:center;gap:8px;padding:10px 12px;border:1px solid var(--border);border-left:3px solid ${c.onSite!==false?'var(--amber)':'var(--border)'};border-radius:8px;cursor:pointer;background:var(--s1)">
+            <div style="flex:1;min-width:0"><div style="font-family:var(--mono);font-size:13px;color:var(--text);font-weight:700">${_ctrEsc(c.name)}</div>${c.desc?`<div style="font-size:11px;color:var(--muted);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${_ctrEsc(c.desc)}</div>`:''}</div>
+            <span style="font-family:var(--mono);font-size:9px;color:var(--muted)">${c.onSite!==false?'on site':''}</span>
+          </div>
+          ${contacts.map(k=>`<div class="ctr-pick-row" data-v="${_ctrEsc(c.name+' · '+k.name)}" style="display:flex;align-items:center;gap:8px;padding:8px 12px 8px 26px;margin-top:3px;border:1px solid var(--border);border-radius:8px;cursor:pointer;background:var(--bg)">
+            <span style="font-size:12px">👤</span><div style="flex:1;min-width:0;font-family:var(--mono);font-size:12px;color:var(--text)">${_ctrEsc(k.name)}${k.title?` <span style="color:var(--muted);font-size:10px">· ${_ctrEsc(k.title)}</span>`:''}</div>${k.phone?`<span style="font-family:var(--mono);font-size:10px;color:var(--amber)">${_ctrEsc(k.phone)}</span>`:''}
+          </div>`).join('')}
+        </div>`;
+      }).join('');
+      return out||`<div style="font-family:var(--mono);font-size:11px;color:var(--muted);padding:10px 0;text-align:center">${list.length?'No match.':'No contractors yet — add them in Settings → 🏗 Contractors.'}</div>`;
+    };
+    ov.innerHTML=`<div class="modal-box" style="max-width:420px;width:94%;max-height:82vh;display:flex;flex-direction:column">
+      <div class="modal-title" style="margin-bottom:8px">Pick contractor / contact</div>
+      <input type="text" id="_ctrpick-q" placeholder="Search…" style="width:100%;box-sizing:border-box;background:var(--s1);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--body);font-size:16px;padding:9px 12px;outline:none;margin-bottom:10px">
+      <div id="_ctrpick-rows" style="overflow-y:auto;flex:1;min-height:0">${rowsHtml('')}</div>
+      <div class="modal-btns" style="margin-top:10px">
+        <button class="modal-cancel" onclick="this.closest('.modal-overlay').remove()">Cancel</button>
+        ${list.length?'':`<button class="modal-confirm" onclick="this.closest('.modal-overlay').remove();if(typeof showPage==='function')showPage('settings');if(typeof ctrBootCard==='function')ctrBootCard()">Open Settings</button>`}
+      </div>
+    </div>`;
+    document.body.appendChild(ov);
+    const rows=ov.querySelector('#_ctrpick-rows');
+    rows.onclick=(e)=>{
+      const r=e.target.closest('.ctr-pick-row'); if(!r) return;
+      target.value=r.getAttribute('data-v')||'';
+      target.dispatchEvent(new Event('input',{bubbles:true}));
+      target.dispatchEvent(new Event('change',{bubbles:true}));
+      if(typeof glHaptic==='function') try{ glHaptic(); }catch(_){}
+      ov.remove();
+    };
+    const q=ov.querySelector('#_ctrpick-q');
+    q.oninput=()=>{ rows.innerHTML=rowsHtml(q.value); };
+  });
+}
+// Button markup shared by every contractor input (crew block, map entry, …).
+function ctrPickBtn(targetId){
+  return `<button type="button" onclick="ctrPick('${targetId}')" title="Pick from the project's contractor list" style="flex-shrink:0;background:var(--s1);border:1px solid var(--border);border-radius:6px;color:var(--amber);font-size:14px;padding:0 11px;cursor:pointer;line-height:1">📇</button>`;
 }
 
 // ── Settings card ──
@@ -237,11 +294,7 @@ function ctrEdit(i){
   // Project switches call applyProjectConfig module-internally (not via window), so
   // the DOM observer below doubles as the switch detector: any re-render re-checks
   // the active pid (cheap — a cached pid returns immediately).
-  new MutationObserver(()=>{
-    try{ kick(); }catch(_){}
-    const dl=document.getElementById('gl-ctr-list');
-    if(dl&&dl.children.length) document.querySelectorAll('input[id^="crew-"][id$="-name"]:not([list])').forEach(i=>i.setAttribute('list','gl-ctr-list'));
-  }).observe(document.body,{childList:true,subtree:true});
+  new MutationObserver(()=>{ try{ kick(); }catch(_){} }).observe(document.body,{childList:true,subtree:true});
 })();
 
 window.CTR_TIERS=CTR_TIERS;
@@ -254,4 +307,6 @@ window.ctrBootCard=ctrBootCard;
 window.ctrToggleOnSite=ctrToggleOnSite;
 window.ctrDelete=ctrDelete;
 window.ctrEdit=ctrEdit;
+window.ctrPick=ctrPick;
+window.ctrPickBtn=ctrPickBtn;
 export { ctrGetList, ctrEnsureCfg, ctrActiveNames };
