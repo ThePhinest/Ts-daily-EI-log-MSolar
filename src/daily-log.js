@@ -16,7 +16,7 @@ function collectFormState(){
   // Simple fields
   const fields=['projectName','reportDate','preparedBy','org','activePhase','contractor','reviewedBy',
     'tempAM','tempPM','wind','precip','soilCond','upcomingWeather',
-    'wxSunrise','wxSunset','wxDaylight','wxRainWeek','wxPrecipPeak',
+    'wxSunrise','wxSunset','wxDaylight','wxRainWeek','wxPrecipPeak','wxRainSrc',
     'inspSummary','agencyInsp','landowner','rte','nonCompliance',
     'genComms','lookahead','lookaheadWeather',
     'p-timeIn','p-timeOut','p-break','p-odoStart','p-odoEnd','p-notes'];
@@ -92,6 +92,7 @@ function restoreFormState(state){
   });
   // Peak-hour line sets UNCONDITIONALLY — a dry day must clear a rainy day's text.
   { const pv=document.getElementById('wx-precip-peak'); if(pv) pv.textContent=document.getElementById('wxPrecipPeak')?.value||''; }
+  { const sv=document.getElementById('wx-rain-src'); if(sv) sv.textContent=document.getElementById('wxRainSrc')?.value||''; }
   _renderRainWeek(document.getElementById('wxRainWeek')?.value||'');
   requestAnimationFrame(()=>requestAnimationFrame(()=>document.querySelectorAll('textarea.auto-expand').forEach(autoResize)));
   updateReportDateDow();
@@ -233,6 +234,8 @@ function _resetFormCore(){
   _renderRainWeek('');
   const ppEl=document.getElementById('wxPrecipPeak'); if(ppEl) ppEl.value='';
   const ppVis=document.getElementById('wx-precip-peak'); if(ppVis) ppVis.textContent='';
+  const rsEl=document.getElementById('wxRainSrc'); if(rsEl) rsEl.value='';
+  const rsVis=document.getElementById('wx-rain-src'); if(rsVis) rsVis.textContent='';
   // Cleared textareas keep yesterday's inline height (autoResize only runs on
   // 'input') — a long inspection summary left a huge empty box on the fresh
   // day. Re-run the same shrink-capable resize the restore path uses;
@@ -335,10 +338,16 @@ async function _doWeatherFetch(forecastOffset){
           `&hourly=precipitation,windspeed_10m,weathercode,soil_moisture_0_to_7cm,soil_temperature_0_to_7cm`+
           `&past_days=1&current_weather=true`+
           `&temperature_unit=fahrenheit&windspeed_unit=mph&precipitation_unit=inch&timezone=auto&forecast_days=8`;
+        // Site rainfall rides alongside: IEMRE (radar + gauge) in parallel with
+        // Open-Meteo; if it can't answer, the Open-Meteo model value stands.
+        const rainP=(typeof wxIemreRain24==='function')
+          ? wxIemreRain24(lat,lon).catch(e=>{ console.warn('IEMRE rain unavailable:',e.message); return null; })
+          : Promise.resolve(null);
         const res=await fetch(url);
         if(!res.ok) throw new Error('HTTP '+res.status);
         const data=await res.json();
-        _applyWeatherData(data,forecastOffset);
+        const rain=await rainP;
+        _applyWeatherData(data,forecastOffset,rain);
         if(btn){btn.textContent='✓ Weather filled';btn.style.color='var(--green)';
           setTimeout(()=>{btn.textContent='⛅ Get My Weather';btn.style.color='';btn.disabled=false;},3000);}
       }catch(e){
@@ -461,7 +470,7 @@ function _formatDaylight(sunriseISO, sunsetISO){
   return {sunrise: _formatTimeAmPm(sr), sunset: _formatTimeAmPm(ss), length: `${lengthH}h ${lengthM}m`};
 }
 
-function _applyWeatherData(data,forecastOffset){
+function _applyWeatherData(data,forecastOffset,rain){
   const d=data.daily;
   const cw=data.current_weather;
   if(!d||!cw) return;
@@ -520,10 +529,18 @@ function _applyWeatherData(data,forecastOffset){
     windEl.value = `${speedStr} mph ${cardDir}${gustStr}`;
   }
 
-  // ── Precip: past 24 hours from hourly (more accurate than today's daily total) ──
-  const past24 = _past24hrPrecip(data);
+  // ── Precip: past 24 hours. Site rainfall is IEMRE (NWS Stage IV radar +
+  // gauge — the DPS-grade number, Tim 8/21) when it answered; Open-Meteo's
+  // model hourly is the silent fallback. The source is persisted (wxRainSrc)
+  // so an archived day says which number it carried.
+  const past24 = rain ? {sum:rain.sum, peak:rain.peak, peakAt:rain.peakAt} : _past24hrPrecip(data);
   const precipEl = document.getElementById('precip');
   if(precipEl) precipEl.value = past24.sum.toFixed(2);
+  {
+    const srcStr = rain ? 'Rain: IEMRE radar + gauge (NWS Stage IV)' : 'Rain: Open-Meteo model (IEMRE unavailable)';
+    const srcHid = document.getElementById('wxRainSrc'); if(srcHid) srcHid.value = srcStr;
+    const srcVis = document.getElementById('wx-rain-src'); if(srcVis) srcVis.textContent = srcStr;
+  }
   // Worst single hour in the window — persisted like the other wx hiddens so an
   // archived day reloads its own snapshot. Only meaningful when it rained.
   {
