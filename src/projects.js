@@ -6,6 +6,8 @@ const PROJECT_CONFIG_DEFAULTS = {
   preparedBy:  '',
   org:         '',
   activePhase: '',
+  siteLat:     '',
+  siteLon:     '',
   contractor:  '',
   location:    '',
   reviewedBy:  ''
@@ -120,11 +122,13 @@ async function syncProjectConfigFromCloud() {
         activePhase: raw.activePhase || '',
         contractor:  raw.contractor  || '',
         location:    raw.location    || '',
-        reviewedBy:  raw.reviewedBy  || ''
+        reviewedBy:  raw.reviewedBy  || '',
+        siteLat:     raw.siteLat     || '',
+        siteLon:     raw.siteLon     || ''
       };
       localStorage.setItem('msf_projectconfig', JSON.stringify(data));
         applyProjectConfig();
-        ['projectName','preparedBy','org','activePhase','contractor','location','reviewedBy'].forEach(k=>{
+        ['projectName','preparedBy','org','activePhase','contractor','location','reviewedBy','siteLat','siteLon'].forEach(k=>{
           const el=document.getElementById('cfg-'+k);
           if(el) el.value=data[k]||'';
         });
@@ -154,7 +158,7 @@ function applyProjectConfig() {
   const sub = document.getElementById('app-bar-sub');
   if (sub && cfg.projectName) sub.textContent = cfg.projectName;
   // Populate config fields
-  ['projectName','preparedBy','org','activePhase','contractor','location','reviewedBy'].forEach(k => {
+  ['projectName','preparedBy','org','activePhase','contractor','location','reviewedBy','siteLat','siteLon'].forEach(k => {
     const el = document.getElementById('cfg-' + k);
     if (el) { el.value = cfg[k]; if(el.tagName==='TEXTAREA' && typeof autoResize==='function') autoResize(el); }
  });
@@ -170,7 +174,10 @@ function saveProjectConfig() {
     activePhase: document.getElementById('cfg-activePhase').value.trim() || PROJECT_CONFIG_DEFAULTS.activePhase,
     contractor:  document.getElementById('cfg-contractor').value.trim()  || PROJECT_CONFIG_DEFAULTS.contractor,
     location:    document.getElementById('cfg-location').value.trim()    || PROJECT_CONFIG_DEFAULTS.location,
-    reviewedBy:  document.getElementById('cfg-reviewedBy').value.trim()  || PROJECT_CONFIG_DEFAULTS.reviewedBy
+    reviewedBy:  document.getElementById('cfg-reviewedBy').value.trim()  || PROJECT_CONFIG_DEFAULTS.reviewedBy,
+    // Site location (weather): lets Get My Weather fetch the JOBSITE from home (8/21)
+    siteLat:     (document.getElementById('cfg-siteLat')?.value||'').trim(),
+    siteLon:     (document.getElementById('cfg-siteLon')?.value||'').trim()
   };
   if(cfg.projectName !== oldCfg.projectName){
     // Tag all untagged timesheet entries with the old project name before switching
@@ -193,7 +200,7 @@ function saveProjectConfig() {
     // Keep the shared projects/{pid} meta in step so members see current
     // project info. Rules let only the lead land this write (silent otherwise).
     if (_pid !== 'active' && _currentUser) db.collection('projects').doc(_pid).set(
-      {name:cfg.projectName,contractor:cfg.contractor,location:cfg.location,phase:cfg.activePhase,_ts:Date.now()},
+      {name:cfg.projectName,contractor:cfg.contractor,location:cfg.location,phase:cfg.activePhase,siteLat:cfg.siteLat||'',siteLon:cfg.siteLon||'',_ts:Date.now()},
       {merge:true}).catch(()=>{});
   }}catch(e){}
   knownProjectsUpsert(cfg, _pid);
@@ -543,7 +550,8 @@ async function loadProject(projectId, projDataOverride) {
     // Apply project config
     const cfg = { projectName:projData.projectName||'', preparedBy:projData.preparedBy||'',
       org:projData.org||'', activePhase:projData.activePhase||'',
-      contractor:projData.contractor||'', location:projData.location||'', reviewedBy:projData.reviewedBy||'' };
+      contractor:projData.contractor||'', location:projData.location||'', reviewedBy:projData.reviewedBy||'',
+      siteLat:projData.siteLat||'', siteLon:projData.siteLon||'' };
     localStorage.setItem('msf_projectconfig', JSON.stringify(cfg));
     applyProjectConfig();
     window.activePhaseLabel = cfg.activePhase || activePhaseLabel;
@@ -826,6 +834,28 @@ window.loadProjectConfig = loadProjectConfig;
 window.knownProjectsGet = knownProjectsGet;
 window.knownProjectsUpsert = knownProjectsUpsert;
 window.knownProjectsPick = knownProjectsPick;
+
+// ── Site location (weather) — Tim 8/21: "if I'm at home or my camper doing my
+// report, I could still run an update for the jobsite." Lives on the project
+// config (and the shared projects/{pid} meta); Get My Weather offers
+// 🏗 Jobsite / 📍 Here whenever the device is away from it.
+function wxSiteLocation(){
+  const c=loadProjectConfig(); const la=parseFloat(c.siteLat), lo=parseFloat(c.siteLon);
+  return (isFinite(la)&&isFinite(lo)&&Math.abs(la)<=90&&Math.abs(lo)<=180&&(la!==0||lo!==0))?{lat:la,lon:lo}:null;
+}
+function cfgSiteUseHere(){
+  const st=document.getElementById('cfg-site-status');
+  if(!navigator.geolocation){ if(st) st.textContent='Geolocation is not available on this device.'; return; }
+  if(st) st.textContent='📍 Getting position…';
+  navigator.geolocation.getCurrentPosition(p=>{
+    const la=document.getElementById('cfg-siteLat'), lo=document.getElementById('cfg-siteLon');
+    if(la) la.value=p.coords.latitude.toFixed(5);
+    if(lo) lo.value=p.coords.longitude.toFixed(5);
+    if(st) st.textContent='Set to your current position — tap Save & Apply below.';
+  },()=>{ if(st) st.textContent='Location access denied — enter the coordinates by hand (Maps → drop a pin → copy).'; },{timeout:10000,maximumAge:0});
+}
+window.wxSiteLocation = wxSiteLocation;
+window.cfgSiteUseHere = cfgSiteUseHere;
 window.onProjectNameInput = onProjectNameInput;
 window.syncPresetsFromCloud = syncPresetsFromCloud;
 window.syncProjectConfigFromCloud = syncProjectConfigFromCloud;

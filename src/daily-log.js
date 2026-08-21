@@ -327,43 +327,101 @@ function getMyWeather(){
 }
 async function _doWeatherFetch(forecastOffset){
   const btn=document.getElementById('wx-btn');
-  if(btn){btn.textContent='⛅ Fetching weather…';btn.disabled=true;}
-  navigator.geolocation.getCurrentPosition(
-    async function(pos){
-      const lat=pos.coords.latitude.toFixed(4);
-      const lon=pos.coords.longitude.toFixed(4);
-      try{
-        const url=`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}`+
-          `&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,snowfall_sum,precipitation_probability_max,windspeed_10m_max,windgusts_10m_max,winddirection_10m_dominant,weathercode,sunrise,sunset`+
-          `&hourly=precipitation,windspeed_10m,weathercode,soil_moisture_0_to_7cm,soil_temperature_0_to_7cm`+
-          `&past_days=1&current_weather=true`+
-          `&temperature_unit=fahrenheit&windspeed_unit=mph&precipitation_unit=inch&timezone=auto&forecast_days=8`;
-        // Site rainfall rides alongside: IEMRE (radar + gauge) in parallel with
-        // Open-Meteo; if it can't answer, the Open-Meteo model value stands.
-        const rainP=(typeof wxIemreRain24==='function')
-          ? wxIemreRain24(lat,lon).catch(e=>{ console.warn('IEMRE rain unavailable:',e.message); return null; })
-          : Promise.resolve(null);
-        const res=await fetch(url);
-        if(!res.ok) throw new Error('HTTP '+res.status);
-        const data=await res.json();
-        const rain=await rainP;
-        _applyWeatherData(data,forecastOffset,rain);
-        if(btn){btn.textContent='✓ Weather filled';btn.style.color='var(--green)';
-          setTimeout(()=>{btn.textContent='⛅ Get My Weather';btn.style.color='';btn.disabled=false;},3000);}
-      }catch(e){
-        let msg='Weather service is temporarily unavailable. Try again in a moment.';
-        if(!navigator.onLine) msg='No internet connection. Connect and try again.';
-        alert(msg);
-        if(btn){btn.textContent='⛅ Get My Weather';btn.disabled=false;}
-      }
-    },
-    function(){
-      alert('Location access denied. Please allow location access and try again.');
-      if(btn){btn.textContent='⛅ Get My Weather';btn.disabled=false;}
-    },
-    {timeout:10000,maximumAge:0}
-  );
+  if(btn){btn.textContent='📍 Getting location…';btn.disabled=true;}
+  let loc;
+  try{ loc=await _wxResolveLocation(); }
+  catch(e){
+    const why=(e&&e.message)||'';
+    if(why!=='cancel'){
+      alert(why==='nogeo'
+        ? 'Geolocation is not supported on this device — set a site location in Settings → Project to fetch jobsite weather.'
+        : 'Location access denied. Allow location access, or set a site location in Settings → Project and use 🏗 Jobsite weather.');
+    }
+    if(btn){btn.textContent='⛅ Get My Weather';btn.disabled=false;}
+    return;
+  }
+  if(btn){btn.textContent='⛅ Fetching weather…';}
+  const lat=loc.lat.toFixed(4);
+  const lon=loc.lon.toFixed(4);
+  try{
+    const url=`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}`+
+      `&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,snowfall_sum,precipitation_probability_max,windspeed_10m_max,windgusts_10m_max,winddirection_10m_dominant,weathercode,sunrise,sunset`+
+      `&hourly=precipitation,windspeed_10m,weathercode,soil_moisture_0_to_7cm,soil_temperature_0_to_7cm`+
+      `&past_days=1&current_weather=true`+
+      `&temperature_unit=fahrenheit&windspeed_unit=mph&precipitation_unit=inch&timezone=auto&forecast_days=8`;
+    // Site rainfall rides alongside: IEMRE (radar + gauge) in parallel with
+    // Open-Meteo; if it can't answer, the Open-Meteo model value stands.
+    const rainP=(typeof wxIemreRain24==='function')
+      ? wxIemreRain24(lat,lon).catch(e=>{ console.warn('IEMRE rain unavailable:',e.message); return null; })
+      : Promise.resolve(null);
+    const res=await fetch(url);
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    const data=await res.json();
+    const rain=await rainP;
+    _applyWeatherData(data,forecastOffset,rain,loc.label||'');
+    if(btn){btn.textContent='✓ Weather filled'+(loc.label?' · '+loc.label:'');btn.style.color='var(--green)';
+      setTimeout(()=>{btn.textContent='⛅ Get My Weather';btn.style.color='';btn.disabled=false;},3000);}
+  }catch(e){
+    let msg='Weather service is temporarily unavailable. Try again in a moment.';
+    if(!navigator.onLine) msg='No internet connection. Connect and try again.';
+    alert(msg);
+    if(btn){btn.textContent='⛅ Get My Weather';btn.disabled=false;}
+  }
 }
+
+// ── Where to fetch for: the device, or the project's saved site location ──
+// Tim 8/21: "if I'm at home or my camper doing my report, I could still run an
+// update for the jobsite." No site saved → device position (as before). Site
+// saved → locate the device: within 3 mi of the site → device, silently (you're
+// on site); farther → offer 🏗 Jobsite / 📍 Here; device can't be located →
+// jobsite. The pick is stamped on the rain-source line so the archived day
+// says whose sky it recorded.
+const WX_ONSITE_MI=3;
+function _wxHaversineMi(a,b){
+  const R=3958.8, toR=x=>x*Math.PI/180;
+  const dLat=toR(b.lat-a.lat), dLon=toR(b.lon-a.lon);
+  const s=Math.sin(dLat/2)**2+Math.cos(toR(a.lat))*Math.cos(toR(b.lat))*Math.sin(dLon/2)**2;
+  return 2*R*Math.asin(Math.sqrt(s));
+}
+function _wxGeo(){
+  return new Promise((res,rej)=>{
+    if(!navigator.geolocation) return rej(new Error('nogeo'));
+    navigator.geolocation.getCurrentPosition(
+      p=>res({lat:p.coords.latitude,lon:p.coords.longitude,label:'📍 Here'}),
+      ()=>rej(new Error('denied')),
+      {timeout:10000,maximumAge:0});
+  });
+}
+async function _wxResolveLocation(){
+  const site=(typeof wxSiteLocation==='function')?wxSiteLocation():null;
+  if(!site) return _wxGeo();
+  let here=null;
+  try{ here=await _wxGeo(); }catch(_){ here=null; }
+  if(here){
+    const mi=_wxHaversineMi(here,site);
+    if(mi<=WX_ONSITE_MI){ here.label='📍 On site'; return here; }
+    return _wxChooseLocation(site,here,mi);
+  }
+  return Object.assign({label:'🏗 Jobsite'},site);
+}
+function _wxChooseLocation(site,here,mi){
+  return new Promise((resolve,reject)=>{
+    const ov=document.getElementById('wx-loc-overlay');
+    if(!ov){ resolve(Object.assign({label:'🏗 Jobsite'},site)); return; }
+    const msg=document.getElementById('wx-loc-msg');
+    if(msg) msg.textContent='You’re about '+(mi>=10?Math.round(mi):mi.toFixed(1))+' mi from the jobsite. Fetch weather for:';
+    ov._resolve=(v)=>{ ov.style.display='none'; ov._resolve=null; v?resolve(v):reject(new Error('cancel')); };
+    ov._site=site; ov._here=here;
+    ov.style.display='flex';
+  });
+}
+function wxLocPick(which){
+  const ov=document.getElementById('wx-loc-overlay'); if(!ov||!ov._resolve) return;
+  if(which==='site') ov._resolve(Object.assign({label:'🏗 Jobsite'},ov._site));
+  else if(which==='here') ov._resolve(ov._here);
+  else ov._resolve(null);
+}
+
 
 // ── C-pack weather helpers ──
 // Active inspection window — 6 AM to 7 PM in user's local timezone (per Tim 2026-05-07)
@@ -470,7 +528,7 @@ function _formatDaylight(sunriseISO, sunsetISO){
   return {sunrise: _formatTimeAmPm(sr), sunset: _formatTimeAmPm(ss), length: `${lengthH}h ${lengthM}m`};
 }
 
-function _applyWeatherData(data,forecastOffset,rain){
+function _applyWeatherData(data,forecastOffset,rain,locLabel){
   const d=data.daily;
   const cw=data.current_weather;
   if(!d||!cw) return;
@@ -537,7 +595,7 @@ function _applyWeatherData(data,forecastOffset,rain){
   const precipEl = document.getElementById('precip');
   if(precipEl) precipEl.value = past24.sum.toFixed(2);
   {
-    const srcStr = rain ? 'Rain: IEMRE radar + gauge (NWS Stage IV)' : 'Rain: Open-Meteo model (IEMRE unavailable)';
+    const srcStr = (rain ? 'Rain: IEMRE radar + gauge (NWS Stage IV)' : 'Rain: Open-Meteo model (IEMRE unavailable)') + (locLabel ? ' · ' + locLabel : '');
     const srcHid = document.getElementById('wxRainSrc'); if(srcHid) srcHid.value = srcStr;
     const srcVis = document.getElementById('wx-rain-src'); if(srcVis) srcVis.textContent = srcStr;
   }
@@ -992,6 +1050,7 @@ async function dlGoToToday(){
 }
 
 // ── Window exposure ──
+window.wxLocPick = wxLocPick;
 window.collectFormState = collectFormState;
 window.restoreFormState = restoreFormState;
 window.buildCrewHTML = buildCrewHTML;

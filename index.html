@@ -1289,6 +1289,19 @@ body.is-native select { font-size: 16px !important; }
   </div>
 </div>
 
+<!-- WEATHER LOCATION CHOOSER — shows only when a site location is saved and the device is away from it -->
+<div class="nd-overlay" id="wx-loc-overlay" style="display:none">
+  <div class="nd-card" style="max-width:320px">
+    <div class="nd-head"><span class="nd-head-icon">⛅</span><span style="font-family:var(--cond);font-weight:700;font-size:16px">Weather for…</span></div>
+    <p id="wx-loc-msg" style="font-family:var(--mono);font-size:13px;color:var(--muted);margin:0 0 16px"></p>
+    <div style="display:flex;gap:10px">
+      <button class="nd-btn nd-btn-secondary" style="flex:1" onclick="wxLocPick('here')">📍 Here</button>
+      <button class="nd-btn nd-btn-primary" style="flex:1" onclick="wxLocPick('site')">🏗 Jobsite</button>
+    </div>
+    <button class="nd-btn nd-btn-secondary" style="width:100%;margin-top:8px;font-size:11px" onclick="wxLocPick('cancel')">Cancel</button>
+  </div>
+</div>
+
 <!-- DAY NOTE MODAL -->
 <div class="nd-overlay" id="daynote-overlay" style="display:none">
   <div class="nd-card">
@@ -3143,6 +3156,14 @@ Anticipated rain — AM weather monitoring expected"></textarea>
         <div class="field"><label>Active Contractor</label><textarea rows="1" class="auto-expand auto-line" id="cfg-contractor" placeholder="Set by the Contractors list below (on-site names)" title="Managed by the Contractors list below — toggle who's on site there"></textarea></div>
         <div class="field"><label>Town / County</label><input type="text" id="cfg-location" placeholder="Town, county, state"></div>
         <div class="field"><label>Reviewed By</label><input type="text" id="cfg-reviewedBy" placeholder="Reviewer / supervisor name"></div>
+        <div class="field span2"><label>Site location <span style="text-transform:none;letter-spacing:0">(weather) — lets Get My Weather fetch the jobsite from home</span></label>
+          <div style="display:flex;gap:6px;align-items:center">
+            <input type="number" step="any" id="cfg-siteLat" placeholder="Latitude" style="flex:1;min-width:0">
+            <input type="number" step="any" id="cfg-siteLon" placeholder="Longitude" style="flex:1;min-width:0">
+            <button type="button" class="btn btn-outline" style="font-size:10px;padding:6px 10px;white-space:nowrap" onclick="cfgSiteUseHere()" title="Fill with this device's current position (tap it while on site)">📍 Use my position</button>
+          </div>
+          <div id="cfg-site-status" style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:3px;min-height:12px"></div>
+        </div>
       </div>
       <button class="btn btn-amber" style="font-size:11px;padding:7px 14px" onclick="saveProjectConfig()">Save &amp; Apply</button>
       <span id="cfg-proj-status" style="font-family:var(--mono);font-size:11px;color:var(--green);margin-left:12px;opacity:0;transition:opacity .4s"></span>
