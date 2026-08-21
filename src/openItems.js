@@ -58,6 +58,47 @@ function _oiFmtDate(d){
   if(p.length!==3) return d;
   return parseInt(p[1])+'/'+parseInt(p[2])+'/'+p[0].slice(2);
 }
+// ── Repeating tasks (Tim 8/1 + 8/21) ──
+// Repeat lives on the TASK (a due-date cadence); the reminder follows the due
+// date at its own time of day. Legacy items carried the cadence on the reminder
+// (remindRepeat/remindDays) — read either, write both (mirror-on-write, so an
+// older app version on another device still schedules the same way).
+function _oiRepeat(it){ return it.repeat!=null ? (it.repeat||'') : (it.remindRepeat||''); }
+function _oiRepeatDays(it){ const d=Array.isArray(it.repeatDays)?it.repeatDays:(Array.isArray(it.remindDays)?it.remindDays:[]); return d.slice().sort(); }
+function _oiSetRepeat(it, v){ it.repeat=v||''; it.remindRepeat=it.repeat; if(it.repeat!=='weekly'){ it.repeatDays=[]; it.remindDays=[]; } }
+function _oiSetRepeatDays(it, days){ it.repeatDays=days.slice().sort(); it.remindDays=it.repeatDays.slice(); }
+// First occurrence strictly after `from` (today when checking off — an overdue
+// one you finally tick jumps ahead, never to a date already behind you).
+function _oiNextDue(it, from){
+  const rep=_oiRepeat(it); if(!rep) return '';
+  from=from||_oiToday();
+  const anchor=it.dueDate||(it.remindAt?String(it.remindAt).slice(0,10):'')||from;
+  if(rep==='daily') return _oiAddDays(from,1);
+  if(rep==='weekly'){
+    let days=_oiRepeatDays(it);
+    if(!days.length){ const a=new Date(anchor+'T12:00:00'); days=[isNaN(a.getTime())?new Date(from+'T12:00:00').getDay():a.getDay()]; }
+    for(let i=1;i<=7;i++){ const d=_oiAddDays(from,i); if(days.includes(new Date(d+'T12:00:00').getDay())) return d; }
+    return _oiAddDays(from,7);
+  }
+  if(rep==='monthly'){
+    const a=new Date(anchor+'T12:00:00'); const dom=isNaN(a.getTime())?1:a.getDate();
+    const f=new Date(from+'T12:00:00');
+    for(let k=0;k<=13;k++){
+      const y=f.getFullYear(), m=f.getMonth()+k;
+      const last=new Date(y,m+1,0).getDate();
+      const d=new Date(y,m,Math.min(dom,last),12);
+      const s=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+      if(s>from) return s;
+    }
+  }
+  return '';
+}
+// Reminder keeps its time of day, moves to the new due date.
+function _oiRollReminder(it, newDue){
+  if(!it.remindAt||!newDue) return;
+  const tm=String(it.remindAt).slice(11); if(!tm) return;
+  it.remindAt=newDue+'T'+tm;
+}
 function _oiAgeDays(it){
   if(!it.createdTs) return 0;
   return Math.floor((Date.now()-it.createdTs)/86400000);
@@ -154,11 +195,26 @@ function oiDueTodayCount(){
 }
 function oiResolvedForReport(dateStr){
   return _oiItems.filter(it=>!it.deleted && it.status==='resolved'
-    && it.includeInReport && it.resolvedDate===dateStr);
+    && it.includeInReport && it.resolvedDate===dateStr).concat(_oiOccurrencesOn(dateStr,true));
 }
 function _oiResolvedToday(){
   const t=_oiToday();
-  return _oiItems.filter(it=>!it.deleted && it.status==='resolved' && it.resolvedDate===t);
+  return _oiItems.filter(it=>!it.deleted && it.status==='resolved' && it.resolvedDate===t).concat(_oiOccurrencesOn(t,false));
+}
+// "Done for now" occurrences of repeating tasks on a date, shaped like resolved
+// items (id/resolvedDate/resolutionNote/includeInReport) so the report table and
+// the resolved strip render them without knowing the difference.
+function _oiOccurrencesOn(dateStr, reportOnly){
+  const out=[];
+  _oiItems.forEach(it=>{
+    if(it.deleted||!Array.isArray(it.history)) return;
+    it.history.forEach(h=>{
+      if(h.date!==dateStr) return;
+      if(reportOnly&&!h.report) return;
+      out.push(Object.assign({},it,{id:it.id+'@'+h.date+'-'+(h.ts||0),_oiOcc:true,_oiBaseId:it.id,resolvedDate:h.date,resolvedTs:h.ts||0,resolutionNote:h.note||'',includeInReport:!!h.report}));
+    });
+  });
+  return out;
 }
 
 // ── Mutations ──
@@ -228,25 +284,25 @@ function oiFieldChange(id, field, value){
   }
   else if(field==='dueDate'){ it.dueDate=value||''; }
   else if(field==='remindAt'){ it.remindAt=value||''; }
-  else if(field==='remindRepeat'){ it.remindRepeat=value||''; if(it.remindRepeat!=='weekly') it.remindDays=[]; }
+  else if(field==='remindRepeat'||field==='repeat'){ _oiSetRepeat(it, value); }
   _oiTouch(it);
   // NO re-render here — iOS fires `change` on the first tap inside a date /
   // datetime picker, and re-rendering destroys the input mid-interaction,
   // slamming the picker shut (Tim, 7/22). The input already shows the new
   // value; chips/labels catch up on the next render (row close, resolve, sync).
   // Exceptions that change the detail card's own structure re-render:
-  if(field==='kind'||field==='remindRepeat') oiRender();
-  if(field==='remindAt'||field==='remindRepeat') _oiNotifSync();
+  if(field==='kind'||field==='remindRepeat'||field==='repeat') oiRender();
+  if(field==='remindAt'||field==='remindRepeat'||field==='repeat') _oiNotifSync();
 }
 
 // Weekly-repeat weekday chips (JS day numbers 0=Sun..6=Sat; +1 at scheduling).
 function oiRemDayToggle(id, day){
   const it=_oiItems.find(x=>x.id===id);
   if(!it) return;
-  const days=Array.isArray(it.remindDays)?it.remindDays.slice():[];
+  const days=_oiRepeatDays(it);
   const i=days.indexOf(day);
   if(i>=0) days.splice(i,1); else days.push(day);
-  it.remindDays=days.sort();
+  _oiSetRepeatDays(it, days);
   _oiTouch(it);
   oiRender();
   _oiNotifSync();
@@ -353,22 +409,39 @@ function oiResolve(id){
     window.mapResolveTemporary(it.sourceRef);
     return;
   }
+  const rep=_oiRepeat(it);
+  const next=rep?_oiNextDue(it,_oiToday()):'';
   const ov=document.createElement('div');
   ov.className='modal-overlay';
   ov.style.cssText='z-index:5000';
   ov.innerHTML='<div class="modal-box" style="max-width:360px;width:92%;text-align:left">'
-    +'<div class="modal-title" style="margin-bottom:6px">✓ Resolve Item</div>'
+    +'<div class="modal-title" style="margin-bottom:6px">'+(rep?'✓ Done for now?':'✓ Resolve Item')+'</div>'
     +'<div style="font-family:var(--body);font-size:13.5px;color:var(--text);line-height:1.45;margin-bottom:12px;background:rgba(0,107,117,0.08);border:1px solid var(--border2);border-radius:6px;padding:9px 11px">'+_oiEsc(oiItemLabel(it))+'</div>'
     +'<div class="field" style="margin-bottom:12px"><label>Resolution note <span style="text-transform:none;letter-spacing:0">(optional)</span></label>'
     +'<textarea id="_oi-res-note" class="short" style="min-height:64px" placeholder="What was done / outcome…"></textarea></div>'
     +'<label style="display:flex;align-items:center;gap:9px;margin-bottom:16px;cursor:pointer;font-family:var(--mono);font-size:11.5px;letter-spacing:.05em;color:var(--muted2);text-transform:uppercase">'
     +'<input type="checkbox" id="_oi-res-rpt" style="width:17px;height:17px;accent-color:var(--amber)">Include in today’s daily report</label>'
-    +'<div style="display:flex;gap:8px">'
-    +'<button class="btn btn-outline" style="flex:1" id="_oi-res-cancel">Cancel</button>'
-    +'<button class="btn btn-amber" style="flex:2" id="_oi-res-ok">✓ Resolve</button>'
-    +'</div></div>';
+    +(rep
+      ?'<div class="oi-rep-note" style="margin:-6px 0 12px">🔁 Repeats '+rep+' — this occurrence gets logged and the item rolls to <b style="color:var(--amber)">'+_oiFmtDate(next)+'</b>'+(it.remindAt?' (reminder moves with it)':'')+'.</div>'
+       +'<div style="display:flex;gap:8px;margin-bottom:8px">'
+       +'<button class="btn btn-outline" style="flex:1" id="_oi-res-cancel">Cancel</button>'
+       +'<button class="btn btn-amber" style="flex:2" id="_oi-res-now">✓ Done for now</button>'
+       +'</div>'
+       +'<button class="btn btn-outline" style="width:100%;font-size:10.5px" id="_oi-res-ok">Complete for good — stop repeating</button>'
+      :'<div style="display:flex;gap:8px">'
+       +'<button class="btn btn-outline" style="flex:1" id="_oi-res-cancel">Cancel</button>'
+       +'<button class="btn btn-amber" style="flex:2" id="_oi-res-ok">✓ Resolve</button>'
+       +'</div>')
+    +'</div>';
   document.body.appendChild(ov);
   ov.querySelector('#_oi-res-cancel').onclick=()=>ov.remove();
+  const nowBtn=ov.querySelector('#_oi-res-now');
+  if(nowBtn) nowBtn.onclick=()=>{
+    const note=(ov.querySelector('#_oi-res-note').value||'').trim();
+    const rpt=!!ov.querySelector('#_oi-res-rpt').checked;
+    ov.remove();
+    oiDoneForNow(it.id, note, rpt);
+  };
   ov.querySelector('#_oi-res-ok').onclick=()=>{
     it.status='resolved';
     it.resolvedDate=_oiToday();
@@ -393,6 +466,43 @@ function oiResolve(id){
     _oiNotifSync();
     window.glHaptic && window.glHaptic.success && window.glHaptic.success();
   };
+}
+
+// ── Repeating task: done for THIS occurrence → roll forward (Tim 8/21:
+// overdue ones stay listed; "if you did it and just didn't check it off you
+// could just check it then and it would remove at that point"). The item stays
+// open; the occurrence is logged (date + note + report opt-in) so the daily
+// report and the resolved strip still see it; the due date jumps to the first
+// occurrence after today and the reminder moves with it.
+function oiDoneForNow(id, note, includeInReport){
+  const it=_oiItems.find(x=>x.id===id);
+  if(!it||it.status!=='open') return;
+  const today=_oiToday();
+  const next=_oiNextDue(it,today);
+  if(!Array.isArray(it.history)) it.history=[];
+  it.history.push({date:today, ts:Date.now(), note:note||'', report:!!includeInReport, due:it.dueDate||''});
+  if(it.history.length>60) it.history=it.history.slice(-60);
+  it.dueDate=next;
+  _oiRollReminder(it,next);
+  _oiExpanded=null;
+  _oiTouch(it);
+  oiRender();
+  _oiNotifSync();
+  window.glHaptic && window.glHaptic.success && window.glHaptic.success();
+}
+// Undo today's "done for now" (resolved strip ↩): back to the due date it had.
+function oiUndoOccurrence(id){
+  const it=_oiItems.find(x=>x.id===id);
+  if(!it||!Array.isArray(it.history)||!it.history.length) return;
+  const last=it.history[it.history.length-1];
+  if(last.date!==_oiToday()) return;
+  it.history.pop();
+  const prevDue=last.due||'';
+  if(prevDue) _oiRollReminder(it,prevDue);
+  it.dueDate=prevDue;
+  _oiTouch(it);
+  oiRender();
+  _oiNotifSync();
 }
 
 function oiReopen(id){
@@ -468,7 +578,8 @@ function oiRender(){
       const ageChip=age>0?'<span class="oi-chip" title="Opened '+_oiFmtDate(it.createdDate)+'">'+age+'d</span>':'';
       const dueOver=it.dueDate && it.dueDate<=today;
       const dueChip=it.dueDate?'<span class="oi-chip'+(dueOver?' over':'')+'">due '+_oiFmtDate(it.dueDate)+(dueOver?' ⚠':'')+'</span>':'';
-      const repChip=(it.remindAt&&it.remindRepeat)?'<span class="oi-chip" title="Repeating reminder">🔁</span>':'';
+      const rep0=_oiRepeat(it);
+      const repChip=rep0?'<span class="oi-chip" title="Repeats '+rep0+' — checking it off rolls it to the next date">🔁 '+rep0+'</span>':'';
       const remChip=it.remindAt?'<span class="oi-chip" title="Reminder set">🔔</span>':'';
       const srcChip=it.source==='flag'
         ?'<span class="oi-chip" style="cursor:pointer" onclick="event.stopPropagation();clPunchlistGoto(\''+_oiEsc(it.sourceRef)+'\')" title="Repair flag — tap to view on map">🚩</span>'
@@ -497,10 +608,18 @@ function oiRender(){
               +'</div>').join('')
             +'<button class="btn btn-outline" style="font-size:10.5px;padding:5px 12px;margin-top:6px" onclick="oiCkAdd(\''+it.id+'\')">＋ Add step</button></div>';
         }
-        // Repeat controls — anchor time comes from the reminder datetime.
-        const rep=it.remindRepeat||'';
+        // Repeat = the TASK's cadence (anchored on the due date); the reminder
+        // just rides along at its time of day. Checking the item off rolls it.
+        const rep=_oiRepeat(it);
+        const repDays=_oiRepeatDays(it);
         const dayChips=(rep==='weekly')
-          ?'<div class="oi-daychips">'+_OI_DAYS.map((d,i)=>'<button class="oi-day'+((it.remindDays||[]).includes(i)?' on':'')+'" onclick="oiRemDayToggle(\''+it.id+'\','+i+')">'+d+'</button>').join('')+'</div>'
+          ?'<div class="oi-daychips">'+_OI_DAYS.map((d,i)=>'<button class="oi-day'+(repDays.includes(i)?' on':'')+'" onclick="oiRemDayToggle(\''+it.id+'\','+i+')">'+d+'</button>').join('')+'</div>'
+          :'';
+        const nextPrev=rep?_oiNextDue(it,(it.dueDate&&it.dueDate>today)?it.dueDate:today):'';
+        const repNote=rep
+          ?'<div class="oi-rep-note">🔁 Repeats '+rep+(rep==='monthly'&&it.dueDate?' on day '+parseInt(it.dueDate.split('-')[2]):'')
+            +(it.dueDate?'':' — set a due date to anchor it')
+            +(nextPrev?' · checking it off rolls it to '+_oiFmtDate(nextPrev)+(it.remindAt?' (reminder moves too)':''):'')+'.</div>'
           :'';
         detail='<div class="oi-detail">'
           +'<div class="field"><label>Title</label><textarea rows="1" class="auto-expand auto-line" placeholder="'+_oiEsc((it.title||'').trim()?'':_oiTitle(it))+'" onchange="oiFieldChange(\''+it.id+'\',\'title\',this.value)">'+_oiEsc(it.title||'')+'</textarea></div>'
@@ -511,11 +630,11 @@ function oiRender(){
           +'<div class="field" style="flex:1"><label>Due date</label><input type="date" value="'+_oiEsc(it.dueDate)+'" onchange="oiFieldChange(\''+it.id+'\',\'dueDate\',this.value)"></div>'
           +'</div>'
           +'<div class="oi-detail-row">'
+          +'<div class="field" style="flex:1"><label>Repeat</label><select onchange="oiFieldChange(\''+it.id+'\',\'repeat\',this.value)"><option value=""'+(rep===''?' selected':'')+'>Once</option><option value="daily"'+(rep==='daily'?' selected':'')+'>Daily</option><option value="weekly"'+(rep==='weekly'?' selected':'')+'>Weekly</option><option value="monthly"'+(rep==='monthly'?' selected':'')+'>Monthly</option></select></div>'
           +'<div class="field" style="flex:1.4"><label>Reminder'+(_oiNative()?'':' <span style="text-transform:none;letter-spacing:0">(fires on the iOS app)</span>')+'</label><input type="datetime-local" value="'+_oiEsc(it.remindAt)+'" onchange="oiFieldChange(\''+it.id+'\',\'remindAt\',this.value)"></div>'
-          +'<div class="field" style="flex:1"><label>Repeat</label><select onchange="oiFieldChange(\''+it.id+'\',\'remindRepeat\',this.value)"'+(it.remindAt?'':' disabled title="Set a reminder time first"')+'><option value=""'+(rep===''?' selected':'')+'>Once</option><option value="daily"'+(rep==='daily'?' selected':'')+'>Daily</option><option value="weekly"'+(rep==='weekly'?' selected':'')+'>Weekly</option><option value="monthly"'+(rep==='monthly'?' selected':'')+'>Monthly</option></select></div>'
           +'</div>'
           +dayChips
-          +((rep==='monthly'&&it.remindAt)?'<div class="oi-rep-note">Fires on day '+new Date(it.remindAt).getDate()+' of each month at '+new Date(it.remindAt).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'})+'</div>':'')
+          +repNote
           +'<div class="oi-detail-btns">'
           +'<button class="btn btn-outline" style="font-size:10.5px;padding:6px 12px" onclick="oiDelete(\''+it.id+'\')">🗑 Delete</button>'
           +'<button class="btn btn-outline" style="font-size:10.5px;padding:6px 12px;margin-left:auto" onclick="oiExpand(\''+it.id+'\')">Close</button>'
@@ -549,8 +668,11 @@ function oiRender(){
       rlist.style.display=_oiResolvedOpen?'block':'none';
       rlist.innerHTML=res.map(it=>'<div class="oi-res-row">'
         +'<span class="oi-res-text">'+_oiEsc(_oiTitle(it))+'</span>'
+        +(it._oiOcc?'<span class="oi-chip" title="Repeating — rolled forward">🔁 next '+_oiFmtDate(it.dueDate)+'</span>':'')
         +(it.includeInReport?'<span class="oi-chip" title="Will appear in today’s report">📄</span>':'')
-        +'<button class="oi-reopen" onclick="oiReopen(\''+it.id+'\')" title="Reopen">↩</button>'
+        +(it._oiOcc
+          ?'<button class="oi-reopen" onclick="oiUndoOccurrence(\''+it._oiBaseId+'\')" title="Undo — back to its previous due date">↩</button>'
+          :'<button class="oi-reopen" onclick="oiReopen(\''+it.id+'\')" title="Reopen">↩</button>')
         +'</div>').join('');
     }
   }
@@ -870,7 +992,8 @@ async function _oiNotifInit(){
             schedule:{at:new Date(Date.now()+10*60000), allowWhileIdle:true}
           }]});
         } else if(ev.actionId==='oi_cancel'){
-          if(it){ it.remindAt=''; it.remindRepeat=''; it.remindDays=[]; _oiTouch(it); oiRender(); }
+          // Cancels the REMINDER only — the task's repeat cadence is its own thing now (8/21).
+          if(it){ it.remindAt=''; _oiTouch(it); oiRender(); }
           _oiNotifSync();
         }
       }catch(e){ console.warn('openItems notif action:', e.message); }
@@ -891,7 +1014,7 @@ async function _oiNotifSync(){
       if(!it.remindAt) return false;
       const t=new Date(it.remindAt).getTime();
       if(!isFinite(t)) return false;
-      return it.remindRepeat ? true : t>now;
+      return _oiRepeat(it) ? true : t>now;
     });
     const wantAny=digest.on || reminders.length>0;
 
@@ -916,14 +1039,14 @@ async function _oiNotifSync(){
         sound:_oiSndTaps()      // ⛏ stake-taps (or bundled silence when muted)
       };
       const at=new Date(it.remindAt);
-      const rep=it.remindRepeat||'';
+      const rep=_oiRepeat(it);
       if(!rep){
         toSchedule.push({...base, id:_oiNotifId(it.id), schedule:{at, allowWhileIdle:true}});
       } else if(rep==='daily'){
         toSchedule.push({...base, id:_oiNotifId(it.id), schedule:{on:{hour:at.getHours(), minute:at.getMinutes()}, allowWhileIdle:true}});
       } else if(rep==='weekly'){
         // One scheduled notification per picked weekday (JS 0-6 → platform 1-7).
-        const days=(Array.isArray(it.remindDays)&&it.remindDays.length)?it.remindDays:[at.getDay()];
+        const rd=_oiRepeatDays(it); const days=rd.length?rd:[at.getDay()];
         days.forEach(d=>{
           toSchedule.push({...base, id:_oiNotifId(it.id+'::w'+d),
             schedule:{on:{weekday:d+1, hour:at.getHours(), minute:at.getMinutes()}, allowWhileIdle:true}});
@@ -959,6 +1082,8 @@ window.oiFieldChange = oiFieldChange;
 window.oiDelete = oiDelete;
 window.oiResolve = oiResolve;
 window.oiReopen = oiReopen;
+window.oiDoneForNow = oiDoneForNow;
+window.oiUndoOccurrence = oiUndoOccurrence;
 window.oiToggleResolved = oiToggleResolved;
 window.oiRender = oiRender;
 window.oiOpenCount = oiOpenCount;
