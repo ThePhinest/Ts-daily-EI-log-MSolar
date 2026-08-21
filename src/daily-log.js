@@ -16,7 +16,7 @@ function collectFormState(){
   // Simple fields
   const fields=['projectName','reportDate','preparedBy','org','activePhase','contractor','reviewedBy',
     'tempAM','tempPM','wind','precip','soilCond','upcomingWeather',
-    'wxSunrise','wxSunset','wxDaylight','wxRainWeek','wxPrecipPeak','wxRainSrc',
+    'wxSunrise','wxSunset','wxDaylight','wxRainWeek','wxPrecipPeak','wxRainSrc','wxRainPast',
     'inspSummary','agencyInsp','landowner','rte','nonCompliance',
     'genComms','lookahead','lookaheadWeather',
     'p-timeIn','p-timeOut','p-break','p-odoStart','p-odoEnd','p-notes'];
@@ -94,6 +94,7 @@ function restoreFormState(state){
   { const pv=document.getElementById('wx-precip-peak'); if(pv) pv.textContent=document.getElementById('wxPrecipPeak')?.value||''; }
   { const sv=document.getElementById('wx-rain-src'); if(sv) sv.textContent=document.getElementById('wxRainSrc')?.value||''; }
   _renderRainWeek(document.getElementById('wxRainWeek')?.value||'');
+  _renderRainPast(document.getElementById('wxRainPast')?.value||'');
   requestAnimationFrame(()=>requestAnimationFrame(()=>document.querySelectorAll('textarea.auto-expand').forEach(autoResize)));
   updateReportDateDow();
 }
@@ -236,6 +237,8 @@ function _resetFormCore(){
   const ppVis=document.getElementById('wx-precip-peak'); if(ppVis) ppVis.textContent='';
   const rsEl=document.getElementById('wxRainSrc'); if(rsEl) rsEl.value='';
   const rsVis=document.getElementById('wx-rain-src'); if(rsVis) rsVis.textContent='';
+  const rpEl=document.getElementById('wxRainPast'); if(rpEl) rpEl.value='';
+  _renderRainPast('');
   // Cleared textareas keep yesterday's inline height (autoResize only runs on
   // 'input') — a long inspection summary left a huge empty box on the fresh
   // day. Re-run the same shrink-capable resize the restore path uses;
@@ -354,11 +357,15 @@ async function _doWeatherFetch(forecastOffset){
     const rainP=(typeof wxIemreRain24==='function')
       ? wxIemreRain24(lat,lon).catch(e=>{ console.warn('IEMRE rain unavailable:',e.message); return null; })
       : Promise.resolve(null);
+    const pastP=(typeof wxIemrePast7==='function')
+      ? wxIemrePast7(lat,lon).catch(e=>{ console.warn('IEMRE past-7 unavailable:',e.message); return null; })
+      : Promise.resolve(null);
     const res=await fetch(url);
     if(!res.ok) throw new Error('HTTP '+res.status);
     const data=await res.json();
     const rain=await rainP;
-    _applyWeatherData(data,forecastOffset,rain,loc.label||'');
+    const past=await pastP;
+    _applyWeatherData(data,forecastOffset,rain,loc.label||'',past);
     if(btn){btn.textContent='✓ Weather filled'+(loc.label?' · '+loc.label:'');btn.style.color='var(--green)';
       setTimeout(()=>{btn.textContent='⛅ Get My Weather';btn.style.color='';btn.disabled=false;},3000);}
   }catch(e){
@@ -528,7 +535,7 @@ function _formatDaylight(sunriseISO, sunsetISO){
   return {sunrise: _formatTimeAmPm(sr), sunset: _formatTimeAmPm(ss), length: `${lengthH}h ${lengthM}m`};
 }
 
-function _applyWeatherData(data,forecastOffset,rain,locLabel){
+function _applyWeatherData(data,forecastOffset,rain,locLabel,past){
   const d=data.daily;
   const cw=data.current_weather;
   if(!d||!cw) return;
@@ -690,6 +697,16 @@ function _applyWeatherData(data,forecastOffset,rain,locLabel){
     _renderRainWeek(json);
   }
 
+  // ── Rain Observed: past 7 local days from IEMRE (same hourly series as the
+  // Precip field), persisted like the outlook so an archived day keeps its
+  // record. IEMRE down → hidden (never a stale strip dressed as current) ──
+  {
+    const json=past?JSON.stringify(past):'';
+    const rpHidden=document.getElementById('wxRainPast');
+    if(rpHidden) rpHidden.value=json;
+    _renderRainPast(json);
+  }
+
   // Any DRAFT QI inspection for this report date picks up the fresh weather
   // (completed/locked reports never change).
   if(typeof swpppSyncWeather === 'function'){
@@ -755,6 +772,41 @@ function _renderRainWeek(json){
   // Open Items spine: ≥trigger forecast days spawn a post-storm inspection item
   // (openItems.js dedupes per date; past-date snapshots are ignored there).
   if(typeof window.oiRainSync==='function'){ try{ window.oiRainSync(week,SWPPP_RAIN_TRIGGER_IN); }catch{} }
+}
+
+// ── Rain Observed strip: 7 local-day tiles + a 7-day total from the persisted
+// JSON in #wxRainPast (IEMRE radar + gauge; today = so far). A day at/over the
+// SPDES trigger gets the amber ⚠ tile — this is the record, not a forecast,
+// so it answers "did we cross 0.5" any day this week" without a gauge. ──
+function _renderRainPast(json){
+  const box=document.getElementById('wx-rainpast-box');
+  const row=document.getElementById('wx-rainpast');
+  if(!box||!row) return;
+  let p=null;
+  try{ p=JSON.parse(json||'null'); }catch(e){}
+  if(!p||!Array.isArray(p.days)||!p.days.length){ row.innerHTML=''; box.classList.remove('vis'); return; }
+  const todayStr=localToday();
+  row.innerHTML=p.days.map(w=>{
+    const dt=new Date(w.d+'T12:00:00');
+    const dow=(w.d===todayStr)?'Today':dt.toLocaleDateString('en-US',{weekday:'short'});
+    const md=(dt.getMonth()+1)+'/'+dt.getDate();
+    const r=(typeof w.r==='number')?w.r:0;
+    const trig=r>=SWPPP_RAIN_TRIGGER_IN;
+    const dry=!trig&&r<0.01;
+    return `<div class="wx-rain-tile${trig?' trig':dry?' dry':''}">`+
+      `<span class="wx-rain-dow">${dow}</span>`+
+      `<span class="wx-rain-date">${md}</span>`+
+      `<span class="wx-rain-amt">${r.toFixed(2)}"</span>`+
+      (w.partial?`<span class="wx-rain-prob">so far</span>`:'')+
+      (trig?`<span class="wx-rain-flag">⚠ ≥${SWPPP_RAIN_TRIGGER_IN}"</span>`:'')+
+    `</div>`;
+  }).join('')+
+  `<div class="wx-rain-tile total">`+
+    `<span class="wx-rain-dow">7-day</span>`+
+    `<span class="wx-rain-date">total</span>`+
+    `<span class="wx-rain-amt">${(+p.total||0).toFixed(2)}"</span>`+
+  `</div>`;
+  box.classList.add('vis');
 }
 
 function _wmoToDesc(code){

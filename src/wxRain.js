@@ -59,5 +59,33 @@ async function wxIemreRain24(lat,lon,now){
   return {sum:+sum.toFixed(2), peak:+peak.toFixed(2), peakAt, hours:n, source:'IEMRE'};
 }
 
+// Observed rain by LOCAL day for the past 7 days (today-6 … today-so-far),
+// from the same hourly series the 24-h number uses, so the strip and the
+// Precip field never disagree. Pulls the 8 day-files that cover the span
+// (finished days cache 12 h, today 1 h), buckets each hour by the device-local
+// date of its start, clips hours that haven't started. Resolves
+// {days:[{d, r, partial}], total, source}; throws when IEMRE can't answer.
+async function wxIemrePast7(lat,lon,now){
+  now=now||new Date();
+  const todayStr=_wxDateStr(now);
+  const dayStr=(i)=>{ const d=new Date(now); d.setDate(d.getDate()-i); return _wxDateStr(d); };
+  const files=[];
+  for(let i=7;i>=0;i--){ const s=dayStr(i); files.push(_wxIemreDay(s,lat,lon,s===todayStr)); }
+  const all=(await Promise.all(files)).flat();
+  const cutoff=now.getTime();
+  const buckets={};
+  all.forEach(h=>{
+    const t=Date.parse(h.valid_utc||''); if(!isFinite(t)||t>cutoff) return;
+    const v=+h.hourly_precip_in; if(!isFinite(v)) return;
+    const k=_wxDateStr(new Date(t));
+    buckets[k]=(buckets[k]||0)+v;
+  });
+  if(!Object.keys(buckets).length) throw new Error('IEMRE: no hours');
+  const days=[]; let total=0;
+  for(let i=6;i>=0;i--){ const s=dayStr(i); const r=+(buckets[s]||0).toFixed(2); total+=r; days.push({d:s,r,partial:s===todayStr}); }
+  return {days, total:+total.toFixed(2), source:'IEMRE'};
+}
+
 window.wxIemreRain24=wxIemreRain24;
-export { wxIemreRain24 };
+window.wxIemrePast7=wxIemrePast7;
+export { wxIemreRain24, wxIemrePast7 };
