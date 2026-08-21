@@ -16,7 +16,7 @@ function collectFormState(){
   // Simple fields
   const fields=['projectName','reportDate','preparedBy','org','activePhase','contractor','reviewedBy',
     'tempAM','tempPM','wind','precip','soilCond','upcomingWeather',
-    'wxSunrise','wxSunset','wxDaylight','wxRainWeek','wxPrecipPeak','wxRainSrc','wxRainPast',
+    'wxSunrise','wxSunset','wxDaylight','wxRainWeek','wxPrecipPeak','wxRainSrc','wxRainPast','wxRainNws',
     'inspSummary','agencyInsp','landowner','rte','nonCompliance',
     'genComms','lookahead','lookaheadWeather',
     'p-timeIn','p-timeOut','p-break','p-odoStart','p-odoEnd','p-notes'];
@@ -95,6 +95,7 @@ function restoreFormState(state){
   { const sv=document.getElementById('wx-rain-src'); if(sv) sv.textContent=document.getElementById('wxRainSrc')?.value||''; }
   _renderRainWeek(document.getElementById('wxRainWeek')?.value||'');
   _renderRainPast(document.getElementById('wxRainPast')?.value||'');
+  _renderRainNws(document.getElementById('wxRainNws')?.value||'');
   requestAnimationFrame(()=>requestAnimationFrame(()=>document.querySelectorAll('textarea.auto-expand').forEach(autoResize)));
   updateReportDateDow();
 }
@@ -239,6 +240,8 @@ function _resetFormCore(){
   const rsVis=document.getElementById('wx-rain-src'); if(rsVis) rsVis.textContent='';
   const rpEl=document.getElementById('wxRainPast'); if(rpEl) rpEl.value='';
   _renderRainPast('');
+  const nwEl=document.getElementById('wxRainNws'); if(nwEl) nwEl.value='';
+  _renderRainNws('');
   // Cleared textareas keep yesterday's inline height (autoResize only runs on
   // 'input') — a long inspection summary left a huge empty box on the fresh
   // day. Re-run the same shrink-capable resize the restore path uses;
@@ -360,12 +363,16 @@ async function _doWeatherFetch(forecastOffset){
     const pastP=(typeof wxIemrePast7==='function')
       ? wxIemrePast7(lat,lon).catch(e=>{ console.warn('IEMRE past-7 unavailable:',e.message); return null; })
       : Promise.resolve(null);
+    const nwsP=(typeof wxNwsOutlook==='function')
+      ? wxNwsOutlook(lat,lon).catch(e=>{ console.warn('NWS outlook unavailable:',e.message); return null; })
+      : Promise.resolve(null);
     const res=await fetch(url);
     if(!res.ok) throw new Error('HTTP '+res.status);
     const data=await res.json();
     const rain=await rainP;
     const past=await pastP;
-    _applyWeatherData(data,forecastOffset,rain,loc.label||'',past);
+    const nws=await nwsP;
+    _applyWeatherData(data,forecastOffset,rain,loc.label||'',past,nws);
     if(btn){btn.textContent='✓ Weather filled'+(loc.label?' · '+loc.label:'');btn.style.color='var(--green)';
       setTimeout(()=>{btn.textContent='⛅ Get My Weather';btn.style.color='';btn.disabled=false;},3000);}
   }catch(e){
@@ -535,7 +542,7 @@ function _formatDaylight(sunriseISO, sunsetISO){
   return {sunrise: _formatTimeAmPm(sr), sunset: _formatTimeAmPm(ss), length: `${lengthH}h ${lengthM}m`};
 }
 
-function _applyWeatherData(data,forecastOffset,rain,locLabel,past){
+function _applyWeatherData(data,forecastOffset,rain,locLabel,past,nws){
   const d=data.daily;
   const cw=data.current_weather;
   if(!d||!cw) return;
@@ -706,6 +713,14 @@ function _applyWeatherData(data,forecastOffset,rain,locLabel,past){
     if(rpHidden) rpHidden.value=json;
     _renderRainPast(json);
   }
+  // ── NWS official outlook row (second row in the Rain Outlook box) — the
+  // comparison Tim asked for 8/21; the observed strip above is the referee ──
+  {
+    const json=nws?JSON.stringify(nws):'';
+    const nwHidden=document.getElementById('wxRainNws');
+    if(nwHidden) nwHidden.value=json;
+    _renderRainNws(json);
+  }
 
   // Any DRAFT QI inspection for this report date picks up the fresh weather
   // (completed/locked reports never change).
@@ -807,6 +822,40 @@ function _renderRainPast(json){
     `<span class="wx-rain-amt">${(+p.total||0).toFixed(2)}"</span>`+
   `</div>`;
   box.classList.add('vis');
+}
+
+// ── NWS official outlook row (api.weather.gov gridpoint, persisted in
+// #wxRainNws). Amounts where the QPF series reaches (~3 days), chance for all
+// 7; same tile language as the model row so the eye compares them directly.
+function _renderRainNws(json){
+  const row=document.getElementById('wx-rainnws');
+  const wrap=document.getElementById('wx-rainnws-wrap');
+  if(!row||!wrap) return;
+  let n=null;
+  try{ n=JSON.parse(json||'null'); }catch(e){}
+  if(!n||!Array.isArray(n.days)||!n.days.length){ row.innerHTML=''; wrap.style.display='none'; return; }
+  const todayStr=localToday();
+  row.innerHTML=n.days.map(w=>{
+    const dt=new Date(w.d+'T12:00:00');
+    const dow=(w.d===todayStr)?'Today':dt.toLocaleDateString('en-US',{weekday:'short'});
+    const md=(dt.getMonth()+1)+'/'+dt.getDate();
+    const has=(typeof w.r==='number');
+    const snow=(typeof w.s==='number')&&w.s>=0.1;
+    const amt=snow?('❄ '+w.s.toFixed(1)+'"'):(has?w.r.toFixed(2)+'"':'—');
+    const trig=has&&w.r>=SWPPP_RAIN_TRIGGER_IN;
+    const dry=has&&!trig&&!snow&&w.r<0.01;
+    const prob=(typeof w.p==='number')?`<span class="wx-rain-prob">${w.p}%</span>`:'';
+    return `<div class="wx-rain-tile${trig?' trig':snow?' snow':dry?' dry':''}"${has?'':' title="NWS amounts run ~3 days out; chance of rain shown"'}>`+
+      `<span class="wx-rain-dow">${dow}</span>`+
+      `<span class="wx-rain-date">${md}</span>`+
+      `<span class="wx-rain-amt">${amt}</span>`+
+      prob+
+      (trig?`<span class="wx-rain-flag">⚠ ≥${SWPPP_RAIN_TRIGGER_IN}"</span>`:'')+
+    `</div>`;
+  }).join('');
+  const upd=document.getElementById('wx-rainnws-upd');
+  if(upd){ const t=n.updated?new Date(n.updated):null; upd.textContent=(t&&!isNaN(t))?('issued '+t.toLocaleString([],{weekday:'short',hour:'numeric'})):''; }
+  wrap.style.display='';
 }
 
 function _wmoToDesc(code){

@@ -725,6 +725,7 @@ button:disabled,button[disabled]{opacity:.45;cursor:not-allowed}
 .wx-rain-tile.total{border-color:rgba(201,168,76,.45);background:rgba(201,168,76,.07)}
 .wx-rain-tile.total .wx-rain-amt{font-weight:700;color:var(--amber)}
 .wx-rain-src{font-family:var(--mono);font-size:9px;letter-spacing:0;text-transform:none;font-weight:400;color:var(--muted)}
+.wx-rain-sublabel{display:flex;align-items:center;gap:8px;margin:6px 0 6px;padding-top:8px;border-top:1px dashed rgba(0,107,117,0.25);font-family:var(--cond);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted2);font-weight:600}
 @media (max-width:420px){.wx-rain-row.past{grid-template-columns:repeat(4,1fr)}}
 /* ── 📌 Open Items — carryover notes & tasks ── */
 .oi-empty{font-family:var(--mono);font-size:11px;color:var(--muted);line-height:1.55;padding:10px 4px 12px;text-align:center}
@@ -2006,9 +2007,15 @@ body.is-native select { font-size: 16px !important; }
           <input type="hidden" id="wxDaylight">
         </div>
         <div class="wx-rain-box" id="wx-rainweek-box">
-          <div class="wx-rain-label">🌧 Rain Outlook — 7 Day</div>
+          <div class="wx-rain-label">🌧 Rain Outlook — 7 Day <span class="wx-rain-src">Open-Meteo model</span></div>
           <div class="wx-rain-row" id="wx-rainweek"></div>
           <input type="hidden" id="wxRainWeek">
+          <!-- NWS official forecast row (8/21): amounts ~3 days, chance 7 — compared against the model row above until one earns the spot -->
+          <div id="wx-rainnws-wrap" style="display:none">
+            <div class="wx-rain-sublabel">🇺🇸 NWS official <span class="wx-rain-src">amounts ~3 days · chance 7 · <span id="wx-rainnws-upd"></span></span></div>
+            <div class="wx-rain-row" id="wx-rainnws"></div>
+          </div>
+          <input type="hidden" id="wxRainNws">
         </div>
         <!-- Rain Observed — past 7 local days from IEMRE (radar + gauge), the record beside the forecast -->
         <div class="wx-rain-box" id="wx-rainpast-box">
