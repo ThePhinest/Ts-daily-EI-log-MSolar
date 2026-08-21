@@ -93,6 +93,7 @@ import './report.js'
 import './swppp.js'
 import './agencyVisits.js'
 import './seedingSpecs.js'
+import './picker.js'
 import './applications.js'
 import './contractors.js'
 

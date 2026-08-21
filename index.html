@@ -460,6 +460,10 @@ textarea.auto-expand{overflow:hidden}
    its JS sets height on input and would fight a manual drag. (Tim 8/7) */
 textarea{resize:vertical}
 textarea.auto-expand{overflow-y:hidden;resize:none;touch-action:manipulation}
+/* One-row auto-grow field: sized like a text input, grows with its text (Tim 8/21:
+   "shouldn't really have any text field anywhere that doesn't expand with the text").
+   Enter commits (blur) — Shift+Enter for a real newline. */
+textarea.auto-line{min-height:40px;line-height:1.35}
 select{cursor:pointer}
 
 /* PRESET CHIPS */
@@ -727,7 +731,7 @@ button:disabled,button[disabled]{opacity:.45;cursor:not-allowed}
 .oi-peek{font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .oi-ck-row{display:flex;align-items:center;gap:8px;margin-top:6px}
 .oi-ck-row input[type="checkbox"]{width:17px;height:17px;accent-color:var(--amber);flex:none}
-.oi-ck-row input[type="text"]{flex:1;min-width:0}
+.oi-ck-row input[type="text"],.oi-ck-row textarea{flex:1;min-width:0}
 .oi-ck-del{flex:none;background:transparent;border:1px solid var(--border);border-radius:5px;color:var(--muted2);font-size:11px;padding:4px 8px;cursor:pointer}
 .oi-daychips{display:flex;gap:5px}
 .oi-day{flex:1;font-family:var(--mono);font-size:11px;font-weight:700;color:var(--muted2);background:var(--s1);border:1px solid var(--border);border-radius:6px;padding:7px 0;cursor:pointer}
@@ -922,6 +926,11 @@ button:disabled,button[disabled]{opacity:.45;cursor:not-allowed}
 .cl-filter-label{width:100%;display:flex;align-items:center;font-family:var(--cond);font-size:10.5px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--muted2);margin-bottom:-2px}
 .cl-filter-label::after{content:'';flex:1;height:1px;margin-left:8px;background:linear-gradient(90deg,rgba(201,168,76,.4),rgba(201,168,76,.06) 70%,transparent)}
 .cl-pill-row{width:100%;display:flex;gap:6px;flex-wrap:wrap}
+/* Separator between the filter/search block and the entries (Tim 8/17) — a rule + label in the same voice as the Filter label above it */
+.cl-list-sep{display:flex;align-items:center;margin:2px 0 12px;padding-top:12px;border-top:1px solid var(--border);font-family:var(--cond);font-size:10.5px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--muted2)}
+.cl-list-sep::after{content:'';flex:1;height:1px;margin-left:8px;background:linear-gradient(90deg,rgba(201,168,76,.4),rgba(201,168,76,.06) 70%,transparent)}
+.cal-legend>span{display:flex;align-items:center;gap:6px}
+.cal-legend i{font-style:normal;width:18px;flex:none;text-align:center}
 .cl-fpill{font-family:var(--mono);font-size:11px;padding:5px 12px;border-radius:11px;border:1px solid;cursor:pointer;transition:all .12s;line-height:1.2}
 .cl-fpill:not(.on){border-color:var(--border) !important;color:var(--muted) !important;background:var(--s1) !important}
 .cl-fpill.on{font-weight:700}
@@ -1867,8 +1876,8 @@ body.is-native select { font-size: 16px !important; }
         <div class="field span2"><label>Town / County</label><input type="text" id="location" value="" readonly=""></div>
         <div class="field"><label>Active Contractor</label>
           <div style="display:flex;gap:6px;align-items:center">
-            <input type="text" id="contractor" placeholder="— none on site —" style="flex:1">
-            <button class="btn btn-outline" style="font-size:11px;padding:6px 10px;white-space:nowrap" onclick="document.getElementById('contractor').value='';cloudSave&&cloudSave()" title="Clear contractor">✕ Clear</button>
+            <textarea rows="1" class="auto-expand auto-line" id="contractor" placeholder="— none on site —" style="flex:1"></textarea>
+            <button class="btn btn-outline" style="font-size:11px;padding:6px 10px;white-space:nowrap" onclick="const c=document.getElementById('contractor');c.value='';autoResize(c);cloudSave&&cloudSave()" title="Clear contractor">✕ Clear</button>
           </div>
         </div>
         
@@ -1973,7 +1982,7 @@ body.is-native select { font-size: 16px !important; }
             <option>Frozen</option><option>Frost / Partially Frozen</option><option>Snow Cover</option>
           </select>
         </div>
-        <div class="field span2"><label>Forecast / Upcoming Weather</label><input type="text" id="upcomingWeather" placeholder="e.g. Clear through the week, temps rising into the 40s"></div>
+        <div class="field span2"><label>Forecast / Upcoming Weather</label><textarea rows="1" class="auto-expand auto-line" id="upcomingWeather" placeholder="e.g. Clear through the week, temps rising into the 40s"></textarea></div>
       </div>
       <div class="field">
         <label>Sky Conditions <span style="color:var(--muted);font-size:9.5px;text-transform:none;letter-spacing:0">(select all that apply)</span></label>
@@ -2082,7 +2091,7 @@ body.is-native select { font-size: 16px !important; }
     <div class="card-body">
       <div class="field" style="margin-bottom:12px">
         <label>Expected Weather Conditions</label>
-        <input type="text" id="lookaheadWeather" placeholder="e.g. Partly cloudy, temps 35–50°F, winds 5–10 mph, no precipitation expected">
+        <textarea rows="1" class="auto-expand auto-line" id="lookaheadWeather" placeholder="e.g. Partly cloudy, temps 35–50°F, winds 5–10 mph, no precipitation expected"></textarea>
       </div>
       <div class="field">
         <label>Anticipated work items for tomorrow</label>
@@ -2323,14 +2332,15 @@ Anticipated rain — AM weather monitoring expected"></textarea>
   <!-- Legend -->
   <div style="margin-top:16px;padding:10px 12px;background:var(--s1);border:1px solid var(--border);border-radius:var(--r)">
     <div style="font-family:var(--mono);font-size:9.5px;color:var(--muted);letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px">Legend</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 14px;font-family:var(--mono);font-size:11px;color:var(--muted2)">
-      <span><span style="color:var(--green)">●</span> Log saved</span>
-      <span>⚠️ Edited after archive</span>
-      <span>❗ Compliance entry</span>
-      <span>📸 Photos</span>
-      <span>🕒 Hours logged</span>
-      <span>🚚 Miles logged</span>
-      <span style="grid-column:1 / -1">📝 Day note</span>
+    <!-- Fixed-width icon cell so the text column lines up (the ● glyph is narrower than the emoji). -->
+    <div class="cal-legend" style="display:grid;grid-template-columns:1fr 1fr;gap:6px 14px;font-family:var(--mono);font-size:11px;color:var(--muted2)">
+      <span><i><span style="color:var(--green)">●</span></i>Log saved</span>
+      <span><i>⚠️</i>Edited after archive</span>
+      <span><i>❗</i>Compliance entry</span>
+      <span><i>📸</i>Photos</span>
+      <span><i>🕒</i>Hours logged</span>
+      <span><i>🚚</i>Miles logged</span>
+      <span style="grid-column:1 / -1"><i>📝</i>Day note</span>
     </div>
   </div>
 
@@ -2962,6 +2972,7 @@ Anticipated rain — AM weather monitoring expected"></textarea>
       </div>
 
       <!-- Entry list -->
+      <div class="cl-list-sep">Entries</div>
       <div id="cl-list"></div>
     </div>
   </div>
@@ -3107,11 +3118,11 @@ Anticipated rain — AM weather monitoring expected"></textarea>
     <div class="config-body">
       <p class="config-hint">Tap the project name in the app bar to switch projects or create a new one. Edit this project's details below — changes save across all devices. Active Contractor sets the default; you can clear or change it per day directly on the log.</p>
       <div class="g g2" style="margin-bottom:10px">
-        <div class="field"><label>Project Name</label><input type="text" id="cfg-projectName" placeholder="Current/new project name" list="known-projects-list" oninput="onProjectNameInput(this.value)"><datalist id="known-projects-list"></datalist></div>
+        <div class="field"><label>Project Name</label><div style="display:flex;gap:6px"><input type="text" id="cfg-projectName" placeholder="Current/new project name" oninput="onProjectNameInput(this.value)" style="flex:1;min-width:0"><button type="button" onclick="knownProjectsPick()" title="Pick a saved project" style="flex-shrink:0;background:var(--s1);border:1px solid var(--border);border-radius:6px;color:var(--amber);font-size:14px;padding:0 11px;cursor:pointer;line-height:1">📇</button></div></div>
         <div class="field"><label>Prepared By</label><input type="text" id="cfg-preparedBy" placeholder="Your full name"></div>
         <div class="field"><label>Organization</label><input type="text" id="cfg-org" placeholder="Your firm/employer"></div>
         <div class="field"><label>Current Activity</label><input type="text" id="cfg-activePhase" placeholder="e.g. Grading, Clearing &amp; Grubbing, Installation"></div>
-        <div class="field"><label>Active Contractor</label><input type="text" id="cfg-contractor" placeholder="Set by the Contractors list below (on-site names)" title="Managed by the Contractors list below — toggle who's on site there"></div>
+        <div class="field"><label>Active Contractor</label><textarea rows="1" class="auto-expand auto-line" id="cfg-contractor" placeholder="Set by the Contractors list below (on-site names)" title="Managed by the Contractors list below — toggle who's on site there"></textarea></div>
         <div class="field"><label>Town / County</label><input type="text" id="cfg-location" placeholder="Town, county, state"></div>
         <div class="field"><label>Reviewed By</label><input type="text" id="cfg-reviewedBy" placeholder="Reviewer / supervisor name"></div>
       </div>
@@ -4110,6 +4121,9 @@ document.addEventListener('change', _onInputEvent);
 // Safari returning the constrained height instead of content height when 'auto' is used.
 function autoResize(el){ el.style.height='1px'; el.style.height=el.scrollHeight+'px'; }
 document.addEventListener('input', function(e){ if(e.target.classList.contains('auto-expand')) autoResize(e.target); });
+// One-row auto-grow fields (.auto-line): Enter commits like a text input would;
+// Shift+Enter keeps a deliberate newline.
+document.addEventListener('keydown', function(e){ if(e.key==='Enter'&&!e.shiftKey&&e.target.classList&&e.target.classList.contains('auto-line')){ e.preventDefault(); e.target.blur(); } });
 // Google Fonts load async — on iOS WKWebView cold boot the initial layout runs
 // against the fallback font, leaving chip flex containers and textarea scrollHeight
 // wrong until a reflow happens. fonts.ready resolves once all fonts are available;

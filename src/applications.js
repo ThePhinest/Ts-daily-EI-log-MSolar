@@ -118,22 +118,52 @@ function sbRateFor(product, pid){
   const hit=sbGetProducts(pid).find(p=>_sbNorm(p.product)===n);
   return (hit&&hit.rateLbsAc>0)?hit.rateLbsAc:null;
 }
+// ⚠ Same boot race that lost the contractor list 8/20 (see ctrEnsureCfg): the
+// IDB mirror hydrates async and _fbReady is false at boot, so an early call used
+// to cache "nothing" for the whole session — badges read "no bag weight set"
+// until Settings or a drawing happened to reload it (Tim 8/21), and an Add from
+// the Materials modal in that window would have overwritten the cloud list.
+// Rules: await idbReady → a result is final only once Firestore was consulted
+// (_sbCloudChecked; every later call retries the cloud until it lands) →
+// newest updatedAtMs wins → never write a default before the cloud check.
+var _sbCloudChecked={};   // pid → true once Firestore has actually been consulted this session
+function sbCloudChecked(pid){ return !!_sbCloudChecked[pid||_sbPid()]; }
 async function sbEnsureCfg(pid){
   pid=pid||_sbPid();
-  if(_sbCfg[pid]!==undefined) return _sbCfg[pid];
+  if(_sbCfg[pid]!==undefined&&_sbCloudChecked[pid]) return _sbCfg[pid];
   if(_sbLoading[pid]) return _sbLoading[pid];
   _sbLoading[pid]=(async()=>{
-    try{ _sbCfg[pid]=(await idbGet('sb_cfg::'+pid))||null; }catch(e){ _sbCfg[pid]=null; }
+    try{ if(window.idbReady) await window.idbReady; }catch(_){}
+    let local=null;
+    try{ local=idbGet('sb_cfg::'+pid)||null; }catch(_){}
+    if(_sbCfg[pid]===undefined||(_sbCfg[pid]===null&&local)) _sbCfg[pid]=local;
     if(typeof db!=='undefined'&&db&&typeof _fbReady!=='undefined'&&_fbReady){
       try{
         const snap=await db.collection('projects').doc(pid).collection('config').doc('seedBags').get();
-        if(snap.exists){ _sbCfg[pid]=snap.data(); idbSet('sb_cfg::'+pid,_sbCfg[pid]); }
+        if(snap.exists){
+          const cloud=snap.data();
+          const cur=_sbCfg[pid];
+          if(!cur||((cloud.updatedAtMs||0)>=(cur.updatedAtMs||0))){ _sbCfg[pid]=cloud; idbSet('sb_cfg::'+pid,cloud); }
+        }
+        _sbCloudChecked[pid]=true;
       }catch(e){ console.warn('seed bags load failed:',e.message); }
     }
     delete _sbLoading[pid];
     return _sbCfg[pid];
   })();
   return _sbLoading[pid];
+}
+// The list is editable once the cloud has been consulted — or, when Firebase
+// still isn't up / the device is offline after a 6 s grace from opening the
+// modal, locally (newest-wins reconciles it on the next cloud check).
+var _sbEditGraceAt=0;
+function sbEditable(pid){
+  pid=pid||_sbPid();
+  if(_sbCloudChecked[pid]) return true;
+  const graced=_sbEditGraceAt>0&&(Date.now()-_sbEditGraceAt)>6000;
+  if(!graced) return false;
+  const fbUp=(typeof db!=='undefined'&&db&&typeof _fbReady!=='undefined'&&_fbReady);
+  return !fbUp||navigator.onLine===false;
 }
 async function sbSaveProducts(products, pid){
   pid=pid||_sbPid();
@@ -430,10 +460,8 @@ function _appEsc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/
 function appRowsRender(){
   const host=document.getElementById('map-tr-apps');
   if(!host) return;
-  // Product suggestions from the materials list (Settings 🎒) — tap "Lime"
-  // instead of typing it; matching also triggers the lbs/ac rate autofill.
-  // Datalist goes AFTER the rows — host.children[i] must stay the i-th row box.
-  const matList=`<datalist id="gl-mat-list">${sbGetProducts().map(p=>`<option value="${_appEsc(p.product)}"></option>`).join('')}</datalist>`;
+  // Product comes from the 🎒 picker (materials list, Settings) or free text;
+  // matching a materials line triggers the lbs/ac rate autofill either way.
   host.innerHTML=_appRows.map((r,i)=>{
     const chips=GL_APP_TYPES.map(t=>{
       const on=r.type===t.id;
@@ -450,7 +478,7 @@ function appRowsRender(){
         ${_appRows.length>1?`<button type="button" onclick="appRowRemove(${i})" title="Remove application" style="background:none;border:none;color:var(--muted);font-size:14px;cursor:pointer;padding:2px 4px;flex-shrink:0">✕</button>`:''}
       </div>
       <div style="display:grid;grid-template-columns:1fr;gap:8px;margin-bottom:8px">
-        <input type="text" list="gl-mat-list" value="${_appEsc(r.product)}" oninput="appRowField(${i},'product',this.value)" placeholder="${isSeed?'Seed mix / product':'Product (e.g. ag lime, 10-10-10)'}" style="width:100%;${_APP_IN}">
+        <div style="display:flex;gap:6px"><input type="text" data-f="product" value="${_appEsc(r.product)}" oninput="appRowField(${i},'product',this.value)" placeholder="${isSeed?'Seed mix / product':'Product (e.g. ag lime, 10-10-10)'}" style="flex:1;min-width:0;${_APP_IN}">${glPickBtn(`sbPickProduct(${i})`,'🎒',"Pick from the project's materials list")}</div>
       </div>
       <div style="display:grid;grid-template-columns:1fr auto auto;gap:8px;align-items:end">
         <div>
@@ -487,7 +515,7 @@ function appRowsRender(){
       </div>
       ${specWarn}
     </div>`;
-  }).join('')+matList;
+  }).join('');
 }
 
 // ── Row event handlers ──
@@ -640,7 +668,9 @@ function appAmendmentsSync(){
 // ── 🌱 Seed bag weights (Settings → one list per project, done once a season) ──
 function sbShowWeights(){
   const pid=_sbPid();
+  _sbEditGraceAt=Date.now();
   const render=()=>{
+    const ed=sbEditable(pid);
     const list=sbGetProducts(pid).map((p,i)=>{
       const bits=[];
       if(p.weightLbs>0) bits.push(p.weightLbs+' lbs/bag');
@@ -653,9 +683,13 @@ function sbShowWeights(){
         <button onclick="sbDeleteWeight(${i})" style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--muted);font-size:11px;padding:5px 8px;cursor:pointer">🗑</button>
       </div>`;
     }).join('')
-      ||'<div style="font-family:var(--mono);font-size:11px;color:var(--muted);padding:8px 0">No materials yet — e.g. "Annual rye · 50 lbs/bag" or "Lime · 2000 lbs/ac".</div>';
+      ||(ed
+        ?'<div style="font-family:var(--mono);font-size:11px;color:var(--muted);padding:8px 0">No materials yet — e.g. "Annual rye · 50 lbs/bag" or "Lime · 2000 lbs/ac".</div>'
+        :'<div style="font-family:var(--mono);font-size:11px;color:var(--muted);padding:8px 0">Loading the materials list…</div>');
     const box=document.getElementById('sb-wt-body');
-    if(box) box.innerHTML=list;
+    if(box) box.innerHTML=(ed?'':'<div style="font-family:var(--mono);font-size:10px;color:var(--amber);padding:0 0 8px">⏳ Syncing with the cloud — editing unlocks in a moment.</div>')+list;
+    const add=document.getElementById('sb-wt-add');
+    if(add){ add.disabled=!ed; add.style.opacity=ed?'':'.5'; }
   };
   const ov=document.createElement('div');
   ov.className='modal-overlay';
@@ -681,14 +715,18 @@ function sbShowWeights(){
       </div>
       <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:10px">
         <button class="btn btn-outline" onclick="this.closest('.modal-overlay').remove()">Close</button>
-        <button class="btn" onclick="sbAddWeight()">＋ Add</button>
+        <button class="btn" id="sb-wt-add" onclick="sbAddWeight()">＋ Add</button>
       </div>
     </div>
   </div>`;
   document.body.appendChild(ov);
   window._sbWtRender=render;
   render();
-  sbEnsureCfg(pid).then(render);
+  // Keep asking until the cloud has been consulted (or the offline grace lapses)
+  // — the Add button stays disabled until then, so nothing can overwrite a list
+  // that simply hasn't arrived yet.
+  const poll=(n)=>{ if(!document.body.contains(ov)) return; sbEnsureCfg(pid).then(()=>{ render(); if(!sbEditable(pid)&&n<30) setTimeout(()=>poll(n+1),500); }); };
+  poll(0);
   sbRetireBeforeCount();
 }
 // Status line INSIDE the materials modal (the cloud banner sits under modal overlays).
@@ -730,6 +768,7 @@ function sbRetireBefore(){
 }
 async function sbAddWeight(){
   const pid=_sbPid();
+  if(!sbEditable(pid)){ _sbStatus('⏳ Still syncing the materials list with the cloud — try again in a moment.'); return; }
   const product=document.getElementById('sb-wt-product')?.value.trim();
   const w=parseFloat(document.getElementById('sb-wt-lbs')?.value);
   const rt=parseFloat(document.getElementById('sb-wt-rate')?.value);
@@ -745,7 +784,6 @@ async function sbAddWeight(){
   ['sb-wt-product','sb-wt-lbs','sb-wt-rate'].forEach(id=>{const el=document.getElementById(id); if(el) el.value='';});
   if(window._sbWtRender) window._sbWtRender();
   if(typeof mapRefreshEntryPhotoStrip==='function') mapRefreshEntryPhotoStrip();
-  appRowsRender();   // product datalist suggestions update
 }
 // ✏️ Rename a material EVERYWHERE (#39, Tim 8/20: "Bedrock grazing seed mix",
 // "Annual rye"). Names live in project DATA, not code — the materials list, every
@@ -755,6 +793,7 @@ async function sbAddWeight(){
 // trSaveEntry (cloud mirror + net-memo invalidation), photos through the dirty flush.
 async function sbRenameProduct(i){
   const pid=_sbPid();
+  if(!sbEditable(pid)){ _sbStatus('⏳ Still syncing the materials list with the cloud — try again in a moment.'); return; }
   const products=sbGetProducts(pid).slice();
   const cur=products[i]; if(!cur) return;
   const next=prompt(`Rename "${cur.product}" everywhere — entries, tag photos, and this list:`,cur.product);
@@ -782,6 +821,7 @@ async function sbRenameProduct(i){
 }
 async function sbDeleteWeight(i){
   const pid=_sbPid();
+  if(!sbEditable(pid)){ _sbStatus('⏳ Still syncing the materials list with the cloud — try again in a moment.'); return; }
   const products=sbGetProducts(pid).slice();
   if(!products[i]) return;
   products.splice(i,1);
@@ -819,6 +859,47 @@ window.sbRenameProduct=sbRenameProduct;
 window.sbRetireBefore=sbRetireBefore;
 window.sbRetireBeforeCount=sbRetireBeforeCount;
 window.sbEnsureCfg=sbEnsureCfg;
+window.sbCloudChecked=sbCloudChecked;
+window.sbEditable=sbEditable;
+window.sbPickProduct=sbPickProduct;
+
+// 🎒 Product picker on an application row (house modal, never a datalist — Tim
+// 8/20). Picking runs the same path as typing the product, so the lbs/ac rate
+// autofill, auto-notes and the Required readout all follow.
+function sbPickProduct(i){
+  sbEnsureCfg().then(()=>{
+    const rows=sbGetProducts().filter(p=>p.product).map(p=>{
+      const bits=[]; if(p.weightLbs>0) bits.push(p.weightLbs+' lbs/bag'); if(p.rateLbsAc>0) bits.push(p.rateLbsAc+' lbs/ac');
+      return {value:p.product,label:p.product,meta:bits.join(' · ')};
+    });
+    glPick({title:'Pick a material',placeholder:'Search materials…',rows,
+      onPick:(v)=>{
+        const box=document.getElementById('map-tr-apps')?.children[i];
+        const el=box?box.querySelector('input[data-f="product"]'):null;
+        if(el) el.value=v;
+        appRowField(i,'product',v);
+      },
+      empty:{text:'No materials yet — add bag weights and rates in Settings → 🎒 Materials.',actionLabel:'Open Materials',onAction:()=>sbShowWeights()}});
+  });
+}
+
+// Boot: load the materials list for the active project so tag-photo badges read
+// right on first paint (Tim 8/21: "have to go in settings or open a drawing
+// first, otherwise it says set bag weights"). Re-runs on project switch and,
+// with a 5 s backoff, whenever the cloud still hasn't been consulted once
+// Firebase is up (boot runs before _fbReady flips).
+(function(){
+  let _lastPid=null, _lastTry=0;
+  const kick=()=>{
+    const pid=_sbPid();
+    const retry=!_sbCloudChecked[pid]&&window._fbReady&&!_sbLoading[pid]&&(Date.now()-_lastTry>5000);
+    if(pid===_lastPid&&!retry) return;
+    _lastPid=pid; _lastTry=Date.now();
+    sbEnsureCfg(pid).then(()=>{ if(typeof mapRefreshEntryPhotoStrip==='function') try{ mapRefreshEntryPhotoStrip(); }catch(_){} }).catch(e=>console.warn('materials boot:',e.message));
+  };
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',kick); else setTimeout(kick,0);
+  new MutationObserver(()=>{ try{ kick(); }catch(_){} }).observe(document.body,{childList:true,subtree:true});
+})();
 window.sbGetProducts=sbGetProducts;
 window.sbWeightFor=sbWeightFor;
 window.sbPhotoLedger=sbPhotoLedger;

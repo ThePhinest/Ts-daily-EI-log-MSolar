@@ -106,7 +106,7 @@ function buildCrewHTML(id, num){
       <div class="g g3" style="margin-bottom:11px">
         <div class="field span2"><label>Contractor / Foreman Name</label><div style="display:flex;gap:6px"><input type="text" id="crew-${id}-name" placeholder="Company or contact" style="flex:1;min-width:0"><button type="button" onclick="ctrPick('crew-${id}-name')" title="Pick from the project's contractor list" style="flex-shrink:0;background:var(--s1);border:1px solid var(--border);border-radius:6px;color:var(--amber);font-size:14px;padding:0 11px;cursor:pointer;line-height:1">📇</button></div></div>
         <div class="field"><label>Hours on Site</label><input type="text" id="crew-${id}-time" placeholder="e.g. 6:30 AM – 4:30 PM"></div>
-        <div class="field full"><label>Work Location / Area</label><input type="text" id="crew-${id}-loc" placeholder="e.g. Station 00+00, laydown yard, etc."></div>
+        <div class="field full"><label>Work Location / Area</label><textarea rows="1" class="auto-expand auto-line" id="crew-${id}-loc" placeholder="e.g. Station 00+00, laydown yard, etc."></textarea></div>
       </div>
       <div class="field" style="margin-bottom:10px">
         <label>Activities Observed</label>
@@ -586,14 +586,14 @@ function _applyWeatherData(data,forecastOffset){
       : new Date(d.time[TMR]+'T12:00:00').toLocaleDateString('en-US',{weekday:'long'});
     const fcastStr = `${fcastLabel}: ${tmrDesc}, High ${tmrHi}°F / Low ${tmrLo}°F, Winds up to ${tmrWspd} mph${gustTail}${rainTail}`;
     const fcastEl = document.getElementById('upcomingWeather');
-    if(fcastEl) fcastEl.value = fcastStr;
+    if(fcastEl){ fcastEl.value = fcastStr; if(typeof autoResize==='function') autoResize(fcastEl); }
     // Push forecast to look-ahead when empty OR still the previous auto-filled
     // line (re-fetch updates it; a user-edited value is never clobbered).
     const lookaheadEl = document.getElementById('lookaheadWeather');
     if(lookaheadEl){
       const cur = lookaheadEl.value.trim();
       const looksAuto = /^(Tomorrow|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday): .*mph/.test(cur);
-      if(!cur || looksAuto) lookaheadEl.value = fcastStr;
+      if(!cur || looksAuto){ lookaheadEl.value = fcastStr; if(typeof autoResize==='function') autoResize(lookaheadEl); }
     }
   }
 

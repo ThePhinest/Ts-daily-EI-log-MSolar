@@ -492,7 +492,7 @@ function oiRender(){
           ckHtml='<div class="field"><label>Steps</label>'
             +ckOrd.map(({c,i})=>'<div class="oi-ck-row">'
               +'<input type="checkbox"'+(c.done?' checked':'')+' onchange="oiCkToggle(\''+it.id+'\','+i+')">'
-              +'<input type="text" value="'+_oiEsc(c.t)+'" placeholder="Step…" onchange="oiCkText(\''+it.id+'\','+i+',this.value)"'+(c.done?' style="text-decoration:line-through;color:var(--muted)"':'')+'>'
+              +'<textarea rows="1" class="auto-expand auto-line" placeholder="Step…" onchange="oiCkText(\''+it.id+'\','+i+',this.value)"'+(c.done?' style="text-decoration:line-through;color:var(--muted)"':'')+'>'+_oiEsc(c.t)+'</textarea>'
               +'<button class="oi-ck-del" onclick="oiCkDel(\''+it.id+'\','+i+')">✕</button>'
               +'</div>').join('')
             +'<button class="btn btn-outline" style="font-size:10.5px;padding:5px 12px;margin-top:6px" onclick="oiCkAdd(\''+it.id+'\')">＋ Add step</button></div>';
@@ -503,7 +503,7 @@ function oiRender(){
           ?'<div class="oi-daychips">'+_OI_DAYS.map((d,i)=>'<button class="oi-day'+((it.remindDays||[]).includes(i)?' on':'')+'" onclick="oiRemDayToggle(\''+it.id+'\','+i+')">'+d+'</button>').join('')+'</div>'
           :'';
         detail='<div class="oi-detail">'
-          +'<div class="field"><label>Title</label><input type="text" value="'+_oiEsc(it.title||'')+'" placeholder="'+_oiEsc((it.title||'').trim()?'':_oiTitle(it))+'" onchange="oiFieldChange(\''+it.id+'\',\'title\',this.value)"></div>'
+          +'<div class="field"><label>Title</label><textarea rows="1" class="auto-expand auto-line" placeholder="'+_oiEsc((it.title||'').trim()?'':_oiTitle(it))+'" onchange="oiFieldChange(\''+it.id+'\',\'title\',this.value)">'+_oiEsc(it.title||'')+'</textarea></div>'
           +'<div class="field"><label>Details</label><textarea class="short auto-expand" placeholder="Notes, details, anything…" onchange="oiFieldChange(\''+it.id+'\',\'text\',this.value)">'+_oiEsc(_oiBody(it))+'</textarea></div>'
           +ckHtml
           +'<div class="oi-detail-row">'

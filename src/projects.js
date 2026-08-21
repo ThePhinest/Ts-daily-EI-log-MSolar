@@ -35,11 +35,14 @@ function knownProjectsUpsert(cfg, projectId){
     _udb().collection('settings').doc('knownProjects').set({projects:list,_ts:Date.now()}).catch(()=>{});
   }
 }
-function renderKnownProjectsDatalist(){
-  const dl=document.getElementById('known-projects-list');
-  if(!dl) return;
-  dl.innerHTML='';
-  knownProjectsGet().forEach(p=>{const o=document.createElement('option');o.value=p.projectName;dl.appendChild(o);});
+// 📇 Known-projects picker on the Settings project-name field (house modal —
+// the native datalist retired 8/21). Picking fills the name and pulls that
+// project's details the same way typing an exact name did.
+function knownProjectsPick(){
+  const rows=knownProjectsGet().filter(p=>p.projectName).map(p=>({value:p.projectName,label:p.projectName,sub:[p.org,p.location].filter(Boolean).join(' · '),meta:p.shared?'shared':''}));
+  glPick({title:'Pick a project',placeholder:'Search projects…',rows,
+    onPick:(v)=>{ const el=document.getElementById('cfg-projectName'); if(el) el.value=v; onProjectNameInput(v); },
+    empty:{text:'No saved projects yet — type a name above to create one.'}});
 }
 function onProjectNameInput(val){
   const match=knownProjectsGet().find(p=>p.projectName===val);
@@ -144,6 +147,7 @@ function applyProjectConfig() {
   // Contractor: only apply default if field is currently empty (per-day override preserved)
   const contractorEl = document.getElementById('contractor');
   if(contractorEl && contractorEl.value.trim()==='') contractorEl.value = cfg.contractor;
+  if(contractorEl && typeof autoResize==='function') autoResize(contractorEl);   // auto-grow textarea, set programmatically
   document.getElementById('location').value     = cfg.location;
   document.getElementById('reviewedBy').value   = cfg.reviewedBy;
   // Update app bar subtitle dynamically from project name
@@ -152,7 +156,7 @@ function applyProjectConfig() {
   // Populate config fields
   ['projectName','preparedBy','org','activePhase','contractor','location','reviewedBy'].forEach(k => {
     const el = document.getElementById('cfg-' + k);
-    if (el) el.value = cfg[k];
+    if (el) { el.value = cfg[k]; if(el.tagName==='TEXTAREA' && typeof autoResize==='function') autoResize(el); }
  });
   if (typeof initCardTitles === 'function') initCardTitles();
 }
@@ -193,7 +197,6 @@ function saveProjectConfig() {
       {merge:true}).catch(()=>{});
   }}catch(e){}
   knownProjectsUpsert(cfg, _pid);
-  renderKnownProjectsDatalist();
   applyProjectConfig();
   // Also update activePhaseLabel for chip rendering
   window.activePhaseLabel = cfg.activePhase;
@@ -822,7 +825,7 @@ window._activeProjectId = _activeProjectId;
 window.loadProjectConfig = loadProjectConfig;
 window.knownProjectsGet = knownProjectsGet;
 window.knownProjectsUpsert = knownProjectsUpsert;
-window.renderKnownProjectsDatalist = renderKnownProjectsDatalist;
+window.knownProjectsPick = knownProjectsPick;
 window.onProjectNameInput = onProjectNameInput;
 window.syncPresetsFromCloud = syncPresetsFromCloud;
 window.syncProjectConfigFromCloud = syncProjectConfigFromCloud;

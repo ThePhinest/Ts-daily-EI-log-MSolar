@@ -4,7 +4,7 @@
 // Built as a REGISTRY (not a description field): one list per project that feeds
 // every place the app already asks for a contractor — the daily-log Active
 // Contractor header (on-site names joined), crew-block Contractor/Foreman, the
-// map entry's Contractor/Applicator, via one shared datalist. Descriptions and
+// map entry's Contractor/Applicator, via the house picker modal. Descriptions and
 // contacts are reference-only (never printed in the report header). Storage
 // mirrors the bag-weights list: projects/{pid}/config/contractors, lead-write,
 // IDB-cached. Multiple contacts per contractor; the picker lists each contact as
@@ -52,7 +52,6 @@ async function ctrEnsureCfg(pid){
       }catch(e){ console.warn('contractors load failed:',e.message); }
     }
     delete _ctrLoading[pid];
-    ctrRenderDatalist();
     return _ctrCfg[pid];
   })();
   return _ctrLoading[pid];
@@ -71,7 +70,6 @@ async function ctrSaveList(list, pid, opts){
     if(typeof showCloudBanner==='function'&&/permission/i.test(e.message||''))
       showCloudBanner('Only a project lead can edit the contractor list — kept on this device only.');
   }
-  ctrRenderDatalist();
   if(opts.sync!==false) ctrSyncActiveField();
 }
 
@@ -109,79 +107,27 @@ function ctrSeedFromConfig(){
   return true;
 }
 
-// ── Shared datalist: every contractor input points at #gl-ctr-list ──
-// Options = each contractor name, then "Contractor · Contact (title)" per contact,
-// on-site first. Free text still allowed everywhere (datalist, not select).
-function ctrRenderDatalist(){
-  let dl=document.getElementById('gl-ctr-list');
-  if(!dl){ dl=document.createElement('datalist'); dl.id='gl-ctr-list'; document.body.appendChild(dl); }
-  const list=ctrGetList().slice().sort((a,b)=>(b.onSite!==false)-(a.onSite!==false));
-  const opts=[];
-  list.forEach(c=>{
-    if(!c.name) return;
-    opts.push(`<option value="${_ctrEsc(c.name)}">${_ctrEsc([CTR_TIERS[c.tier]||'',c.desc].filter(Boolean).join(' — '))}</option>`);
-    (c.contacts||[]).forEach(k=>{ if(k.name) opts.push(`<option value="${_ctrEsc(c.name+' · '+k.name)}">${_ctrEsc([k.title,k.phone].filter(Boolean).join(' · '))}</option>`); });
-  });
-  dl.innerHTML=opts.join('');
-}
-
-// ── 📇 Picker modal (Tim 8/20: "I'd prefer a popup modal — keep that for
-// everything going forward"; native datalists are out). Fills the target input:
-// tap a company → company name; tap a contact → "Company · Contact". Search box
-// filters across names, contacts, titles, scope. On-site companies float first.
+// ── 📇 Picker (Tim 8/20: "I'd prefer a popup modal — keep that for everything
+// going forward"; native datalists are out). Rows come from the registry, the
+// modal itself is the shared house picker (src/picker.js). Tap a company →
+// company name; tap a contact → "Company · Contact". On-site companies first.
 function ctrPick(targetId){
   const target=document.getElementById(targetId);
   if(!target) return;
   ctrEnsureCfg().then(()=>{
     const list=ctrGetList().slice().sort((a,b)=>(b.onSite!==false)-(a.onSite!==false));
-    const ov=document.createElement('div');
-    ov.className='modal-overlay';
-    ov.style.cssText='z-index:9600';
-    const rowsHtml=(q)=>{
-      q=String(q||'').trim().toLowerCase();
-      const hit=s=>!q||String(s||'').toLowerCase().includes(q);
-      const out=list.map(c=>{
-        const contacts=(c.contacts||[]).filter(k=>k.name&&(hit(c.name)||hit(k.name)||hit(k.title)));
-        if(!(hit(c.name)||hit(c.desc)||contacts.length)) return '';
-        const val=c.name;
-        return `<div style="margin-bottom:6px">
-          <div class="ctr-pick-row" data-v="${_ctrEsc(val)}" style="display:flex;align-items:center;gap:8px;padding:10px 12px;border:1px solid var(--border);border-left:3px solid ${c.onSite!==false?'var(--amber)':'var(--border)'};border-radius:8px;cursor:pointer;background:var(--s1)">
-            <div style="flex:1;min-width:0"><div style="font-family:var(--mono);font-size:13px;color:var(--text);font-weight:700">${_ctrEsc(c.name)}</div>${c.desc?`<div style="font-size:11px;color:var(--muted);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${_ctrEsc(c.desc)}</div>`:''}</div>
-            <span style="font-family:var(--mono);font-size:9px;color:var(--muted)">${c.onSite!==false?'on site':''}</span>
-          </div>
-          ${contacts.map(k=>`<div class="ctr-pick-row" data-v="${_ctrEsc(c.name+' · '+k.name)}" style="display:flex;align-items:center;gap:8px;padding:8px 12px 8px 26px;margin-top:3px;border:1px solid var(--border);border-radius:8px;cursor:pointer;background:var(--bg)">
-            <span style="font-size:12px">👤</span><div style="flex:1;min-width:0;font-family:var(--mono);font-size:12px;color:var(--text)">${_ctrEsc(k.name)}${k.title?` <span style="color:var(--muted);font-size:10px">· ${_ctrEsc(k.title)}</span>`:''}</div>${k.phone?`<span style="font-family:var(--mono);font-size:10px;color:var(--amber)">${_ctrEsc(k.phone)}</span>`:''}
-          </div>`).join('')}
-        </div>`;
-      }).join('');
-      return out||`<div style="font-family:var(--mono);font-size:11px;color:var(--muted);padding:10px 0;text-align:center">${list.length?'No match.':'No contractors yet — add them in Settings → 🏗 Contractors.'}</div>`;
-    };
-    ov.innerHTML=`<div class="modal-box" style="max-width:420px;width:94%;max-height:82vh;display:flex;flex-direction:column">
-      <div class="modal-title" style="margin-bottom:8px">Pick contractor / contact</div>
-      <input type="text" id="_ctrpick-q" placeholder="Search…" style="width:100%;box-sizing:border-box;background:var(--s1);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--body);font-size:16px;padding:9px 12px;outline:none;margin-bottom:10px">
-      <div id="_ctrpick-rows" style="overflow-y:auto;flex:1;min-height:0">${rowsHtml('')}</div>
-      <div class="modal-btns" style="margin-top:10px">
-        <button class="modal-cancel" onclick="this.closest('.modal-overlay').remove()">Cancel</button>
-        ${list.length?'':`<button class="modal-confirm" onclick="this.closest('.modal-overlay').remove();if(typeof showPage==='function')showPage('settings');if(typeof ctrBootCard==='function')ctrBootCard()">Open Settings</button>`}
-      </div>
-    </div>`;
-    document.body.appendChild(ov);
-    const rows=ov.querySelector('#_ctrpick-rows');
-    rows.onclick=(e)=>{
-      const r=e.target.closest('.ctr-pick-row'); if(!r) return;
-      target.value=r.getAttribute('data-v')||'';
-      target.dispatchEvent(new Event('input',{bubbles:true}));
-      target.dispatchEvent(new Event('change',{bubbles:true}));
-      if(typeof glHaptic==='function') try{ glHaptic(); }catch(_){}
-      ov.remove();
-    };
-    const q=ov.querySelector('#_ctrpick-q');
-    q.oninput=()=>{ rows.innerHTML=rowsHtml(q.value); };
+    const rows=list.filter(c=>c.name).map(c=>({
+      value:c.name, label:c.name, sub:c.desc||'', meta:c.onSite!==false?'on site':'', accent:c.onSite!==false,
+      children:(c.contacts||[]).filter(k=>k.name).map(k=>({value:c.name+' · '+k.name, label:k.name, sub:k.title||'', meta:k.phone||'', icon:'👤'}))
+    }));
+    glPick({title:'Pick contractor / contact', placeholder:'Search…', rows, target,
+      empty:{text:'No contractors yet — add them in Settings → 🏗 Contractors.', actionLabel:'Open Settings',
+        onAction:()=>{ if(typeof showPage==='function') showPage('settings'); if(typeof ctrBootCard==='function') ctrBootCard(); }}});
   });
 }
 // Button markup shared by every contractor input (crew block, map entry, …).
 function ctrPickBtn(targetId){
-  return `<button type="button" onclick="ctrPick('${targetId}')" title="Pick from the project's contractor list" style="flex-shrink:0;background:var(--s1);border:1px solid var(--border);border-radius:6px;color:var(--amber);font-size:14px;padding:0 11px;cursor:pointer;line-height:1">📇</button>`;
+  return glPickBtn(`ctrPick('${targetId}')`,'📇',"Pick from the project's contractor list");
 }
 
 // ── Settings card ──
@@ -277,18 +223,19 @@ function ctrEdit(i){
   };
 }
 
-// Boot: load the list for the active project so the datalist is ready before the
+// Boot: load the list for the active project so the picker is ready before the
 // first crew block or map entry opens. Re-runs on project switch via applyProjectConfig.
 (function(){
-  let _lastPid=null;
+  let _lastPid=null, _lastTry=0;
   const kick=()=>{
     const pid=_ctrPid();
     // Re-run on a project switch, or whenever the cloud still hasn't been
     // consulted and Firebase is now ready (boot runs before _fbReady flips).
-    const need=(pid!==_lastPid)||(!_ctrCloudChecked[pid]&&window._fbReady&&!_ctrLoading[pid]);
-    if(!need) return;
-    _lastPid=pid;
-    ctrEnsureCfg().then(()=>{ ctrRenderDatalist(); ctrRenderCard(); }).catch(e=>console.warn('contractors boot:',e.message));
+    // Retries back off 5 s so an offline Firestore isn't polled on every DOM change.
+    const retry=!_ctrCloudChecked[pid]&&window._fbReady&&!_ctrLoading[pid]&&(Date.now()-_lastTry>5000);
+    if(pid===_lastPid&&!retry) return;
+    _lastPid=pid; _lastTry=Date.now();
+    ctrEnsureCfg().then(()=>{ ctrRenderCard(); }).catch(e=>console.warn('contractors boot:',e.message));
   };
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',kick); else setTimeout(kick,0);
   // Project switches call applyProjectConfig module-internally (not via window), so
@@ -301,7 +248,6 @@ window.CTR_TIERS=CTR_TIERS;
 window.ctrGetList=ctrGetList;
 window.ctrEnsureCfg=ctrEnsureCfg;
 window.ctrActiveNames=ctrActiveNames;
-window.ctrRenderDatalist=ctrRenderDatalist;
 window.ctrRenderCard=ctrRenderCard;
 window.ctrBootCard=ctrBootCard;
 window.ctrToggleOnSite=ctrToggleOnSite;
