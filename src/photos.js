@@ -212,17 +212,43 @@ function _phPartition(list){
 // not localStorage. Live + trash are one keyspace; partition is by deletedAt.
 // (Storage architecture locked 2026-06-17 — see KB storage-architecture.md.)
 const PH_IDB_PREFIX = 'ph:';
+// Write only what changed (8/24, boot timeline): phSaveLocal used to structured-
+// clone EVERY record into IndexedDB on every call — 1,681 photos × ~30 KB thumb
+// ≈ 51 MB per caption edit, per boot, per listener delta. Each record now has a
+// signature (every field except the thumb, which never changes after creation,
+// plus the thumb's length); only records whose signature moved are written.
+// Stale keys (hard delete / trash sweep) are still removed.
+const _phSigMap = new Map();
+function _phSig(p){
+  let s = '';
+  for(const k of Object.keys(p).sort()){
+    if(k === 'thumb') continue;
+    const v = p[k];
+    s += k + '=' + ((v !== null && typeof v === 'object') ? JSON.stringify(v) : String(v)) + ';';
+  }
+  return s + 'thumb#' + (p.thumb ? p.thumb.length : 0);
+}
 function phSaveLocal(){
   const all = (window._phPhotos||[]).concat(window._phTrash||[]).filter(p => p && p.id);
   const want = new Set(all.map(p => PH_IDB_PREFIX + p.id));
-  // Remove records no longer present (hard delete / trash sweep).
   const stale = (window.idbKeysWithPrefix ? window.idbKeysWithPrefix(PH_IDB_PREFIX) : []).filter(k => !want.has(k));
-  if(window.idbSetMany) window.idbSetMany(all.map(p => [PH_IDB_PREFIX + p.id, p]));
-  if(stale.length && window.idbDelMany) window.idbDelMany(stale);
+  const changed = [];
+  for(const p of all){
+    const sig = _phSig(p);
+    if(_phSigMap.get(p.id) !== sig){ _phSigMap.set(p.id, sig); changed.push([PH_IDB_PREFIX + p.id, p]); }
+  }
+  if(changed.length && window.idbSetMany) window.idbSetMany(changed);
+  if(stale.length && window.idbDelMany){
+    window.idbDelMany(stale);
+    stale.forEach(k => _phSigMap.delete(k.slice(PH_IDB_PREFIX.length)));
+  }
 }
 
 function phLoadLocal(){
-  _phPartition(window.idbGetPrefix ? window.idbGetPrefix(PH_IDB_PREFIX) : []);
+  const recs = window.idbGetPrefix ? window.idbGetPrefix(PH_IDB_PREFIX) : [];
+  _phSigMap.clear();
+  recs.forEach(p => { if(p && p.id) _phSigMap.set(p.id, _phSig(p)); });
+  _phPartition(recs);
 }
 
 // One-time migration: move the legacy localStorage blobs (ph_photos/ph_trash)
@@ -330,47 +356,74 @@ async function phSaveCloud(){
   }
 }
 
-async function phLoadCloud(){
-  if(!db) return false;
-  // Wait for Firebase to be ready (max 5 seconds)
-  let waited = 0;
-  while(!_fbReady && waited < 5000){
-    await new Promise(r => setTimeout(r, 200));
-    waited += 200;
-  }
-  try{
-    const snap = await _udb().collection('photos').get();
-    if(typeof glBootMark==='function') glBootMark('ph-cloud-get',{docs:snap.size,fromCache:!!(snap.metadata&&snap.metadata.fromCache),kb:Math.round(snap.docs.reduce((a,d)=>{ const t=d.get('thumb'); return a+(t?t.length:0)+240; },0)/1024),thumbAvgKb:Math.round(snap.docs.reduce((a,d)=>{ const t=d.get('thumb'); return a+(t?t.length:0); },0)/Math.max(1,snap.size)/1024*10)/10,thumbMaxKb:Math.round(snap.docs.reduce((a,d)=>{ const t=d.get('thumb'); return Math.max(a,t?t.length:0); },0)/1024)});
-    // #52 offline rule: a from-cache snapshot (offline fallback with Firestore
-    // persistence on) can be partial — letting it repartition the list would
-    // vanish photos it never saw AND persist the pruned list. Local IDB copy
-    // stands; the next genuine server read reconciles.
-    if(snap.metadata && snap.metadata.fromCache) return false;
-    if(!snap.empty){
-      const cloud = snap.docs.map(d => d.data());
-      // Photos with a PENDING cloud write (dirty set) keep their LOCAL record —
-      // the cloud copy is stale or missing (a new upload whose batch died in the
-      // field would otherwise vanish here). They re-flush right after.
-      if(_phDirtyIds.size){
-        const cloudIds = new Set(cloud.map(p => p.id));
-        const localAll = (window._phPhotos||[]).concat(window._phTrash||[]);
-        _phDirtyIds.forEach(id => {
-          const lp = localAll.find(p => p && p.id === id);
-          if(!lp) return;
-          const ci = cloud.findIndex(p => p.id === id);
-          if(ci >= 0) cloud[ci] = Object.assign({}, cloud[ci], lp);
-          else if(!cloudIds.has(id)) cloud.push(lp);
-        });
-      }
-      _phPartition(cloud);
-      phSaveLocal();
-      _phSweepTrash();
-      if(_phDirtyIds.size) phSaveCloud();
-      return true;
+// ── Cloud photos: persistent listener (8/24, boot timeline on Tim's phone) ──
+// Was: one-shot .get() of the whole `photos` collection every launch — 1,681
+// docs / 51.7 MB of thumbs (13 s cold in the field, the 48K-reads/day root
+// cause) — then a full repartition + full IDB rewrite. Now: Firestore's own
+// delta mechanism. With persistence + an unlimited cache (db.js) the SDK keeps
+// a resume point per query; on each launch the listener first replays from its
+// local cache (instant) and the server then sends ONLY docs that changed since
+// this device last listened — tracked server-side, so it holds across app
+// versions and devices, with nothing to stamp, migrate, or reconcile. Changes
+// are applied from docChanges(): a change whose record signature equals the
+// local copy is ignored (the cache replay and our own write acks are no-ops),
+// so the boot cost is a signature pass, not 1,681 parses + 51 MB of IDB.
+// Rules kept from the old path: a pending local write wins over the cloud copy
+// until it flushes (a dead-zone upload must never vanish); a cache-only
+// snapshot never proves a server-side removal (#52 offline rule), so removals
+// apply only from server snapshots. Live deltas after boot re-render the grid
+// and map pins — the other device's photos appear within seconds.
+let _phUnsub = null, _phCloudSettled = false;
+function _phApplySnapshot(snap){
+  const fromCache = !!(snap.metadata && snap.metadata.fromCache);
+  const byId = new Map();
+  (window._phPhotos||[]).concat(window._phTrash||[]).forEach(p => { if(p && p.id) byId.set(p.id, p); });
+  let applied = 0, removed = 0, kb = 0;
+  snap.docChanges().forEach(ch => {
+    const id = ch.doc.id;
+    if(ch.type === 'removed'){
+      if(fromCache) return;
+      if(byId.delete(id)) removed++;
+      return;
     }
-  }catch(e){ console.warn('phLoadCloud failed:', e.message); }
-  return false;
+    const cloud = ch.doc.data();
+    if(!cloud || !cloud.id) return;
+    const local = byId.get(id);
+    const rec = (_phDirtyIds.has(id) && local) ? Object.assign({}, cloud, local) : cloud;
+    if(local && _phSig(local) === _phSig(rec)) return;   // identical → nothing to do
+    byId.set(id, rec); applied++; kb += (cloud.thumb ? cloud.thumb.length : 0);
+  });
+  if(applied || removed){
+    _phPartition([...byId.values()]);
+    phSaveLocal();
+  }
+  return { applied, removed, fromCache, kb: Math.round(kb/1024), total: snap.size };
 }
+function phWatchCloud(){
+  if(!db) return Promise.resolve(false);
+  if(_phUnsub){ try{ _phUnsub(); }catch(_){} _phUnsub = null; }
+  return new Promise(resolve => {
+    let settled = false;
+    const done = (ok) => { if(!settled){ settled = true; _phCloudSettled = true; clearTimeout(timer); resolve(ok); } };
+    // Offline / slow link: boot proceeds on the local copy after 8 s; the listener stays up and applies the server delta whenever it lands.
+    const timer = setTimeout(() => done(false), 8000);
+    try{
+      _phUnsub = _udb().collection('photos').onSnapshot({ includeMetadataChanges: true }, snap => {
+        const r = _phApplySnapshot(snap);
+        if(typeof glBootMark === 'function') glBootMark('ph-snap', { changes: snap.docChanges().length, applied: r.applied, removed: r.removed, fromCache: r.fromCache, kb: r.kb, total: r.total });
+        if((r.applied || r.removed) && settled){
+          phRender();
+          if(typeof mapRenderPhotoPins === 'function'){ try{ mapRenderPhotoPins(); }catch(_){} }
+        }
+        if(!r.fromCache){
+          if(_phDirtyIds.size) phSaveCloud();
+          done(true);
+        }
+      }, err => { console.warn('photos listener:', err && err.message); done(false); });
+    }catch(e){ console.warn('photos listener failed:', e && e.message); done(false); }
+  });
+}
+async function phLoadCloud(){ return phWatchCloud(); }   // legacy name — boot path
 
 function phSave(){
   phSaveLocal();
@@ -1490,7 +1543,7 @@ async function phInit(){
   phLoadLocal();
   phRender();
   if(typeof glBootMark==='function') glBootMark('ph-local',{count:(window._phPhotos||[]).length});
-  const fromCloud = await phLoadCloud();
+  const fromCloud = await phWatchCloud();   // resolves on the first server-confirmed snapshot (or 8 s)
   phRender();
   if(typeof glBootMark==='function') glBootMark('ph-done',{cloud:fromCloud,count:(window._phPhotos||[]).length});
   phRecoverStorageUrls();

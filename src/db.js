@@ -31,6 +31,15 @@ document.addEventListener('DOMContentLoaded', function _initFirebase() {
       // walled the whole app behind the onboarding overlay when opened with
       // no service. Must be the first Firestore call after init; failure is
       // non-fatal (multi-tab conflict / private mode → in-memory cache only).
+      // 8/24 boot timeline: the default persistence cache is 40 MB with LRU
+      // garbage collection. Tim's photo docs alone are ~51 MB, so the SDK was
+      // evicting them (and the query's resume point) every launch → every
+      // .get() re-downloaded the whole collection (48K reads/day, 13 s cold
+      // boots in the field). Unlimited = Firestore keeps the docs + resume
+      // tokens, and listeners receive only what changed. Must precede
+      // enablePersistence; failure is non-fatal (settings already applied).
+      try { window.db.settings({ cacheSizeBytes: firebase.firestore.CACHE_SIZE_UNLIMITED }); }
+      catch(e) { console.warn('Firestore cacheSizeBytes not applied:', e && e.message); }
       try {
         window.db.enablePersistence({ synchronizeTabs: true })
           .catch(function(e){ console.warn('Firestore persistence unavailable:', e && (e.code || e.message)); });
