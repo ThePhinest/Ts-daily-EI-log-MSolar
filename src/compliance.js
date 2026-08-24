@@ -684,7 +684,9 @@ function _clRenderTrackerCardNow(search){
       t.headlineMode='area'; t.headlineVal=childStates.length?stateTotal(childStates[childStates.length-1].id):0;
     }
   });
-  const splitTotals=Object.values(_catMap).filter(t=>t.entryCount>0).sort((a,b)=>b.installedValue-a.installedValue);
+  // 🔒 closed categories last (Tim 8/24), then by installed size as before.
+  const _closedK=(t)=>(typeof tcIsClosed==='function'&&t.categoryId&&tcIsClosed(t.categoryId,pid))?1:0;
+  const splitTotals=Object.values(_catMap).filter(t=>t.entryCount>0).sort((a,b)=>(_closedK(a)-_closedK(b))||(b.installedValue-a.installedValue));
   if(!entries.length && !splitTotals.length){ el.style.display='none'; return; }
 
   const todayRows=entries.map(e=>{
@@ -1203,6 +1205,8 @@ function clShowTrackerLog(){
         }
         groups[cid].entries.push(e);
       });
+      // 🔒 closed categories sink below the open ones (stable — encounter order kept within each group).
+      if(typeof tcIsClosed==='function') order.sort((x,y)=>((tcIsClosed(x,pid)?1:0)-(tcIsClosed(y,pid)?1:0)));
       res.innerHTML=order.map(cid=>{
         const g=groups[cid];
         const _installed=g.entries.filter(e=>e.entryType!=='planned'&&!e.temporary);

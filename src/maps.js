@@ -2915,12 +2915,20 @@ function mapMoveKmlFolderOrder(folderName, dir){
   mapUpdateKmlLayerList();
   _applyKmlFolderMapOrder();
 }
+// 🔒 Closed (locked) categories sink to the bottom of every category list —
+// map tracker sheet, layers panel, pickers (Tim 8/24: "preseeding sits right at
+// the top, no need to see it there"). Relative order within open / closed groups
+// is untouched (the user's drag order still applies inside each group).
+function _closedLast(cats,pid){
+  const closed=(c)=>(typeof tcIsClosed==='function'&&tcIsClosed(c,pid))?1:0;
+  return cats.map((c,i)=>({c,i,k:closed(c)})).sort((x,y)=>(x.k-y.k)||(x.i-y.i)).map(x=>x.c);
+}
 function _sortCatsByOrder(cats,pid){
   const order=_getTcLayerOrder(pid);
-  if(!order.length) return cats;
+  if(!order.length) return _closedLast(cats,pid);
   const indexed=cats.filter(c=>order.includes(c.id)).sort((a,b)=>order.indexOf(a.id)-order.indexOf(b.id));
   const rest=cats.filter(c=>!order.includes(c.id));
-  return [...indexed,...rest];
+  return _closedLast([...indexed,...rest],pid);
 }
 let _tcEditingCatId=null;     // id of category being inline-edited
 let _tcEditingColor=null;     // color staged for edit row (hex string)
