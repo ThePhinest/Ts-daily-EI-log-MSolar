@@ -340,6 +340,7 @@ async function phLoadCloud(){
   }
   try{
     const snap = await _udb().collection('photos').get();
+    if(typeof glBootMark==='function') glBootMark('ph-cloud-get',{docs:snap.size,fromCache:!!(snap.metadata&&snap.metadata.fromCache),kb:Math.round(snap.docs.reduce((a,d)=>{ const t=d.get('thumb'); return a+(t?t.length:0)+240; },0)/1024)});
     // #52 offline rule: a from-cache snapshot (offline fallback with Firestore
     // persistence on) can be partial — letting it repartition the list would
     // vanish photos it never saw AND persist the pruned list. Local IDB copy
@@ -1488,8 +1489,10 @@ async function phInit(){
   await phMigrateLocalToIdb();
   phLoadLocal();
   phRender();
+  if(typeof glBootMark==='function') glBootMark('ph-local',{n:(window._phPhotos||[]).length});
   const fromCloud = await phLoadCloud();
   phRender();
+  if(typeof glBootMark==='function') glBootMark('ph-done',{cloud:fromCloud,n:(window._phPhotos||[]).length});
   phRecoverStorageUrls();
   phRetryPendingUploads();   // finish any camera uploads a dead zone deferred
   _glMigratePhaseD();

@@ -3903,6 +3903,20 @@ Anticipated rain — AM weather monitoring expected"></textarea>
     </div>
   </div>
 
+  <!-- Diagnostics (8/24, #54/#55) — boot timeline + camera/SW logs, all local,
+       nothing leaves the device unless you tap Copy and paste it somewhere. -->
+  <div class="config-section" id="acct-diag">
+    <div class="config-head"><span class="config-title">Diagnostics</span><span class="head-fade"></span><span class="config-sub">Boot timeline &amp; device logs</span></div>
+    <div class="config-body">
+      <p class="config-hint">How long this app took to become usable on this device (last open), main-thread stalls, and the camera/compass log. Stored on this device only. Copy and paste it to Claude when something feels slow.</p>
+      <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+        <button class="btn btn-outline" id="gl-diag-copy" style="font-size:11px;padding:7px 14px" onclick="glDiagCopy()">📋 Copy all</button>
+        <button class="btn btn-outline" style="font-size:11px;padding:7px 14px;color:var(--muted)" onclick="glDiagRender()">↻ Refresh</button>
+      </div>
+      <pre id="gl-diag-out" style="font-family:var(--mono);font-size:10.5px;line-height:1.45;color:var(--text);background:var(--s1);border:1px solid var(--border);border-radius:6px;padding:10px;white-space:pre-wrap;word-break:break-word;max-height:360px;overflow:auto;margin:0"></pre>
+    </div>
+  </div>
+
   <!-- Data -->
   <div class="config-section" id="acct-data">
     <div class="config-head"><span class="config-title">Data</span><span class="head-fade"></span><span class="config-sub">Account &amp; data removal</span></div>
@@ -3999,7 +4013,7 @@ function showPage(name){
   if(name==='log'){ if(typeof glUpdateReviewerLogState==='function') glUpdateReviewerLogState(); }
   if(name==='config'){ renderConfig(); tsLoadConfigFields(); renderNavConfig(); mapLoadSettingsFields(); if(typeof glRenderMembersCard==='function') glRenderMembersCard(); if(typeof _glInitMapShareBtn==='function') _glInitMapShareBtn(); if(typeof _glInitMapHostBtn==='function') _glInitMapHostBtn(); if(typeof rptLoadReportLogoUI==='function') rptLoadReportLogoUI(); }
   if(name==='aiBranding'){ if(typeof aiBrandingInit==='function') aiBrandingInit(); }
-  if(name==='accountSettings'){ acctInitPage(); }
+  if(name==='accountSettings'){ acctInitPage(); if(typeof glDiagRender==='function') glDiagRender(); }
   if(name==='map'){ mapInit(); setTimeout(()=>{ mapResize(); },200); }
   if(name==='calendar'){ calRender(); }
   if(name==='timesheet'){ tsPushFromDailyLog(); tsRenderCurrentWeek(); tsRenderHistory(); tsRenderCumulative(); tsCheckArchivePrompt(); }

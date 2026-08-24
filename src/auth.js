@@ -526,6 +526,7 @@ function _initAuth() {
     }
   });
   window.auth.onAuthStateChanged(function(user) {
+    if(typeof glBootMark==='function') glBootMark('auth',{user:!!user});
     document.getElementById('page-auth-loading').style.display = 'none';
     if (user) {
       window._currentUser = user;

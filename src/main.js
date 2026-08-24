@@ -28,6 +28,7 @@
 // See groundlog/wiki/dependency-watch.md Outstanding Items + memory
 // project_privacy_posture.md for the original posture decisions.
 // ───────────────────────────────────────────────────────────────────────────
+import './bootLog.js'   // boot timeline — MUST stay the first import (its clock starts here)
 import * as Sentry from '@sentry/capacitor'
 import * as SentryBrowser from '@sentry/browser'
 import { Capacitor } from '@capacitor/core'

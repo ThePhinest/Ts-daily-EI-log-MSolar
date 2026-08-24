@@ -71,6 +71,7 @@ async function calLoadCloud(){
   try{
     if(typeof db==='undefined'||!db||!_fbReady) return;
     const snap=await _udb().collection('dailyLogs').get();
+    if(typeof glBootMark==='function') glBootMark('cal-cloud',{docs:snap.size});
     if(snap.empty) return;
     const all=dlGetAll();
     snap.forEach(doc=>{ if(!all[doc.id]) all[doc.id]=doc.data(); });

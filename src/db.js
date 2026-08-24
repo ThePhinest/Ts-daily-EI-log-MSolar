@@ -21,6 +21,7 @@ const _fbConfig = {
 // Auth state gate is registered here (not separately) to guarantee it fires AFTER auth is set up.
 // If registered in a classic script DOMContentLoaded, it would fire before this module's listener.
 document.addEventListener('DOMContentLoaded', function _initFirebase() {
+  if(typeof glBootMark==='function') glBootMark('fb-init');
   if (typeof firebase !== 'undefined') {
     try {
       const _fbApp = firebase.apps.length ? firebase.apps[0] : firebase.initializeApp(_fbConfig);
@@ -318,6 +319,7 @@ function _trackerStartupLoad(){
       // Backfill permanent PL numbers on any flags created before 7/30 —
       // no-ops once every flag carries one.
       if(typeof trEnsurePlNums==='function'){ try{ trEnsurePlNums(); }catch(e){} }
+      if(typeof glBootMark==='function') glBootMark('tracker',{entries:(typeof trGetEntriesForProject==='function'&&typeof _activeProjectId==='function')?trGetEntriesForProject(_activeProjectId()).length:undefined});
       // Non-map UI updates immediately.
       if(typeof window._renderTrackerSheet==='function') window._renderTrackerSheet();
       if(typeof clRenderTrackerCard==='function') clRenderTrackerCard();
@@ -342,6 +344,7 @@ function _trackerStartupLoad(){
 // ── Firebase init load — runs async after page restores from localStorage ──
 async function initFirebaseLoad() {
   if (!db) { setSyncStatus('offline');  return; }
+  if(typeof glBootMark==='function') glBootMark('ifl');
 
   // Tier-1 cache gate: hydrate IndexedDB and migrate the daily-log / compliance
   // archive blobs out of localStorage BEFORE any downstream read (session
@@ -349,6 +352,7 @@ async function initFirebaseLoad() {
   // cache synchronously, so the mirror must be populated first. (Storage
   // architecture Stage 2 — see KB storage-architecture.md.)
   if (window.idbReady) { try { await window.idbReady; } catch (e) {} }
+  if(typeof glBootMark==='function') glBootMark('idb-ready');
   if (window.idbMigrateKey) { window.idbMigrateKey('pei_daily_logs'); window.idbMigrateKey('cl_entries'); }
   // Per-project tracker + KML caches (dynamic msf_proj_<pid>_* keys). Suffix-matched
   // so timesheet's msf_proj_<pid>_ts_config is left in localStorage (own session).
@@ -400,9 +404,11 @@ async function initFirebaseLoad() {
   // One-time migrations
   await _glMigrateToProjects();
   await _glMigratePhaseC();
+  if(typeof glBootMark==='function') glBootMark('migrations');
 
   try {
     const doc = await _udb().collection('sessions').doc(_activeProjectId()).get();
+    if(typeof glBootMark==='function') glBootMark('session-doc',{exists:doc.exists});
 
     if (!doc.exists) {
       // Project session missing — try sessions/active as fallback (handles fresh migration)
@@ -518,6 +524,7 @@ async function initFirebaseLoad() {
     loadFlagsCloud();
   }
   window._fbReady = true; // allow cloudSave from this point forward
+  if(typeof glBootMark==='function') glBootMark('fb-ready');
   _glSharedBoot(); // runs _trackerStartupLoad after membership backfill
 }
 

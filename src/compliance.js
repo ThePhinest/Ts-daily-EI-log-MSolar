@@ -3252,6 +3252,7 @@ async function clInit(){
   const fromCloud = await clLoadCloud();
   if(!fromCloud) clLoadLocal(); // fallback
   clRender();
+  if(typeof glBootMark==='function') glBootMark('compliance',{cloud:!!fromCloud});
   _glMigrateCompliancePhaseD();
 }
 

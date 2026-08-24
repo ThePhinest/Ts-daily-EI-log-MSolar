@@ -263,6 +263,7 @@ async function tsLoadFromFirestore(){
       if(changed) _tsWriteEntries(local);
     }
   }catch(e){console.warn('Phinest EI: tsLoadFromFirestore failed —',e.message);}
+  if(typeof glBootMark==='function') glBootMark('timesheet');
   // Run v2 migration after cloud-merge so any cross-device entries pulled
   // from the legacy timesheetEntries collection get re-keyed into v2 shape.
   // First-run does the bulk migration + backup; subsequent calls are cheap
