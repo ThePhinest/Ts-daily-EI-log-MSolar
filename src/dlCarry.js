@@ -54,9 +54,18 @@ function dlPrevRecord(){
   }
   return null;
 }
-// A device that hasn't opened the Calendar this session may not have the
-// archive cached yet — pull once (calLoadCloud only fills missing entries).
+// The archive on THIS device is only as fresh as its last Calendar open — logs
+// archived from the other device (iPad ↔ iPhone) aren't here yet. 8/24 field:
+// the carry pulled Thu 8/20 past a Fri/Sat that existed only in the cloud, so
+// the local walk-back silently answered wrong. Now the cloud is consulted ONCE
+// per session before the first answer (calLoadCloud fills missing dates only —
+// one dailyLogs read, same as opening the Calendar), and again if the answer is
+// still empty.
+let _dcCloudChecked=false;
 async function dlPrevRecordAsync(){
+  if(!_dcCloudChecked&&typeof calLoadCloud==='function'&&window._fbReady){
+    try{ await calLoadCloud(); _dcCloudChecked=true; }catch(_){}
+  }
   let r=dlPrevRecord();
   if(!r&&typeof calLoadCloud==='function'){ try{ await calLoadCloud(); }catch(_){} r=dlPrevRecord(); }
   return r;
