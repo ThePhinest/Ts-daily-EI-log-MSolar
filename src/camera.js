@@ -22,6 +22,10 @@ import { ScreenOrientation } from '@capacitor/screen-orientation';
 
 let _open=false, _suspended=false, _busy=false;
 let _geoWatch=null, _coords=null, _heading=null;
+// Compass health (8/24): iOS reports webkitCompassAccuracy in ±degrees, <0 =
+// reading invalid (magnetometer needs calibration / steel nearby). We also count
+// orientation events so a stalled stream can be told apart from a bad one.
+let _headingAcc=null, _orientN=0, _orientStall=0, _orientWd=null;
 let _tags=new Set(), _ctx=null;
 let _clockTimer=null, _stripTimer=null;
 let _orientBound=null, _visBound=null, _reframeT=null;
@@ -149,7 +153,7 @@ window.camStampHydrate=camStampHydrate;
 // direction sits under a fixed amber pointer at the top — real-compass
 // behavior, the amber N travels the ring as you turn. Letters stay upright.
 // GPS coords sit INSIDE the dial; bearing text below it.
-function _drawRose(ctx,cx,cy,R,heading,coordLines,bearing){
+function _drawRose(ctx,cx,cy,R,heading,coordLines,bearing,hint){
   const off=heading!=null?-heading:0;             // spin the dial, not the glyphs
   ctx.save();
   ctx.textAlign='center'; ctx.textBaseline='middle';
@@ -191,8 +195,13 @@ function _drawRose(ctx,cx,cy,R,heading,coordLines,bearing){
   }
   if(bearing){                                    // bearing text under the dial
     ctx.font=`bold ${Math.round(R*0.26)}px Arial`;
-    ctx.fillStyle='#fff';
+    ctx.fillStyle=hint?'rgba(255,255,255,0.55)':'#fff';   // dimmed while the reading is flagged
     ctx.fillText(bearing,cx,cy+R+Math.round(R*0.32));
+  }
+  if(hint){                                       // live preview only — never stamped
+    ctx.font=`bold ${Math.round(R*0.17)}px Arial`;
+    ctx.fillStyle='#C9A84C';
+    ctx.fillText(hint,cx,cy+R+Math.round(R*0.32)+Math.round(R*0.24));
   }
   ctx.restore();
 }
@@ -331,7 +340,7 @@ function _paintRose(){
     if(_coords.altitude!=null) coordLines.push(`EL ${Math.round(_coords.altitude*3.28084).toLocaleString()} ft`);
   } else coordLines.push('GPS','acquiring…');
   const h=_viewHeading();
-  _drawRose(ctx,CW/2,R+8,R,h,coordLines,_bearingTxt(h)||'—');
+  _drawRose(ctx,CW/2,R+8,R,h,coordLines,_bearingTxt(h)||'—',_compassBad()?'⟳ calibrate':null);
 }
 
 function _toast(msg){
@@ -351,7 +360,7 @@ function _toast(msg){
 export async function camOpen(ctx){
   if(_open) return;
   _ctx=ctx||null;
-  _open=true; _suspended=false; _coords=null; _heading=null;
+  _open=true; _suspended=false; _coords=null; _heading=null; _headingAcc=null; _orientN=0; _orientStall=0;
   // Armed tags: launch context wins (e.g. 📷 from a punchlist item arms 🚩),
   // else the per-project remembered set.
   try{ _tags=new Set(ctx&&Array.isArray(ctx.tags)?ctx.tags:JSON.parse(localStorage.getItem(_tagsKey())||'[]')); }catch{ _tags=new Set(); }
@@ -396,6 +405,7 @@ export async function camClose(){
   window.removeEventListener('resize',_onReframe);
   window.removeEventListener('orientationchange',_onReframe);
   if(_visBound){ document.removeEventListener('visibilitychange',_visBound); _visBound=null; }
+  clearInterval(_orientWd); _orientWd=null;
   if(_orientBound){ window.removeEventListener('deviceorientationabsolute',_orientBound); window.removeEventListener('deviceorientation',_orientBound); _orientBound=null; }
   if(_geoWatch!=null){ try{ navigator.geolocation.clearWatch(_geoWatch); }catch{} _geoWatch=null; }
   try{ await CameraPreview.stop(); }catch{}
@@ -621,6 +631,8 @@ async function _startSensors(){
       const rot=_calcUiRot(e.beta,e.gamma);
       if(rot!==_uiRot){ _uiRot=rot; _applyUiRot(); }
     }
+    _orientN++;
+    if(typeof e.webkitCompassAccuracy==='number') _headingAcc=e.webkitCompassAccuracy;   // iOS: ±deg, <0 = invalid
     let h=null;
     if(typeof e.webkitCompassHeading==='number') h=e.webkitCompassHeading;            // iOS: degrees from north
     else if(e.absolute===true && typeof e.alpha==='number') h=(360-e.alpha)%360;      // spec absolute
@@ -631,6 +643,46 @@ async function _startSensors(){
   };
   window.addEventListener('deviceorientationabsolute',_orientBound);
   window.addEventListener('deviceorientation',_orientBound);
+  _orientStartWatchdog();
+}
+
+// ── Compass watchdog (8/24 — Tim 8/24 field: rose "laggy, barely moving" in
+// landscape after pitching the phone forward and back). Two failure modes we
+// can now tell apart: (1) iOS keeps sending events but flags the reading as
+// unreliable (webkitCompassAccuracy < 0 or > 30°) — magnetometer calibration
+// lost; the dial shows "⟳ calibrate" until it recovers (figure-8 / step away
+// from steel); (2) events stop arriving — after ~4 s of silence the listeners
+// are rebound. Both land in localStorage gl_cam_log (last 30) so the next
+// field report carries evidence instead of a guess.
+function _camLog(ev,extra){
+  try{
+    const l=JSON.parse(localStorage.getItem('gl_cam_log')||'[]');
+    l.push(Object.assign({t:new Date().toISOString().slice(0,19),ev},extra||{}));
+    while(l.length>30) l.shift();
+    localStorage.setItem('gl_cam_log',JSON.stringify(l));
+  }catch{}
+}
+function _compassBad(){ return _headingAcc!=null&&(_headingAcc<0||_headingAcc>30); }
+function _orientStartWatchdog(){
+  clearInterval(_orientWd);
+  let lastN=_orientN, lowSince=0;
+  _orientWd=setInterval(()=>{
+    if(!_open||!_orientBound) return;
+    if(_orientN===lastN){
+      if(++_orientStall>=2){
+        window.removeEventListener('deviceorientationabsolute',_orientBound);
+        window.removeEventListener('deviceorientation',_orientBound);
+        window.addEventListener('deviceorientationabsolute',_orientBound);
+        window.addEventListener('deviceorientation',_orientBound);
+        _camLog('orient-stall-rebind',{n:_orientN,rot:_uiRot});
+        _orientStall=0;
+      }
+    } else _orientStall=0;
+    lastN=_orientN;
+    const bad=_compassBad();
+    if(bad&&!lowSince){ lowSince=Date.now(); _camLog('compass-acc-low',{acc:_headingAcc,rot:_uiRot}); _renderLive(); }
+    else if(!bad&&lowSince){ _camLog('compass-acc-ok',{acc:_headingAcc,after:Math.round((Date.now()-lowSince)/1000)+'s'}); lowSince=0; _renderLive(); }
+  },2000);
 }
 
 // ── DOM ──

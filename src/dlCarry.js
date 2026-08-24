@@ -31,6 +31,16 @@ function _dcPreview(s){ s=String(s||'').replace(/\s+/g,' ').trim(); return s.len
 
 // Most recent archived log for this project dated strictly before the log in
 // the form. Legacy records without projectId count (pre-multi-project days).
+// Skips logs with nothing to carry (8/24, Tim: a Sunday logged only to capture
+// a 0.5" rain event is a real archived day — it stays on the calendar and in
+// dailyLogs — but "previous log" means the last day with substance, so Monday
+// pulls Friday, not the weather-only Sunday). Substance = any crew block with
+// text or any carry-section field with text.
+function _dcHasContent(r){
+  const pf=r.fields||{};
+  if(DL_CARRY_SECTIONS.some(s=>!s.crew&&s.fields.some(f=>String(pf[f]||'').trim()))) return true;
+  return (r.crew||[]).some(b=>b&&DL_CARRY_CREW_FIELDS.some(f=>String(b[f]||'').trim()));
+}
 function dlPrevRecord(){
   const all=(typeof dlGetAll==='function')?dlGetAll():{};
   const cur=_dcCurDate(); const pid=_dcPid();
@@ -39,6 +49,7 @@ function dlPrevRecord(){
     const r=all[d];
     if(!r||!r.fields) continue;
     if(r.projectId&&r.projectId!==pid) continue;
+    if(!_dcHasContent(r)) continue;
     return Object.assign({_date:d},r);
   }
   return null;

@@ -7467,6 +7467,14 @@ function mapDeleteTrackerEntryFromPanel(entryId){
 }
 
 // ── Photo attachment for new / edit tracker entry modal ──────────────────────
+// Paged (8/24, #57): the picker used to render EVERY project photo as a base64
+// <img> in one modal — 1,600+ thumbs at once is what force-reloaded the PWA on
+// iOS when attaching a seed photo from a drawing's edit menu (Safari memory
+// kill, not the SW). Now newest-first pages of 48 with All / 🏷 Tag photos /
+// ✓ Linked chips and a caption-or-date filter; the bag ledger is derived ONCE
+// per open and handed to the badge helper (it used to rebuild per thumb).
+const _MTR_PAGE=48;
+let _mtrPick=null;   // {photos, led, pid, filter, q, shown}
 function mapShowEntryPhotoPicker(){
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
   const projectPhotos=(window._phPhotos||[]).filter(p=>!p.projectId||p.projectId===pid)
@@ -7483,29 +7491,63 @@ function mapShowEntryPhotoPicker(){
     document.body.appendChild(ov);
     return;
   }
-  // 🌱 photos already serving as seed-tag bags elsewhere show their remaining lbs.
   const _led=(typeof sbPhotoLedger==='function')?sbPhotoLedger(pid):new Map();
-  const thumbs=projectPhotos.map(p=>{
+  _mtrPick={photos:projectPhotos,led:_led,pid,filter:'all',q:'',shown:_MTR_PAGE};
+  ov.innerHTML=`<div class="modal-box" style="max-width:360px;width:92%;max-height:80vh;display:flex;flex-direction:column">
+    <div class="modal-title" style="margin-bottom:8px">Attach Photos</div>
+    <div id="mtrph-chips" style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap"></div>
+    <input id="mtrph-q" type="search" placeholder="Filter by caption or date…" autocomplete="off" style="-webkit-appearance:none;appearance:none;width:100%;box-sizing:border-box;background:var(--s1);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--body);font-size:16px;padding:7px 10px;outline:none;margin-bottom:8px">
+    <div id="mtrph-grid" style="display:flex;flex-wrap:wrap;gap:6px;overflow-y:auto;flex:1;margin-bottom:12px;align-content:flex-start"></div>
+    <div class="modal-btns"><button class="modal-confirm" onclick="this.closest('.modal-overlay').remove();_mtrPick=null;mapRefreshEntryPhotoStrip()">Done</button></div>
+  </div>`;
+  document.body.appendChild(ov);
+  ov.querySelector('#mtrph-q').oninput=(e)=>{ _mtrPick.q=e.target.value.trim().toLowerCase(); _mtrPick.shown=_MTR_PAGE; _mtrRender(); };
+  _mtrRender();
+}
+function _mtrIsTag(p){
+  const s=_mtrPick;
+  return !!(p.seedTag||(s&&s.led.has(p.id))||_pendingPhotoTypes[p.id]==='material_tag');
+}
+function _mtrFiltered(){
+  const s=_mtrPick; if(!s) return [];
+  return s.photos.filter(p=>{
+    if(s.filter==='linked'&&!_pendingPhotoIds.includes(p.id)) return false;
+    if(s.filter==='tags'&&!_mtrIsTag(p)) return false;
+    if(s.q&&!(String(p.caption||'').toLowerCase().includes(s.q)||String(p.date||'').includes(s.q))) return false;
+    return true;
+  });
+}
+function _mtrRender(){
+  const s=_mtrPick; const grid=document.getElementById('mtrph-grid'); if(!s||!grid) return;
+  const chips=document.getElementById('mtrph-chips');
+  if(chips){
+    const counts={all:s.photos.length, tags:s.photos.filter(_mtrIsTag).length, linked:_pendingPhotoIds.length};
+    chips.innerHTML=[['all','All'],['tags','🏷 Tag photos'],['linked','✓ Linked']].map(([k,l])=>
+      `<button type="button" class="cl-fpill${s.filter===k?' on':''}" data-f="${k}" style="border-color:var(--amber);color:var(--amber);background:rgba(201,168,76,.15)">${l} <span style="opacity:.7">${counts[k]}</span></button>`).join('');
+    chips.querySelectorAll('button').forEach(b=>{ b.onclick=()=>{ s.filter=b.dataset.f; s.shown=_MTR_PAGE; _mtrRender(); }; });
+  }
+  const list=_mtrFiltered();
+  const page=list.slice(0,s.shown);
+  const pid=s.pid;
+  grid.innerHTML=page.map(p=>{
     const linked=_pendingPhotoIds.includes(p.id);
-    const L=_led.get(p.id);
+    const L=s.led.get(p.id);
     let ledHtml='';
     if(L&&L.capacity!=null){
-      const bd=sbPhotoBadge(p.id,pid);
+      const bd=sbPhotoBadge(p.id,pid,s.led);
       ledHtml=`<div style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.62);font-family:var(--mono);font-size:8px;color:${bd.amber?'var(--amber)':(bd.closed?'#9fb2c4':'#cfe8cf')};text-align:center;padding:1px 0;white-space:nowrap;overflow:hidden">${bd.txt}</div>`;
     }
     return `<div id="mtrph-${p.id}" onclick="mapToggleEntryPhoto('${p.id}',this)"
       style="position:relative;cursor:pointer;border-radius:6px;border:2px solid ${linked?'var(--amber)':'transparent'};overflow:hidden;flex-shrink:0;width:80px;height:60px">
-      <img src="${p.thumb}" style="width:80px;height:60px;object-fit:cover;display:block">
+      <img src="${p.thumb}" loading="lazy" style="width:80px;height:60px;object-fit:cover;display:block">
       <div id="mtrph-chk-${p.id}" style="position:absolute;top:2px;right:2px;width:16px;height:16px;border-radius:50%;background:${linked?'var(--amber)':'rgba(0,0,0,.45)'};display:flex;align-items:center;justify-content:center;font-size:9px;color:#fff">${linked?'✓':''}</div>
       ${ledHtml}
     </div>`;
-  }).join('');
-  ov.innerHTML=`<div class="modal-box" style="max-width:360px;width:92%;max-height:80vh;display:flex;flex-direction:column">
-    <div class="modal-title" style="margin-bottom:12px">Attach Photos</div>
-    <div style="display:flex;flex-wrap:wrap;gap:6px;overflow-y:auto;flex:1;margin-bottom:12px">${thumbs}</div>
-    <div class="modal-btns"><button class="modal-confirm" onclick="this.closest('.modal-overlay').remove();mapRefreshEntryPhotoStrip()">Done</button></div>
-  </div>`;
-  document.body.appendChild(ov);
+  }).join('')
+  +(list.length>page.length
+    ?`<button type="button" id="mtrph-more" style="width:100%;margin-top:4px;padding:9px;border-radius:6px;border:1px dashed var(--border);background:var(--s1);color:var(--muted);font-family:var(--mono);font-size:11px;cursor:pointer">Load more · ${list.length-page.length} older</button>`
+    :(list.length?'':`<div style="font-family:var(--mono);font-size:11px;color:var(--muted);padding:12px 4px">No photos match.</div>`));
+  const more=document.getElementById('mtrph-more'); if(more) more.onclick=()=>{ s.shown+=_MTR_PAGE; _mtrRender(); };
 }
 function mapToggleEntryPhoto(photoId, el){
   if(_pendingPhotoIds.includes(photoId)){
@@ -7524,6 +7566,8 @@ function mapToggleEntryPhoto(photoId, el){
     const chk=document.getElementById('mtrph-chk-'+photoId);
     if(chk){chk.style.background='var(--amber)';chk.textContent='✓';}
   }
+  // Keep the ✓ Linked chip count honest without re-rendering the grid.
+  const lc=document.querySelector('#mtrph-chips button[data-f="linked"] span'); if(lc) lc.textContent=_pendingPhotoIds.length;
 }
 function mapRefreshEntryPhotoStrip(){
   // The repair-flag sheet shares _pendingPhotoIds + the attach picker — keep its
@@ -7543,7 +7587,7 @@ function mapRefreshEntryPhotoStrip(){
     if(isTag){
       const L=_led.get(p.id);
       if(L&&L.capacity!=null){
-        const bd=sbPhotoBadge(p.id,pid);
+        const bd=sbPhotoBadge(p.id,pid,_led);
         ledHtml=`<div style="font-family:var(--mono);font-size:8px;color:${bd.amber?'var(--amber)':'var(--muted)'};white-space:nowrap;max-width:64px;overflow:hidden;text-overflow:ellipsis" title="${bd.txt}">${bd.txt}</div>`;
       } else if(L){
         ledHtml=`<div onclick="if(typeof sbShowWeights==='function')sbShowWeights()" style="font-family:var(--mono);font-size:8px;color:var(--muted);white-space:nowrap;cursor:pointer;text-decoration:underline dotted">⚖ set bag wt</div>`;

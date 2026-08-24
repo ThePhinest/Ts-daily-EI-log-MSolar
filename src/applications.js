@@ -228,6 +228,7 @@ function sbPhotoLedger(pid){
         const w=sbWeightFor(g.product,pid);
         const capacity=carry!=null?carry:((w!=null)?count*w:null);
         led.set(id,{product:g.product,count,weight:w,capacity,used:0,countInferred:!(ph&&ph.tagCount>0),
+          type:isSeedGroup?'seed':(g.app?(g.app.type||'other'):'seed'),   // a tag with no matching application is a seed tag by default
           carry,carryFrom:(ph&&ph.carryFrom)||null,closed:!!(ph&&ph.tagClosed),entryDate:e.date||null});
       });
       let lbs=(g.app&&g.app.actual!=null&&(g.app.actualUnit||'lbs')==='lbs')?(+g.app.actual||0):0;
@@ -242,8 +243,56 @@ function sbPhotoLedger(pid){
   }
   return led;
 }
-function sbPhotoInfo(photoId, pid){
-  const L=sbPhotoLedger(pid).get(photoId);
+// Task-scoped ledger memo: one synchronous render pass (sheet totals, a grid of
+// badges, per-row counts) shares a single derivation instead of rebuilding per
+// row. It lives only until the end of the current event-loop turn — any
+// mutation (transfer, retire, tag-count edit, attach) runs in a later task and
+// therefore always derives fresh. Explicit ledgers passed by callers still win.
+let _sbLedMemo={pid:null,led:null};
+function sbLedgerCached(pid){
+  pid=pid||_sbPid();
+  if(_sbLedMemo.led&&_sbLedMemo.pid===pid) return _sbLedMemo.led;
+  const led=sbPhotoLedger(pid); _sbLedMemo={pid,led};
+  setTimeout(()=>{ _sbLedMemo.led=null; },0);
+  return led;
+}
+// Physical seed tags across a set of entries (8/24, Tim: "list the actual number
+// of bags used"). One tag photographed once and attached to three locations is
+// ONE tag: count = Σ over DISTINCT seed-tag photos of tags-in-photo (the ledger
+// count — override, else inferred from the entry's Tags field, else 1); a
+// carried-in continuation photo is the same physical tag as its source → 0.
+// Entries with no tag photo at all fall back to their typed Tags 🏷️ field, so
+// pre-ledger history still counts. Returns {count, ids:Set, shared} — shared =
+// one of the counted photos is also attached to an entry OUTSIDE this set (the
+// export marks such rows with *; the grand total is taken over all rows at once
+// so a shared tag lands once).
+function sbTagCountFor(entries, pid, led, allEntries){
+  pid=pid||_sbPid();
+  led=led||sbLedgerCached(pid);
+  const ids=new Set(); let count=0;
+  (entries||[]).forEach(e=>{
+    if(!e) return;
+    const types=e.photoTypes||{};
+    const seedIds=(e.photoIds||[]).filter(id=>types[id]==='material_tag'&&(led.get(id)?led.get(id).type==='seed':true));
+    if(!seedIds.length){ count+=(+(e.fields&&e.fields.seedTagCount)||0); return; }
+    seedIds.forEach(id=>{
+      if(ids.has(id)) return;
+      ids.add(id);
+      const L=led.get(id);
+      if(L&&L.carryFrom) return;
+      const ph=L?null:(window._phPhotos||[]).find(p=>p.id===id);
+      count+=(L&&L.count>0)?L.count:((ph&&ph.tagCount>0)?ph.tagCount:1);
+    });
+  });
+  let shared=false;
+  if(allEntries&&ids.size){
+    const inSet=new Set((entries||[]).map(e=>e&&e.id));
+    shared=allEntries.some(e=>e&&!inSet.has(e.id)&&(e.photoIds||[]).some(id=>ids.has(id)&&(e.photoTypes||{})[id]==='material_tag'));
+  }
+  return {count,ids,shared};
+}
+function sbPhotoInfo(photoId, pid, led){
+  const L=(led||sbLedgerCached(pid)).get(photoId);
   if(!L) return null;
   // leftover = the raw math; remaining = what's still usable (0 once retired/carried on).
   const leftover=(L.capacity!=null)?(L.capacity-L.used):null;
@@ -252,8 +301,8 @@ function sbPhotoInfo(photoId, pid){
 // Badge text for a tag photo — remaining when computable, setup hints otherwise.
 // Returns {txt, amber, info, closed}; every surface (entry strip, attach picker,
 // map popup, Photos grid, lightbox) renders from this one function.
-function sbPhotoBadge(photoId, pid){
-  const info=sbPhotoInfo(photoId,pid);
+function sbPhotoBadge(photoId, pid, led){
+  const info=sbPhotoInfo(photoId,pid,led);
   if(!info) return null;
   if(info.remaining==null) return {txt:'⚖ set bag wt',amber:false,info,closed:false};
   if(info.closed){
@@ -862,6 +911,8 @@ window.sbEnsureCfg=sbEnsureCfg;
 window.sbCloudChecked=sbCloudChecked;
 window.sbEditable=sbEditable;
 window.sbPickProduct=sbPickProduct;
+window.sbTagCountFor=sbTagCountFor;
+window.sbLedgerCached=sbLedgerCached;
 
 // 🎒 Product picker on an application row (house modal, never a datalist — Tim
 // 8/20). Picking runs the same path as typing the product, so the lbs/ac rate

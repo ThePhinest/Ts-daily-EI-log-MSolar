@@ -950,7 +950,7 @@ button:disabled,button[disabled]{opacity:.45;cursor:not-allowed}
 .dl-carry-mode{display:flex;gap:14px;flex-wrap:wrap;margin-top:4px;font-family:var(--mono);font-size:10.5px;color:var(--muted2)}
 .dl-carry-mode label{display:flex;align-items:center;gap:5px;cursor:pointer}
 .dl-carry-mode input{accent-color:var(--amber)}
-#dl-carry-toast{position:fixed;left:50%;top:14px;transform:translate(-50%,-30px);z-index:9700;background:var(--s1);border:1px solid rgba(201,168,76,.5);border-radius:20px;color:var(--text);font-family:var(--mono);font-size:11.5px;padding:8px 16px;opacity:0;pointer-events:none;transition:opacity .18s,transform .18s;max-width:92vw;text-align:center}
+#dl-carry-toast{position:fixed;left:50%;top:calc(var(--app-bar-h,58px) + 10px);transform:translate(-50%,-30px);z-index:9700;background:var(--s1);border:1px solid rgba(201,168,76,.5);border-radius:20px;color:var(--text);font-family:var(--mono);font-size:11.5px;padding:8px 16px;opacity:0;pointer-events:none;transition:opacity .18s,transform .18s;max-width:92vw;text-align:center}
 #dl-carry-toast.on{opacity:1;transform:translate(-50%,0)}
 .cal-legend>span{display:flex;align-items:center;gap:6px}
 .cal-legend i{font-style:normal;width:18px;flex:none;text-align:center}
