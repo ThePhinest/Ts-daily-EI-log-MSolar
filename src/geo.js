@@ -82,7 +82,9 @@ function _glMemo(fn, entries, extra, compute){
   let key = fn + ':' + _glGeoVer + ':' + (extra || '') + ':';
   for(const e of entries) key += e.id + '|';
   if(_glGeoCache.has(key)) return _glGeoCache.get(key);
+  const t0 = performance.now();
   const v = compute();
+  if(typeof glBootMark === 'function') glBootMark('geo:' + fn, { entries: entries.length, ms: Math.round(performance.now() - t0) });   // boot-timeline attribution; no-op after the log finalizes
   if(_glGeoCache.size > 40) _glGeoCache.clear();   // tiny bound; recompute is cheap post-fix-1
   _glGeoCache.set(key, v);
   return v;

@@ -607,7 +607,24 @@ if(typeof window!=='undefined'){
   window.clPunchlistReopen=clPunchlistReopen;
 }
 
+// Boot/perf gate (8/24, boot timeline on Tim's phone): this render is the
+// heaviest main-thread work at startup — the net-area engine (turf union +
+// difference over every disturbance polygon) plus per-category HTML for 1,000+
+// entries — and it ran at boot for a page that wasn't on screen. The 5.7 s
+// freeze in the timeline started exactly at tracker load, where db.js calls
+// this. When the Compliance page isn't active the render is skipped and
+// flagged stale; showPage('compliance') → clInit → clRender → this fn renders
+// fresh on arrival, so nothing visible changes. Live re-renders while the page
+// IS open (tracker edits, punchlist ticks) are untouched.
 function clRenderTrackerCard(search){
+  const pg=document.getElementById('page-compliance');
+  if(pg&&!pg.classList.contains('active')){ window._clTrackerCardStale=true; return; }
+  window._clTrackerCardStale=false;
+  const t0=performance.now();
+  _clRenderTrackerCardNow(search);
+  if(typeof glBootMark==='function') glBootMark('cl-card',{ms:Math.round(performance.now()-t0)});
+}
+function _clRenderTrackerCardNow(search){
   clRenderPunchlist();
   const el=document.getElementById('cl-tracker-card');
   if(!el) return;
@@ -1218,12 +1235,12 @@ function clShowTrackerLog(){
           ?glEntryNetAreasM2(_installed, (_catObjMeta&&Array.isArray(_catObjMeta.states))?_catObjMeta.states.filter(s=>!s.isPlanned):[])
           :null;
         const gPhotos=_installed.reduce((s,e)=>s+(Array.isArray(e.photoIds)?e.photoIds.length:0),0);
-        const gSeeds=(typeof sbTagCountFor==='function')?sbTagCountFor(_installed,pid).count:_installed.reduce((s,e)=>s+(e.fields?.seedTagCount||0),0);
+        const gSeeds=_installed.reduce((s,e)=>s+(e.fields?.seedTagCount||0),0);
         const gReports=_installed.reduce((s,e)=>s+(Array.isArray(e.reportIds)?e.reportIds.length:0),0);
         const rows=g.entries.map(e=>{
           const pc=Array.isArray(e.photoIds)?e.photoIds.length:0;
           const rc=Array.isArray(e.reportIds)?e.reportIds.length:0;
-          const stc=(typeof sbTagCountFor==='function')?(sbTagCountFor([e],pid).count||0):(e.fields?.seedTagCount||0);
+          const stc=e.fields?.seedTagCount||0;
           const hasAct=e.fields?.actualAmount!=null;
           const hasReq=e.fields?.requiredAmount!=null;
           let amtText=hasAct&&hasReq
@@ -1378,7 +1395,7 @@ function clShowTrackerLog(){
         const _flatDot=(_flatSt&&_flatSt.color&&/^#[0-9A-Fa-f]{6}$/.test(_flatSt.color))?_flatSt.color:cat.color;
         const pc=Array.isArray(e.photoIds)?e.photoIds.length:0;
         const rc=Array.isArray(e.reportIds)?e.reportIds.length:0;
-        const stc=(typeof sbTagCountFor==='function')?(sbTagCountFor([e],pid).count||0):(e.fields?.seedTagCount||0);
+        const stc=e.fields?.seedTagCount||0;
         const hasActF=e.fields?.actualAmount!=null;
         const hasReqF=e.fields?.requiredAmount!=null;
         const amtTextF=hasActF&&hasReqF
@@ -1932,7 +1949,7 @@ async function _tlogExportXlsx(scheme, entries, pid){
       e.measurementValue!=null?`${e.measurementValue} ${e.measurementUnit||''}`:e.acres!=null?`${e.acres} ac`:'',
       e.location||'', e.notes||'',
       Array.isArray(e.photoIds)?e.photoIds.length:'',
-      ((typeof sbTagCountFor==='function')?(sbTagCountFor([e],pid).count||''):(f.seedTagCount!=null?f.seedTagCount:'')),
+      f.seedTagCount!=null?f.seedTagCount:'',
       e.seedMix||'',
       f.appliedRate!=null?(rateUnit?f.appliedRate+' '+rateUnit:f.appliedRate):'',
       f.requiredAmount!=null?f.requiredAmount+' '+(f.requiredUnit||''):'',
@@ -2028,7 +2045,7 @@ async function _tlogExportXlsx(scheme, entries, pid){
         const measUnit=installed.find(e=>e.measurementUnit)?.measurementUnit||'ac';
         const totalActAmt=installed.reduce((s,e)=>s+(e.fields?.actualAmount||0),0);
         const actUnit=installed.find(e=>e.fields?.actualUnit)?.fields?.actualUnit||'lbs';
-        const totalSeeds=(typeof sbTagCountFor==='function')?sbTagCountFor(installed,pid).count:installed.reduce((s,e)=>s+(e.fields?.seedTagCount||0),0);
+        const totalSeeds=installed.reduce((s,e)=>s+(e.fields?.seedTagCount||0),0);
         const totalPhotos=installed.reduce((s,e)=>s+(Array.isArray(e.photoIds)?e.photoIds.length:0),0);
         // Running-balance/total (disturbance) categories: a gross SUM of overlapping
         // drawings is meaningless — show the NET open total instead (see the dedicated
@@ -2155,13 +2172,16 @@ async function _allSeedingSummarySheet(wb, srcs, entries, pid){
   hdr.height=20;
   // Freeze title block + column headers — they stay on top while scrolling the rows.
   ws.views=[{state:'frozen',ySplit:hdr.number}];
-  // 🏷 Physical seed tags (8/24, Tim): rows count DISTINCT seed-tag photos (a tag
-  // photographed once and attached to three locations is one tag; carried-in
-  // continuations are their source tag); the grand total is taken over every row
-  // at once so a tag shared across rows lands once. * marks a shared row.
+  // 🏷 Seed tags (8/24, Tim on device): every ROW shows the tags used at that
+  // location exactly as entered — that's what documents the area. Only the GRAND
+  // TOTAL counts PHYSICAL tags: each seed-tag photo once × the tags listed on it
+  // (a tag photographed once and attached to three locations is one tag; a
+  // carried-in continuation is its source tag), plus the typed count for entries
+  // that carry no tag photo. Rows can therefore sum past the total — the footnote
+  // says why. (First cut counted physically per row: a 9-tag close-out photo made
+  // a 1.32 ac area read "18" — wrong place for that number.)
   const _led=(typeof sbPhotoLedger==='function')?sbPhotoLedger(pid):new Map();
-  const _liveRows=entries.filter(e=>e.entryType!=='planned'&&!e.temporary&&!e.deletedAt);
-  const _usedRows=[]; let _sharedAny=false;
+  const _usedRows=[];
   let grandAc=0, grandTags=0;
   srcs.forEach(m=>{
     const cat=(typeof tcGetCategory==='function')?tcGetCategory(m.cid,pid):null; if(!cat) return;
@@ -2186,8 +2206,8 @@ async function _allSeedingSummarySheet(wb, srcs, entries, pid){
       [...map.values()].forEach(g=>{
         const f0=g[0].fields||{};
         const cov=g.reduce((a,e)=>a+measure(e),0);
-        const _tc=(typeof sbTagCountFor==='function')?sbTagCountFor(g,pid,_led,_liveRows):{count:g.reduce((a,e)=>a+((e.fields&&e.fields.seedTagCount)||0),0),shared:false};
-        const tags=_tc.count; _usedRows.push(...g); if(_tc.shared) _sharedAny=true;
+        const tags=g.reduce((a,e)=>a+((e.fields&&e.fields.seedTagCount)||0),0);
+        _usedRows.push(...g);
         const req=g.reduce((a,e)=>a+((e.fields&&e.fields.requiredAmount)||0),0);
         const act=g.reduce((a,e)=>a+((e.fields&&e.fields.actualAmount)||0),0);
         const reqU=(g.find(e=>e.fields&&e.fields.requiredUnit)||{}).fields?.requiredUnit||'';
@@ -2195,7 +2215,7 @@ async function _allSeedingSummarySheet(wb, srcs, entries, pid){
         grandAc+=(defUnit==='ac')?cov:((typeof tcConvertMeasurement==='function')?(tcConvertMeasurement(cov,defUnit,'ac')||0):0);
         grandTags+=tags;
         const r=ws.addRow([
-          first?srcName:'', s.label, fmt(cov), tags?(String(tags)+(_tc.shared?'*':'')):'',
+          first?srcName:'', s.label, fmt(cov), tags||'',
           (g[0].seedMix||'').trim(), f0.appliedRate!=null?(reqU?f0.appliedRate+' '+reqU+'/ac':String(f0.appliedRate)):'',
           req?req.toLocaleString()+(reqU?' '+reqU:''):'', act?act.toLocaleString()+(actU?' '+actU:''):'',
         ]);
@@ -2209,7 +2229,8 @@ async function _allSeedingSummarySheet(wb, srcs, entries, pid){
     ws.addRow([]).height=6;
   });
   // Grand-total band — the headline: all seed placed on the job, every source combined.
-  if(typeof sbTagCountFor==='function') grandTags=sbTagCountFor(_usedRows,pid,_led).count;   // distinct across every row
+  const _physTags=(typeof sbTagCountFor==='function')?sbTagCountFor(_usedRows,pid,_led).count:null;   // physical tags across every row
+  if(_physTags!=null) grandTags=_physTags;
   const gr=ws.addRow(['GRAND TOTAL — all seeding','',(Math.round(grandAc*100)/100)+' ac',grandTags||'','','','','']);
   gr.getCell(1).font={bold:true,size:16}; gr.getCell(3).font={bold:true,size:16,color:{argb:'FF006B75'}}; gr.getCell(4).font={bold:true,size:14};
   for(let c=1;c<=NC;c++){
@@ -2222,8 +2243,8 @@ async function _allSeedingSummarySheet(wb, srcs, entries, pid){
   nt.getCell(1).font={italic:true,size:9,color:{argb:'FF7A6A2E'}};
   nt.getCell(1).alignment={vertical:'middle',horizontal:'left',indent:1};
   nt.height=16;
-  if(_sharedAny){
-    const sn=ws.addRow(['* tag photographed on more than one location — the total counts each physical seed tag once']);
+  if(_physTags!=null){
+    const sn=ws.addRow(['Seed Tags total = physical tags used (each seed-tag photo counted once × tags shown on it); rows list the tags used at each location and may add up to more']);
     ws.mergeCells(sn.number,1,sn.number,NC);
     sn.getCell(1).font={italic:true,size:9,color:{argb:'FF7A6A2E'}};
     sn.getCell(1).alignment={vertical:'middle',horizontal:'left',indent:1};
@@ -2979,7 +3000,6 @@ async function _seedingSheetRender(wb, o){
   // Coverage Summary is a materials line-item schedule: one row per State × Mix × Rate.
   // A single-material state collapses to one row; a state seeded with two mixes shows two.
   const uniq=(arr)=>[...new Set(arr.filter(Boolean))];
-  const _tabLed=(typeof sbPhotoLedger==='function')?sbPhotoLedger(pid):new Map();   // 🏷 one ledger per tab
   const materialRows=(sid)=>{
     const es=installed.filter(e=>stOf(e)===sid);
     const map=new Map();
@@ -2999,7 +3019,7 @@ async function _seedingSheetRender(wb, o){
         mix:(g[0].seedMix||'').trim(),
         rate:f0.appliedRate!=null?(rateUnit?f0.appliedRate+' '+rateUnit:String(f0.appliedRate)):'',
         cov:g.reduce((a,e)=>a+measure(e),0),
-        seedTags:(typeof sbTagCountFor==='function')?sbTagCountFor(g,pid,_tabLed).count:g.reduce((a,e)=>a+((e.fields&&e.fields.seedTagCount)||0),0),
+        seedTags:g.reduce((a,e)=>a+((e.fields&&e.fields.seedTagCount)||0),0),
         required:g.reduce((a,e)=>a+((e.fields&&e.fields.requiredAmount)||0),0),
         reqUnit:(g.find(e=>e.fields&&e.fields.requiredUnit)||{}).fields?.requiredUnit||'',
         actual:g.reduce((a,e)=>a+((e.fields&&e.fields.actualAmount)||0),0),
@@ -3117,7 +3137,7 @@ async function _seedingSheetRender(wb, o){
         fmt(cov),
         pct!=null?Math.round(pct):'',
         e.date||'',
-        ((typeof sbTagCountFor==='function')?(sbTagCountFor([e],pid).count||''):(f.seedTagCount!=null?f.seedTagCount:'')),
+        f.seedTagCount!=null?f.seedTagCount:'',
         e.seedMix||'',
         f.appliedRate!=null?(rateUnit?f.appliedRate+' '+rateUnit:f.appliedRate):'',
         f.requiredAmount!=null?f.requiredAmount+' '+(f.requiredUnit||''):'',

@@ -46,7 +46,7 @@ document.addEventListener('visibilitychange',()=>{ _last=performance.now(); if(d
   const now=performance.now(), gap=now-_last; _last=now;
   if(gap>200&&document.visibilityState==='visible'){
     _stalls++; if(gap>_worst) _worst=Math.round(gap);
-    if(!_finalized) _marks.push({n:'stall',t:Math.round(now),ms:Math.round(gap)});
+    if(!_finalized) _marks.push({n:'stall',t:Math.round(now),ms:Math.round(gap),pg:((document.querySelector('.page.active')||{}).id||'').replace('page-','')});
   }
   if(now<_END&&!_finalized) requestAnimationFrame(tick); else _finalize('timer');
 })();
@@ -102,7 +102,7 @@ function _fmtRun(r){
     const extra=Object.keys(m).filter(k=>k!=='n'&&k!=='t').map(k=>`${k}=${m[k]}`).join(' ');
     L.push(`${String((m.t/1000).toFixed(2)).padStart(6)}s  ${m.n}${extra?'  '+extra:''}`);
   });
-  if(r.stallMarks&&r.stallMarks.length) L.push('', 'stalls: '+r.stallMarks.map(s=>`${(s.t/1000).toFixed(1)}s/${s.ms}ms`).join('  '));
+  if(r.stallMarks&&r.stallMarks.length) L.push('', 'stalls: '+r.stallMarks.map(s=>`${(s.t/1000).toFixed(1)}s/${s.ms}ms${s.pg?'@'+s.pg:''}`).join('  '));
   return L.join('\n');
 }
 function glBootReport(all){

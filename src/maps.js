@@ -2934,7 +2934,7 @@ function mapShowTrackerSheet(){
   mapCloseFab();
   _tcEditingCatId=null;
   _tcAddingColor=null;
-  _renderTrackerSheet();
+  _renderTrackerSheet(true);
   document.getElementById('map-tracker-sheet').classList.add('open');
 }
 function mapCloseTrackerSheet(){
@@ -2944,7 +2944,17 @@ function mapCloseTrackerSheet(){
   document.getElementById('map-tracker-sheet-add').classList.remove('open');
 }
 
-function _renderTrackerSheet(){
+// Same boot gate as clRenderTrackerCard (8/24): the sheet is closed at boot and
+// re-renders on open (mapShowTrackerSheet passes force), so an invisible render
+// of every category row is skipped. In-sheet edits render normally (sheet open).
+function _renderTrackerSheet(force){
+  const sh=document.getElementById('map-tracker-sheet');
+  if(!force&&sh&&!sh.classList.contains('open')) return;
+  const t0=performance.now();
+  _renderTrackerSheetNow();
+  if(typeof glBootMark==='function') glBootMark('tracker-sheet',{ms:Math.round(performance.now()-t0)});
+}
+function _renderTrackerSheetNow(){
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
   const cats=_sortCatsByOrder((typeof tcGetCategories==='function')?tcGetCategories(pid):[],pid);
   const list=document.getElementById('map-tracker-cat-list');
