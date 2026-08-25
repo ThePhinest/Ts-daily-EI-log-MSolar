@@ -126,10 +126,23 @@ function glDiagRender(){
   out.textContent=glBootReport(false)+'\n\n── camera log (last 12) ──\n'+camTxt+'\n\n── sw log entries: '+sw.length;
 }
 window.glDiagRender=glDiagRender;
-window.glDiagCopy=async function(){
+function _glDiagText(){
   let cam='[]', sw='[]', boot='[]';
   try{ cam=localStorage.getItem('gl_cam_log')||'[]'; sw=localStorage.getItem('gl_sw_log')||'[]'; boot=localStorage.getItem('gl_boot_log')||'[]'; }catch{}
-  const txt=`GroundLog diagnostics ${_localStamp()} (device local time; tz offset ${-new Date().getTimezoneOffset()/60}h)\n\n== boot (all) ==\n${glBootReport(true)}\n\n== gl_boot_log ==\n${boot}\n\n== gl_cam_log ==\n${cam}\n\n== gl_sw_log ==\n${sw}`;
+  return `GroundLog diagnostics ${_localStamp()} (device local time; tz offset ${-new Date().getTimezoneOffset()/60}h)\n\n== boot (all) ==\n${glBootReport(true)}\n\n== gl_boot_log ==\n${boot}\n\n== gl_cam_log ==\n${cam}\n\n== gl_sw_log ==\n${sw}`;
+}
+// 📤 Share as a .txt file (iOS share sheet → OneDrive / Mail / Files; web = download).
+// The clipboard route hit Discord's per-message cap (8 pastes per report — Tim 8/25);
+// a file lands on the PC in one hop via OneDrive, or rides the email-export pipeline via Mail.
+window.glDiagShare=async function(){
+  const txt=_glDiagText();
+  const name='groundlog-diag-'+_localStamp().replace(/[: ]/g,'-')+'.txt';
+  const blob=new Blob([txt],{type:'text/plain'});
+  if(typeof window._glShareOrDownload==='function'){ try{ await window._glShareOrDownload(blob,name,'text/plain'); return; }catch(e){ console.warn('diag share:',e&&e.message); } }
+  try{ const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name; document.body.appendChild(a); a.click(); a.remove(); }catch{}
+};
+window.glDiagCopy=async function(){
+  const txt=_glDiagText();
   try{ await navigator.clipboard.writeText(txt); const b=document.getElementById('gl-diag-copy'); if(b){ b.textContent='✓ Copied'; setTimeout(()=>{ b.textContent='📋 Copy all'; },1800); } }
   catch{ try{ window.prompt('Copy diagnostics:', txt.slice(0,2000)); }catch{} }
 };

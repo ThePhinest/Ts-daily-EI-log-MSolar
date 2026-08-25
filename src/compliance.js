@@ -1495,6 +1495,7 @@ async function _glShareOrDownload(blob, filename, mimeType){
   a.href=url; a.download=filename; a.click();
   URL.revokeObjectURL(url);
 }
+window._glShareOrDownload=_glShareOrDownload;
 
 // ── Tracker log export — scheme picker modal ──
 // Per-category deliverables: pick one OR MORE categories — they combine into a single
