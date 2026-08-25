@@ -657,7 +657,7 @@ async function _startSensors(){
 function _camLog(ev,extra){
   try{
     const l=JSON.parse(localStorage.getItem('gl_cam_log')||'[]');
-    l.push(Object.assign({t:new Date().toISOString().slice(0,19),ev},extra||{}));
+    l.push(Object.assign({t:(typeof window._glLocalStamp==='function')?window._glLocalStamp():new Date().toLocaleString('sv-SE'),ev},extra||{}));
     while(l.length>30) l.shift();
     localStorage.setItem('gl_cam_log',JSON.stringify(l));
   }catch{}

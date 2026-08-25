@@ -14,6 +14,9 @@
 // the console prints it. Nothing here touches the network or Firestore.
 
 const _marks=[];
+// Local wall-clock stamp, 'YYYY-MM-DD HH:MM:SS' in the device's zone (sv-SE locale gives ISO ordering).
+function _localStamp(){ try{ return new Date().toLocaleString('sv-SE'); }catch{ return new Date().toString().slice(0,24); } }
+window._glLocalStamp=_localStamp;
 const _t=()=>Math.round(performance.now());
 let _finalized=false, _stalls=0, _worst=0, _firstTouch=null;
 
@@ -69,7 +72,7 @@ function _finalize(why){
   if(_finalized) return;
   _finalized=true;
   const run={
-    at:new Date().toISOString().slice(0,19),
+    at:_localStamp(),   // device LOCAL time (an ISO/UTC stamp read as local cost a real misread on 8/24)
     end:why, dur:_t(),
     native:!!(window.Capacitor&&window.Capacitor.isNativePlatform&&window.Capacitor.isNativePlatform()),
     ua:(navigator.userAgent||'').replace(/Mozilla\/5\.0 \(/,'(').slice(0,80),
@@ -126,7 +129,7 @@ window.glDiagRender=glDiagRender;
 window.glDiagCopy=async function(){
   let cam='[]', sw='[]', boot='[]';
   try{ cam=localStorage.getItem('gl_cam_log')||'[]'; sw=localStorage.getItem('gl_sw_log')||'[]'; boot=localStorage.getItem('gl_boot_log')||'[]'; }catch{}
-  const txt=`GroundLog diagnostics ${new Date().toISOString().slice(0,19)}\n\n== boot (all) ==\n${glBootReport(true)}\n\n== gl_boot_log ==\n${boot}\n\n== gl_cam_log ==\n${cam}\n\n== gl_sw_log ==\n${sw}`;
+  const txt=`GroundLog diagnostics ${_localStamp()} (device local time; tz offset ${-new Date().getTimezoneOffset()/60}h)\n\n== boot (all) ==\n${glBootReport(true)}\n\n== gl_boot_log ==\n${boot}\n\n== gl_cam_log ==\n${cam}\n\n== gl_sw_log ==\n${sw}`;
   try{ await navigator.clipboard.writeText(txt); const b=document.getElementById('gl-diag-copy'); if(b){ b.textContent='✓ Copied'; setTimeout(()=>{ b.textContent='📋 Copy all'; },1800); } }
   catch{ try{ window.prompt('Copy diagnostics:', txt.slice(0,2000)); }catch{} }
 };
