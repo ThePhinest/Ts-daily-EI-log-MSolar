@@ -67,6 +67,9 @@ jobs:
           SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
           SENTRY_PROJECT: ${{ secrets.SENTRY_PROJECT }}
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          # 8/25: the geo Web Worker adds a second Rollup bundle (turf) with sourcemaps;
+          # the runner's default Node heap (~4 GB) OOM'd on run 32909851161.
+          NODE_OPTIONS: --max-old-space-size=6144
         run: npm run build
 
       - name: Sync Capacitor iOS
