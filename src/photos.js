@@ -219,11 +219,17 @@ const PH_IDB_PREFIX = 'ph:';
 // plus the thumb's length); only records whose signature moved are written.
 // Stale keys (hard delete / trash sweep) are still removed.
 const _phSigMap = new Map();
+// Signature = change detection between a local record and its cloud doc.
+// null / undefined / false are all "not set" — _phDocFor writes explicit
+// falsy values (swppp:false, tagCount:null, …) that a fresh local record
+// simply lacks; treating them as different made EVERY new photo's first
+// write ack look like a change (the 8/25 caption bug's first domino).
 function _phSig(p){
   let s = '';
   for(const k of Object.keys(p).sort()){
     if(k === 'thumb') continue;
     const v = p[k];
+    if(v === null || v === undefined || v === false) continue;
     s += k + '=' + ((v !== null && typeof v === 'object') ? JSON.stringify(v) : String(v)) + ';';
   }
   return s + 'thumb#' + (p.thumb ? p.thumb.length : 0);
@@ -389,9 +395,20 @@ function _phApplySnapshot(snap){
     const cloud = ch.doc.data();
     if(!cloud || !cloud.id) return;
     const local = byId.get(id);
-    const rec = (_phDirtyIds.has(id) && local) ? Object.assign({}, cloud, local) : cloud;
-    if(local && _phSig(local) === _phSig(rec)) return;   // identical → nothing to do
-    byId.set(id, rec); applied++; kb += (cloud.thumb ? cloud.thumb.length : 0);
+    if(!local){ byId.set(id, cloud); applied++; kb += (cloud.thumb ? cloud.thumb.length : 0); return; }
+    // A pending local write wins wholesale until it flushes (its doc is on
+    // its way; the cloud copy here is older by definition).
+    if(_phDirtyIds.has(id)) return;
+    // MERGE IN PLACE — never swap the object. Live code holds references to
+    // these records (the camera's post-shot strip + upload IIFE, the lightbox,
+    // popups); replacing the object detached them, so a caption edited after
+    // the first write ack landed on an orphan and the library kept the
+    // capture-time carry-forward caption (8/25: "tons of photos miscaptioned",
+    // camera roll right, app wrong). Local-only extras (alt, …) survive.
+    const before = _phSig(local);
+    const merged = Object.assign({}, local, cloud);
+    if(_phSig(merged) === before) return;   // identical → nothing to do
+    Object.assign(local, cloud); applied++; kb += (cloud.thumb ? cloud.thumb.length : 0);
   });
   if(applied || removed){
     _phPartition([...byId.values()]);
@@ -1604,7 +1621,11 @@ async function phSaveCameraPhoto(blob, meta){
       if(!storage||!_fbReady) throw new Error('firebase not ready');
       const ref=storage.ref(`photos/${_currentUser.uid}/${id}/${fname}`);
       const snap=await ref.put(blob,{contentType:'image/jpeg'});
-      entry.storageUrl=await snap.ref.getDownloadURL();
+      const url=await snap.ref.getDownloadURL();
+      // Resolve the LIVE record by id — never trust a captured reference to
+      // still be the array's object (see _phApplySnapshot).
+      const live=(window._phPhotos||[]).find(x=>x.id===id)||entry;
+      live.storageUrl=url; entry.storageUrl=url;
       phSaveLocal();
     }catch(e){
       console.warn('phSaveCameraPhoto upload deferred:',e.message);
@@ -1613,7 +1634,7 @@ async function phSaveCameraPhoto(blob, meta){
       // shot survives a dead zone, not just the thumbnail.
       try{ if(window.idbSet) window.idbSet('cam_pending::'+id, blob); }catch(_){}
     }
-    phSaveCloudOne(entry);
+    phSaveCloudOne((window._phPhotos||[]).find(x=>x.id===id)||entry);
   })();
   // Contextual launch (📸 from a punchlist flag / drawing popup): auto-attach the
   // photo to that tracker entry — the shot lands where it documents.

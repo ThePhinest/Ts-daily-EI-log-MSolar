@@ -1035,9 +1035,13 @@ function _stripEdit(entry,strip,objUrl){
   ov.querySelector('#glc-ed-ok').onclick=()=>{
     const loc=ov.querySelector('#glc-ed-loc').value.trim();
     const cap=ov.querySelector('#glc-ed-cap').value.trim();
-    entry.locLabel=loc; entry.caption=cap;
+    // Write onto the LIVE library record (by id), not only the captured
+    // reference — the photos listener may have merged the cloud copy since the
+    // shot, and phSaveLocal/phSaveCloud flush from the array (8/25 caption bug).
+    const live=((window._phPhotos||[]).find(x=>x.id===entry.id))||entry;
+    live.locLabel=loc; live.caption=cap; entry.locLabel=loc; entry.caption=cap;
     if(typeof window.phSaveLocal==='function') window.phSaveLocal();
-    if(typeof window.phSaveCloudOne==='function') window.phSaveCloudOne(entry);
+    if(typeof window.phSaveCloudOne==='function') window.phSaveCloudOne(live);
     // Re-bake the map pin popups — they carry the caption in their HTML, so
     // without this the popup showed the pre-edit caption until the NEXT shot
     // re-rendered pins (Tim 7/30: "lags behind by 1 photo").
