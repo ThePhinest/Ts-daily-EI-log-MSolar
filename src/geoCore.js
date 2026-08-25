@@ -84,12 +84,34 @@ function _dropSlivers(geometry){
 
 // One chronological pass shared by all three outputs (the suffix-union is the
 // whole cost; computing S/E/G separately tripled it).
+// Bounding boxes (8/25): the suffix-union accumulated ONE giant multipolygon
+// and every drawing was differenced against all of it (7 s for 264 drawings on
+// an iPhone, even in the worker). A polygon can only be clipped by later
+// drawings whose bbox touches its own, so each drawing is differenced against
+// the union of just those — identical result (disjoint-bbox polygons contribute
+// nothing to the difference), a fraction of the work. _suffixLaters is kept
+// exported for reference/tests.
+function _bboxOf(f){
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  const walk = (c) => {
+    if(typeof c[0] === 'number'){ if(c[0] < minX) minX = c[0]; if(c[0] > maxX) maxX = c[0]; if(c[1] < minY) minY = c[1]; if(c[1] > maxY) maxY = c[1]; }
+    else for(const k of c) walk(k);
+  };
+  try{ walk(f.geometry.coordinates); }catch{}
+  return [minX, minY, maxX, maxY];
+}
+function _bboxHit(a, b){ return a[0] <= b[2] && b[0] <= a[2] && a[1] <= b[3] && b[1] <= a[3]; }
 function _prep(entries){
   const parsed = (entries || []).map(e => ({ e, f: _parseGeom(e) })).filter(x => x.f);
   if(!parsed.length) return null;
   parsed.sort(_chronoSort);
-  const laters = _suffixLaters(parsed);
-  const clipped = parsed.map((x, i) => laters[i] ? _safeDiff(x.f, laters[i]) : x.f);
+  const bb = parsed.map(x => _bboxOf(x.f));
+  const clipped = parsed.map((x, i) => {
+    const laters = [];
+    for(let j = i + 1; j < parsed.length; j++){ if(_bboxHit(bb[i], bb[j])) laters.push(parsed[j].f); }
+    if(!laters.length) return x.f;
+    return _safeDiff(x.f, _unionAll(laters));
+  });
   return { parsed, clipped };
 }
 

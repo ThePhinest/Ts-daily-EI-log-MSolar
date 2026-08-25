@@ -41,7 +41,10 @@ document.addEventListener('DOMContentLoaded', function _initFirebase() {
       try { window.db.settings({ cacheSizeBytes: firebase.firestore.CACHE_SIZE_UNLIMITED }); }
       catch(e) { console.warn('Firestore cacheSizeBytes not applied:', e && e.message); }
       try {
-        window.db.enablePersistence({ synchronizeTabs: true })
+        // 8/25: multi-tab persistence pays a cross-tab lease/coordination cost at
+        // startup (~1.7 s before the first cache read on the phone). The native
+        // app is a single WebView — only the web/PWA needs tab sync.
+        window.db.enablePersistence({ synchronizeTabs: !(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()) })
           .catch(function(e){ console.warn('Firestore persistence unavailable:', e && (e.code || e.message)); });
       } catch(e) { console.warn('Firestore persistence unavailable:', e && e.message); }
       window.storage = _fbApp.storage();
