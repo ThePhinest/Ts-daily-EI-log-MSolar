@@ -304,15 +304,16 @@ async function _glMigratePhaseC() {
   if (!_udb()) return;
   const known = knownProjectsGet().filter(p => p.projectId);
   if (!known.length) return;
-  // Early-out if every project is already migrated
-  let anyNeedsMigration = false;
-  for (const proj of known) {
-    try {
-      const d = await _udb().collection('settings').doc(proj.projectId).get();
-      if (!d.exists || !d.data().phaseC_migrated) { anyNeedsMigration = true; break; }
-    } catch(e) {}
-  }
-  if (!anyNeedsMigration) return;
+  // Early-out if every project is already migrated. The verdict is cached per
+  // device (tiny pref keyed by the project-id set; cleared by the uid fence) so
+  // the N per-project reads stop running on every boot — projects created after
+  // Phase C are stamped phaseC_migrated at creation, so the flag can't go stale.
+  const _pcKey = 'gl_phasec_ok::' + known.map(p => p.projectId).sort().join(',');
+  try { if (localStorage.getItem(_pcKey) === '1') return; } catch(e) {}
+  const _pcDocs = await Promise.all(known.map(proj =>
+    _udb().collection('settings').doc(proj.projectId).get().catch(() => null)));
+  const anyNeedsMigration = _pcDocs.some(d => d && (!d.exists || !d.data().phaseC_migrated));
+  if (!anyNeedsMigration) { try { localStorage.setItem(_pcKey, '1'); } catch(e) {} return; }
   console.log('GroundLog Phase C: starting settings migration...');
   try {
     const [presetsDoc, phasesDoc, cardTitlesDoc, checklistDoc, flagsDoc, tsCfgDoc] = await Promise.all([

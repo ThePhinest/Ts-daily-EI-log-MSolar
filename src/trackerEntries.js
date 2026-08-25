@@ -432,91 +432,136 @@ function trRemovePhotoLink(entryId, photoId, projectId){
 // Shared root is publish-gated, so an unconstrained list is not rules-provable —
 // two provable queries cover everything a member may see: own records
 // (published or not) + everyone's published records.
+// ── Lever 3 (8/25 boot perf): tracker entries = persistent Firestore listeners ──
+// Same pattern as photos.js phWatchCloud (the #51 audit): two onSnapshot
+// listeners (own + published) replace the two one-shot .get()s that
+// materialized + JSON-parsed all 1,033 docs and rewrote the IDB blob on every
+// open / refocus (the last ~0.8 s boot stall). Changes are applied from
+// docChanges(); a doc whose updatedAt isn't newer than the local copy is a
+// no-op (no geometry parse, no save) — so a warm-boot cache replay costs
+// nothing. Foreign entries are revoked only on a SERVER-confirmed removal
+// (the #52 offline rule); own entries are never revoked locally. The boot
+// promise resolves once both queries have a server view (or after 8 s
+// offline) so the existing .then render chains still work; later live deltas
+// re-render map / sheet / compliance card on their own.
+let _trUnsubs = [], _trWatchPid = null, _trWatchSettled = false;
+const _trRemoteVer = new Map();   // id → updatedAt as last seen from Firestore (push-repair truth)
+function _trUnwatch(){
+  _trUnsubs.forEach(u => { try{ u(); }catch(_){} });
+  _trUnsubs = []; _trWatchPid = null; _trWatchSettled = false; _trRemoteVer.clear();
+}
+window._trUnwatch = _trUnwatch;
+
+function _trApplySnapshot(pid, uid, snap){
+  const changes = snap.docChanges();
+  const fromCache = !!(snap.metadata && snap.metadata.fromCache);
+  if(!changes.length) return { applied: 0, removed: 0, fromCache };
+  const data = _trLoadRaw(pid);
+  const byId = new Map();
+  data.entries.forEach(e => { if(e && e.id) byId.set(e.id, e); });
+  let applied = 0, removed = 0;
+  for(const ch of changes){
+    const id = ch.doc.id;
+    if(ch.type === 'removed'){
+      if(fromCache) continue;                       // only server truth revokes
+      _trRemoteVer.delete(id);
+      const cur = byId.get(id);
+      if(cur && cur.ownerUid && cur.ownerUid !== uid){ byId.delete(id); removed++; }
+      continue;
+    }
+    const d = ch.doc.data();
+    _trRemoteVer.set(id, d.updatedAt || 0);
+    const cur = byId.get(id);
+    if(cur && (cur.updatedAt || 0) >= (d.updatedAt || 0)) continue;   // local same/newer → no-op
+    if(typeof d.geometry === 'string'){ try{ d.geometry = JSON.parse(d.geometry); }catch{} }
+    byId.set(id, d); applied++;
+  }
+  if(applied || removed) _trSaveRaw(pid, { entries: Array.from(byId.values()) });
+  return { applied, removed, fromCache };
+}
+
+// Push own local-only/newer entries to Firestore (recovery for silent write
+// failures — offline field edits don't survive a reload, so a day-after boot
+// can carry many deltas). Never push someone else's record back. Runs once per
+// watch, after BOTH queries have a server view (a partial cache would queue
+// re-pushes that could overwrite newer cross-device versions on reconnect).
+// BATCHED + detached: the old per-entry fire-and-forget loop flooded the SDK
+// write stream on app open (resource-exhausted 7/18). Chunk size is small
+// because each doc carries its full traced geometry as a JSON string.
+function _trPushRepair(pid, uid, ref){
+  const toPush = _trLoadRaw(pid).entries.filter(e => {
+    if(!e || !e.id) return false;
+    if(e.ownerUid && e.ownerUid !== uid) return false;
+    if(_trPushDenied.has(e.id)) return false;   // rules denied it this session — don't re-spam every refocus
+    return !_trRemoteVer.has(e.id) || (e.updatedAt || 0) > (_trRemoteVer.get(e.id) || 0);
+  });
+  if(!toPush.length) return;
+  (async () => {
+    for(let i = 0; i < toPush.length; i += 20){
+      const chunk = toPush.slice(i, i + 20);
+      try{
+        const batch = db.batch();
+        chunk.forEach(e => batch.set(ref.doc(e.id), _trToFs(_trStamp(e))));
+        await batch.commit();
+      }catch(err){
+        // Batch commits are atomic — one denied doc fails its whole chunk.
+        // Retry per-doc (sequential, awaited) so the good ones still land,
+        // and remember denied ids so they never re-fire this session.
+        for(const e of chunk){
+          try{ await ref.doc(e.id).set(_trToFs(_trStamp(e))); }
+          catch(err2){
+            if(err2 && err2.code === 'permission-denied') _trPushDenied.add(e.id);
+            console.warn('trSync push:', e.id, err2.message);
+          }
+        }
+      }
+    }
+  })().catch(err => console.warn('trSync push loop:', err.message));
+}
+
+// Live delta after boot (another device drew / edited / published): re-render
+// what's on screen. Hidden pages are already gated (8/24 boot gate).
+function _trLiveRender(){
+  try{ if(typeof mapRenderTrackerLayers === 'function') mapRenderTrackerLayers(); }catch(_){}
+  try{ if(typeof mapUpdateKmlLayerList === 'function') mapUpdateKmlLayerList(); }catch(_){}
+  try{ if(typeof window._renderTrackerSheet === 'function') window._renderTrackerSheet(); }catch(_){}
+  try{ if(typeof clRenderTrackerCard === 'function') clRenderTrackerCard(); }catch(_){}
+}
+
 async function trLoadFromFirestore(projectId){
   const pid = projectId || ((typeof _activeProjectId === 'function') ? _activeProjectId() : 'default');
   if(!_trCloudOk(pid) || !_udb()) return;
+  // Listeners already live for this project: every server delta has been
+  // applied as it landed — a refocus/re-sync has nothing to fetch.
+  if(_trWatchPid === pid && _trWatchSettled) return;
+  _trUnwatch();
+  _trWatchPid = pid;
   const uid = _currentUser.uid;
-  try {
-    const ref = _projData(pid).collection('trackerEntries');
-    const [ownSnap, pubSnap] = await Promise.all([
-      ref.where('ownerUid', '==', uid).get(),
-      ref.where('published', '==', true).get()
-    ]);
-    const remote = [];
-    const remoteIds = new Set();
-    [ownSnap, pubSnap].forEach(snap => snap.forEach(doc => {
-      if(remoteIds.has(doc.id)) return;
-      remoteIds.add(doc.id);
-      const d = doc.data();
-      if(typeof d.geometry === 'string'){ try{ d.geometry = JSON.parse(d.geometry); }catch{} }
-      remote.push(d);
-    }));
-    const local = _trLoadRaw(pid).entries;
-    if(remote.length === 0 && local.length === 0) return;
-    // #52 offline rule: with Firestore persistence on, an offline get() falls
-    // back to the local cache and can be EMPTY/PARTIAL instead of rejecting.
-    // The newest-wins merge below is absence-safe, but the foreign-revocation
-    // filter is not — an empty offline cache would read as "everything was
-    // unshared" and drop teammates' drawings locally. Only a genuine SERVER
-    // read may revoke.
-    const fromCache = !!((ownSnap.metadata && ownSnap.metadata.fromCache) ||
-                         (pubSnap.metadata && pubSnap.metadata.fromCache));
-    // Merge: prefer the higher updatedAt on conflict.
-    const byId = new Map();
-    [...local, ...remote].forEach(e => {
-      if(!e || !e.id) return;
-      const prev = byId.get(e.id);
-      if(!prev || (e.updatedAt||0) >= (prev.updatedAt||0)) byId.set(e.id, e);
+  const ref = _projData(pid).collection('trackerEntries');
+  const queries = [ref.where('ownerUid', '==', uid), ref.where('published', '==', true)];
+  const serverSeen = [false, false];
+  return new Promise(resolve => {
+    let settled = false;
+    const done = () => { if(!settled){ settled = true; _trWatchSettled = true; clearTimeout(timer); resolve(); } };
+    const timer = setTimeout(done, 8000);   // offline / slow link: boot proceeds on the local copy
+    queries.forEach((q, qi) => {
+      try{
+        const unsub = q.onSnapshot({ includeMetadataChanges: true }, snap => {
+          if(_trWatchPid !== pid) return;
+          const r = _trApplySnapshot(pid, uid, snap);
+          if(typeof glBootMark === 'function') glBootMark('tr-snap', { q: qi, changes: snap.docChanges().length, applied: r.applied, removed: r.removed, fromCache: r.fromCache, total: snap.size });
+          if(settled && (r.applied || r.removed)) _trLiveRender();
+          if(!r.fromCache) serverSeen[qi] = true;
+          if(serverSeen[0] && serverSeen[1] && !settled){ _trPushRepair(pid, uid, ref); done(); }
+        }, err => {
+          console.warn('trLoadFromFirestore:', err && err.message);
+          if(typeof showCloudBanner === 'function') showCloudBanner('⚠ Tracker cloud load failed: ' + (err && err.message));
+          done();
+        });
+        _trUnsubs.push(unsub);
+      }catch(e){ console.warn('tracker listener failed:', e && e.message); done(); }
     });
-    // A foreign entry that no longer comes back was unpublished or removed by
-    // its owner — revocation is real, so it leaves the local cache too.
-    const merged = fromCache ? Array.from(byId.values()) : Array.from(byId.values()).filter(e =>
-      !e.ownerUid || e.ownerUid === uid || remoteIds.has(e.id));
-    _trSaveRaw(pid, { entries: merged });
-    // Push own local-only/newer entries to Firestore (recovery for silent write
-    // failures — offline field edits don't survive a reload, so a day-after boot
-    // can carry many deltas). Never push someone else's record back.
-    // BATCHED + detached: the old per-entry fire-and-forget loop flooded the SDK
-    // write stream on app open (resource-exhausted 7/18) and jammed every other
-    // write behind max backoff. Chunk size is kept small because each doc carries
-    // its full traced geometry as a JSON string — the constraint is request
-    // payload, not the 500-op batch cap.
-    // (Repair decisions also need server truth — a partial offline cache would
-    // queue re-pushes of entries the cache simply hadn't seen, and those
-    // deferred writes could overwrite newer cross-device versions on reconnect.)
-    const toPush = fromCache ? [] : merged.filter(e => {
-      if(e.ownerUid && e.ownerUid !== uid) return false;
-      if(_trPushDenied.has(e.id)) return false;   // rules denied it this session — don't re-spam every refocus
-      const rem = remote.find(r => r.id === e.id);
-      return !rem || (e.updatedAt||0) > (rem.updatedAt||0);
-    });
-    if(toPush.length){
-      (async () => {
-        for(let i = 0; i < toPush.length; i += 20){
-          const chunk = toPush.slice(i, i + 20);
-          try{
-            const batch = db.batch();
-            chunk.forEach(e => batch.set(ref.doc(e.id), _trToFs(_trStamp(e))));
-            await batch.commit();
-          }catch(err){
-            // Batch commits are atomic — one denied doc fails its whole chunk.
-            // Retry per-doc (sequential, awaited) so the good ones still land,
-            // and remember denied ids so they never re-fire this session.
-            for(const e of chunk){
-              try{ await ref.doc(e.id).set(_trToFs(_trStamp(e))); }
-              catch(err2){
-                if(err2 && err2.code === 'permission-denied') _trPushDenied.add(e.id);
-                console.warn('trSync push:', e.id, err2.message);
-              }
-            }
-          }
-        }
-      })().catch(err => console.warn('trSync push loop:', err.message));
-    }
-  } catch(e){
-    console.warn('trLoadFromFirestore:', e.message);
-    if(typeof showCloudBanner === 'function') showCloudBanner('⚠ Tracker cloud load failed: ' + e.message);
-  }
+  });
 }
 
 // ── Publish / unpublish a set of entries (submit-day batch + Share-now) ──

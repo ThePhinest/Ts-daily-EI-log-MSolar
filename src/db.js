@@ -384,39 +384,52 @@ async function initFirebaseLoad() {
   }
 
   // Recover if localStorage was wiped OR if stored project ID is not in Firestore known projects
-  const _storedPid = localStorage.getItem('gl_active_project_id');
-  if (!_storedPid) {
-    try {
-      const apDoc = await _udb().collection('settings').doc('activeProject').get();
-      if (apDoc.exists && apDoc.data().projectId) {
-        localStorage.setItem('gl_active_project_id', apDoc.data().projectId);
-      }
-    } catch(e) {}
-  } else {
-    try {
-      const knownDoc = await _udb().collection('settings').doc('knownProjects').get();
-      if (knownDoc.exists) {
-        const validIds = (knownDoc.data().projects || []).map(p => p.projectId).filter(Boolean);
-        if (validIds.length > 0 && !validIds.includes(_storedPid)) {
-          const apDoc = await _udb().collection('settings').doc('activeProject').get();
-          if (apDoc.exists && apDoc.data().projectId && validIds.includes(apDoc.data().projectId)) {
-            const recoveredId = apDoc.data().projectId;
-            localStorage.setItem('gl_active_project_id', recoveredId);
-            localStorage.setItem('gl_known_projects', JSON.stringify(knownDoc.data().projects || []));
-            console.log('GroundLog: stale project ID recovered', _storedPid, '→', recoveredId);
+  async function _iflRecoverPid() {
+    const _storedPid = localStorage.getItem('gl_active_project_id');
+    if (!_storedPid) {
+      try {
+        const apDoc = await _udb().collection('settings').doc('activeProject').get();
+        if (apDoc.exists && apDoc.data().projectId) {
+          localStorage.setItem('gl_active_project_id', apDoc.data().projectId);
+        }
+      } catch(e) {}
+    } else {
+      try {
+        const knownDoc = await _udb().collection('settings').doc('knownProjects').get();
+        if (knownDoc.exists) {
+          const validIds = (knownDoc.data().projects || []).map(p => p.projectId).filter(Boolean);
+          if (validIds.length > 0 && !validIds.includes(_storedPid)) {
+            const apDoc = await _udb().collection('settings').doc('activeProject').get();
+            if (apDoc.exists && apDoc.data().projectId && validIds.includes(apDoc.data().projectId)) {
+              const recoveredId = apDoc.data().projectId;
+              localStorage.setItem('gl_active_project_id', recoveredId);
+              localStorage.setItem('gl_known_projects', JSON.stringify(knownDoc.data().projects || []));
+              console.log('GroundLog: stale project ID recovered', _storedPid, '→', recoveredId);
+            }
           }
         }
-      }
-    } catch(e) {}
+      } catch(e) {}
+    }
   }
 
-  // One-time migrations
+  // Lever 2 (8/25 boot perf): the pre-fb-ready reads used to run serially
+  // (known-projects recovery → phase-C per-project check → session doc ≈ 0.8 s
+  // warm / 3.3 s cold). The session doc read is fired first against the stored
+  // pid and only re-read if the (rare) stale-pid recovery changed it; the
+  // phase-C check runs beside it. Order of the recovery → migrations is kept
+  // (migration must see a recovered pid, or a wiped device re-migrates).
+  const _pidAtStart = localStorage.getItem('gl_active_project_id');
+  const _sessionP0 = _pidAtStart ? _udb().collection('sessions').doc(_pidAtStart).get() : null;
+  if (_sessionP0) _sessionP0.catch(function(){});
+  await _iflRecoverPid();
   await _glMigrateToProjects();
   await _glMigratePhaseC();
   if(typeof glBootMark==='function') glBootMark('migrations');
 
   try {
-    const doc = await _udb().collection('sessions').doc(_activeProjectId()).get();
+    const doc = (_sessionP0 && _activeProjectId() === _pidAtStart)
+      ? await _sessionP0
+      : await _udb().collection('sessions').doc(_activeProjectId()).get();
     if(typeof glBootMark==='function') glBootMark('session-doc',{exists:doc.exists});
 
     if (!doc.exists) {

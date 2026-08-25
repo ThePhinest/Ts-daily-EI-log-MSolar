@@ -10,13 +10,29 @@ let _obTotalSlides = 12; // fallback — recomputed from the DOM at carousel ini
 // ONBOARDING
 // ═══════════════════════════════════════════
 
+// Lever 1 (8/25 boot perf): the onboarding-complete verdict is cached per uid
+// (tiny localStorage pref, cleared by the uid fence / sign-out purge). A
+// completed account never waits on this network read again (~1–1.5 s on
+// every boot between `auth` and `ifl`); the doc is still re-read in the
+// background so a reset (complete:false) on another device drops the flag.
+function _obKey() { return 'gl_ob_ok::' + (window._currentUser ? window._currentUser.uid : ''); }
 async function obCheck() {
   let unverifiable = false;
   try {
     const udb = _udb();
+    if (udb && window._currentUser && localStorage.getItem(_obKey()) === '1') {
+      if (typeof glBootMark === 'function') glBootMark('ob-cached');
+      initFirebaseLoad();
+      if (typeof glMaybeFirstRunSetup === 'function') glMaybeFirstRunSetup();
+      udb.collection('profile').doc('onboarding').get().then(function(doc) {
+        if (doc.exists && !doc.data().complete) { try { localStorage.removeItem(_obKey()); } catch (e) {} }
+      }).catch(function(){});
+      return;
+    }
     if (udb) {
       const doc = await udb.collection('profile').doc('onboarding').get();
       if (doc.exists && doc.data().complete) {
+        try { localStorage.setItem(_obKey(), '1'); } catch (e) {}
         initFirebaseLoad();
         // Account finished onboarding but may never have made a project
         // (pre-first-run-sheet signups) — the sheet self-skips otherwise.
@@ -119,6 +135,7 @@ async function obComplete() {
     var udb = _udb();
     if (udb) {
       await udb.collection('profile').doc('onboarding').set({ complete: true, completedAt: Date.now() });
+      try { localStorage.setItem(_obKey(), '1'); } catch (e) {}
     }
   } catch(e) {}
   initFirebaseLoad();
