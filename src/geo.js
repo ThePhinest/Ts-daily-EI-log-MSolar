@@ -16,88 +16,106 @@
 // this — they keep their gross per-state sums.
 //
 // Turf is the industry-standard JS geospatial library (Mapbox's own, GeoJSON-native).
-import area from '@turf/area';
-import union from '@turf/union';
-import difference from '@turf/difference';
 import length from '@turf/length';
-import { featureCollection } from '@turf/helpers';
-
-// m² → area unit (matches the cap-unit selector: ac/sqft/sqyd/sqm/ha).
-const _M2_PER = { sqm:1, m2:1, 'm²':1, sqft:0.09290304, sqyd:0.83612736, ac:4046.8564224, ha:10000 };
-function glAreaConvertM2(m2, toUnit){
-  const d = _M2_PER[toUnit] || _M2_PER[(toUnit||'').toLowerCase()] || _M2_PER.ac;
-  return (m2 || 0) / d;
-}
-
-function _parseGeom(e){
-  if(!e || !e.geometry) return null;
-  let g = e.geometry;
-  if(typeof g === 'string'){ try{ g = JSON.parse(g); }catch{ return null; } }
-  if(!g || !g.type) return null;
-  if(g.type !== 'Polygon' && g.type !== 'MultiPolygon') return null; // area only
-  return { type:'Feature', properties:{}, geometry:g };
-}
-
-// Union a list of polygon Features → one Feature (or null). Falls back to pairwise on error.
-function _unionAll(feats){
-  feats = (feats || []).filter(Boolean);
-  if(!feats.length) return null;
-  if(feats.length === 1) return feats[0];
-  try{ return union(featureCollection(feats)); }
-  catch{
-    let acc = feats[0];
-    for(let i = 1; i < feats.length; i++){
-      try{ acc = union(featureCollection([acc, feats[i]])) || acc; }catch{}
-    }
-    return acc;
-  }
-}
-function _safeArea(f){ try{ return f ? area(f) : 0; }catch{ return 0; } }
-function _safeDiff(a, b){
-  if(!a) return null;
-  if(!b) return a;
-  try{ return difference(featureCollection([a, b])); }catch{ return a; }
-}
-
-// Chronological sort key: report date (the day the ground condition was observed),
-// then createdAt for same-day ordering. Entries without a date sort first.
-function _chronoSort(a, b){
-  return String(a.e.date||'').localeCompare(String(b.e.date||''))
-    || (a.e.createdAt||0) - (b.e.createdAt||0);
-}
+import { glAreaConvertM2, _safeArea, computeStateNet, computeEntryNet, computeEntryGeoms } from './geoCore.js';
 
 // ── Perf (2026-07-23) — suffix unions + version-keyed memo ──
 // Each net fn needed "union of everything drawn AFTER entry i" — computed as a
 // fresh union of a growing slice per entry (O(n²) union calls), recomputed from
-// scratch on EVERY render and EVERY drawing tap. As field entries accumulated,
-// popups visibly lagged (photo pins, which do no geometry math, stayed instant).
-// Fix 1: one reverse pass accumulates the later-union — n union calls total,
-// identical semantics. Fix 2: results memoize keyed on the entry-id set + a
-// version that any tracker-entry mutation bumps (trackerEntries.js), so repeat
-// taps/renders are pure cache hits.
+// scratch on EVERY render and EVERY drawing tap. Fix 1: one reverse pass
+// accumulates the later-union — n union calls total. Fix 2: results memoize keyed
+// on the entry-id SET (sorted — callers pass different orders) + a version that
+// any tracker-entry mutation bumps (trackerEntries.js).
+// ── Perf (2026-08-25) — Web Worker warm-up ──
+// The pass itself still costs ~5 s for 252 drawings on a phone, and it ran on
+// the main thread on the first map / Compliance visit (the first-touch freeze).
+// glGeoWarm() posts every running-mode category's entry set to geoWorker.js
+// right after the tracker loads (and, debounced, after any tracker mutation);
+// results land in this memo under the same keys the sync functions build, so
+// the first visit is a cache hit. The sync functions are unchanged (inline
+// compute on a miss) — exports and popups never see a partial value.
 let _glGeoVer = 0;
 const _glGeoCache = new Map();
-function glGeoInvalidate(){ _glGeoVer++; _glGeoCache.clear(); }
+let _glWarmTimer = null;
+function glGeoInvalidate(){
+  _glGeoVer++; _glGeoCache.clear();
+  // Re-warm after the burst of edits settles so the next tap is a hit.
+  if(typeof window !== 'undefined'){ clearTimeout(_glWarmTimer); _glWarmTimer = setTimeout(() => { try{ glGeoWarm(); }catch(_){} }, 800); }
+}
+function _glKey(fn, entries, extra){
+  const ids = []; for(const e of entries) ids.push(e.id);
+  ids.sort();
+  return fn + ':' + _glGeoVer + ':' + (extra || '') + ':' + ids.join('|');
+}
 function _glMemo(fn, entries, extra, compute){
-  let key = fn + ':' + _glGeoVer + ':' + (extra || '') + ':';
-  for(const e of entries) key += e.id + '|';
+  const key = _glKey(fn, entries, extra);
   if(_glGeoCache.has(key)) return _glGeoCache.get(key);
   const t0 = performance.now();
   const v = compute();
   if(typeof glBootMark === 'function') glBootMark('geo:' + fn, { entries: entries.length, ms: Math.round(performance.now() - t0) });   // boot-timeline attribution; no-op after the log finalizes
-  if(_glGeoCache.size > 40) _glGeoCache.clear();   // tiny bound; recompute is cheap post-fix-1
+  if(_glGeoCache.size > 60) _glGeoCache.clear();   // small bound; recompute is cheap post-fix-1
   _glGeoCache.set(key, v);
   return v;
 }
-// laters[i] = union of parsed[i+1..end] (null when nothing later).
-function _suffixLaters(parsed){
-  const laters = new Array(parsed.length).fill(null);
-  let acc = null;
-  for(let i = parsed.length - 1; i >= 0; i--){
-    laters[i] = acc;
-    acc = acc ? (_unionAll([acc, parsed[i].f]) || acc) : parsed[i].f;
-  }
-  return laters;
+
+// ── Worker plumbing ──
+let _glWorker = null, _glWorkerDead = false, _glJobSeq = 0;
+const _glJobs = new Map();   // id → {ver, keys:{S,E,G}}
+function _glGetWorker(){
+  if(_glWorker || _glWorkerDead) return _glWorker;
+  try{
+    _glWorker = new Worker(new URL('./geoWorker.js', import.meta.url), { type: 'module' });
+    _glWorker.onmessage = (ev) => {
+      const { id, v, err, ms, n } = ev.data || {};
+      const job = _glJobs.get(id); _glJobs.delete(id);
+      if(!job) return;
+      if(typeof glBootMark === 'function') glBootMark('geo:warm', { entries: n, ms, err: err || undefined });
+      if(err || !v || job.ver !== _glGeoVer) return;   // stale (a mutation bumped the version) → ignore
+      if(job.keys.S && v.S !== undefined) _glGeoCache.set(job.keys.S, v.S);
+      _glGeoCache.set(job.keys.E, v.E);
+      _glGeoCache.set(job.keys.G, v.G);
+      if(_glJobs.size === 0 && typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('gl-geo-ready'));
+    };
+    _glWorker.onerror = (e) => { console.warn('geo worker error:', e && e.message); _glWorkerDead = true; try{ _glWorker.terminate(); }catch(_){} _glWorker = null; _glJobs.clear(); };
+  }catch(e){ console.warn('geo worker unavailable:', e && e.message); _glWorkerDead = true; _glWorker = null; }
+  return _glWorker;
+}
+// Slim copies: the worker needs only what the engine reads.
+function _glSlim(entries){
+  return entries.map(e => ({ id: e.id, date: e.date, createdAt: e.createdAt, state: e.state, geometry: e.geometry }));
+}
+// Warm every running-mode category of the active project. Entry sets mirror the
+// map render's clip list (open temporary flags out, planned out) — the same set
+// the Compliance card uses once planned/temporary are removed — so keys match.
+function glGeoWarm(projectId){
+  if(typeof window === 'undefined') return;
+  const pid = projectId || ((typeof _activeProjectId === 'function') ? _activeProjectId() : 'default');
+  if(typeof tcGetCategories !== 'function' || typeof trGetEntriesForProject !== 'function' || typeof tcProgressMode !== 'function') return;
+  const w = _glGetWorker(); if(!w) return;
+  const all = trGetEntriesForProject(pid);
+  tcGetCategories(pid).forEach(cat => {
+    const mode = tcProgressMode(cat, pid);
+    if(mode !== 'running-balance' && mode !== 'running-total') return;
+    const states = (typeof tcGetStates === 'function') ? tcGetStates(cat, pid).filter(s => !s.isPlanned) : [];
+    const list = all.filter(e => {
+      if((e.categoryId || e.category) !== cat.id || !e.geometry) return false;
+      if(e.temporary && e.tempStatus !== 'resolved') return false;
+      const st = (typeof tcEntryState === 'function') ? tcEntryState(e, cat, pid) : null;
+      return !(st ? !!st.isPlanned : (e.entryType === 'planned'));
+    });
+    if(!list.length) return;
+    const keys = {
+      S: states.length ? _glKey('S', list, states.map(s => s.id).join(',')) : null,
+      E: _glKey('E', list, ''),
+      G: _glKey('G', list, ''),
+    };
+    if(_glGeoCache.has(keys.G) && _glGeoCache.has(keys.E) && (!keys.S || _glGeoCache.has(keys.S))) return;
+    for(const j of _glJobs.values()){ if(j.keys.G === keys.G) return; }   // already in flight
+    const id = ++_glJobSeq;
+    _glJobs.set(id, { ver: _glGeoVer, keys });
+    try{ w.postMessage({ id, entries: _glSlim(list), states: states.map(s => ({ id: s.id })) }); }
+    catch(e){ _glJobs.delete(id); console.warn('geo warm post failed:', e && e.message); }
+  });
 }
 
 // entries        : installed entries for ONE category (caller pre-filters planned/temporary/deleted)
@@ -106,81 +124,20 @@ function _suffixLaters(parsed){
 // Returns { netM2:{stateId:m²}, totalM2 } or null if no usable polygon geometry exists.
 function glStateNetAreasM2(entries, orderedStates){
   if(!Array.isArray(entries) || !Array.isArray(orderedStates) || !orderedStates.length) return null;
-  return _glMemo('S', entries, orderedStates.map(s => s.id).join(','), () => {
-    const known = {}; orderedStates.forEach(s => { known[s.id] = true; });
-    const parsed = entries.map(e => ({ e, f: _parseGeom(e) })).filter(x => x.f);
-    if(!parsed.length) return null;
-    parsed.sort(_chronoSort);
-
-    const laters = _suffixLaters(parsed);
-    const stateFeats = {}; orderedStates.forEach(s => { stateFeats[s.id] = []; });
-    parsed.forEach((x, i) => {
-      // Legacy unstated entries belong to the first state; an entry with a set-but-
-      // UNKNOWN state id is skipped (mis-attributing it to Active would corrupt the
-      // open total silently).
-      let sid = x.e.state;
-      if(!sid) sid = orderedStates[0].id;
-      else if(!known[sid]){ console.warn('glStateNetAreasM2: unknown state id on entry', x.e.id, sid); return; }
-      const later = laters[i];
-      let g = x.f;
-      if(later) g = _safeDiff(g, later);
-      if(g) stateFeats[sid].push(g);
-    });
-    const netM2 = {};
-    orderedStates.forEach(s => { netM2[s.id] = _safeArea(_unionAll(stateFeats[s.id])); });
-    const totalM2 = _safeArea(_unionAll(parsed.map(x => x.f)));
-    return { netM2, totalM2 };
-  });
+  return _glMemo('S', entries, orderedStates.map(s => s.id).join(','), () => computeStateNet(entries, orderedStates));
 }
 
 // Per-ENTRY net area (m²): each drawing's geometry minus the union of everything
 // drawn AFTER it (chronological — later drawing wins, matching glStateNetAreasM2).
-// So a list of drawings shows each one's CURRENT contribution after later work is
-// drawn on top — not the misleading gross drawn size. Returns { entryId: m² } or null.
+// Returns { entryId: m² } or null.
 function glEntryNetAreasM2(entries, orderedStates){
   if(!Array.isArray(entries) || !Array.isArray(orderedStates) || !orderedStates.length) return null;
-  return _glMemo('E', entries, '', () => {
-    const parsed = entries.map(e => ({ e, f: _parseGeom(e) })).filter(x => x.f);
-    if(!parsed.length) return null;
-    parsed.sort(_chronoSort);
-    const laters = _suffixLaters(parsed);
-    const out = {};
-    parsed.forEach((x, i) => {
-      const later = laters[i];
-      let g = x.f;
-      if(later) g = _safeDiff(g, later);
-      out[x.e.id] = _safeArea(g);
-    });
-    return out;
-  });
+  return _glMemo('E', entries, '', () => computeEntryNet(entries));
 }
 
 // Per-ENTRY net GEOMETRY: each drawing minus the union of everything drawn AFTER
-// it (same chronological clip as the area fns above, but returns the clipped shape).
-// Map rendering uses this for running-mode categories so stacked translucent fills
-// never alpha-blend (yellow-over-red read as orange and collided with a real orange
-// state — Tim 7/13). Returns { entryId: geometry|null } — null = fully covered by
-// later drawings (outline-only on the map).
-// Sliver cleanup for RENDERED clips: two drawings traced along the same edge
-// never match vertex-for-vertex, so difference() leaves needle fragments that
-// read as stray triangles on the map. Fragments under ~4 m² are drawing noise,
-// not ground state — drop them from the DISPLAY geometry only (the acreage
-// fns above keep exact math; the ~m² delta is far below drawing precision).
-const _SLIVER_M2 = 4;
-function _dropSlivers(geometry){
-  if(!geometry) return null;
-  const polyArea = (coords) => _safeArea({ type:'Feature', properties:{}, geometry:{ type:'Polygon', coordinates: coords } });
-  if(geometry.type === 'Polygon'){
-    return polyArea(geometry.coordinates) < _SLIVER_M2 ? null : geometry;
-  }
-  if(geometry.type === 'MultiPolygon'){
-    const kept = geometry.coordinates.filter(coords => polyArea(coords) >= _SLIVER_M2);
-    if(!kept.length) return null;
-    return kept.length === 1 ? { type:'Polygon', coordinates: kept[0] } : { type:'MultiPolygon', coordinates: kept };
-  }
-  return geometry;
-}
-
+// it (same chronological clip, returns the clipped shape; slivers < 4 m² dropped
+// for DISPLAY only — see geoCore._dropSlivers). null = fully covered.
 // Area in m² of one polygon ring-set (for picking the largest piece of a split remainder).
 function glPolyAreaM2(coords){
   return _safeArea({ type:'Feature', properties:{}, geometry:{ type:'Polygon', coordinates: coords } });
@@ -239,20 +196,7 @@ function glLineGapsFt(planGeom, installedGeoms, tolM, stepM){
 }
 
 function glEntryNetGeoms(entries){
-  return _glMemo('G', entries || [], '', () => {
-    const parsed = (entries || []).map(e => ({ e, f: _parseGeom(e) })).filter(x => x.f);
-    if(!parsed.length) return null;
-    parsed.sort(_chronoSort);
-    const laters = _suffixLaters(parsed);
-    const out = {};
-    parsed.forEach((x, i) => {
-      const later = laters[i];
-      let g = x.f;
-      if(later) g = _safeDiff(g, later);
-      out[x.e.id] = (g && g.geometry) ? _dropSlivers(g.geometry) : null;
-    });
-    return out;
-  });
+  return _glMemo('G', entries || [], '', () => computeEntryGeoms(entries || []));
 }
 
 // Line length in FEET for a LineString/MultiLineString geometry (object or JSON
@@ -276,6 +220,7 @@ if(typeof window !== 'undefined'){
   window.glLineGapsFt      = glLineGapsFt;
   window.glPolyAreaM2      = glPolyAreaM2;
   window.glGeoInvalidate   = glGeoInvalidate;
+  window.glGeoWarm         = glGeoWarm;
 }
 
-export { glStateNetAreasM2, glEntryNetAreasM2, glEntryNetGeoms, glAreaConvertM2, glLineLengthFt, glLineGapsFt, glPolyAreaM2, glGeoInvalidate };
+export { glGeoWarm, glStateNetAreasM2, glEntryNetAreasM2, glEntryNetGeoms, glAreaConvertM2, glLineLengthFt, glLineGapsFt, glPolyAreaM2, glGeoInvalidate };

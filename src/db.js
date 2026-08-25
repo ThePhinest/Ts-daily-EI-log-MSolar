@@ -328,6 +328,7 @@ function _trackerStartupLoad(){
       // Backfill permanent PL numbers on any flags created before 7/30 —
       // no-ops once every flag carries one.
       if(typeof trEnsurePlNums==='function'){ try{ trEnsurePlNums(); }catch(e){} }
+      if(typeof window.glGeoWarm==='function'){ try{ window.glGeoWarm(); }catch(e){} }   // 8/25: net-area engine → Web Worker, off the first-touch path
       if(typeof glBootMark==='function') glBootMark('tracker',{entries:(typeof trGetEntriesForProject==='function'&&typeof _activeProjectId==='function')?trGetEntriesForProject(_activeProjectId()).length:undefined});
       // Non-map UI updates immediately.
       if(typeof window._renderTrackerSheet==='function') window._renderTrackerSheet();
@@ -351,6 +352,27 @@ function _trackerStartupLoad(){
 }
 
 // ── Firebase init load — runs async after page restores from localStorage ──
+// Background reconcile for the cache-served session doc: if the server copy is
+// newer than both the cached copy we booted from and the local autosave, adopt
+// it (same rule as the foreground restore). Runs once per boot, non-blocking.
+function _iflReconcileSession(sref, cachedDoc) {
+  sref.get().then(function(doc){
+    if (!doc.exists || (doc.metadata && doc.metadata.fromCache)) return;
+    const cloudState = doc.data();
+    const cloudTs = cloudState._ts || 0;
+    const cachedTs = (cachedDoc.exists && cachedDoc.data()._ts) || 0;
+    let localTs = 0;
+    try { localTs = JSON.parse(localStorage.getItem('msf_autosave') || '{}')._ts || 0; } catch {}
+    if (cloudTs <= cachedTs || cloudTs <= localTs) return;
+    if(typeof glBootMark==='function') glBootMark('session-reconcile',{cloudTs:cloudTs});
+    document.getElementById('crewContainer').innerHTML = '';
+    window.crewIds = []; window.crewSeq = 0;
+    restoreFormState(cloudState);
+    try { localStorage.setItem('msf_autosave', JSON.stringify(cloudState)); } catch {}
+    showCloudBanner('☁ Session restored from cloud — picked up where you left off.');
+  }).catch(function(){});
+}
+
 async function initFirebaseLoad() {
   if (!db) { setSyncStatus('offline');  return; }
   if(typeof glBootMark==='function') glBootMark('ifl');
@@ -395,7 +417,15 @@ async function initFirebaseLoad() {
       } catch(e) {}
     } else {
       try {
-        const knownDoc = await _udb().collection('settings').doc('knownProjects').get();
+        // Cache-first: the known-projects doc only changes when a project is
+        // created/joined (paths that write through this device), so the local
+        // copy is authoritative enough to validate the stored pid. Going to the
+        // server here paid the first Firestore connection warm-up (~2.3 s on
+        // the 8/25 phone timeline) before anything could render.
+        const _kref = _udb().collection('settings').doc('knownProjects');
+        let knownDoc = null;
+        try { knownDoc = await _kref.get({ source: 'cache' }); } catch (e) {}
+        if (!knownDoc || !knownDoc.exists) knownDoc = await _kref.get();
         if (knownDoc.exists) {
           const validIds = (knownDoc.data().projects || []).map(p => p.projectId).filter(Boolean);
           if (validIds.length > 0 && !validIds.includes(_storedPid)) {
@@ -418,8 +448,12 @@ async function initFirebaseLoad() {
   // pid and only re-read if the (rare) stale-pid recovery changed it; the
   // phase-C check runs beside it. Order of the recovery → migrations is kept
   // (migration must see a recovered pid, or a wiped device re-migrates).
+  // Session doc: cache-first too. The cached copy is what this device last
+  // saw; a newer cross-device session is reconciled in the background below
+  // (_iflReconcileSession) with the same _ts rule as the foreground path.
   const _pidAtStart = localStorage.getItem('gl_active_project_id');
-  const _sessionP0 = _pidAtStart ? _udb().collection('sessions').doc(_pidAtStart).get() : null;
+  const _sref = _pidAtStart ? _udb().collection('sessions').doc(_pidAtStart) : null;
+  const _sessionP0 = _sref ? _sref.get({ source: 'cache' }).then(function(d){ return d.exists ? d : _sref.get(); }, function(){ return _sref.get(); }) : null;
   if (_sessionP0) _sessionP0.catch(function(){});
   await _iflRecoverPid();
   await _glMigrateToProjects();
@@ -430,7 +464,8 @@ async function initFirebaseLoad() {
     const doc = (_sessionP0 && _activeProjectId() === _pidAtStart)
       ? await _sessionP0
       : await _udb().collection('sessions').doc(_activeProjectId()).get();
-    if(typeof glBootMark==='function') glBootMark('session-doc',{exists:doc.exists});
+    if(typeof glBootMark==='function') glBootMark('session-doc',{exists:doc.exists, fromCache: !!(doc.metadata && doc.metadata.fromCache)});
+    if (doc.metadata && doc.metadata.fromCache && _sref) _iflReconcileSession(_sref, doc);
 
     if (!doc.exists) {
       // Project session missing — try sessions/active as fallback (handles fresh migration)
