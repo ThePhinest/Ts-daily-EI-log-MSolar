@@ -1464,38 +1464,46 @@ body.is-native select { font-size: 16px !important; }
       </div>
     </div>
     <div class="ob-section-label">Before you begin</div>
-    <div class="ob-heading">Terms of Use &amp; Privacy</div>
+    <div class="ob-heading">Terms of Service &amp; Privacy</div>
     <div class="ob-tos-scroll">
-      <p style="color:var(--muted2);font-style:italic;margin-bottom:14px">Early Access — By Invitation Only</p>
       <h3>What GroundLog is</h3>
-      <p>GroundLog is a field compliance logging tool for environmental inspection work. It is currently available by invitation only as part of early access. It is not a commercial product and is provided as-is.</p>
+      <p>GroundLog is a field compliance platform for environmental inspection and construction-compliance work: daily logs, photos, field maps, progress tracking, and inspection reports. It is operated by GroundLog (Tim Shortz), Pennsylvania, USA. The full Terms of Service and Privacy Policy are at <a href="https://www.groundlog.io/terms" target="_blank" rel="noopener" style="color:var(--amber)">groundlog.io/terms</a> and <a href="https://www.groundlog.io/privacy" target="_blank" rel="noopener" style="color:var(--amber)">groundlog.io/privacy</a>, and are always available from Settings → Account.</p>
+      <h3>Your account</h3>
+      <p>GroundLog is intended for professional use by adults. Keep your sign-in credentials secure; you are responsible for activity under your account. You can delete your account and its data at any time from Settings → Account → Data.</p>
       <h3>What data we collect</h3>
       <p>When you use GroundLog, we collect and store:</p>
       <ul>
-        <li>Your email address and account credentials (via Google Firebase Authentication)</li>
-        <li>Field log entries you create (daily logs, compliance notes, timesheet records)</li>
-        <li>Photos you upload, including GPS coordinates embedded in photo metadata</li>
-        <li>Field map markers and KML layers you import</li>
-        <li>Project configuration you enter (project name, organization, contractor)</li>
+        <li>Your email address, display name, and sign-in identity (via Google Firebase Authentication, Google, or Apple)</li>
+        <li>Field records you create (daily logs, compliance notes, timesheet entries, inspection forms)</li>
+        <li>Photos you capture or upload, including GPS coordinates and compass bearing in photo metadata</li>
+        <li>Location while you use the field map, at your direction only</li>
+        <li>Map data (drawings, markers, KML layers, plan overlays) and documents you import</li>
+        <li>Project configuration you enter (project name, organization, contractors)</li>
+        <li>Basic diagnostic information about app errors, tied to your account ID only</li>
       </ul>
-      <p>All data is stored on Google Firebase infrastructure under your individual account. No data is shared between users.</p>
+      <p>Data is stored on Google Firebase infrastructure and is transmitted over HTTPS.</p>
+      <h3>Your data and shared projects</h3>
+      <p>You own the content you enter. Data lives under your own account unless you share it: work you <em>publish</em> or <em>submit</em> to a shared project becomes visible to that project's members according to their role. Personal notes never leave your account. Removing a member ends their access going forward.</p>
       <h3>How we use your data</h3>
-      <p>Your data is used only to operate the app for you. We do not share your data with third parties, use it for advertising, sell or license it in any form, or train AI models on it.</p>
-      <p>AI report generation uses the Anthropic Claude API. Field log content is sent to the API to generate your report and is not retained by Anthropic after the response is returned, per Anthropic's API data policy.</p>
-      <h3>Your data, your responsibility</h3>
-      <p>GroundLog is a logging and documentation tool. You are responsible for the accuracy and completeness of what you enter. GroundLog-generated reports are drafts — always review before submitting to any agency or client.</p>
-      <h3>No warranty</h3>
-      <p>GroundLog is provided as-is during this early-access period. There are no guarantees of uptime, data retention, or fitness for any particular purpose. Do not use GroundLog as your only record of compliance-critical information.</p>
+      <p>Your data is used only to operate GroundLog for you. We do not sell it, license it, use it for advertising, or train AI models on it.</p>
+      <h3>AI features</h3>
+      <p>AI report polishing and generation are optional. When you use them, the relevant field-log text is sent to the Anthropic Claude API to produce your draft, and is not retained or used for training by Anthropic under its API data policy. You can use your own API key or GroundLog's, as configured in Settings.</p>
+      <h3>Your responsibility</h3>
+      <p>GroundLog is a documentation tool. You are responsible for the accuracy and completeness of what you enter and for reviewing every generated report before it is submitted to any agency, owner, or client. GroundLog does not provide regulatory or legal advice and does not replace the record-keeping your permits require.</p>
+      <h3>Acceptable use</h3>
+      <p>Use GroundLog lawfully. Do not attempt to access other users' data, interfere with the service, or upload content you do not have the right to use.</p>
+      <h3>Availability and warranty</h3>
+      <p>We work to keep GroundLog available and keep daily backups, but the service is provided "as is" and "as available" without warranties of any kind. To the fullest extent permitted by law, GroundLog's liability is limited to the amount you paid for the service in the twelve months before a claim.</p>
       <h3>Changes and termination</h3>
-      <p>This is early access. Features will change. Access may be revoked at any time. You will be notified of any significant changes to these terms.</p>
+      <p>We may suspend accounts that violate these terms. We will notify you in the app of material changes to these terms; continued use after a change means you accept it.</p>
       <h3>Contact</h3>
       <p>Questions or concerns: <a href="mailto:support@groundlog.io" style="color:var(--amber)">support@groundlog.io</a></p>
       <h3>Governing law</h3>
-      <p>These terms are governed by the laws of the State of Pennsylvania.</p>
+      <p>These terms are governed by the laws of the Commonwealth of Pennsylvania, USA.</p>
     </div>
     <label class="ob-tos-check">
       <input type="checkbox" id="ob-tos-cb" onchange="document.getElementById('ob-agree-btn').disabled=!this.checked">
-      I have read and agree to the Terms of Use and Privacy Notice.
+      I have read and agree to the Terms of Service and Privacy Policy.
     </label>
     <button class="ob-agree-btn" id="ob-agree-btn" disabled onclick="obStartTour()">I Agree — Continue →</button>
   </div>
@@ -3225,7 +3233,6 @@ Anticipated rain — AM weather monitoring expected"></textarea>
       <button class="btn btn-amber" style="font-size:11px;padding:7px 14px" onclick="saveApiKey()">Save &amp; Encrypt</button>
       <span id="cfg-api-status" style="font-family:var(--mono);font-size:11px;color:var(--green);margin-left:12px;opacity:0;transition:opacity .4s"></span>
       <div style="margin-top:10px">
-        <button id="cfg-hosted-key-btn" class="btn btn-outline" style="font-size:11px;padding:7px 14px;display:none" onclick="rptSaveHostedKey()">Share key with invited users</button>
         <div class="config-hint" style="margin-top:4px">Makes Formalize Log &amp; Generate Report available to users without their own API key.</div>
       </div>
       <div style="margin-top:14px;border-top:1px solid var(--border);padding-top:12px">
@@ -3904,17 +3911,30 @@ Anticipated rain — AM weather monitoring expected"></textarea>
   </div>
 
   <!-- Diagnostics (8/24, #54/#55) — boot timeline + camera/SW logs, all local,
-       nothing leaves the device unless you tap Copy and paste it somewhere. -->
+       nothing leaves the device unless you tap Copy/Share. -->
   <div class="config-section" id="acct-diag">
     <div class="config-head"><span class="config-title">Diagnostics</span><span class="head-fade"></span><span class="config-sub">Boot timeline &amp; device logs</span></div>
     <div class="config-body">
-      <p class="config-hint">How long this app took to become usable on this device (last open), main-thread stalls, and the camera/compass log. Stored on this device only. Copy and paste it to Claude when something feels slow.</p>
+      <p class="config-hint">How long this app took to become usable on this device (last open), main-thread stalls, and the camera/compass log. Stored on this device only. Share it with GroundLog support if something feels slow.</p>
       <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">
         <button class="btn btn-outline" id="gl-diag-copy" style="font-size:11px;padding:7px 14px" onclick="glDiagCopy()">📋 Copy all</button>
         <button class="btn btn-outline" id="gl-diag-share" style="font-size:11px;padding:7px 14px" onclick="glDiagShare()">📤 Share .txt</button>
         <button class="btn btn-outline" style="font-size:11px;padding:7px 14px;color:var(--muted)" onclick="glDiagRender()">↻ Refresh</button>
       </div>
       <pre id="gl-diag-out" style="font-family:var(--mono);font-size:10.5px;line-height:1.45;color:var(--text);background:var(--s1);border:1px solid var(--border);border-radius:6px;padding:10px;white-space:pre-wrap;word-break:break-word;max-height:360px;overflow:auto;margin:0"></pre>
+    </div>
+  </div>
+
+  <!-- Legal (8/26, App Store 5.1.1(i): policy + terms reachable in-app) -->
+  <div class="config-section" id="acct-legal">
+    <div class="config-head"><span class="config-title">Legal</span><span class="head-fade"></span><span class="config-sub">Terms &amp; privacy</span></div>
+    <div class="config-body">
+      <p class="config-hint">The terms you accepted at sign-up and how your data is handled.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <a class="btn btn-outline" style="font-size:11px;padding:7px 14px;text-decoration:none" href="https://www.groundlog.io/terms" target="_blank" rel="noopener">Terms of Service ↗</a>
+        <a class="btn btn-outline" style="font-size:11px;padding:7px 14px;text-decoration:none" href="https://www.groundlog.io/privacy" target="_blank" rel="noopener">Privacy Policy ↗</a>
+        <a class="btn btn-outline" style="font-size:11px;padding:7px 14px;text-decoration:none" href="https://www.groundlog.io/support" target="_blank" rel="noopener">Support ↗</a>
+      </div>
     </div>
   </div>
 

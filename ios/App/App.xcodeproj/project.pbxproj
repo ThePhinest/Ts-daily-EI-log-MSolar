@@ -19,6 +19,7 @@
 		A5D10C0DE000000000000001 /* gl_taps.wav in Resources */ = {isa = PBXBuildFile; fileRef = A5D10C0DE000000000000011 /* gl_taps.wav */; };
 		A5D10C0DE000000000000002 /* gl_digest.wav in Resources */ = {isa = PBXBuildFile; fileRef = A5D10C0DE000000000000012 /* gl_digest.wav */; };
 		A5D10C0DE000000000000003 /* gl_silent.wav in Resources */ = {isa = PBXBuildFile; fileRef = A5D10C0DE000000000000013 /* gl_silent.wav */; };
+		AABC00010000000000000003 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = AABC00010000000000000002 /* PrivacyInfo.xcprivacy */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -37,6 +38,7 @@
 		A5D10C0DE000000000000011 /* gl_taps.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = gl_taps.wav; sourceTree = "<group>"; };
 		A5D10C0DE000000000000012 /* gl_digest.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = gl_digest.wav; sourceTree = "<group>"; };
 		A5D10C0DE000000000000013 /* gl_silent.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = gl_silent.wav; sourceTree = "<group>"; };
+		AABC00010000000000000002 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -84,6 +86,7 @@
 				A5D10C0DE000000000000011 /* gl_taps.wav */,
 				A5D10C0DE000000000000012 /* gl_digest.wav */,
 				A5D10C0DE000000000000013 /* gl_silent.wav */,
+				AABC00010000000000000002 /* PrivacyInfo.xcprivacy */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -163,6 +166,7 @@
 				A5D10C0DE000000000000001 /* gl_taps.wav in Resources */,
 				A5D10C0DE000000000000002 /* gl_digest.wav in Resources */,
 				A5D10C0DE000000000000003 /* gl_silent.wav in Resources */,
+				AABC00010000000000000003 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

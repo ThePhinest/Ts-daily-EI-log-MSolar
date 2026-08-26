@@ -326,13 +326,19 @@ describe('appConfig — shared hosted key (reconciled live block)', () => {
       await setDoc(doc(ctx.firestore(), 'appConfig/hosted'), { encApiKey: 'enc-blob' });
     });
   });
-  it('any authed user reads the hosted key doc', () =>
-    assertSucceeds(getDoc(doc(as('forest'), 'appConfig/hosted'))));
+  it('8/26: NO user can read the hosted key doc any more (key lives in the aiComplete secret)', () =>
+    assertFails(getDoc(doc(as('forest'), 'appConfig/hosted'))));
+  it('other appConfig docs (mapKey) stay readable by any authed user', async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'appConfig/mapKey'), { token: 'pk.x' });
+    });
+    await assertSucceeds(getDoc(doc(as('forest'), 'appConfig/mapKey')));
+  });
   it('unauthenticated cannot read', () =>
     assertFails(getDoc(doc(anon(), 'appConfig/hosted'))));
   it('non-admin authed user CANNOT write (tightened from live rules)', () =>
     assertFails(setDoc(doc(as('stranger'), 'appConfig/hosted'), { encApiKey: 'evil' })));
-  it('admin writes (Share-key button keeps working)', () =>
+  it('admin can still write the doc (migration cleanup)', () =>
     assertSucceeds(setDoc(doc(as(ADMIN), 'appConfig/hosted'), { encApiKey: 'enc-blob2' })));
 });
 

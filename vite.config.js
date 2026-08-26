@@ -1,6 +1,5 @@
 import { defineConfig } from 'vite'
 import { VitePWA } from 'vite-plugin-pwa'
-import { sentryVitePlugin } from '@sentry/vite-plugin'
 import { viteStaticCopy } from 'vite-plugin-static-copy'
 
 export default defineConfig({
@@ -64,26 +63,6 @@ export default defineConfig({
           },
         ],
       },
-    }),
-    // Sentry source map upload — runs LAST so it sees all emitted .map files.
-    // Without SENTRY_AUTH_TOKEN, the plugin is a no-op (logs a warning, doesn't
-    // fail the build) — local builds and forks work without a token.
-    sentryVitePlugin({
-      org: process.env.SENTRY_ORG,
-      project: process.env.SENTRY_PROJECT,
-      authToken: process.env.SENTRY_AUTH_TOKEN,
-      // Tag the release so issues correlate with a specific TestFlight/web build.
-      // CI passes GITHUB_RUN_NUMBER (matches Fastlane's CFBundleVersion); local
-      // builds fall back to a 'local' tag.
-      release: {
-        name: process.env.GITHUB_RUN_NUMBER
-          ? `groundlog@1.0.0+${process.env.GITHUB_RUN_NUMBER}`
-          : 'groundlog@local',
-      },
-      // Privacy posture — opt out of Sentry's internal usage telemetry.
-      telemetry: false,
-      // No-op when auth token absent (local dev, fork builds).
-      disable: !process.env.SENTRY_AUTH_TOKEN,
     }),
   ],
 })

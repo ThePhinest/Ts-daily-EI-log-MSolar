@@ -1,5 +1,6 @@
 const { onSchedule } = require('firebase-functions/v2/scheduler');
 const { onDocumentCreated } = require('firebase-functions/v2/firestore');
+const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { defineSecret } = require('firebase-functions/params');
 // v1 namespace solely for the auth.onDelete trigger — v2 has no auth-delete
 // event (its identity triggers are blocking-only). Supported to mix.
@@ -133,6 +134,11 @@ exports.purgeDeletedUser = functionsV1.auth.user().onDelete(async (user) => {
     await _purgeQueryDocs(db, proj.collection('trackerEntries').where('ownerUid', '==', uid), `${pid}/entries`, done);
     await _purgeQueryDocs(db, proj.collection('trackerCategories').where('ownerUid', '==', uid), `${pid}/categories`, done);
     await _purgeQueryDocs(db, proj.collection('submissions').where('submittedBy', '==', uid), `${pid}/submissions`, done);
+    // 8/26 (App Store 5.1.1(v) — privacy policy promises ALL associated data):
+    // the remaining owner-stamped project subcollections.
+    for (const col of ['kmlLayers', 'planOverlays', 'docs', 'complianceLog', 'swpppInspections', 'openItems']) {
+      await _purgeQueryDocs(db, proj.collection(col).where('ownerUid', '==', uid), `${pid}/${col}`, done);
+    }
     try {
       await proj.collection('members').doc(uid).delete();
       const remaining = await proj.collection('members').limit(1).get();
@@ -161,7 +167,7 @@ exports.purgeDeletedUser = functionsV1.auth.user().onDelete(async (user) => {
   }
 
   // 4. Storage files.
-  for (const prefix of [`photos/${uid}/`, `kml/${uid}/`]) {
+  for (const prefix of [`photos/${uid}/`, `kml/${uid}/`, `docs/${uid}/`, `planOverlays/${uid}/`]) {
     try {
       await getStorage().bucket().deleteFiles({ prefix });
       done.push(`storage ${prefix}:deleted`);
@@ -205,3 +211,112 @@ exports.criticalErrorAlert = onDocumentCreated(
     });
   }
 );
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// aiComplete — platform-hosted Claude proxy (8/26, App Store v1 / user #2 gate).
+//
+// Before this, the "hosted" key was an AES blob in appConfig/hosted readable by
+// every signed-in user with a hardcoded salt in the client — i.e. recoverable by
+// anyone. The key now lives ONLY in the ANTHROPIC_HOSTED_KEY secret. Users with
+// their own key still call Anthropic directly from the client (their key, their
+// account); everyone else comes through here with a per-user daily cap.
+// Cap doc: aiUsage/{uid} { day:'YYYY-MM-DD', n } — rules deny all client access.
+// ═══════════════════════════════════════════════════════════════════════════
+const ANTHROPIC_HOSTED_KEY = defineSecret('ANTHROPIC_HOSTED_KEY');
+const AI_DAILY_CAP = 40;          // calls per user per UTC day on the hosted key
+const AI_MODEL = 'claude-sonnet-5';
+const AI_MAX_TOKENS = 8000;
+
+exports.aiComplete = onCall({ secrets: [ANTHROPIC_HOSTED_KEY], timeoutSeconds: 120, memory: '256MiB' }, async (req) => {
+  if (!req.auth) throw new HttpsError('unauthenticated', 'Sign in required.');
+  const uid = req.auth.uid;
+  const { system, user, maxTokens } = req.data || {};
+  if (typeof system !== 'string' || typeof user !== 'string' || !user.trim()) {
+    throw new HttpsError('invalid-argument', 'system and user prompts are required.');
+  }
+  if (system.length + user.length > 120000) throw new HttpsError('invalid-argument', 'Prompt too large.');
+
+  // Daily cap — transactional so parallel taps can't slip past it.
+  const db = getFirestore();
+  const day = new Date().toISOString().slice(0, 10);
+  const ref = db.collection('aiUsage').doc(uid);
+  await db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    const cur = snap.exists && snap.data().day === day ? (snap.data().n || 0) : 0;
+    if (cur >= AI_DAILY_CAP) {
+      throw new HttpsError('resource-exhausted', `Daily AI limit reached (${AI_DAILY_CAP}/day on the GroundLog key). Add your own API key in Settings → Report Generation for unlimited use.`);
+    }
+    tx.set(ref, { day, n: cur + 1, _ts: Date.now() });
+  });
+
+  const resp = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-api-key': ANTHROPIC_HOSTED_KEY.value().trim(), 'anthropic-version': '2023-06-01' },
+    body: JSON.stringify({ model: AI_MODEL, max_tokens: Math.min(Number(maxTokens) || AI_MAX_TOKENS, AI_MAX_TOKENS), system, messages: [{ role: 'user', content: user }] }),
+  });
+  if (!resp.ok) {
+    const txt = await resp.text();
+    console.error(`aiComplete ${uid}: upstream ${resp.status} ${txt.slice(0, 300)}`);
+    throw new HttpsError('internal', `AI service error (${resp.status}).`);
+  }
+  const data = await resp.json();
+  const block = (data.content || []).find((b) => b.type === 'text' && b.text);
+  if (!block) throw new HttpsError('internal', 'Empty AI response.');
+  return { text: block.text };
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// revokeAppleToken — Sign in with Apple token revocation on account deletion
+// (Apple requires it: App Store Review 5.1.1(v)). The client re-authenticates
+// with Apple right before deleting and passes the fresh authorizationCode
+// (single-use, 5-minute life); we exchange it for tokens and revoke them.
+// Secrets: APPLE_SIWA_KEY_ID (10 chars), APPLE_SIWA_PRIVATE_KEY (the .p8 PEM
+// of a Sign in with Apple key from developer.apple.com → Keys).
+// ═══════════════════════════════════════════════════════════════════════════
+const APPLE_SIWA_KEY_ID = defineSecret('APPLE_SIWA_KEY_ID');
+const APPLE_SIWA_PRIVATE_KEY = defineSecret('APPLE_SIWA_PRIVATE_KEY');
+const APPLE_TEAM_ID = '7YRGVD95PY';
+const APPLE_CLIENT_ID = 'io.groundlog.app';   // native app = bundle id (a web Service ID would differ)
+
+async function _appleClientSecret() {
+  const { SignJWT, importPKCS8 } = require('jose');
+  // Secrets pasted with literal "\n" sequences still parse.
+  const pem = APPLE_SIWA_PRIVATE_KEY.value().replace(/\\n/g, '\n').trim();
+  const key = await importPKCS8(pem, 'ES256');
+  return new SignJWT({})
+    .setProtectedHeader({ alg: 'ES256', kid: APPLE_SIWA_KEY_ID.value().trim() })
+    .setIssuer(APPLE_TEAM_ID).setIssuedAt().setExpirationTime('10m')
+    .setAudience('https://appleid.apple.com').setSubject(APPLE_CLIENT_ID)
+    .sign(key);
+}
+
+exports.revokeAppleToken = onCall({ secrets: [APPLE_SIWA_KEY_ID, APPLE_SIWA_PRIVATE_KEY], timeoutSeconds: 60 }, async (req) => {
+  if (!req.auth) throw new HttpsError('unauthenticated', 'Sign in required.');
+  const code = req.data && req.data.authorizationCode;
+  if (typeof code !== 'string' || !code) throw new HttpsError('invalid-argument', 'authorizationCode required.');
+  const secret = await _appleClientSecret();
+  const form = (o) => Object.entries(o).map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join('&');
+  const tok = await fetch('https://appleid.apple.com/auth/token', {
+    method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: form({ client_id: APPLE_CLIENT_ID, client_secret: secret, code, grant_type: 'authorization_code' }),
+  });
+  if (!tok.ok) {
+    const txt = await tok.text();
+    console.error(`revokeAppleToken ${req.auth.uid}: token exchange ${tok.status} ${txt.slice(0, 300)}`);
+    throw new HttpsError('failed-precondition', 'Apple token exchange failed.');
+  }
+  const { refresh_token, access_token } = await tok.json();
+  const token = refresh_token || access_token;
+  const rev = await fetch('https://appleid.apple.com/auth/revoke', {
+    method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: form({ client_id: APPLE_CLIENT_ID, client_secret: secret, token, token_type_hint: refresh_token ? 'refresh_token' : 'access_token' }),
+  });
+  if (!rev.ok) {
+    const txt = await rev.text();
+    console.error(`revokeAppleToken ${req.auth.uid}: revoke ${rev.status} ${txt.slice(0, 300)}`);
+    throw new HttpsError('internal', 'Apple revocation failed.');
+  }
+  console.log(`revokeAppleToken ${req.auth.uid}: revoked`);
+  return { revoked: true };
+});

@@ -44,33 +44,38 @@ async function rptDecryptKey(ciphertext){
     return new TextDecoder().decode(dec);
   }catch(e){return null;}
 }
+// 8/26: own key only. The platform-hosted key never reaches the client any more —
+// users without their own key go through the aiComplete Cloud Function (see
+// _rptClaude). appConfig/hosted is dead (rules deny reads).
 async function rptGetApiKey(){
   let enc=null;
   try{if(db&&_fbReady){const doc=await _udb().collection('appConfig').doc('reportSettings').get();if(doc.exists)enc=doc.data().encApiKey;}}catch(e){}
   if(!enc) enc=localStorage.getItem('pei_enc_api_key');
-  if(!enc){try{if(db&&_fbReady){const doc=await db.collection('appConfig').doc('hosted').get();if(doc.exists)enc=doc.data().encApiKey;}}catch(e){}}
   if(!enc) return null;
   return rptDecryptKey(enc);
 }
-async function _rptInitHostedKeyBtn(){
-  // Show "Share key with invited users" only for users who have their own API key saved
-  let hasKey = !!localStorage.getItem('pei_enc_api_key');
-  if(!hasKey && db && _fbReady){
-    try{const doc=await _udb().collection('appConfig').doc('reportSettings').get();if(doc.exists&&doc.data().encApiKey)hasKey=true;}catch(e){}
+// One door to Claude. Own key → direct (their key, their account). No key →
+// GroundLog-hosted key via the aiComplete Cloud Function (per-user daily cap).
+// Returns the text block or throws a user-readable Error.
+async function _rptClaude(systemPrompt,userPrompt,maxTokens){
+  const apiKey=await rptGetApiKey();
+  if(apiKey){
+    const resp=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-sonnet-5',max_tokens:maxTokens||8000,system:systemPrompt,messages:[{role:'user',content:userPrompt}]})});
+    if(!resp.ok){const err=await resp.text();throw new Error('API '+resp.status+': '+err);}
+    const data=await resp.json();
+    const textBlock=(data.content||[]).find(function(b){return b.type==='text'&&b.text;});
+    if(!textBlock){console.error('Claude: no text block in response. Content:',data.content);throw new Error('AI response empty \u2014 see console');}
+    return textBlock.text;
   }
-  const btn=document.getElementById('cfg-hosted-key-btn');
-  if(btn) btn.style.display=hasKey?'':'none';
-}
-async function rptSaveHostedKey(){
-  let enc=null;
-  try{if(db&&_fbReady){const doc=await _udb().collection('appConfig').doc('reportSettings').get();if(doc.exists)enc=doc.data().encApiKey;}}catch(e){}
-  if(!enc) enc=localStorage.getItem('pei_enc_api_key');
-  if(!enc){alert('Save your API key in Report Generation first.');return;}
+  if(!(db&&_fbReady&&window._currentUser)) throw new Error('Sign in (online) to use AI features, or add your own API key in Settings \u2192 Report Generation.');
   try{
-    await db.collection('appConfig').doc('hosted').set({encApiKey:enc,_ts:Date.now()});
-    const btn=document.getElementById('cfg-hosted-key-btn');
-    if(btn){btn.textContent='✓ Shared';btn.disabled=true;setTimeout(()=>{btn.textContent='Share key with invited users';btn.disabled=false;},3000);}
-  }catch(e){alert('Failed to share key: '+e.message);}
+    const fn=firebase.app().functions().httpsCallable('aiComplete');
+    const res=await fn({system:systemPrompt,user:userPrompt,maxTokens:maxTokens||8000});
+    return (res.data&&res.data.text)||'';
+  }catch(e){
+    // HttpsError messages are written for users (daily cap etc.) — surface them.
+    throw new Error((e&&e.message)||'AI service unavailable.');
+  }
 }
 async function saveApiKey(){
   const val=document.getElementById('cfg-api-key').value.trim();
@@ -83,7 +88,6 @@ async function saveApiKey(){
     document.getElementById('cfg-api-key').placeholder='✓ Key saved securely';
     const st=document.getElementById('cfg-api-status');
     st.textContent='✓ Encrypted & saved';st.style.opacity='1';setTimeout(()=>st.style.opacity='0',2500);
-    _rptInitHostedKeyBtn();
   }catch(e){alert('Error saving key: '+e.message);}
 }
 function toggleApiKeyVisibility(){
@@ -156,8 +160,6 @@ function _polishChoiceModal(msg, labelA, labelB, onChoice){
 
 // ── Formalize Log — gate ──
 async function polishLog(){
-  const apiKey=await rptGetApiKey();
-  if(!apiKey){_confirmModal('No API key configured. Add your Anthropic API key in Settings → Report Generation.',()=>{});return;}
   const STATIC_FIELDS=[
     {id:'inspSummary',  label:'Field Observations'},
     {id:'nonCompliance',label:'Non-Compliance Note'},
@@ -179,7 +181,7 @@ async function polishLog(){
     });
   });
   if(!fields.length){_confirmModal('Nothing to formalize — fill in some fields first.',()=>{},'✦ Formalize Log','OK');return;}
-  _polishSelectModal(fields,function(selected){_doPolish(selected,apiKey);});
+  _polishSelectModal(fields,function(selected){_doPolish(selected);});
 }
 
 // ── Formalize Log — Claude API call + field update ──
@@ -190,7 +192,7 @@ async function polishLog(){
 // logs missing keys + raw response on parse failure, and keeps the status visible
 // longer so the user can spot warnings. Doesn't fix the underlying mystery — but
 // next time Tim hits it, the console + status bar will show exactly what's wrong.
-async function _doPolish(selectedFields, apiKey){
+async function _doPolish(selectedFields){
   const btn=document.getElementById('btn-formalize-log');
   const status=document.getElementById('rpt-status');
   const setStatus=function(msg,color){if(status){status.textContent=msg;status.style.color=color||'var(--green)';status.style.opacity='1';}};
@@ -201,12 +203,7 @@ async function _doPolish(selectedFields, apiKey){
     const payload=Object.fromEntries(selectedFields.map(function(f){return[f.id,f.value];}));
     const systemPrompt='You are a professional field inspector writing assistant. Rewrite the provided field log text into clean, professional language suitable for a regulatory compliance report. Rules: use "conducting" not "performing"; use definitive language ("will" not "anticipated to"); contractor compliance language must be collaborative in tone; do not use first person; preserve all specific facts, measurements, locations, and compliance levels exactly as entered; do not add information not present in the original; do not remove relevant observations. Return a JSON object with the same keys as provided, containing the rewritten text for each field. Return ONLY the JSON object — no preamble, no markdown, no code fences.';
     const userPrompt='Rewrite these daily log fields:\n'+JSON.stringify(payload);
-    const resp=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-sonnet-5',max_tokens:8000,system:systemPrompt,messages:[{role:'user',content:userPrompt}]})});
-    if(!resp.ok){const err=await resp.text();throw new Error('API '+resp.status+': '+err);}
-    const data=await resp.json();
-    const textBlock=(data.content||[]).find(function(b){return b.type==='text'&&b.text;});
-    if(!textBlock){console.error('Formalize Log: no text block in Claude response. Content:',data.content);throw new Error('Polish response empty — see console');}
-    const text=textBlock.text;
+    const text=await _rptClaude(systemPrompt,userPrompt,8000);
     const j0=text.indexOf('{'),j1=text.lastIndexOf('}');
     if(j0===-1||j1===-1){
       console.error('Formalize Log: no JSON object in Claude response. Raw text:',text);
@@ -273,7 +270,7 @@ function _rptFmtTime(t){
 // The skip-polish suffix is appended at runtime — it is NOT folded into
 // effectivePromptHash because skipPolish is already a separate dimension of
 // the cache snapshot (so cache-key partitioning by skipPolish is automatic).
-async function rptCallClaude(apiKey, logData, compEntries, systemPromptIn){
+async function rptCallClaude(logData, compEntries, systemPromptIn){
   if(!systemPromptIn || typeof systemPromptIn !== 'string'){
     throw new Error('rptCallClaude: systemPrompt parameter required (Stage 4 / C10 contract). Call site must pass an assembled system prompt from promptAssembly.js.');
   }
@@ -286,12 +283,7 @@ async function rptCallClaude(apiKey, logData, compEntries, systemPromptIn){
   const finalSystemPrompt=(window._rptSkipPolish===true)
     ? systemPromptIn + '\n\nIMPORTANT: The user has already professionally formalized the narrative text fields. Include ALL narrative content VERBATIM — do NOT rephrase, restructure, or alter any provided text.'
     : systemPromptIn;
-  const resp=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-sonnet-5',max_tokens:8000,system:finalSystemPrompt,messages:[{role:'user',content:userPrompt}]})});
-  if(!resp.ok){const err=await resp.text();throw new Error('Claude API error '+resp.status+': '+err);}
-  const data=await resp.json();
-  const textBlock=(data.content||[]).find(function(b){return b.type==='text'&&b.text;});
-  if(!textBlock){console.error('Report generate: no text block in Claude response. Content:',data.content);throw new Error('Claude response empty — see console');}
-  const text=textBlock.text;
+  const text=await _rptClaude(finalSystemPrompt,userPrompt,8000);
   const clean=text.replace(/```json\n?/g,'').replace(/```\n?/g,'').trim();
   return JSON.parse(clean);
 }
@@ -731,9 +723,7 @@ async function _doGenerate(){
   const clearStatusSoon=()=>setTimeout(()=>{if(status)status.style.opacity='0';},3000);
   if(btn){btn.disabled=true;btn.textContent='\u29d7 Generating...';}
   try{
-    setStatus('Retrieving API key\u2026');
-    const apiKey=await rptGetApiKey();
-    if(!apiKey) throw new Error('No API key found. Add your Anthropic API key in Settings \u2192 Report Generation.');
+    setStatus('Preparing\u2026');
     // Collect log data
     const sky=[...document.querySelectorAll('input[name="sky"]:checked')].map(el=>el.value).join(', ')||'';
     const crew=crewIds.map(id=>({
@@ -819,7 +809,7 @@ async function _doGenerate(){
     if(!latest){
       // No prior version \u2014 fresh polish, save as v1
       setStatus('Polishing report narrative\u2026');
-      const polished=await rptCallClaude(apiKey,logData,compEntries,assembledSystemPrompt);
+      const polished=await rptCallClaude(logData,compEntries,assembledSystemPrompt);
       _saveReportVersion(reportDate,currSnap,polished,currHash,1,effectivePromptHash).catch(e=>console.warn('[report-cache] write failed:',e));
       await assembleAndSave(polished,currSnap);
       setStatus('\u2713 Report generated!');
@@ -868,7 +858,7 @@ async function _doGenerate(){
     if(choice==='secondary'){
       // Generate new version \u2014 fresh polish, save as v(latest+1)
       setStatus('Polishing report narrative\u2026');
-      const polished=await rptCallClaude(apiKey,logData,compEntries,assembledSystemPrompt);
+      const polished=await rptCallClaude(logData,compEntries,assembledSystemPrompt);
       const newVer=(latest.version||0)+1;
       _saveReportVersion(reportDate,currSnap,polished,currHash,newVer,effectivePromptHash).catch(e=>console.warn('[report-cache] write failed:',e));
       await assembleAndSave(polished,currSnap);
@@ -964,5 +954,3 @@ window.rptLoadReportLogoUI = rptLoadReportLogoUI;
 window.polishLog = polishLog;
 window.saveApiKey = saveApiKey;
 window.toggleApiKeyVisibility = toggleApiKeyVisibility;
-window.rptSaveHostedKey = rptSaveHostedKey;
-window._rptInitHostedKeyBtn = _rptInitHostedKeyBtn;

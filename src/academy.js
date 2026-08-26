@@ -10,7 +10,7 @@
 // free bandwidth vs Storage egress, CDN range-requests so seeking works.
 // Adding a video = drop the MP4 in the site repo at /academy/{id}.mp4, set
 // the topic's url to https://groundlog.io/academy/{id}.mp4, ship. Topics
-// with no URL render as COMING SOON. Record against a DEMO project only —
+// with no URL are HIDDEN (App Store 2.1 completeness — no placeholders). Record against a DEMO project only —
 // never real project data.
 
 const GL_ACADEMY_TOPICS = [
@@ -39,7 +39,7 @@ function glRenderAcademyPage() {
     <div style="font-family:var(--mono);font-size:11.5px;line-height:1.6;color:var(--muted);margin-bottom:14px">
       Short video walkthroughs — one task, a couple of minutes each. Watch the one you need, when you need it.
     </div>
-    ${GL_ACADEMY_TOPICS.map(t => `
+    ${GL_ACADEMY_TOPICS.filter(t => t.url).map(t => `
       <div class="gl-ac-row" id="ac-row-${t.id}" onclick="glAcademyOpen('${t.id}')">
         <span class="gl-ac-icon">${t.icon}</span>
         <div class="gl-ac-info">

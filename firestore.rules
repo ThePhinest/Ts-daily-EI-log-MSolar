@@ -31,8 +31,11 @@ service cloud.firestore {
     // admin-only writes (any signup could have overwritten the hosted key).
     // Pre-4.5 stopgap: project-scoped key sharing (api-key-scoping design) replaces
     // this global doc once shared projects ship.
+    // 8/26: appConfig/hosted (the encrypted shared Claude key) is no longer
+    // readable by users at all — the platform-hosted key now lives only in the
+    // aiComplete Cloud Function secret. Doc kept admin-only for the migration.
     match /appConfig/{docId} {
-      allow read: if request.auth != null;
+      allow read: if request.auth != null && docId != 'hosted';
       allow write: if request.auth != null
         && request.auth.uid == 'Z1RZWSUTXfR1Ys76VMd8FTqydaq1';   // Tim (admin)
     }

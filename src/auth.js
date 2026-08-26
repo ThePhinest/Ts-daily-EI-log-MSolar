@@ -1,7 +1,3 @@
-// Sentry — initialized in main.js; we just attach user identity here.
-// Privacy posture: only the opaque Firebase UID, never email or display name.
-import * as Sentry from '@sentry/capacitor'
-
 // ── Module-level state (onboarding carousel) ──
 let _obSlideIndex = 0;
 let _obTotalSlides = 12; // fallback — recomputed from the DOM at carousel init
@@ -292,6 +288,7 @@ async function siAppleSignIn() {
       if (!result || !result.credential || !result.credential.idToken) {
         return siSetError('Apple sign-in was cancelled.');
       }
+      window._glAppleAuthCode = result.credential.authorizationCode || null;
       const provider = new firebase.auth.OAuthProvider('apple.com');
       const credential = provider.credential({ idToken: result.credential.idToken, rawNonce: result.credential.nonce });
       await auth.signInWithCredential(credential);
@@ -550,16 +547,10 @@ function _initAuth() {
       // Different account than this device last ran → storage cleared +
       // reload; skip boot, the clean boot after reload takes it from here.
       if (_glUidFence(user.uid)) return;
-      // Tag Sentry events with the opaque UID only (no email/name) so we
-      // can correlate per-user issues without leaking PII to Sentry.
-      Sentry.setUser({ id: user.uid });
       document.getElementById('page-signin').style.display = 'none';
       obCheck();
     } else {
       window._currentUser = null;
-      // Clear Sentry user identity so post-signout errors aren't attributed
-      // to the prior user.
-      Sentry.setUser(null);
       // Reset Firestore-ready flag on sign-out so any pending debounced
       // writes (cloudSave, autosave, etc.) fail-safe instead of firing
       // _udb()→null→.collection() and crashing. Re-set true by
@@ -843,21 +834,36 @@ function acctDeleteAccount() {
 }
 
 function _acctDoDelete(user) {
+  // Apple accounts: Apple requires the Sign in with Apple token be REVOKED when
+  // the account is deleted (App Store 5.1.1(v)). The authorization code is
+  // single-use and lives 5 minutes, so on native we always re-authenticate with
+  // Apple right here (fresh code) → revokeAppleToken Cloud Function → delete.
+  const providers = (user.providerData || []).map(function(p) { return p.providerId; });
+  if (providers.includes('apple.com') && window.Capacitor?.isNativePlatform?.() && !user._glAppleRevoked) {
+    return _acctReauthThenDelete(user, /*forceApple*/ true);
+  }
   user.delete().catch(function(e) {
     if (e && e.code === 'auth/requires-recent-login') return _acctReauthThenDelete(user);
     _confirmModal(e.message || 'Could not delete account.', null, 'Delete Failed', 'Close');
   });
 }
 
+async function _acctRevokeApple(user, authorizationCode) {
+  if (!authorizationCode) throw new Error('Apple did not return an authorization code.');
+  const fn = firebase.app().functions().httpsCallable('revokeAppleToken');
+  await fn({ authorizationCode: authorizationCode });
+  user._glAppleRevoked = true;
+}
+
 // Firebase requires a recent sign-in before destructive account ops. Instead
 // of dead-ending with "sign out and sign back in first" (the 6/11 purge-test
 // friction find), re-authenticate in place with whichever provider the
 // account actually has, then retry the delete.
-async function _acctReauthThenDelete(user) {
+async function _acctReauthThenDelete(user, forceApple) {
   const providers = (user.providerData || []).map(function(p) { return p.providerId; });
   try {
-    if (providers.includes('password')) return _acctReauthPasswordSheet(user);
-    if (providers.includes('google.com')) {
+    if (!forceApple && providers.includes('password')) return _acctReauthPasswordSheet(user);
+    if (!forceApple && providers.includes('google.com')) {
       if (window.Capacitor?.isNativePlatform?.()) {
         const { FirebaseAuthentication } = await import('@capacitor-firebase/authentication');
         const result = await FirebaseAuthentication.signInWithGoogle();
@@ -880,6 +886,8 @@ async function _acctReauthThenDelete(user) {
         const provider = new firebase.auth.OAuthProvider('apple.com');
         const cred = provider.credential({ idToken: result.credential.idToken, rawNonce: result.credential.nonce });
         await user.reauthenticateWithCredential(cred);
+        // Revoke Apple's token with the fresh code BEFORE the Firebase user dies.
+        await _acctRevokeApple(user, result.credential.authorizationCode);
       } else {
         await user.reauthenticateWithPopup(new firebase.auth.OAuthProvider('apple.com'));
       }
