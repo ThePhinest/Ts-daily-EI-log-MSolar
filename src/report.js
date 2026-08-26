@@ -587,6 +587,10 @@ function _buildSnapshot(logData, compEntries, skipPolish, photos, effectivePromp
   const photoRefs = (photos||[]).map(p => {
     const ref = {...p};
     delete ref._localUrl; delete ref._thumbUrl; delete ref._blobUrl;
+    // 8/26: the 280px camera thumb (~30 KB base64 per photo, in the doc since 8/24)
+    // pushed a 30-photo day's version doc past Firestore's 1 MiB cap → cache save
+    // failed silently. Identity/caption/geo fields are the cache key; pixels aren't.
+    delete ref.thumb;
     return ref;
   }).sort((a,b) => String(a.id||'').localeCompare(String(b.id||'')));
   const compRefs = (compEntries||[]).slice().sort((a,b) => String(a.id||'').localeCompare(String(b.id||'')));
