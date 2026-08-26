@@ -643,6 +643,7 @@ async function _glSharedBoot() {
     // Restore the per-project nav layout from the user's cloud profile — the
     // device-uid purge wiped its localStorage on the last account switch.
     if (typeof _glHydrateNavSlotsFromCloud === 'function') _glHydrateNavSlotsFromCloud();
+    if (typeof window._glHydratePrefsFromCloud === 'function') window._glHydratePrefsFromCloud();
   } catch(e) { console.warn('shared-projects boot:', e.message); }
 }
 

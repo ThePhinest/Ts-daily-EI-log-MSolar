@@ -54,6 +54,7 @@ import './seedingSpecs.js'
 import './picker.js'
 import './applications.js'
 import './contractors.js'
+import './prefsMirror.js'   // 8/26: view prefs survive the sign-out storage fence
 
 window.firebase = firebase
 window.mapboxgl = mapboxgl
