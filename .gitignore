@@ -16,3 +16,5 @@ firebase-debug.log
 firestore-debug.log
 .firebase/
 sound-candidates/
+tests/screens/.profile/
+tests/screens/out/
