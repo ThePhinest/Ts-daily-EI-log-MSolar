@@ -93,17 +93,19 @@ function glGeoWarm(projectId){
   if(typeof tcGetCategories !== 'function' || typeof trGetEntriesForProject !== 'function' || typeof tcProgressMode !== 'function') return;
   const w = _glGetWorker(); if(!w) return;
   const all = trGetEntriesForProject(pid);
+  // Warm sets: the generic per-category set (Compliance card shape: installed,
+  // non-temporary) PLUS whatever each surface registers as the exact list it
+  // will ask for (maps.js registers its render clip list). Same key → one job.
+  const sets = [];
   tcGetCategories(pid).forEach(cat => {
     const mode = tcProgressMode(cat, pid);
     if(mode !== 'running-balance' && mode !== 'running-total') return;
     const states = (typeof tcGetStates === 'function') ? tcGetStates(cat, pid).filter(s => !s.isPlanned) : [];
-    const list = all.filter(e => {
-      if((e.categoryId || e.category) !== cat.id || !e.geometry) return false;
-      if(e.temporary && e.tempStatus !== 'resolved') return false;
-      const st = (typeof tcEntryState === 'function') ? tcEntryState(e, cat, pid) : null;
-      return !(st ? !!st.isPlanned : (e.entryType === 'planned'));
-    });
-    if(!list.length) return;
+    const list = all.filter(e => (e.categoryId || e.category) === cat.id && e.geometry && e.entryType !== 'planned' && !e.temporary);
+    if(list.length) sets.push({ entries: list, states });
+  });
+  (window._glGeoWarmProviders || []).forEach(fn => { try{ (fn(pid) || []).forEach(x => { if(x && x.entries && x.entries.length) sets.push(x); }); }catch(e){ console.warn('geo warm provider:', e && e.message); } });
+  sets.forEach(({ entries: list, states }) => {
     const keys = {
       S: states.length ? _glKey('S', list, states.map(s => s.id).join(',')) : null,
       E: _glKey('E', list, ''),

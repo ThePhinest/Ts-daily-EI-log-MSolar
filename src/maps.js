@@ -6535,6 +6535,37 @@ function _trRenderableEntries(pid){
 // Shared by the full render loop and _trRefreshCatSources (#57: a visibility
 // toggle must never rebuild every category — that full-map re-render spike is
 // what jetsam-killed WKWebView on hide).
+// The running-mode clip set for one category — ONE definition shared by the
+// render path and the geo warm-up (8/25: the warm-up built its own list, 264 vs
+// the map's 252, so the memo key never matched and the first map tap still
+// computed inline).
+function _mapNetClipFilter(list,cat,pid){
+  return (list||[]).filter(e=>{
+    if(e.temporary&&e.tempStatus!=='resolved') return false;
+    const st=(typeof tcEntryState==='function')?tcEntryState(e,cat,pid):null;
+    return !(st?!!st.isPlanned:(e.entryType==='planned'));
+  });
+}
+// Warm provider: exactly the entry sets mapRenderTrackerLayers will ask the net
+// engine for (renderable entries → caps → clip filter), per running-mode category.
+function _mapGeoWarmSets(pid){
+  const out=[];
+  if(typeof tcGetCategories!=='function'||typeof tcProgressMode!=='function') return out;
+  const all=_trRenderableEntries(pid);
+  tcGetCategories(pid).forEach(cat=>{
+    const mode=tcProgressMode(cat,pid);
+    if(mode!=='running-balance'&&mode!=='running-total') return;
+    const catRaw=all.filter(e=>((e.categoryId||e.category)===cat.id)&&e.geometry);
+    const visible=_tcLayerVisible[cat.id]!==false;
+    const catEntries=visible?_distCapEntries(_seedCapEntries(_escCapEntries(catRaw,cat,pid),cat,pid),cat,pid):[];
+    const list=_mapNetClipFilter(catEntries,cat,pid);
+    if(list.length) out.push({entries:list,states:(typeof tcGetStates==='function')?tcGetStates(cat,pid).filter(s=>!s.isPlanned):[]});
+  });
+  return out;
+}
+window._glGeoWarmProviders=window._glGeoWarmProviders||[];
+window._glGeoWarmProviders.push(_mapGeoWarmSets);
+
 function _trackerCatGeojson(cat,catRaw,pid){
   const color=cat.color||'#888';
   const visible=_tcLayerVisible[cat.id]!==false;
@@ -6549,11 +6580,7 @@ function _trackerCatGeojson(cat,catRaw,pid){
   const _mode=(typeof tcProgressMode==='function')?tcProgressMode(cat,pid):'';
   let _netGeoms=null;
   if((_mode==='running-balance'||_mode==='running-total')&&typeof glEntryNetGeoms==='function'){
-    const clipList=catEntries.filter(e=>{
-      if(e.temporary&&e.tempStatus!=='resolved') return false;
-      const st=(typeof tcEntryState==='function')?tcEntryState(e,cat,pid):null;
-      return !(st?!!st.isPlanned:(e.entryType==='planned'));
-    });
+    const clipList=_mapNetClipFilter(catEntries,cat,pid);
     try{ _netGeoms=glEntryNetGeoms(clipList); }catch(err){ console.warn('net-geom clip failed, falling back to raw fills:', err); }
   }
   return {type:'FeatureCollection',features:catEntries.flatMap(e=>{
