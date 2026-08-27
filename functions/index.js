@@ -213,6 +213,37 @@ exports.criticalErrorAlert = onDocumentCreated(
 );
 
 
+
+// ⚑ Content report alert (8/27, App Store Guideline 1.2): every new
+// contentReports/{id} doc → support Discord channel (same webhook as the
+// error digest). The reporter's identity stays in Firestore; the embed carries
+// what support needs to act within 24h.
+exports.contentReportAlert = onDocumentCreated(
+  { document: 'contentReports/{id}', secrets: [WEBHOOK] },
+  async (event) => {
+    const r = event.data?.data();
+    if (!r) return;
+    const description = [
+      `**Reason:** ${r.reason || '(none)'}`,
+      r.note && `**Note:** ${String(r.note).slice(0, 600)}`,
+      `**Target:** ${r.targetType} \`${r.targetId}\`${r.targetLabel ? ' — ' + String(r.targetLabel).slice(0, 120) : ''}`,
+      `**Project:** ${r.projectName || ''} \`${r.pid}\``,
+      `**Owner UID:** \`${r.targetOwnerUid || '?'}\`  ·  **Reporter:** ${r.reporterName || ''} \`${r.reporterUid}\``,
+      r.platform && `**Platform:** ${r.platform}`,
+      `Firestore: contentReports/${event.params.id}`,
+    ].filter(Boolean).join('\n');
+    await postToDiscord(WEBHOOK.value(), {
+      embeds: [{
+        title: '⚑ Content report — GroundLog',
+        description,
+        color: 0xf59e0b,
+        footer: { text: 'GroundLog · contentReportAlert · act within 24h' },
+        timestamp: new Date().toISOString(),
+      }],
+    });
+  }
+);
+
 // ═══════════════════════════════════════════════════════════════════════════
 // aiComplete — platform-hosted Claude proxy (8/26, App Store v1 / user #2 gate).
 //

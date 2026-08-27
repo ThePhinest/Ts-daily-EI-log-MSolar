@@ -2952,6 +2952,7 @@ Anticipated rain — AM weather monitoring expected"></textarea>
         <button class="btn btn-outline ph-lb-btn" id="ph-lb-swppp" style="display:none" onclick="phToggleSwpppCurrent()">🌊 SWPPP</button>
         <button class="btn btn-outline ph-lb-btn" id="ph-lb-seed" style="display:none" onclick="phToggleSeedCurrent()">🌱 Seed</button>
         <button class="btn btn-outline ph-lb-btn" id="ph-lb-del" style="display:none;border-color:#e25555;color:#e25555" onclick="phDeleteCurrent()">🗑 Delete</button>
+        <button class="btn btn-outline ph-lb-btn" id="ph-lb-report" style="display:none;color:var(--muted)" onclick="phReportCurrent()">⚑ Report</button>
       </div>
       <!-- Drawing links (#30): rendered per photo by _phLbRenderMeta -->
       <div id="ph-lb-links" style="display:none"></div>
@@ -3917,6 +3918,10 @@ Anticipated rain — AM weather monitoring expected"></textarea>
     <div class="config-head"><span class="config-title">Diagnostics</span><span class="head-fade"></span><span class="config-sub">Boot timeline &amp; device logs</span></div>
     <div class="config-body">
       <p class="config-hint">How long this app took to become usable on this device (last open), main-thread stalls, and the camera/compass log. Stored on this device only. Share it with GroundLog support if something feels slow.</p>
+      <label style="display:flex;align-items:flex-start;gap:10px;margin:0 0 12px;cursor:pointer">
+        <input type="checkbox" id="acct-diag-optin" style="width:18px;height:18px;accent-color:var(--amber);flex-shrink:0;margin-top:1px" onchange="glDiagOptInChanged()">
+        <span style="font-size:12px;line-height:1.45"><b>Send error reports to GroundLog</b><br><span class="config-hint" style="display:inline">Off by default. When on, app errors (the error message, where it happened, device type) go to GroundLog's own database so we can fix them. Never your logs, photos, or location; no third parties.</span></span>
+      </label>
       <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">
         <button class="btn btn-outline" id="gl-diag-copy" style="font-size:11px;padding:7px 14px" onclick="glDiagCopy()">📋 Copy all</button>
         <button class="btn btn-outline" id="gl-diag-share" style="font-size:11px;padding:7px 14px" onclick="glDiagShare()">📤 Share .txt</button>

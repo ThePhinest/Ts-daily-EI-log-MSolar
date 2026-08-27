@@ -39,11 +39,19 @@ const DEDUPE_WINDOW_MS = 5000;
 let _errorCount = 0;
 const _recentErrors = new Map(); // message → last-seen-ts
 
+// β.2 (8/27, App Store B10): opt-in for everyone else. The Diagnostics card's
+// "Send error reports" checkbox writes gl_diag_optin=1 (mirrored to
+// users/{uid}/settings/prefs by prefsMirror so it survives the sign-out fence).
+// Default OFF (privacy posture); the developer UID stays on so Tim's own
+// devices keep reporting without a toggle.
+function _optedIn() {
+  try { return localStorage.getItem('gl_diag_optin') === '1'; } catch (_) { return false; }
+}
 function _shouldReport() {
   if (_errorCount >= MAX_ERRORS_PER_SESSION) return false;
   const u = window._currentUser;
   if (!u || !u.uid) return false;
-  if (!ENABLED_UIDS.includes(u.uid)) return false;
+  if (!ENABLED_UIDS.includes(u.uid) && !_optedIn()) return false;
   return true;
 }
 

@@ -12,6 +12,7 @@ const _PM_PREFIXES = [
   'gl_seed_cap_sel::', 'gl_esc_cap_sel::', 'gl_dist_cap_sel::',
   'gl_tcf_order_', 'gl_tcf_map_', 'gl_tc_order_', 'gl_kfl_order_',
   'gl_map_style',
+  'gl_diag_optin',     // Diagnostics → "Send error reports" opt-in (errorReporter β.2)
 ];
 const _pmWatched = (k) => typeof k === 'string' && _PM_PREFIXES.some((p) => k.startsWith(p));
 const _pmOrigSet = Storage.prototype.setItem;

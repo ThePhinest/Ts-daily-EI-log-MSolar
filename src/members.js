@@ -1337,9 +1337,73 @@ function glShowSubmission(id) {
     ${para('General communications', f.genComms)}
     ${para('Lookahead', f.lookahead)}${para('Expected weather', f.lookaheadWeather)}
     ${mine && s.status !== 'withdrawn' ? `<button class="btn btn-outline" style="font-size:11px;padding:7px 14px;margin-top:8px;color:var(--red)" onclick="glWithdrawSubmission('${s._id}')">Withdraw submission</button>` : ''}
+    ${!mine ? `<button class="btn btn-outline" style="font-size:11px;padding:7px 14px;margin-top:8px;color:var(--muted)" onclick="glReportSubmission('${s._id}')">⚑ Report this submission</button>` : ''}
   </div>`;
   document.body.appendChild(ov);
 }
+
+// ── ⚑ Report content (8/27, App Store Guideline 1.2 — UGC hygiene) ──
+// A member flags a teammate's shared photo / submission. Writes a top-level
+// contentReports/{id} doc (self-attributed, status 'open'); the contentReportAlert
+// Cloud Function posts it to the support Discord channel. Leads already hold the
+// "block" side of 1.2 (remove a member = revoke everything they shared).
+const _GL_REPORT_REASONS = [
+  ['inappropriate', 'Inappropriate or offensive'],
+  ['private',       'Shows private or personal information'],
+  ['wrong-project', 'Does not belong to this project'],
+  ['other',         'Something else'],
+];
+function glReportContent(target) {
+  const d = _sdb();
+  if (!d || !window._currentUser) return _confirmModal('Sign in to report content.', function(){}, 'Report', 'OK');
+  const pid = _activeProjectId();
+  if (!pid || pid === 'default' || !target || !target.id) return;
+  document.getElementById('_gl-report')?.remove();
+  const ov = document.createElement('div');
+  ov.className = 'modal-overlay';
+  ov.id = '_gl-report';
+  ov.style.zIndex = '9700';
+  ov.innerHTML = `<div class="modal-box" style="max-width:420px">
+    <div class="modal-title">⚑ Report content</div>
+    <div class="modal-msg" style="text-align:left">
+      <div style="font-size:11px;color:var(--muted);margin-bottom:10px;word-break:break-word">${_glEsc(target.label || target.type)}</div>
+      ${_GL_REPORT_REASONS.map(([v, l], i) => `<label style="display:flex;align-items:center;gap:10px;padding:6px 0;cursor:pointer;font-size:13px"><input type="radio" name="gl-rep-reason" value="${v}"${i === 0 ? ' checked' : ''} style="accent-color:var(--amber);width:16px;height:16px">${l}</label>`).join('')}
+      <textarea id="gl-rep-note" placeholder="Anything else we should know? (optional)" rows="2" style="width:100%;box-sizing:border-box;margin-top:8px;font-size:13px"></textarea>
+      <div style="font-size:11px;color:var(--muted);margin-top:8px">GroundLog reviews reports within 24 hours. Your name is attached so we can follow up; the other person is not told who reported.</div>
+    </div>
+    <div class="modal-btns">
+      <button class="modal-cancel" onclick="document.getElementById('_gl-report').remove()">Cancel</button>
+      <button class="modal-confirm" id="gl-rep-send">Send report</button>
+    </div></div>`;
+  document.body.appendChild(ov);
+  document.getElementById('gl-rep-send').onclick = async function() {
+    const btn = this; btn.disabled = true; btn.textContent = 'Sending…';
+    const reason = (ov.querySelector('input[name="gl-rep-reason"]:checked') || {}).value || 'other';
+    const note = (document.getElementById('gl-rep-note').value || '').trim().slice(0, 1000);
+    try {
+      await d.collection('contentReports').add({
+        pid, projectName: (typeof loadProjectConfig === 'function' ? (loadProjectConfig().projectName || '') : ''),
+        targetType: target.type, targetId: target.id, targetOwnerUid: target.ownerUid || '', targetLabel: String(target.label || '').slice(0, 200),
+        reporterUid: _currentUser.uid, reporterName: _glMyName(), reporterEmail: _currentUser.email || '',
+        reason, note, status: 'open', createdAt: Date.now(),
+        platform: (window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()) ? 'native' : 'web',
+      });
+      ov.remove();
+      if (typeof showCloudBanner === 'function') showCloudBanner('⚑ Report sent — thank you. We will look at it within 24 hours.');
+    } catch (e) {
+      btn.disabled = false; btn.textContent = 'Send report';
+      if (typeof showCloudBanner === 'function') showCloudBanner('⚠ Could not send the report (' + (e && e.message || 'error') + ').');
+    }
+  };
+}
+window.glReportContent = glReportContent;
+// Inline-handler-safe wrapper (names with apostrophes must not reach an onclick string).
+function glReportSubmission(id) {
+  const s = (window._glPSpaceCache || {})[id];
+  if (!s) return;
+  glReportContent({ type: 'submission', id, ownerUid: s.submittedBy || '', label: _glSubFmtDate(s.date) + ' by ' + (s.submittedByName || '') });
+}
+window.glReportSubmission = glReportSubmission;
 
 function glWithdrawSubmission(id) {
   const d = _sdb();

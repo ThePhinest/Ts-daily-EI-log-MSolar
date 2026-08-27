@@ -119,6 +119,8 @@ window.glBootReport=glBootReport;
 
 // Account Settings → Diagnostics card: last boot + camera log, copyable.
 function glDiagRender(){
+  const cb=document.getElementById('acct-diag-optin');
+  if(cb){ try{ cb.checked = localStorage.getItem('gl_diag_optin')==='1'; }catch{} }
   const out=document.getElementById('gl-diag-out'); if(!out) return;
   let cam=[]; try{ cam=JSON.parse(localStorage.getItem('gl_cam_log')||'[]'); }catch{}
   let sw=[]; try{ sw=JSON.parse(localStorage.getItem('gl_sw_log')||'[]'); }catch{}
@@ -126,6 +128,14 @@ function glDiagRender(){
   out.textContent=glBootReport(false)+'\n\n── camera log (last 12) ──\n'+camTxt+'\n\n── sw log entries: '+sw.length;
 }
 window.glDiagRender=glDiagRender;
+// Opt-in error reporting (β.2). localStorage is what errorReporter reads;
+// prefsMirror carries the key to users/{uid}/settings/prefs.
+function glDiagOptInChanged(){
+  const cb=document.getElementById('acct-diag-optin'); if(!cb) return;
+  try{ if(cb.checked) localStorage.setItem('gl_diag_optin','1'); else localStorage.removeItem('gl_diag_optin'); }catch{}
+  if(typeof showCloudBanner==='function') showCloudBanner(cb.checked?'✓ Error reports on — thank you. Turn off any time.':'Error reports off.');
+}
+window.glDiagOptInChanged=glDiagOptInChanged;
 function _glDiagText(){
   let cam='[]', sw='[]', boot='[]';
   try{ cam=localStorage.getItem('gl_cam_log')||'[]'; sw=localStorage.getItem('gl_sw_log')||'[]'; boot=localStorage.getItem('gl_boot_log')||'[]'; }catch{}

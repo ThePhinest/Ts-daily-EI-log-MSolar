@@ -924,6 +924,9 @@ async function _phLbShow(index){
   }
   const delBtn = document.getElementById('ph-lb-del');
   if(delBtn) delBtn.style.display = own ? '' : 'none';
+  // ⚑ Report (Guideline 1.2 UGC): a teammate's published photo only.
+  const repBtn = document.getElementById('ph-lb-report');
+  if(repBtn) repBtn.style.display = (!own && p.ownerUid) ? '' : 'none';
   // 🏷 Stamp section — in-app camera photos only (they carry the metadata record
   // the stamp renders from; imported photos keep their own baked-in overlays).
   // Pills adjust what renders (lightbox view + every export); button saves a copy.
@@ -1815,6 +1818,13 @@ window.phLbNext = phLbNext;
 window.phLbPrev = phLbPrev;
 window.phSaveCaption = phSaveCaption;
 window.phShareCurrent = phShareCurrent;
+// ⚑ Report a teammate's shared photo → members.js glReportContent (contentReports/).
+function phReportCurrent(){
+  const p=_phById(_phLbId); if(!p) return;
+  if(typeof window.glReportContent!=='function') return;
+  window.glReportContent({ type:'photo', id:p.id, ownerUid:p.ownerUid||'', label:(p.caption||p.filename||'Photo')+(p.date?' · '+p.date:'') });
+}
+window.phReportCurrent = phReportCurrent;
 window.phToggleSwpppCurrent = phToggleSwpppCurrent;
 window.phToggleSeedCurrent = phToggleSeedCurrent;
 window.phSetPublished = phSetPublished;

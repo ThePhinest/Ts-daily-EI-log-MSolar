@@ -74,6 +74,25 @@ service cloud.firestore {
       allow delete: if request.auth != null && isLeadOf(resource.data.pid);
     }
 
+    // ── Content reports (8/27, App Store Guideline 1.2 — UGC hygiene) ──
+    // TOP-LEVEL so support (admin) can list them across projects. A member of
+    // the named project files a self-attributed 'open' report; only the
+    // reporter (their own, query-constrained) and the admin can read; only the
+    // admin resolves (status/notes). Nobody else learns who reported what.
+    match /contentReports/{id} {
+      function isAdmin() { return request.auth.uid == 'Z1RZWSUTXfR1Ys76VMd8FTqydaq1'; }
+      allow create: if request.auth != null
+        && request.resource.data.reporterUid == request.auth.uid
+        && request.resource.data.status == 'open'
+        && request.resource.data.pid is string
+        && request.resource.data.targetType in ['photo', 'submission', 'doc', 'marker', 'entry']
+        && request.resource.data.targetId is string
+        && exists(/databases/$(database)/documents/projects/$(request.resource.data.pid)/members/$(request.auth.uid));
+      allow read: if request.auth != null
+        && (isAdmin() || resource.data.reporterUid == request.auth.uid);
+      allow update, delete: if request.auth != null && isAdmin();
+    }
+
     // ── Shared projects ──
     match /projects/{pid} {
 

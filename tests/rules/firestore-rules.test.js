@@ -319,6 +319,31 @@ describe('non-member / unauthenticated — nothing', () => {
   });
 });
 
+describe('contentReports — ⚑ Report content (Guideline 1.2, top-level)', () => {
+  const ADMIN = 'Z1RZWSUTXfR1Ys76VMd8FTqydaq1';
+  const rep = (over) => Object.assign({ pid: PID, targetType: 'photo', targetId: 'ph1', targetOwnerUid: 'tim',
+    reporterUid: 'forest', reason: 'private', note: '', status: 'open', createdAt: 1 }, over || {});
+  it('a member (even a reviewer) can file a self-attributed open report', () =>
+    assertSucceeds(setDoc(doc(as('forest'), 'contentReports/r1'), rep())));
+  it('non-member of the named project cannot file', () =>
+    assertFails(setDoc(doc(as('stranger'), 'contentReports/r2'), rep({ reporterUid: 'stranger' }))));
+  it('cannot file as someone else, nor pre-resolved', async () => {
+    await assertFails(setDoc(doc(as('forest'), 'contentReports/r3'), rep({ reporterUid: 'boots' })));
+    await assertFails(setDoc(doc(as('forest'), 'contentReports/r4'), rep({ status: 'resolved' })));
+  });
+  it('reporter reads own report; another member cannot; admin can and resolves', async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'contentReports/r5'), rep());
+    });
+    await assertSucceeds(getDoc(doc(as('forest'), 'contentReports/r5')));
+    await assertFails(getDoc(doc(as('boots'), 'contentReports/r5')));
+    await assertFails(getDoc(doc(as('tim'), 'contentReports/r5')));      // target owner learns nothing
+    await assertFails(updateDoc(doc(as('forest'), 'contentReports/r5'), { status: 'resolved' }));
+    await assertSucceeds(getDoc(doc(as(ADMIN), 'contentReports/r5')));
+    await assertSucceeds(updateDoc(doc(as(ADMIN), 'contentReports/r5'), { status: 'resolved' }));
+  });
+});
+
 describe('appConfig — shared hosted key (reconciled live block)', () => {
   const ADMIN = 'Z1RZWSUTXfR1Ys76VMd8FTqydaq1';
   beforeEach(async () => {
