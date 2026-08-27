@@ -58,7 +58,8 @@ if (mode === 'check') {
 }
 
 // ───────────────────────────── seed ─────────────────────────────
-const result = await page.evaluate(async () => {
+const REUSE = process.argv.includes('--reuse');
+const result = await page.evaluate(async (REUSE) => {
   const log = (...a) => console.log('seed:', ...a);
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   const uid = window._currentUser.uid;
@@ -69,7 +70,7 @@ const result = await page.evaluate(async () => {
   // ── 0. Refuse to double-seed ──
   const existing = (typeof knownProjectsGet === 'function' ? knownProjectsGet() : [])
     .find(p => /Ridgeline/.test(p.projectName || ''));
-  if (existing) { return { error: 'Ridgeline project already exists (' + existing.projectId + ') — aborting, nothing written.' }; }
+  if (existing && !REUSE) { return { error: 'Ridgeline project already exists (' + existing.projectId + ') — aborting, nothing written. Re-run with --reuse to continue into it.' }; }
 
   // ── helpers ──
   const dayISO = (offset) => { const d = new Date(); d.setDate(d.getDate() + offset); return d.toLocaleDateString('en-CA'); };
@@ -88,15 +89,24 @@ const result = await page.evaluate(async () => {
   const box = (dx, dy, w, h) => { const ring = [[C.lng + dx, C.lat + dy], [C.lng + dx + w, C.lat + dy], [C.lng + dx + w, C.lat + dy + h], [C.lng + dx, C.lat + dy + h]]; ring.push(ring[0]); return ring; };
 
   // ── 1. Project ──
-  const pid = await createProject('Ridgeline Solar Energy Center', 'Chenango County, NY', 'Summit Civil Contractors', { landOn: 'log', preparedBy: 'Alex Rivera' });
-  if (!pid) return { error: 'createProject returned nothing' };
-  step('project ' + pid);
+  let pid;
+  if (existing) { pid = existing.projectId; await loadProject(pid); step('reusing project ' + pid); }
+  else {
+    pid = await createProject('Ridgeline Solar Energy Center', 'Chenango County, NY', 'Summit Civil Contractors', { landOn: 'log', preparedBy: 'Alex Rivera' });
+    if (!pid) return { error: 'createProject returned nothing' };
+    step('project ' + pid);
+  }
+  // Membership trio must exist BEFORE any projects/{pid}/* write (rules: isMember) —
+  // createProject fires it without awaiting, so land it explicitly (idempotent merge).
+  await glEnsureSharedProject(pid, loadProjectConfig());
   await sleep(1500);
   // Header fields for the log
   await udb.collection('settings').doc(pid).set({ preparedBy: 'Alex Rivera', org: 'Ridgeline Environmental LLC', reviewedBy: 'J. Morgan, PE', activePhase: 'Phase 1 — Civil', _ts: Date.now() }, { merge: true });
 
   // ── 2. Tracker categories ──
   const mk = async (name, template, color) => {
+    const have = (tcGetCategories(pid) || []).find(c => c.name === name);
+    if (have) return have;
     const sch = tcTemplateSchema(template);
     const cat = Object.assign({ name, color, template }, sch);
     await tcSaveCategory(cat, pid);
@@ -302,7 +312,7 @@ const result = await page.evaluate(async () => {
 
   out.pid = pid; out.photoIds = photoIds;
   return out;
-});
+}, REUSE);
 
 console.log(JSON.stringify(result, null, 2));
 await page.waitForTimeout(4000);   // let trailing fire-and-forget writes land
