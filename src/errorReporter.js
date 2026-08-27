@@ -105,8 +105,50 @@ async function _writeError(payload) {
   }
 }
 
+// ── Firestore INTERNAL ASSERTION recovery (8/27, Tim's iPhone docs-share bug) ──
+// The Firestore JS SDK's IndexedDB persistence can trip an internal assertion on
+// iOS WKWebView (ids b815/ca9 — "delete range without an in-progress
+// transaction", firebase-js-sdk #8250/#9968). After it fires the client is
+// wedged: every later write rejects with the same text until the page reloads,
+// while the UI keeps looking alive ("Share failed" over and over). The SDK
+// logs the assertion via console.error and throws it, so we watch both paths,
+// report it once as critical (Discord alert), and offer a one-tap reload —
+// all state is persisted locally, so a reload loses nothing.
+const _FS_ASSERT_RE = /INTERNAL ASSERTION FAILED/i;
+let _fsRecoverShown = false;
+function _isFsAssertion(msg) { return typeof msg === 'string' && _FS_ASSERT_RE.test(msg); }
+function glFsRecover(msg) {
+  if (_fsRecoverShown) return;
+  _fsRecoverShown = true;
+  try {
+    _writeError({ type: 'firestore-assertion', severity: 'critical', message: String(msg).slice(0, 600), ..._platformContext() });
+  } catch (_) {}
+  const doReload = function() { try { location.reload(); } catch (_) {} };
+  try {
+    if (typeof window._confirmModal === 'function') {
+      window._confirmModal('The sync engine hit an internal error and has stopped saving to the cloud until the app reloads. Everything you did is kept on this device and syncs after the reload.', doReload, '⟳ Reload to keep syncing', 'Reload now');
+    } else if (typeof window.showCloudBanner === 'function') {
+      window.showCloudBanner('⚠ Sync engine error — close and reopen the app to keep syncing.');
+    }
+  } catch (_) {}
+}
+window.glFsRecover = glFsRecover;
+// The SDK's logError goes through console.error before the throw.
+try {
+  const _origConsoleError = console.error.bind(console);
+  console.error = function() {
+    try {
+      const first = arguments[0];
+      const text = (first && first.message) ? first.message : String(first || '');
+      if (_isFsAssertion(text) || (arguments.length > 1 && _isFsAssertion(String(arguments[1] || '')))) glFsRecover(text);
+    } catch (_) {}
+    return _origConsoleError.apply(console, arguments);
+  };
+} catch (_) {}
+
 window.addEventListener('error', function(event) {
   const err = event.error || {};
+  if (_isFsAssertion(event.message || err.message)) glFsRecover(event.message || err.message);
   _writeError({
     type: 'error',
     message: event.message || err.message || 'unknown error',
@@ -121,6 +163,7 @@ window.addEventListener('error', function(event) {
 window.addEventListener('unhandledrejection', function(event) {
   const reason = event.reason;
   const message = (reason && reason.message) ? reason.message : String(reason || 'unknown rejection');
+  if (_isFsAssertion(message)) glFsRecover(message);
   _writeError({
     type: 'unhandledrejection',
     message,
