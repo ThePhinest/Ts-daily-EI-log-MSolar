@@ -54,7 +54,7 @@ export default defineConfig({
         // mapbox-gl/docx/exifr lazy-loaded) lands and once minify:true is
         // enabled in the Aggressive source-maps follow-up. Tracked in
         // groundlog/wiki/dependency-watch.md Outstanding Items.
-        maximumFileSizeToCacheInBytes: 7 * 1024 * 1024,
+        maximumFileSizeToCacheInBytes: 12 * 1024 * 1024,   // 8/27: main chunk 7.4 MB after firebase 12.18 (was 7 MiB cap; see dependency-watch B8)
         runtimeCaching: [
           {
             // Inline array — closure vars aren't available in the serialized SW context
