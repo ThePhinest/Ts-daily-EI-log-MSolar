@@ -232,7 +232,7 @@ const result = await page.evaluate(async () => {
 
   // ── 7. SWPPP QI form config + one completed inspection + one draft ──
   const swCfg = {
-    formType: 'swppp-qi-inspection', version: 1,
+    formType: 'swppp-qi-inspection', version: 1, projectTitle: 'Ridgeline Solar Energy Center', projectName: 'Ridgeline Solar Energy Center',
     header: { inspectorName: 'Alex Rivera', roleCredential: 'Qualified Inspector (CPESC)', organization: 'Ridgeline Environmental LLC', spdesPermit: 'GP-0-20-001', swtNumber: 'NYR11X999', swptsId: 'Ridgeline-Demo' },
     drainageAreas: [{ id: 'DA-1', desc: 'Laydown yard and construction entrance, drains south to roadside ditch' }, { id: 'DA-2', desc: 'Array block A-1 and access road, drains east to sediment trap ST-1' }],
     drainageAreasNote: 'Drainage areas per ESC plan sheets C-301 to C-303.',
