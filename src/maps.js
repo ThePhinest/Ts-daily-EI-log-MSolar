@@ -167,6 +167,30 @@ async function mapInit(){
   document.head.appendChild(script);
 }
 
+// Where a map should open when this device has no saved view (see initMap).
+let _mapStartFit=null;
+function _mapStartView(){
+  const lat=parseFloat(localStorage.getItem('gl_map_lat')), lng=parseFloat(localStorage.getItem('gl_map_lng'));
+  if(Number.isFinite(lat)&&Number.isFinite(lng)){
+    return { center:[lng,lat], zoom:parseFloat(localStorage.getItem('gl_map_zoom')||'13'), fit:null };
+  }
+  try{
+    const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+    const pts=[];
+    ((typeof trGetEntriesForProject==='function')?trGetEntriesForProject(pid):[]).forEach(e=>{
+      if(Number.isFinite(e.centroidLng)&&Number.isFinite(e.centroidLat)) pts.push([e.centroidLng,e.centroidLat]);
+    });
+    ((window._phPhotos||[])).forEach(p=>{ if(p.projectId===pid&&Number.isFinite(p.lng)&&Number.isFinite(p.lat)) pts.push([p.lng,p.lat]); });
+    if(pts.length){
+      let w=Infinity,s=Infinity,e=-Infinity,n=-Infinity;
+      pts.forEach(([x,y])=>{ if(x<w)w=x; if(x>e)e=x; if(y<s)s=y; if(y>n)n=y; });
+      const pad=0.002;   // ~200 m so a single point still gets a sensible frame
+      return { center:[(w+e)/2,(s+n)/2], zoom:14, fit:[[w-pad,s-pad],[e+pad,n+pad]] };
+    }
+  }catch(err){}
+  return { center:[-98.5,39.8], zoom:3.5, fit:null };   // continental US — no project, no guess
+}
+
 function mapSetup(token){
   if(!mapboxgl.supported()){
     const el=document.getElementById('map-loading');
@@ -176,11 +200,14 @@ function mapSetup(token){
   }
   mapboxgl.accessToken=token;
   _mapCurrentStyle=localStorage.getItem('gl_map_style')||'satellite-streets-v11';
-  const center=[
-    parseFloat(localStorage.getItem('gl_map_lng')||'-77.755'),
-    parseFloat(localStorage.getItem('gl_map_lat')||'42.448')
-  ];
-  const zoom=parseFloat(localStorage.getItem('gl_map_zoom')||'13');
+  // Start view (8/27): the device's last view wins; a fresh device starts on the
+  // PROJECT'S OWN WORK (bbox of its tracker entries, fitted on load) — never a
+  // baked-in site coordinate (feedback_no_project_specific_hardcoding; the old
+  // fallback dropped every new account onto one real job site). No work yet →
+  // continental view, and the geolocate flow takes over from there.
+  const _sv=_mapStartView();
+  const center=_sv.center, zoom=_sv.zoom;
+  _mapStartFit=_sv.fit;
   _mapInstance=new mapboxgl.Map({
     container:'mapbox-map',
     style:`mapbox://styles/mapbox/${_mapCurrentStyle}`,
@@ -248,6 +275,7 @@ function mapSetup(token){
     if(rose) rose.style.transform=`rotate(${-b}deg)`; // keep N pointing true north
   });
   _mapInstance.on('load',()=>{
+    if(_mapStartFit){ try{ _mapInstance.fitBounds(_mapStartFit,{padding:60,duration:0,maxZoom:16}); }catch(e){} _mapStartFit=null; }
     document.getElementById('map-loading').style.display='none';
     setTimeout(()=>_mapInstance.resize(),100);
     mapAddGPSDot();
