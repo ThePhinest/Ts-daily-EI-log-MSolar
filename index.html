@@ -1347,23 +1347,6 @@ body.is-native select { font-size: 16px !important; }
      PROJECT SPACE PAGE — the shared-project hub (submissions feed v1;
      search + photo gallery + published map iterate in per the design)
 ══════════════════════════════════ -->
-<div class="page" id="page-projectSpace"><div class="wrap">
-  <div class="card">
-    <div class="card-head">
-      <span class="card-num">🤝</span>
-      <span class="card-title">Project Space</span>
-      <span id="pspace-proj-name" style="margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--muted2)"></span>
-    </div>
-    <div class="card-body">
-      <div style="font-family:var(--mono);font-size:11px;color:var(--muted2);line-height:1.75;margin-bottom:14px">
-        <span style="color:var(--amber);font-weight:500">Everything shared to this project.</span><br>
-        What you see here is exactly what every project member sees — submitted daily logs first; shared photos, map state, and search are on the way.
-      </div>
-      <div class="gl-inv-label" style="margin-bottom:8px">Submitted daily logs</div>
-      <div id="pspace-list"><div class="gl-mem-empty">Loading submissions…</div></div>
-    </div>
-  </div>
-</div></div>
 
 <!-- MORE SLIDE-UP PANEL -->
 <div class="more-overlay" id="more-overlay" onclick="closeMoreMenu()"></div>
@@ -1887,6 +1870,25 @@ body.is-native select { font-size: 16px !important; }
      DAILY LOG PAGE
 ══════════════════════════════════ -->
 <div id="scroll-root">
+<!-- Project Space (moved inside #scroll-root 8/27: it sat as a body child outside the scroll container, pushing #scroll-root off-screen = no scrolling + header shift on iOS) -->
+<div class="page" id="page-projectSpace"><div class="wrap">
+  <div class="card">
+    <div class="card-head">
+      <span class="card-num">🤝</span>
+      <span class="card-title">Project Space</span>
+      <span id="pspace-proj-name" style="margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--muted2)"></span>
+    </div>
+    <div class="card-body">
+      <div style="font-family:var(--mono);font-size:11px;color:var(--muted2);line-height:1.75;margin-bottom:14px">
+        <span style="color:var(--amber);font-weight:500">Everything shared to this project.</span><br>
+        What you see here is exactly what every project member sees — submitted daily logs first; shared photos, map state, and search are on the way.
+      </div>
+      <div class="gl-inv-label" style="margin-bottom:8px">Submitted daily logs</div>
+      <div id="pspace-list"><div class="gl-mem-empty">Loading submissions…</div></div>
+    </div>
+  </div>
+</div></div>
+
 <div class="page active" id="page-log"><div class="wrap">
 
   <!-- Role-aware empty state (Glasses): the page stays fully open — this is a
