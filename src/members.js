@@ -18,10 +18,17 @@ import QRCode from 'qrcode'
 // ── Roles v1 — display name does the brand work, subtitle does the parsing work.
 // Code keys are generic (lead/field/reviewer) so renames stay a one-line change.
 const GL_ROLES = {
-  lead:     { name: 'Lead',    icon: '⭐', sub: 'Full control — runs the project.' },
-  field:    { name: 'Boots',   icon: '🥾', sub: 'Works in the project — own logs, drawings, photos, submissions.' },
-  reviewer: { name: 'Glasses', icon: '👓', sub: 'Reviewer access — sees everything published, edits nothing.' }
+  lead:     { name: 'Lead',     icon: '⭐', sub: 'Full control — runs the project.' },
+  field:    { name: 'Boots',    icon: '🥾', sub: 'Works in the project — own logs, drawings, photos, submissions.' },
+  signer:   { name: 'Reviewer', icon: '✍', sub: 'Reviews and signs submitted reports — sees everything published, edits nothing else.' },
+  reviewer: { name: 'Glasses',  icon: '👓', sub: 'View access — sees everything published, edits nothing.' }
 };
+
+// View-shaped roles: read everything published, no field writes. 'signer'
+// (Reviewer ✍, added 8/31 §C) is Glasses + the one extra power of writing
+// review.* on a submission addressed to them — everywhere else, treat both
+// exactly like the view role.
+function glIsViewRole(role) { return role === 'reviewer' || role === 'signer'; }
 
 const INVITE_TTL_MS = 14 * 86400000; // invites live 14 days
 
@@ -202,7 +209,7 @@ async function _glMigrateWorkProductFlip() {
   for (const p of knownProjectsGet()) {
     const pid = p.projectId;
     if (!pid || pid === 'default') continue;
-    if (p.shared && p.role === 'reviewer') continue;   // no write caps, nothing of ours to move
+    if (p.shared && glIsViewRole(p.role)) continue;   // no write caps, nothing of ours to move
     const key = 'gl_flip_workproduct_' + pid;
     if (localStorage.getItem(key)) continue;
     try {
@@ -312,6 +319,7 @@ function glShowInviteModal() {
     <div class="modal-title">Invite to this project</div>
     <div class="modal-msg" style="margin-bottom:12px">Pick the role for this invite — one invite, one person.</div>
     ${roleCard('reviewer')}
+    ${roleCard('signer', 'Can approve, sign and return reports you send for review.')}
     ${roleCard('field')}
     ${roleCard('lead', 'Equal control to you — including members and invites. Only for someone you completely trust.')}
     <div class="modal-btns" style="margin-top:14px">
@@ -557,7 +565,11 @@ async function glAcceptInvite(inv, token) {
 // Role-scoped orientation — the "what just happened" card shown once on join.
 function _glShowOrientation(inv) {
   const r = GL_ROLES[inv.role] || GL_ROLES.reviewer;
-  const pts = inv.role === 'reviewer' ? [
+  const pts = inv.role === 'signer' ? [
+    'You see what gets <b>published</b> to this project — submitted logs, shared drawings and photos.',
+    'When a report is sent to you for review, you can <b>approve &amp; sign</b> it in-app, or return it with a comment.',
+    'Nothing else here is editable by you, and nobody sees <b>your</b> private work.'
+  ] : inv.role === 'reviewer' ? [
     'You see what gets <b>published</b> to this project — submitted logs, shared drawings and photos.',
     'Nothing here is editable by you, and nobody sees <b>your</b> private work.',
     'Project setup data (maps, categories) is visible right away; daily work appears as it\'s shared.'
@@ -802,9 +814,13 @@ async function glShareMapToken() {
 // layer — they never exist in any snapshot. Checklist/flag item TEXT is
 // embedded so the snapshot stays self-contained when configs change later.
 
-function glBuildSubmissionPayload() {
-  if (typeof collectFormState !== 'function') return null;
-  const state = collectFormState();
+function glBuildSubmissionPayload(state) {
+  // No arg = snapshot the live form. An archived day record (dlGet shape ==
+  // collectFormState shape) can be passed to submit a past day from Calendar.
+  if (!state) {
+    if (typeof collectFormState !== 'function') return null;
+    state = collectFormState();
+  }
   const fields = {};
   Object.entries(state.fields || {}).forEach(([id, val]) => {
     if (!id.startsWith('p-')) fields[id] = val;   // personal data never leaves user space
@@ -852,6 +868,29 @@ function glSubmitDay() {
     .catch(e => _glSubmitSay('Could not open the review sheet: ' + e.message, true));
 }
 
+// Calendar entry point (#61, 8/31): submit any past day on demand — no waiting
+// for the next-morning prompt, no loading the day into the form first. If the
+// tapped day IS the live form's day, the live form wins (the archive may lag).
+function glSubmitDayFromCalendar(date) {
+  const d = _sdb();
+  if (!d) { showCloudBanner('Sign in first.'); return; }
+  const pid = _activeProjectId();
+  if (!pid || pid === 'default') { showCloudBanner('Open a project first.'); return; }
+  const liveDate = document.getElementById('reportDate')?.value || '';
+  let payload;
+  if (date === liveDate) {
+    payload = glBuildSubmissionPayload();
+  } else {
+    const rec = (typeof dlGet === 'function') ? dlGet(date) : null;
+    if (!rec) { showCloudBanner('No archived log found for ' + date + '.'); return; }
+    payload = glBuildSubmissionPayload(rec);
+  }
+  if (!payload) { showCloudBanner('Nothing to submit for ' + date + '.'); return; }
+  payload.fields.reportDate = date;
+  _glShowSubmitReview(payload, date, pid)
+    .catch(e => showCloudBanner('Could not open the review sheet: ' + e.message));
+}
+
 async function _glShowSubmitReview(payload, date, pid) {
   const projName = (typeof loadProjectConfig === 'function' ? loadProjectConfig().projectName : '') || 'this project';
   // Unpublished work product, this project. Entries/photos come from the live
@@ -874,6 +913,60 @@ async function _glShowSubmitReview(payload, date, pid) {
       }
     });
   } catch (e) { /* markers are optional in the sheet */ }
+
+  // ── §C review & sign-off (8/31): eligible reviewers (Reviewer ✍ / Lead) +
+  // the generated report to attach. The EXACT render snapshot rides with the
+  // submission — the reviewer's device rebuilds the identical PDF from it, so
+  // what gets signed is what the export prints. Author signature + project
+  // logo ride along because the reviewer can't read the author's user subtree.
+  const dRev = _sdb();
+  let _revMembers = [], _revSnap = null;
+  try {
+    const ms = await dRev.collection('projects').doc(pid).collection('members').get();
+    ms.forEach(mm => {
+      const v = mm.data() || {};
+      if (mm.id !== _currentUser.uid && (v.role === 'signer' || v.role === 'lead'))
+        _revMembers.push({ uid: mm.id, name: v.displayName || v.email || 'Member', role: v.role });
+    });
+  } catch (e) {}
+  if (_revMembers.length) {
+    try {
+      const vs = await _udb().collection('reports').doc(date).collection('versions').orderBy('version', 'desc').limit(1).get();
+      if (!vs.empty) {
+        const v = vs.docs[0].data();
+        const authorSig = (typeof window.glSigLoad === 'function') ? await window.glSigLoad() : null;
+        let logo = null;
+        try {
+          const pd = await _udb().collection('settings').doc(pid).get();
+          if (pd.exists && pd.data().reportLogoB64) logo = { b64: String(pd.data().reportLogoB64), w: pd.data().reportLogoW || 200, h: pd.data().reportLogoH || 50 };
+        } catch (e) {}
+        _revSnap = {
+          logData: (v.inputSnapshot || {}).logData || null,
+          polished: v.polished || {},
+          photoRefs: (v.inputSnapshot || {}).photoRefs || [],
+          oiRefs: (v.inputSnapshot || {}).oiRefs || [],
+          inputHash: v.inputHash || '', version: v.version || 1,
+          authorSig: authorSig || null, logo
+        };
+        if (!_revSnap.logData) _revSnap = null;
+        else if (JSON.stringify(_revSnap).length > 850000) {   // Firestore 1 MiB doc cap headroom
+          delete _revSnap.authorSig;
+          if (JSON.stringify(_revSnap).length > 850000) _revSnap = null;
+        }
+      }
+    } catch (e) {}
+  }
+  const _lastRevRaw = (function(){ try { return localStorage.getItem('gl_last_reviewer_' + pid) || ''; } catch (e) { return ''; } })();
+  const _lastRev = _revMembers.some(mm => mm.uid === _lastRevRaw) ? _lastRevRaw : '';
+  const revSection = _revMembers.length ? `
+    <div style="margin-top:14px;border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:9px 12px">
+      <div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:4px">✍ Review &amp; sign-off</div>
+      ${_revSnap ? `
+        <div style="font-size:10.5px;color:var(--muted2);margin-bottom:6px">Attaches your generated report (v${_revSnap.version}) — your reviewer signs the exact document you'll export.</div>
+        <label style="display:flex;align-items:center;gap:10px;padding:5px 0;cursor:pointer;font-size:12px"><input type="radio" name="_gl-rev-picker" value=""${_lastRev ? '' : ' checked'} style="accent-color:var(--amber,#C9A84C);width:15px;height:15px;flex-shrink:0">No review — just share the day</label>
+        ${_revMembers.map(mm => `<label style="display:flex;align-items:center;gap:10px;padding:5px 0;cursor:pointer;font-size:12px"><input type="radio" name="_gl-rev-picker" value="${_glEsc(mm.uid)}" data-name="${_glEsc(mm.name)}"${_lastRev === mm.uid ? ' checked' : ''} style="accent-color:var(--amber,#C9A84C);width:15px;height:15px;flex-shrink:0"><span>Send to <b>${_glEsc(mm.name)}</b> for review &amp; signature</span></label>`).join('')}`
+      : `<div style="font-size:10.5px;color:var(--muted2)">Generate this day's report first (Daily Log → Generate Report) to attach it here for review &amp; signature.</div>`}
+    </div>` : '';
 
   const mDate = m => new Date(m.createdAt || 0).toLocaleDateString('en-CA');
   // Row text = main text color, date = amber — keeps the fields visually
@@ -925,6 +1018,7 @@ async function _glShowSubmitReview(payload, date, pid) {
         ${preE.map(e => entryRow(e, false)).join('')}${preP.map(p => photoRow(p, false)).join('')}${preM.map(m => markerRow(m, false)).join('')}
       </div>
     </div>` : ''}
+    ${revSection}
     <div style="margin-top:14px;padding:9px 12px;border:1px solid rgba(255,255,255,.12);border-radius:8px;font-family:var(--mono);font-size:10.5px;line-height:1.55;color:var(--text)">✍ By submitting, I certify this record is accurate and complete to the best of my knowledge.<div style="color:var(--muted2);margin-top:3px">Recorded as ${_glEsc(_glMyName())} · attested by your account, date and version trail.</div></div>
     <div class="modal-btns" style="margin-top:14px">
       <button class="modal-cancel" id="_gl-rev-cancel">Cancel</button>
@@ -933,6 +1027,7 @@ async function _glShowSubmitReview(payload, date, pid) {
     <div class="proj-row-meta" style="margin-top:10px;white-space:normal;overflow:visible;text-overflow:unset">Unchecked items stay private — they'll be offered again next submit, or share them any time from the map. You can keep editing after submitting; reviewers see a resubmit only when you post one.</div>
   </div>`;
   document.body.appendChild(ov);
+  ov._revSnap = _revSnap;   // review attachment rides the sheet element to submit time
   // Bailing out of the sheet also cancels any pending "then start today" chain
   // from the next-day prompt — nothing was submitted, so nothing advances.
   const bail = () => { window._glAfterSubmitStartToday = false; ov.remove(); };
@@ -964,6 +1059,11 @@ async function _glReviewSubmit(ov, payload, date, pid, markersById) {
   ov.querySelectorAll('input[type=checkbox][data-type]').forEach(cb => {
     if (cb.checked && picks[cb.dataset.type]) picks[cb.dataset.type].push(cb.dataset.id);
   });
+  // §C: reviewer selection (radio) + the attached report snapshot.
+  let reviewOpts = null;
+  const rp = ov.querySelector('input[name="_gl-rev-picker"]:checked');
+  if (rp && rp.value && ov._revSnap)
+    reviewOpts = { reviewerUid: rp.value, reviewerName: rp.dataset.name || '', snapshot: ov._revSnap };
   let published = 0;
   try {
     if (picks.entry.length && typeof trSetPublished === 'function')
@@ -974,7 +1074,7 @@ async function _glReviewSubmit(ov, payload, date, pid, markersById) {
       published += await glSetMarkersPublished(markersById, picks.marker, true, pid);
   } catch (e) { console.warn('submit-day publish batch:', e.message); }
   ov.remove();
-  await _glDoSubmitDay(payload, date, published);
+  await _glDoSubmitDay(payload, date, published, reviewOpts);
 }
 
 // Publish/unpublish field markers: stamp the user's own doc + maintain the
@@ -1007,7 +1107,7 @@ async function glSetMarkersPublished(markersById, ids, publish, pid) {
   return n;
 }
 
-async function _glDoSubmitDay(payload, date, publishedCount) {
+async function _glDoSubmitDay(payload, date, publishedCount, reviewOpts) {
   const d = _sdb();
   if (!d) return;
   const pid = _activeProjectId();
@@ -1021,16 +1121,27 @@ async function _glDoSubmitDay(payload, date, publishedCount) {
     snap.forEach(s => { const v = s.data().version || 1; if (v >= version) version = v + 1; });
   } catch (e) { /* first submission for the project */ }
   try {
-    await d.collection('projects').doc(pid).collection('submissions').doc(date + '_v' + version).set({
+    const docData = {
       date, version, status: 'active', audience: 'project',
       submittedBy: _currentUser.uid, submittedByName: _glMyName(),
       submittedAt: Date.now(),
       projectName: (typeof loadProjectConfig === 'function' ? (loadProjectConfig().projectName || '') : ''),
       payload
-    });
+    };
+    // §C (8/31): review request + the frozen report snapshot the reviewer signs.
+    if (reviewOpts && reviewOpts.reviewerUid && reviewOpts.snapshot) {
+      docData.review = {
+        status: 'pending', requestedAt: Date.now(),
+        reviewerUid: reviewOpts.reviewerUid, reviewerName: reviewOpts.reviewerName || ''
+      };
+      docData.reportSnapshot = JSON.parse(JSON.stringify(reviewOpts.snapshot));
+      try { localStorage.setItem('gl_last_reviewer_' + pid, reviewOpts.reviewerUid); } catch (e) {}
+    }
+    await d.collection('projects').doc(pid).collection('submissions').doc(date + '_v' + version).set(docData);
     const pubNote = publishedCount ? (' · ' + publishedCount + ' item' + (publishedCount > 1 ? 's' : '') + ' published') : '';
-    say((version > 1 ? ('✓ Resubmitted — v' + version + ' posted') : '✓ Day submitted to the project') + pubNote);
-    showCloudBanner('✓ ' + date + ' submitted to the project' + (version > 1 ? ' (v' + version + ')' : '') + pubNote + '.');
+    const revNote = docData.review ? (' · sent to ' + (docData.review.reviewerName || 'reviewer') + ' for review') : '';
+    say((version > 1 ? ('✓ Resubmitted — v' + version + ' posted') : '✓ Day submitted to the project') + pubNote + revNote);
+    showCloudBanner('✓ ' + date + ' submitted to the project' + (version > 1 ? ' (v' + version + ')' : '') + pubNote + revNote + '.');
     console.log('GroundLog submissions: posted', date, 'v' + version, publishedCount ? ('+' + publishedCount + ' published') : '');
     _glMarkSubmitted(pid, date, version);
     glUpdateSubmitBadge();
@@ -1114,7 +1225,7 @@ function _glDayHasContent(rec) {
 // started using submissions aren't debt, they're history.
 function glUnsubmittedDates(pid) {
   if (!pid || pid === 'default') return [];
-  if (glMyRoleFor(pid) === 'reviewer') return [];
+  if (glIsViewRole(glMyRoleFor(pid))) return [];
   const subs = glMySubmittedDates(pid);
   const subDates = Object.keys(subs);
   if (!subDates.length) return [];
@@ -1153,7 +1264,9 @@ function _glRenderSubmitBadge() {
 function glUpdateSubmitBadge() {
   _glRenderSubmitBadge();
   const pid = _activeProjectId();
-  if (pid && pid !== 'default' && Object.keys(glMySubmittedDates(pid)).length &&
+  // No non-empty-cache guard: a device that has never submitted locally still
+  // needs to learn its cloud submission history (cross-device correctness).
+  if (pid && pid !== 'default' &&
       Date.now() - _glSubsRefreshTs > 300000) {
     _glSubsRefreshTs = Date.now();
     glRefreshMySubmittedDates(pid).then(() => _glRenderSubmitBadge()).catch(() => {});
@@ -1168,12 +1281,18 @@ async function _ndMaybeOfferSubmit(prevDate) {
   block.style.display = 'none';
   const pid = _activeProjectId();
   if (!pid || pid === 'default' || !prevDate) return;
-  if (glMyRoleFor(pid) === 'reviewer') return;
-  let subs = glMySubmittedDates(pid);
-  if (!Object.keys(subs).length) subs = await glRefreshMySubmittedDates(pid);
-  else glRefreshMySubmittedDates(pid).then(m => {       // a submit from another device counts
-    if (m[prevDate]) block.style.display = 'none';
-  }).catch(() => {});
+  if (glIsViewRole(glMyRoleFor(pid))) return;
+  // Always reconcile with Firestore BEFORE prompting — the local cache is
+  // per-device, so a day submitted from another device would otherwise
+  // re-prompt here (and the old stale-first render raced its background hide).
+  // Offline or slow network falls back to the local cache after 3.5s.
+  let subs;
+  try {
+    subs = await Promise.race([
+      glRefreshMySubmittedDates(pid),
+      new Promise(res => setTimeout(() => res(null), 3500))
+    ]) || glMySubmittedDates(pid);
+  } catch (e) { subs = glMySubmittedDates(pid); }
   if (!Object.keys(subs).length) return;                 // submissions not in use here — don't nag
   if (subs[prevDate]) return;                            // already submitted
   const projName = (typeof loadProjectConfig === 'function' ? loadProjectConfig().projectName : '') || 'the project';
@@ -1278,13 +1397,26 @@ async function glRenderProjectSpacePage() {
   });
   window._glPSpaceCache = {};
   subs.forEach(s => { window._glPSpaceCache[s._id] = s; });
-  list.innerHTML = [...byDate.values()]
-    .sort((a, b) => (b.date || '').localeCompare(a.date || ''))
-    .map(s => {
+  const latest = [...byDate.values()].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  // §C: review-status chip per row + an "awaiting YOUR review" banner for the
+  // addressed reviewer (badge-only notification model, v1).
+  const me = window._currentUser ? _currentUser.uid : '';
+  const myPending = latest.filter(s => s.status !== 'withdrawn' && s.review &&
+    s.review.status === 'pending' && s.review.reviewerUid === me).length;
+  const revChip = (s) => {
+    const rv = s.review;
+    if (!rv || s.status === 'withdrawn') return '';
+    if (rv.status === 'pending')  return ' <span class="gl-role-chip" style="color:var(--amber,#C9A84C)">⏳ review</span>';
+    if (rv.status === 'approved') return ' <span class="gl-role-chip" style="color:var(--green,#27AE60)">✓ signed</span>';
+    if (rv.status === 'returned') return ' <span class="gl-role-chip" style="color:var(--red,#E74C3C)">↩ returned</span>';
+    return '';
+  };
+  list.innerHTML = (myPending ? `<div style="padding:9px 12px;margin-bottom:10px;border:1px solid var(--amber,#C9A84C);border-radius:8px;font-family:var(--mono);font-size:11.5px;color:var(--amber,#C9A84C)">✍ ${myPending} report${myPending > 1 ? 's' : ''} awaiting your review — tap a ⏳ row below.</div>` : '') +
+    latest.map(s => {
       const withdrawn = s.status === 'withdrawn';
       return `<div class="proj-row" onclick="glShowSubmission('${s._id}')"${withdrawn ? ' style="opacity:.45"' : ''}>
         <div class="proj-row-info">
-          <div class="proj-row-name">${_glEsc(_glSubFmtDate(s.date))}${(s.version || 1) > 1 ? ' <span class="gl-role-chip">v' + s.version + '</span>' : ''}${withdrawn ? ' <span class="gl-mem-you">withdrawn</span>' : ''}</div>
+          <div class="proj-row-name">${_glEsc(_glSubFmtDate(s.date))}${(s.version || 1) > 1 ? ' <span class="gl-role-chip">v' + s.version + '</span>' : ''}${revChip(s)}${withdrawn ? ' <span class="gl-mem-you">withdrawn</span>' : ''}</div>
           <div class="proj-row-meta">${_glEsc(s.submittedByName || '')} · ${new Date(s.submittedAt || 0).toLocaleString()}</div>
         </div>
         <span style="color:var(--muted2)">›</span>
@@ -1303,6 +1435,21 @@ function glShowSubmission(id) {
   const checked = (p.checklist || []).filter(c => c.checked);
   const flagged = (p.flags || []).filter(fl => fl.flagged);
   const mine = window._currentUser && s.submittedBy === _currentUser.uid;
+  // §C review state — banner + actions. The attached reportSnapshot renders
+  // the exact PDF; Approve & Sign / Return show only for the addressed
+  // reviewer while pending.
+  const rv = s.review || null;
+  const meUid = window._currentUser ? _currentUser.uid : '';
+  const forMe = rv && rv.reviewerUid === meUid && s.status !== 'withdrawn';
+  const rvBanner = !rv ? '' :
+    rv.status === 'pending' ? `<div style="padding:8px 12px;margin:0 0 10px;border:1px solid var(--amber,#C9A84C);border-radius:8px;font-family:var(--mono);font-size:11px;color:var(--amber,#C9A84C)">⏳ Awaiting review — ${_glEsc(rv.reviewerName || 'reviewer')}</div>` :
+    rv.status === 'approved' ? `<div style="padding:8px 12px;margin:0 0 10px;border:1px solid var(--green,#27AE60);border-radius:8px;font-family:var(--mono);font-size:11px;color:var(--green,#27AE60)">✓ Reviewed &amp; signed by ${_glEsc(rv.reviewerName || '')}${rv.reviewerTitle ? ', ' + _glEsc(rv.reviewerTitle) : ''} · ${rv.reviewedAt ? new Date(rv.reviewedAt).toLocaleDateString() : ''}</div>` :
+    rv.status === 'returned' ? `<div style="padding:8px 12px;margin:0 0 10px;border:1px solid var(--red,#E74C3C);border-radius:8px;font-family:var(--mono);font-size:11px;color:var(--red,#E74C3C)">↩ Returned by ${_glEsc(rv.reviewerName || '')}${rv.comment ? ': “' + _glEsc(rv.comment) + '”' : ''}<br><span style="color:var(--muted2)">Fix the day's log, regenerate the report, and resubmit — the new version starts a fresh review.</span></div>` : '';
+  const rvButtons = [
+    s.reportSnapshot ? `<button class="btn btn-outline" style="font-size:11px;padding:7px 14px;margin-top:8px" onclick="glReviewViewPdf('${s._id}')">📄 View report (PDF${rv && rv.status === 'approved' ? ' — signed' : ''})</button>` : '',
+    (forMe && rv.status === 'pending') ? `<button class="btn" style="font-size:11px;padding:7px 14px;margin-top:8px" onclick="glReviewApprove('${s._id}')">✍ Approve &amp; Sign</button>
+      <button class="btn btn-outline" style="font-size:11px;padding:7px 14px;margin-top:8px" onclick="glReviewReturn('${s._id}')">↩ Return with comment</button>` : ''
+  ].join(' ');
   const ov = document.createElement('div');
   ov.className = 'proj-switcher-overlay';
   ov.id = '_gl-sub-detail';
@@ -1314,6 +1461,8 @@ function glShowSubmission(id) {
       <button class="proj-switcher-close" onclick="document.getElementById('_gl-sub-detail').remove()">✕</button>
     </div>
     <div class="proj-row-meta" style="margin:-8px 0 12px">Submitted by ${_glEsc(s.submittedByName || '')} · ${new Date(s.submittedAt || 0).toLocaleString()}${s.status === 'withdrawn' ? ' · <b>WITHDRAWN</b>' : ''}</div>
+    ${rvBanner}
+    ${rvButtons ? `<div style="display:flex;flex-wrap:wrap;gap:8px;margin:0 0 10px">${rvButtons}</div>` : ''}
     <div class="gl-sub-sect">
       ${kv('Project', f.projectName)}${kv('Prepared by', f.preparedBy)}${kv('Organization', f.org)}
       ${kv('Activity', f.activePhase)}${kv('Contractor', f.contractor)}${kv('Reviewed by', f.reviewedBy)}
@@ -1428,6 +1577,133 @@ function glWithdrawSubmission(id) {
   }, 'Withdraw submission', 'Withdraw');
 }
 
+// ═══════════════════════════════════════════
+// §C REVIEW & SIGN-OFF — reviewer actions (8/31 build, Forest 9/10)
+// ═══════════════════════════════════════════
+// The reviewer renders the submission's frozen reportSnapshot to the exact
+// PDF the author will export, then signs it (drawn signature, shared
+// signature.js capture) or returns it with a comment. Rules allow the
+// addressed reviewer to write ONLY the `review` key while status is pending.
+
+async function glReviewViewPdf(id) {
+  const s = (window._glPSpaceCache || {})[id];
+  if (!s || !s.reportSnapshot) return;
+  const snap = s.reportSnapshot;
+  showCloudBanner('📄 Building the report PDF…');
+  try {
+    const pdfMod = await import('./swpppPdf.js');
+    const rv = (s.review && s.review.status === 'approved') ? {
+      name: s.review.reviewerName || '', title: s.review.reviewerTitle || '',
+      dateMs: s.review.reviewedAt || 0, signature: s.review.signature || null
+    } : null;
+    await pdfMod.dailyExportPdfNow(snap.logData, snap.polished, snap.photoRefs, {
+      oiRes: snap.oiRefs || [], authorSig: snap.authorSig || null, logo: snap.logo || null,
+      review: rv, watermark: (s.review && s.review.status !== 'approved') ? 'UNDER REVIEW' : ''
+    });
+  } catch (e) {
+    showCloudBanner('⚠ Could not build the PDF: ' + (e && e.message || 'error'));
+  }
+}
+
+async function glReviewApprove(id) {
+  const s = (window._glPSpaceCache || {})[id];
+  if (!s || !s.review || s.review.status !== 'pending') return;
+  const sig = (typeof window.glSigLoad === 'function') ? await window.glSigLoad() : null;
+  if (!sig || !sig.b64) {
+    // First approval = first signature. Draw it, then come straight back.
+    window.glSigDraw(() => glReviewApprove(id));
+    return;
+  }
+  document.getElementById('_gl-rev-approve')?.remove();
+  const lastTitle = (function(){ try { return localStorage.getItem('gl_rev_title') || ''; } catch (e) { return ''; } })();
+  const ov = document.createElement('div');
+  ov.className = 'modal-overlay';
+  ov.id = '_gl-rev-approve';
+  ov.style.zIndex = '9700';
+  ov.innerHTML = `<div class="modal-box" style="max-width:440px">
+    <div class="modal-title">✍ Approve &amp; sign — ${_glEsc(_glSubFmtDate(s.date))}</div>
+    <div class="modal-msg" style="text-align:left">
+      <div style="font-size:12px;margin-bottom:10px">Your saved signature and name stamp into this report's certification block as its reviewer. This approval is recorded with your account and the date.</div>
+      <img src="${sig.b64}" alt="signature" style="background:#fff;border-radius:6px;max-width:220px;display:block;margin:0 0 10px">
+      <label style="font-size:11px;color:var(--muted)">Your title on the report (optional)</label>
+      <input id="gl-rev-title" type="text" value="${_glEsc(lastTitle)}" placeholder="e.g. Project Manager" style="width:100%;box-sizing:border-box;font-size:13px;margin-top:4px">
+      <div style="font-family:var(--mono);font-size:10.5px;color:var(--muted2);margin-top:10px">I have reviewed this Daily Environmental Compliance Report and approve it.</div>
+    </div>
+    <div class="modal-btns">
+      <button class="modal-cancel" onclick="document.getElementById('_gl-rev-approve').remove()">Cancel</button>
+      <button class="modal-confirm" id="gl-rev-approve-go">Approve &amp; Sign</button>
+    </div></div>`;
+  document.body.appendChild(ov);
+  document.getElementById('gl-rev-approve-go').onclick = async function() {
+    const btn = this; btn.disabled = true; btn.textContent = 'Signing…';
+    const title = (document.getElementById('gl-rev-title').value || '').trim().slice(0, 80);
+    try { localStorage.setItem('gl_rev_title', title); } catch (e) {}
+    const newReview = Object.assign({}, s.review, {
+      status: 'approved', reviewedAt: Date.now(),
+      reviewerName: _glMyName(), reviewerTitle: title,
+      signature: { b64: sig.b64, w: sig.w || 460, h: sig.h || 150 }, comment: ''
+    });
+    await _glReviewWrite(id, s, newReview,
+      '✓ Signed — ' + _glSubFmtDate(s.date) + ' is approved.',
+      () => ov.remove(), btn, 'Approve & Sign');
+  };
+}
+
+function glReviewReturn(id) {
+  const s = (window._glPSpaceCache || {})[id];
+  if (!s || !s.review || s.review.status !== 'pending') return;
+  document.getElementById('_gl-rev-return')?.remove();
+  const ov = document.createElement('div');
+  ov.className = 'modal-overlay';
+  ov.id = '_gl-rev-return';
+  ov.style.zIndex = '9700';
+  ov.innerHTML = `<div class="modal-box" style="max-width:440px">
+    <div class="modal-title">↩ Return — ${_glEsc(_glSubFmtDate(s.date))}</div>
+    <div class="modal-msg" style="text-align:left">
+      <div style="font-size:12px;margin-bottom:8px">Send this report back with a note. The author fixes the day, regenerates the report, and resubmits — the new version starts a fresh review.</div>
+      <textarea id="gl-rev-comment" rows="3" placeholder="What needs to change?" style="width:100%;box-sizing:border-box;font-size:13px"></textarea>
+    </div>
+    <div class="modal-btns">
+      <button class="modal-cancel" onclick="document.getElementById('_gl-rev-return').remove()">Cancel</button>
+      <button class="modal-confirm" id="gl-rev-return-go">Return report</button>
+    </div></div>`;
+  document.body.appendChild(ov);
+  document.getElementById('gl-rev-return-go').onclick = async function() {
+    const btn = this; btn.disabled = true; btn.textContent = 'Returning…';
+    const comment = (document.getElementById('gl-rev-comment').value || '').trim().slice(0, 1000);
+    const newReview = Object.assign({}, s.review, {
+      status: 'returned', reviewedAt: Date.now(),
+      reviewerName: _glMyName(), comment
+    });
+    await _glReviewWrite(id, s, newReview,
+      '↩ Returned to ' + (s.submittedByName || 'the author') + '.',
+      () => ov.remove(), btn, 'Return report');
+  };
+}
+
+// Shared write path: only the `review` key changes (rules enforce the same).
+async function _glReviewWrite(id, s, newReview, okMsg, closeModal, btn, btnLabel) {
+  const d = _sdb();
+  const pid = _activeProjectId();
+  try {
+    await d.collection('projects').doc(pid).collection('submissions').doc(id)
+      .update({ review: newReview });
+    s.review = newReview;
+    if (window._glPSpaceCache) window._glPSpaceCache[id] = s;
+    closeModal();
+    document.getElementById('_gl-sub-detail')?.remove();
+    showCloudBanner(okMsg);
+    if (typeof glRenderProjectSpacePage === 'function') glRenderProjectSpacePage();
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = btnLabel; }
+    showCloudBanner('⚠ Could not save the review: ' + (e && e.message || 'error'));
+  }
+}
+
+window.glReviewViewPdf = glReviewViewPdf;
+window.glReviewApprove = glReviewApprove;
+window.glReviewReturn = glReviewReturn;
+
 // ── Platform-hosted DEFAULT map token (tier 4 of the key chain) ──
 // A new user on their own project must get a working map with ZERO setup.
 // Admin (Tim) publishes the platform token once to appConfig/mapKey — rules
@@ -1475,7 +1751,7 @@ window.GL_ROLES = GL_ROLES;
 //    role has nothing to submit). Lead/Boots: open-days badge.
 function glUpdateReviewerLogState() {
   const pid = (typeof _activeProjectId === 'function') ? _activeProjectId() : '';
-  const isReviewer = !!pid && pid !== 'default' && glMyRoleFor(pid) === 'reviewer';
+  const isReviewer = !!pid && pid !== 'default' && glIsViewRole(glMyRoleFor(pid));
   const note = document.getElementById('log-reviewer-note');
   if (note) note.style.display = isReviewer ? 'block' : 'none';
   const btn = document.getElementById('btn-submit-day');
@@ -1489,6 +1765,7 @@ function glUpdateReviewerLogState() {
 }
 
 window.glMyRoleFor = glMyRoleFor;
+window.glIsViewRole = glIsViewRole;
 window.glMySubmittedDates = glMySubmittedDates;
 window.glRefreshMySubmittedDates = glRefreshMySubmittedDates;
 window.glUnsubmittedDates = glUnsubmittedDates;
@@ -1525,6 +1802,7 @@ window._glInitMapHostBtn = _glInitMapHostBtn;
 window.glHostMapToken = glHostMapToken;
 window.glBuildSubmissionPayload = glBuildSubmissionPayload;
 window.glSubmitDay = glSubmitDay;
+window.glSubmitDayFromCalendar = glSubmitDayFromCalendar;
 window.glShowProjectSpace = glShowProjectSpace;
 window.glRenderProjectSpacePage = glRenderProjectSpacePage;
 window.glShowSubmission = glShowSubmission;

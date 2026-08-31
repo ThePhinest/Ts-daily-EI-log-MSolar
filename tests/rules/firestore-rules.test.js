@@ -52,6 +52,18 @@ beforeEach(async () => {
     await setDoc(doc(db, `projects/${PID}/config/main`), { cap: 5 });
     await setDoc(doc(db, `projects/${PID}/submissions/s1`),
       { submittedBy: 'tim', version: 1, status: 'active', date: '2026-06-09' });
+    // §C review & sign-off fixtures: a signer-role member ('Reviewer ✍') and a
+    // submission with a pending review addressed to them.
+    await setDoc(doc(db, `projects/${PID}/members/signy`), { role: 'signer' });
+    await setDoc(doc(db, `projects/${PID}/submissions/s_rev`),
+      { submittedBy: 'tim', version: 1, status: 'active', date: '2026-08-30',
+        review: { status: 'pending', reviewerUid: 'signy', reviewerName: 'Sig Ny', requestedAt: 1 },
+        reportSnapshot: { inputHash: 'h1' } });
+    await setDoc(doc(db, `projects/${PID}/submissions/s_rev_done`),
+      { submittedBy: 'tim', version: 1, status: 'active', date: '2026-08-29',
+        review: { status: 'approved', reviewerUid: 'signy', reviewerName: 'Sig Ny',
+                  reviewedAt: 2, signature: { b64: 'data:image/png;base64,x', w: 460, h: 150 } },
+        reportSnapshot: { inputHash: 'h0' } });
     // Invites are TOP-LEVEL (token = doc id = the link/code/QR capability).
     await setDoc(doc(db, 'invites/tok-glasses'),
       { pid: PID, role: 'reviewer', status: 'active', createdBy: 'tim',
@@ -100,6 +112,61 @@ describe('reviewer (Glasses) — sees published, edits nothing', () => {
     await assertFails(setDoc(doc(as('forest'), `projects/${PID}/docs/x`),
       { ownerUid: 'forest', title: 'hax' }));
   });
+});
+
+describe('signer (Reviewer ✍) — §C review & sign-off', () => {
+  const APPROVE = { status: 'approved', reviewerUid: 'signy', reviewerName: 'Sig Ny',
+    requestedAt: 1, reviewedAt: 9, reviewerTitle: 'PM',
+    signature: { b64: 'data:image/png;base64,y', w: 460, h: 150 }, comment: '' };
+  it('reads submissions and published work like Glasses', async () => {
+    await assertSucceeds(getDoc(doc(as('signy'), `projects/${PID}/submissions/s_rev`)));
+    await assertSucceeds(getDoc(doc(as('signy'), `projects/${PID}/trackerEntries/pub1`)));
+    await assertFails(getDoc(doc(as('signy'), `projects/${PID}/trackerEntries/draft1`)));
+  });
+  it('approves & signs a pending review addressed to them (review key only)', () =>
+    assertSucceeds(updateDoc(doc(as('signy'), `projects/${PID}/submissions/s_rev`),
+      { review: APPROVE })));
+  it('returns a pending review with a comment', () =>
+    assertSucceeds(updateDoc(doc(as('signy'), `projects/${PID}/submissions/s_rev`),
+      { review: { status: 'returned', reviewerUid: 'signy', reviewerName: 'Sig Ny',
+                  requestedAt: 1, reviewedAt: 9, comment: 'fix the precip figure' } })));
+  it('cannot touch any key besides review', () =>
+    assertFails(updateDoc(doc(as('signy'), `projects/${PID}/submissions/s_rev`),
+      { review: APPROVE, status: 'withdrawn' })));
+  it('cannot re-address the review to someone else', () =>
+    assertFails(updateDoc(doc(as('signy'), `projects/${PID}/submissions/s_rev`),
+      { review: { ...APPROVE, reviewerUid: 'signy2' } })));
+  it('cannot set a non-terminal review status', () =>
+    assertFails(updateDoc(doc(as('signy'), `projects/${PID}/submissions/s_rev`),
+      { review: { ...APPROVE, status: 'pending' } })));
+  it('cannot write a review on a submission not addressed to them', () =>
+    assertFails(updateDoc(doc(as('signy'), `projects/${PID}/submissions/s1`),
+      { review: APPROVE })));
+  it('cannot re-write an already-decided review (no double-sign)', () =>
+    assertFails(updateDoc(doc(as('signy'), `projects/${PID}/submissions/s_rev_done`),
+      { review: { ...APPROVE, reviewedAt: 99 } })));
+  it('holds no field-write capability (view-shaped role)', async () => {
+    await assertFails(setDoc(doc(as('signy'), `projects/${PID}/submissions/s9`),
+      { submittedBy: 'signy', version: 1, status: 'active' }));
+    await assertFails(setDoc(doc(as('signy'), `projects/${PID}/trackerEntries/sx`),
+      { ownerUid: 'signy', published: true }));
+    await assertFails(updateDoc(doc(as('signy'), `projects/${PID}/config/main`), { cap: 125 }));
+  });
+  it('Glasses cannot sign even if addressed; author cannot forge an approval', async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), `projects/${PID}/submissions/s_glass`),
+        { submittedBy: 'tim', version: 1, status: 'active', date: '2026-08-28',
+          review: { status: 'pending', reviewerUid: 'forest', requestedAt: 1 } });
+    });
+    await assertFails(updateDoc(doc(as('forest'), `projects/${PID}/submissions/s_glass`),
+      { review: { status: 'approved', reviewerUid: 'forest', reviewedAt: 9 } }));
+    await assertFails(updateDoc(doc(as('tim'), `projects/${PID}/submissions/s_rev`),
+      { review: APPROVE }));
+  });
+  it('lead may invite the signer role', () =>
+    assertSucceeds(setDoc(doc(as('tim'), 'invites/tok-signer'),
+      { pid: PID, role: 'signer', status: 'active', createdBy: 'tim',
+        projectName: 'Moraine Solar', createdByName: 'Tim', expiresAt: FUTURE })));
 });
 
 describe('owner / lead (Tim)', () => {

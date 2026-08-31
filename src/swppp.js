@@ -414,58 +414,14 @@ function swCaInp(ev, i, field){
 }
 
 // ── Signature (user-level, one-time capture — 6/11 design: draw once, stamp
-// onto rendered forms; stored per-user, reused on every report) ──
-var _swSig = undefined;   // undefined = not loaded; null = none saved; {b64,w,h}
-async function _swLoadSig(){
-  if(_swSig !== undefined) return _swSig;
-  try{ _swSig = (await idbGet('sw_sig')) || null; }catch(e){ _swSig = null; }
-  if(!_swSig && db && _fbReady){
-    try{
-      const d = await _udb().collection('settings').doc('signature').get();
-      if(d.exists){ _swSig = d.data(); idbSet('sw_sig', _swSig); }
-    }catch(e){}
-  }
-  return _swSig;
-}
-function swpppDrawSignature(){
-  const ov=document.createElement('div');
-  ov.className='modal-overlay';
-  ov.innerHTML=`<div class="modal-box" style="max-width:500px">
-    <h3 style="margin:0 0 4px">Draw your signature</h3>
-    <p style="font-size:11px;color:var(--muted);margin:0 0 10px">Saved once to your account and stamped on every report you export. Finger or stylus.</p>
-    <canvas id="sw-sig-canvas" width="460" height="150" style="width:100%;touch-action:none;background:#fff;border-radius:8px;border:1px solid var(--s1);display:block"></canvas>
-    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:12px">
-      <button class="btn btn-outline" onclick="this.closest('.modal-overlay').remove()">Cancel</button>
-      <button class="btn btn-outline" id="sw-sig-clear">Clear</button>
-      <button class="btn" id="sw-sig-save">Save signature</button>
-    </div>
-  </div>`;
-  document.body.appendChild(ov);
-  const cv=ov.querySelector('#sw-sig-canvas');
-  const ctx=cv.getContext('2d');
-  ctx.lineWidth=2.6; ctx.lineCap='round'; ctx.lineJoin='round'; ctx.strokeStyle='#101060';
-  let drawing=false, drew=false;
-  const pos=(ev)=>{ const r=cv.getBoundingClientRect(); return {x:(ev.clientX-r.left)*(cv.width/r.width), y:(ev.clientY-r.top)*(cv.height/r.height)}; };
-  cv.addEventListener('pointerdown',ev=>{ ev.preventDefault(); drawing=true; drew=true; const p=pos(ev); ctx.beginPath(); ctx.moveTo(p.x,p.y); try{cv.setPointerCapture(ev.pointerId);}catch(e){} });
-  cv.addEventListener('pointermove',ev=>{ if(!drawing) return; ev.preventDefault(); const p=pos(ev); ctx.lineTo(p.x,p.y); ctx.stroke(); });
-  cv.addEventListener('pointerup',()=>{ drawing=false; });
-  cv.addEventListener('pointercancel',()=>{ drawing=false; });
-  ov.querySelector('#sw-sig-clear').onclick=()=>{ ctx.clearRect(0,0,cv.width,cv.height); drew=false; };
-  ov.querySelector('#sw-sig-save').onclick=async()=>{
-    if(!drew){ ov.remove(); return; }
-    _swSig={ b64: cv.toDataURL('image/png'), w:460, h:150 };
-    idbSet('sw_sig', _swSig);
-    try{ if(db && _fbReady) await _udb().collection('settings').doc('signature').set(_swSig); }catch(e){ console.warn('signature cloud save failed (kept locally):', e.message); }
-    ov.remove();
-    _swRenderSection('sw-sec-cert');
-  };
-}
-function _swB64ToBuf(b64){
-  const raw = b64.includes(',') ? b64.split(',')[1] : b64;
-  const bin = atob(raw); const arr = new Uint8Array(bin.length);
-  for(let i=0;i<bin.length;i++) arr[i]=bin.charCodeAt(i);
-  return arr.buffer;
-}
+// onto rendered forms; stored per-user, reused on every report). 8/31: the
+// implementation moved to the shared signature.js (the reviewer countersign
+// uses the same capture); these thin delegates keep every existing call site
+// and the stored 'sw_sig' / settings/signature data working unchanged. ──
+var _swSig = undefined;   // module mirror — the cert card reads it synchronously
+async function _swLoadSig(){ _swSig = await window.glSigLoad(); return _swSig; }
+function swpppDrawSignature(){ window.glSigDraw((sig)=>{ _swSig = sig; _swRenderSection('sw-sec-cert'); }); }
+function _swB64ToBuf(b64){ return window.glSigB64ToBuf(b64); }
 
 // ── Photo / sketch pickers ──
 function swpppPickPhotos(kind){   // kind: 'sketches' | 'photos'
@@ -538,20 +494,38 @@ async function _swLoadDailyReports(){
     _swDaily = snap.docs.map(d=>d.data()).filter(r=>r.reportDate);
   }catch(e){ console.warn('daily-report archive load failed:', e.message); _swDaily=[]; }
 }
-// Re-export a generated daily report from its cached snapshot — same DOCX,
-// no API call (mirrors the Generate Report cache-hit path).
-async function swpppExportDaily(reportDate){
-  const btns=document.querySelectorAll(`[onclick="swpppExportDaily('${reportDate}')"]`);
+// Re-export a generated daily report from its cached snapshot — no API call
+// (mirrors the Generate Report cache-hit path). 8/31 PDF-primary decision:
+// fmt 'pdf' (default) renders the GroundLog-branded dailyBuildPdf with any
+// approved reviewer sign-off stamped; 'docx' keeps the legacy Word build.
+async function swpppExportDaily(reportDate,fmt){
+  fmt=fmt||'pdf';
+  const btns=document.querySelectorAll(`[onclick*="swpppExportDaily('${reportDate}'"]`);
   btns.forEach(b=>{ b.dataset.oldTxt=b.textContent; b.textContent='…'; b.disabled=true; });
   try{
     const snap=await _udb().collection('reports').doc(reportDate).collection('versions').orderBy('version','desc').limit(1).get();
     if(snap.empty) throw new Error('No cached version for this date.');
     const v=snap.docs[0].data();
-    const blob=await rptBuildDocx(v.inputSnapshot.logData, v.polished, v.inputSnapshot.photoRefs||[]);
-    const [y,m,d]=reportDate.split('-');
-    const projName=(document.getElementById('cfg-projectName')?.value?.trim())||'GroundLog';
-    const slug=projName.replace(/[^a-zA-Z0-9]+/g,'_').replace(/^_+|_+$/g,'')||'GroundLog';
-    await saveFileNative(blob,`${m}-${d}-${y}_${slug}-Daily_Inspection_Report.docx`,'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    if(fmt==='docx'){
+      const blob=await rptBuildDocx(v.inputSnapshot.logData, v.polished, v.inputSnapshot.photoRefs||[]);
+      const [y,m,d]=reportDate.split('-');
+      const projName=(document.getElementById('cfg-projectName')?.value?.trim())||'GroundLog';
+      const slug=projName.replace(/[^a-zA-Z0-9]+/g,'_').replace(/^_+|_+$/g,'')||'GroundLog';
+      await saveFileNative(blob,`${m}-${d}-${y}_${slug}-Daily_Inspection_Report.docx`,'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    } else {
+      const pdfMod=await import('./swpppPdf.js');
+      const [authorSig,logo,review]=await Promise.all([
+        (typeof window.glSigLoad==='function')?window.glSigLoad().catch(()=>null):Promise.resolve(null),
+        (typeof window._rptLoadLogo==='function')?window._rptLoadLogo():Promise.resolve(null),
+        (typeof window._rptApprovedReview==='function')?window._rptApprovedReview(reportDate,v.inputHash||null):Promise.resolve(null)
+      ]);
+      await pdfMod.dailyExportPdfNow(v.inputSnapshot.logData, v.polished, v.inputSnapshot.photoRefs||[],{
+        oiRes:(v.inputSnapshot.oiRefs)||[],
+        authorSig:(authorSig&&authorSig.b64)?authorSig:null,
+        logo,
+        review:(review&&!review.stale)?review:null
+      });
+    }
   }catch(e){ console.error('daily re-export failed:',e); alert('Export failed: '+e.message); }
   finally{ btns.forEach(b=>{ b.textContent=b.dataset.oldTxt||'⬇'; b.disabled=false; }); }
 }
@@ -687,7 +661,8 @@ function _swRenderReportsInner(host, pid){
             <span class="sw-list-date">${r.reportDate}</span>
             <span class="sw-list-type">v${r.latestVersion||1}</span>
           </div>
-          <button class="sw-list-btn" title="Re-export DOCX" onclick="swpppExportDaily('${r.reportDate}')">⬇</button>
+          <button class="sw-list-btn" title="Export PDF" onclick="swpppExportDaily('${r.reportDate}','pdf')">⬇ PDF</button>
+          <button class="sw-list-btn" title="Export DOCX" onclick="swpppExportDaily('${r.reportDate}','docx')">DOCX</button>
         </div>`).join('');
   const moreDaily = daily.length>_swDailyLimit
     ? `<div class="sw-more"><button class="btn btn-outline" onclick="swpppShowMore('daily')">⌄ Show ${daily.length-_swDailyLimit} more</button></div>` : '';

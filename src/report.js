@@ -486,6 +486,40 @@ async function rptBuildDocx(logData,polished,photos){
   return Packer.toBlob(doc);
 }
 
+// ── Per-project report logo (shared by the PDF export; the DOCX builder keeps
+//    its own internal load) ──
+async function _rptLoadLogo(){
+  try{
+    const _pid=_activeProjectId();
+    if(_pid&&_pid!=='active'&&typeof db!=='undefined'&&db&&_fbReady){
+      const _pd=await _udb().collection('settings').doc(_pid).get();
+      if(_pd.exists&&_pd.data().reportLogoB64)
+        return {b64:String(_pd.data().reportLogoB64),w:_pd.data().reportLogoW||200,h:_pd.data().reportLogoH||50};
+    }
+  }catch(e){}
+  return null;
+}
+
+// ── §C (8/31): approved reviewer sign-off for this date, if any ──
+// Looks up the latest active submission for the date; returns the review stamp
+// ONLY when the approved snapshot's hash matches the content being exported —
+// a reviewer signs a specific version, never whatever the form says later.
+async function _rptApprovedReview(reportDate,inputHash){
+  try{
+    const pid=(typeof _activeProjectId==='function')?_activeProjectId():'';
+    if(!pid||pid==='default'||typeof db==='undefined'||!db||!_fbReady) return null;
+    const snap=await db.collection('projects').doc(pid).collection('submissions')
+      .where('date','==',reportDate).get();
+    let best=null;
+    snap.forEach(sd=>{ const v=sd.data(); if(v.status!=='withdrawn'&&(!best||(v.version||1)>(best.version||1))) best=v; });
+    if(!best||!best.review||best.review.status!=='approved') return null;
+    if(best.reportSnapshot&&best.reportSnapshot.inputHash&&inputHash&&best.reportSnapshot.inputHash!==inputHash)
+      return {stale:true};
+    const rv=best.review;
+    return {name:rv.reviewerName||'',title:rv.reviewerTitle||'',dateMs:rv.reviewedAt||0,signature:rv.signature||null};
+  }catch(e){ return null; }
+}
+
 // ── Report versioning + cache (B keystone) ──
 // Architecture: every Generate Report writes a versioned snapshot to
 //   users/{uid}/reports/{reportDate}/versions/{v1, v2, ...}
@@ -796,17 +830,28 @@ async function _doGenerate(){
     const versions=await _loadReportVersions(reportDate);
     const latest=versions.length?versions[0]:null;  // sorted desc by version
 
-    // Helper: assemble DOCX + open share sheet from any polished/snapshot pair
-    const assembleAndSave=async(polishedToUse,snapshotToUse)=>{
+    // Helper: assemble the report + open share sheet from any polished/snapshot
+    // pair. 8/31: PDF is the PRIMARY export (GroundLog-branded dailyBuildPdf);
+    // DOCX stays available from the Reports-page archive. An approved reviewer
+    // sign-off (\u00a7C) stamps in when its snapshot hash matches this content.
+    const assembleAndSave=async(polishedToUse,snapshotToUse,hashForUse)=>{
       setStatus('Assembling report\u2026');
-      const blob=await rptBuildDocx(snapshotToUse.logData,polishedToUse,snapshotToUse.photoRefs||[]);
-      const[y,m,d]=reportDate.split('-');
-      const _projName=(document.getElementById('cfg-projectName')?.value?.trim()||'GroundLog');
-      const _projSlug=_projName.replace(/[^a-zA-Z0-9]+/g,'_').replace(/^_+|_+$/g,'')||'GroundLog';
-      const filename=`${m}-${d}-${y}_${_projSlug}-Daily_Inspection_Report.docx`;
-      const mimeType='application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+      const [pdfMod,authorSig,logo]=await Promise.all([
+        import('./swpppPdf.js'),
+        (typeof window.glSigLoad==='function')?window.glSigLoad().catch(()=>null):Promise.resolve(null),
+        _rptLoadLogo()
+      ]);
+      const review=await _rptApprovedReview(reportDate,hashForUse||null);
+      const oiRes=snapshotToUse.oiRefs||((typeof window.oiResolvedForReport==='function')?window.oiResolvedForReport(reportDate):[]);
       setStatus('Opening save sheet\u2026');
-      await window.saveFileNative(blob,filename,mimeType);
+      await pdfMod.dailyExportPdfNow(snapshotToUse.logData,polishedToUse,snapshotToUse.photoRefs||[],{
+        oiRes,
+        authorSig:(authorSig&&authorSig.b64)?authorSig:null,
+        logo,
+        review:(review&&!review.stale)?review:null
+      });
+      if(review&&review.stale)
+        setStatus('\u26a0 Content changed since the reviewer signed \u2014 exported without the reviewer signature.','var(--amber)');
     };
 
     // \u2500\u2500\u2500 Decision tree \u2500\u2500\u2500
@@ -815,7 +860,7 @@ async function _doGenerate(){
       setStatus('Polishing report narrative\u2026');
       const polished=await rptCallClaude(logData,compEntries,assembledSystemPrompt);
       _saveReportVersion(reportDate,currSnap,polished,currHash,1,effectivePromptHash).catch(e=>console.warn('[report-cache] write failed:',e));
-      await assembleAndSave(polished,currSnap);
+      await assembleAndSave(polished,currSnap,currHash);
       setStatus('\u2713 Report generated!');
       clearStatusSoon();
       return;
@@ -823,7 +868,7 @@ async function _doGenerate(){
 
     if(latest.inputHash===currHash){
       // Silent cache hit \u2014 same input, re-export from latest version (no API call)
-      await assembleAndSave(latest.polished,latest.inputSnapshot);
+      await assembleAndSave(latest.polished,latest.inputSnapshot,latest.inputHash);
       setStatus('\u2713 Report re-exported (no changes since last generation).');
       clearStatusSoon();
       return;
@@ -854,7 +899,7 @@ async function _doGenerate(){
     }
     if(choice==='primary'){
       // Re-export existing \u2014 no API call, no new version
-      await assembleAndSave(latest.polished,latest.inputSnapshot);
+      await assembleAndSave(latest.polished,latest.inputSnapshot,latest.inputHash);
       setStatus('\u2713 Existing report re-exported.');
       clearStatusSoon();
       return;
@@ -865,7 +910,7 @@ async function _doGenerate(){
       const polished=await rptCallClaude(logData,compEntries,assembledSystemPrompt);
       const newVer=(latest.version||0)+1;
       _saveReportVersion(reportDate,currSnap,polished,currHash,newVer,effectivePromptHash).catch(e=>console.warn('[report-cache] write failed:',e));
-      await assembleAndSave(polished,currSnap);
+      await assembleAndSave(polished,currSnap,currHash);
       setStatus(`\u2713 Report v${newVer} generated!`);
       clearStatusSoon();
       return;
@@ -952,6 +997,8 @@ async function rptClearReportLogo(){
 
 window.generateReport = generateReport;
 window.rptBuildDocx = rptBuildDocx;   // Reports-page archive re-export (swppp.js)
+window._rptLoadLogo = _rptLoadLogo;             // shared by the archive PDF export (swppp.js)
+window._rptApprovedReview = _rptApprovedReview; // §C sign-off stamp lookup (swppp.js)
 window.rptSaveReportLogo = rptSaveReportLogo;
 window.rptClearReportLogo = rptClearReportLogo;
 window.rptLoadReportLogoUI = rptLoadReportLogoUI;

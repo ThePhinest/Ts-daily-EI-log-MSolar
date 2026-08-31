@@ -109,6 +109,26 @@ async function calRender(){
   calSetView(_calView);
 }
 
+// Submit-on-demand from the day view (#61, 8/31): own log, shared project,
+// writable role, not a future day. Already-submitted days offer a resubmit
+// (posts the next version) so post-submit edits can be shared too.
+function _calSubmitBtn(date,rec){
+  try{
+    const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+    if(!rec||!pid||pid==='default') return '';
+    const role=(typeof glMyRoleFor==='function')?glMyRoleFor(pid):'lead';
+    if(role==='reviewer'||role==='signer') return '';
+    if(rec.projectId&&rec.projectId!==pid) return '';
+    const today=(typeof localToday==='function')?localToday():new Date().toLocaleDateString('en-CA');
+    if(date>today) return '';
+    const v=((typeof glMySubmittedDates==='function')?glMySubmittedDates(pid):{})[date];
+    const label=v
+      ?`📤 Resubmit to Project <span style="color:var(--muted2);font-size:11px">(v${v} already posted)</span>`
+      :'📤 Submit This Day to Project';
+    return `<button class="btn" style="width:100%;margin-top:8px;padding:13px;font-size:13px" onclick="glSubmitDayFromCalendar('${date}')">${label}</button>`;
+  }catch(e){ return ''; }
+}
+
 function calOpenDay(date){
   const rec=dlGet(date);
   const _daySubs=_calSubs(date);
@@ -312,7 +332,8 @@ function calOpenDay(date){
     </div>
     <button class="btn btn-amber" style="width:100%;margin-top:8px;padding:13px;font-size:13px" onclick="dlLoadFromCalendar('${date}')">
       📂 Load This Log into Form
-    </button>`;
+    </button>
+    ${_calSubmitBtn(date,rec)}`;
   calRenderDayViewGrid();
 }
 

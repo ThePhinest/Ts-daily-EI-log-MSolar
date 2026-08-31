@@ -60,7 +60,7 @@ service cloud.firestore {
       allow create: if request.auth != null
         && request.resource.data.createdBy == request.auth.uid
         && request.resource.data.pid is string
-        && request.resource.data.role in ['lead', 'field', 'reviewer']
+        && request.resource.data.role in ['lead', 'field', 'reviewer', 'signer']
         && request.resource.data.status == 'active'
         && request.resource.data.expiresAt is number
         && isLeadOf(request.resource.data.pid);
@@ -106,7 +106,9 @@ service cloud.firestore {
       }
       function isLead()       { return isMember() && myRole() == 'lead'; }
       function canFieldWrite(){ return isMember() && (myRole() == 'lead' || myRole() == 'field'); }
-      // Reviewer ("Glasses") holds no write capability anywhere.
+      // Glasses ('reviewer') holds no write capability anywhere. The signer
+      // role ('Reviewer ✍', §C 8/31) is Glasses + exactly ONE extra power:
+      // writing the review block on a submission addressed to them (below).
 
       // Owner-or-published: non-owners only see published work product.
       function canSeeWorkDoc() {
@@ -226,15 +228,30 @@ service cloud.firestore {
           && resource.data.ownerUid == request.auth.uid;
       }
 
-      // ── Submissions (close-day snapshots; immutable except status) ──
+      // ── Submissions (close-day snapshots; immutable except status + review) ──
       match /submissions/{sid} {
+        // §C reviewer sign-off: ONLY the addressed reviewer, ONLY while the
+        // review is pending, ONLY the review key — and the address itself
+        // (reviewerUid) can never be rewritten. Approve requires a signature;
+        // the terminal status is approved or returned.
+        function reviewWriteOk() {
+          return isMember()
+            && (myRole() == 'signer' || myRole() == 'lead')
+            && resource.data.review != null
+            && resource.data.review.status == 'pending'
+            && resource.data.review.reviewerUid == request.auth.uid
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['review'])
+            && request.resource.data.review.reviewerUid == resource.data.review.reviewerUid
+            && request.resource.data.review.status in ['approved', 'returned'];
+        }
         allow read: if isMember();
         allow create: if canFieldWrite()
           && request.resource.data.submittedBy == request.auth.uid;
         // Withdraw / status changes by the submitter or lead; no payload rewrites
         // (resubmit = new version doc), no deletes (version trail persists).
-        allow update: if (isLead() || resource.data.submittedBy == request.auth.uid)
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'statusChangedAt']);
+        allow update: if ((isLead() || resource.data.submittedBy == request.auth.uid)
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'statusChangedAt']))
+          || reviewWriteOk();
         allow delete: if false;
       }
     }

@@ -48,6 +48,7 @@ import './promptAssembly.js'
 import './promptStorage.js'
 import './aiBrandingEditor.js'
 import './report.js'
+import './signature.js'   // shared drawn-signature capture (must precede swppp.js + members.js use)
 import './swppp.js'
 import './agencyVisits.js'
 import './seedingSpecs.js'

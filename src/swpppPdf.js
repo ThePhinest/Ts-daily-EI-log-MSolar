@@ -375,6 +375,222 @@ export async function swpppExportPdfNow(insp,cfg,sig){
   await saveFileNative(blob,fname,'application/pdf');
 }
 
+// ═══ DAILY REPORT PDF — the primary daily export (8/31, PDF-primary decision) ═══
+// Mirrors rptBuildDocx (report.js) section-for-section, but in the GroundLog
+// palette (teal/amber — feedback_branded_exports; the QI report keeps its blue
+// until the mid-project freeze lifts). Renders ENTIRELY from a snapshot triple
+// (logData, polished, photoRefs) so a REVIEWER'S device can produce the exact
+// same document from a submission's attached report snapshot — photos load
+// from each ref's own storageUrl, never from the local _phPhotos cache.
+// opts: { logo:{b64,w,h}, authorSig:{b64,w,h}, review:{name,title,dateMs,
+//         signature:{b64,w,h}}, oiRes:[…] (snapshot oiRefs), watermark }
+const G_TEAL='#006B75', G_TEAL_LT='#E4EFEE', G_AMBER='#C9A84C', G_INK='#1A1A1A';
+const dh1=(text)=>({table:{widths:['*'],body:[[{text,bold:true,color:'#FFFFFF',fontSize:12,fillColor:G_TEAL,border:[false,false,false,false]}]]},
+  layout:{hLineWidth:()=>0,vLineWidth:()=>0,paddingLeft:()=>6,paddingRight:()=>6,paddingTop:()=>3,paddingBottom:()=>3},
+  headlineLevel:1, margin:[0,10,0,5]});
+const dh2=(text)=>({stack:[
+  {text,bold:true,fontSize:11,color:G_TEAL,margin:[0,8,0,2]},
+  {canvas:[{type:'line',x1:0,y1:0,x2:CONTENT_W,y2:0,lineWidth:1,lineColor:G_AMBER}],margin:[0,0,0,4]}
+]});
+const dInfoRow=(label,value)=>[
+  {text:label,bold:true,fontSize:10,fillColor:G_TEAL_LT,color:G_INK},
+  (value&&value.text!==undefined)||Array.isArray(value)?{text:value,fontSize:10}:{text:String(value==null?'':value),fontSize:10}
+];
+const dInfoTable=(rows)=>({table:{dontBreakRows:true,widths:[160,'*'],body:rows},layout:hairLayout,margin:[0,2,0,4]});
+const dhcell=(text)=>({text,bold:true,color:'#FFFFFF',fillColor:G_TEAL,fontSize:9});
+
+// Photo ref (snapshot shape: storageUrl, caption, camera fields; NO thumb) → sized dataUrl
+async function _dailyImg(p,maxWpx,maxHpx){
+  maxWpx=maxWpx||331; maxHpx=maxHpx||700;
+  try{
+    let blob=null;
+    if(p.storageUrl){ try{ blob=await (await fetch(p.storageUrl)).blob(); }catch(e){} }
+    if(!blob&&p.thumb){ const raw=p.thumb,b64=raw.includes(',')?raw.split(',')[1]:raw; const bin=atob(b64); const arr=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++)arr[i]=bin.charCodeAt(i); blob=new Blob([arr],{type:'image/jpeg'}); }
+    if(!blob) return null;
+    blob=await stampIfCamera(p,blob);
+    const ep=exportImageParams(p); blob=await exportImageBlob(blob,ep.maxPx,ep.quality);
+    let w=maxWpx,h=Math.round(maxWpx*0.75);
+    try{ const bmp=await createImageBitmap(blob); const sc=maxWpx/bmp.width; w=maxWpx; h=Math.round(bmp.height*sc); if(h>maxHpx){ h=maxHpx; w=Math.round(bmp.width*(maxHpx/bmp.height)); } bmp.close&&bmp.close(); }catch(e){}
+    const dataUrl=await new Promise((res,rej)=>{ const r=new FileReader(); r.onloadend=()=>res(r.result); r.onerror=()=>rej(r.error); r.readAsDataURL(blob); });
+    return {dataUrl,w:Math.round(w*0.75),h:Math.round(h*0.75)};
+  }catch(e){ return null; }
+}
+
+export async function dailyBuildPdf(logData,polished,photoRefs,opts){
+  opts=opts||{};
+  const pdfMake=await _getPdfMake();
+  const [y,m,d]=(logData.reportDate||new Date().toLocaleDateString('en-CA')).split('-');
+  const dt=new Date(parseInt(y),parseInt(m)-1,parseInt(d));
+  const longDate=dt.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'});
+  const shortDate=`${parseInt(m)}/${parseInt(d)}/${y.slice(2)}`;
+
+  // Title block (logo is per-project data, passed in — never fetched here)
+  const titleBlock=[];
+  if(opts.logo&&opts.logo.b64){
+    const lb=opts.logo.b64.startsWith('data:')?opts.logo.b64:('data:image/png;base64,'+opts.logo.b64);
+    titleBlock.push({image:lb,width:Math.round((opts.logo.w||200)*0.75),height:Math.round((opts.logo.h||50)*0.75),alignment:'center',margin:[0,4,0,3]});
+  }
+  titleBlock.push({text:'Daily Environmental Compliance Report',fontSize:11,color:G_TEAL,alignment:'center',margin:[0,0,0,8]});
+
+  const infoTbl=dInfoTable([
+    dInfoRow('Report Date:',longDate),
+    dInfoRow('Prepared By:',(logData.preparedBy||'')+' — Environmental Inspector'),
+    dInfoRow('Organization:',logData.org||''),
+    dInfoRow('Project:',logData.project||''),
+    dInfoRow('Current Activity:',logData.activePhase||''),
+    dInfoRow('Active Contractors:',logData.contractor||'—')
+  ]);
+
+  // 1. Weather
+  const wx=logData.weather||{};
+  const sky=Array.isArray(wx.sky)?wx.sky.join(', '):(wx.sky||'');
+  const wxTbl=dInfoTable([
+    dInfoRow('Sky Conditions:',sky||'—'),
+    dInfoRow('Temperature (AM / PM):',(wx.tempAM||'—')+'°F / '+(wx.tempPM||'—')+'°F'),
+    dInfoRow('Precipitation:',wx.precip||'None'),
+    dInfoRow('Wind:',wx.wind||'—'),
+    dInfoRow('Soil Conditions:',wx.soilConditions||'—'),
+    dInfoRow('Upcoming Weather:',wx.upcomingForecast||'—')
+  ]);
+
+  // 2. Inspection Summary
+  const bullets=(arr)=>({ul:(arr||[]),fontSize:10,margin:[10,2,0,2]});
+  const sec2=[
+    dh1('2.  Inspection Summary'),
+    dh2('Contractor Activities'),
+    body(polished.contractorActivities||''),
+    dh2('Field Observations'),
+    body(polished.fieldObservationsOpening||''),
+    ...((polished.fieldObservationsBullets||[]).length?[bullets(polished.fieldObservationsBullets)]:[]),
+    body(polished.fieldObservationsClosing||'')
+  ];
+
+  // 3. Compliance
+  const compIssues=polished.complianceIssues||[{level:'No issues identified',description:'All areas inspected — no compliance concerns observed.',corrective:'N/A',status:'Compliant',dateResolved:''}];
+  const compBody=[[dhcell('Level'),dhcell('Location / Description'),dhcell('Corrective Action'),dhcell('Status')],
+    ...compIssues.map(i=>[cell(i.level),cell(i.description),cell(i.corrective),cell(i.status)])];
+  const sec3=[
+    dh1('3.  Compliance Issues'),
+    dh2('Agency Inspections'),
+    body(polished.agencyInspection||'No agency inspections conducted today.'),
+    dh2('Non-Compliance Observations'),
+    {text:'Compliance Level Reference: Level 1 — Observation | Level 2 — Corrective Action | Level 3 — Non-Compliance | Level 4 — Stop Work Order',fontSize:8.5,italics:true,color:'#555555',margin:[0,2,0,4]},
+    {table:{headerRows:1,dontBreakRows:true,widths:cols(14,32,30),body:compBody},layout:hairLayout,margin:[0,2,0,4]},
+    dh2('Landowner / Public Interactions'),
+    body(polished.landownerContact||'No landowner or public interactions occurred today.'),
+    dh2('T&E Species / Unanticipated Discoveries'),
+    body(polished.rteObservation||'No rare, threatened, or endangered species were observed. No unanticipated archaeological or cultural resource discoveries were encountered.')
+  ];
+  const oiRes=opts.oiRes||[];
+  if(oiRes.length){
+    const oiFmt=(ds)=>{ if(!ds) return ''; const p=String(ds).split('-'); return p.length===3?`${parseInt(p[1])}/${parseInt(p[2])}/${p[0].slice(2)}`:ds; };
+    const oiBody=[[dhcell('Item'),dhcell('Opened'),dhcell('Resolved'),dhcell('Resolution')],
+      ...oiRes.map(it=>[cell(it.title||it.text||''),cell(oiFmt(it.createdDate)),cell(oiFmt(it.resolvedDate)),cell(it.resolutionNote||'Resolved')])];
+    sec3.push(dh2('Open Items Resolved'),
+      {table:{headerRows:1,dontBreakRows:true,widths:cols(38,11,11),body:oiBody},layout:hairLayout,margin:[0,2,0,4]});
+  }
+
+  // 4 + 5
+  const sec4=[dh1('4.  General Communication to Contractors'),body(polished.generalComms||'No general communications to report.')];
+  const laItems=polished.lookaheadBullets||(logData.lookahead?logData.lookahead.split('\n').filter(l=>l.trim()):[]);
+  const upcomingWx=(wx.upcomingForecast||'').trim();
+  const sec5=[
+    dh1('5.  24-Hour Look Ahead'),
+    ...(upcomingWx?[body('Expected Weather: '+upcomingWx)]:[]),
+    ...(laItems.length?[bullets(laItems)]:[body(logData.lookahead||'No look ahead items recorded.')])
+  ];
+
+  // 6. Photo Log — from the snapshot refs, 2-up
+  const dayPhotos=(photoRefs||[]).filter(p=>p.date===logData.reportDate).sort((a,b)=>(a.uploadedAt||0)-(b.uploadedAt||0));
+  const phItems=[];
+  for(let j=0;j<dayPhotos.length;j++){
+    const p=dayPhotos[j];
+    const im=await _dailyImg(p,331);
+    phItems.push({im,cap:`Photo ${j+1} — ${p.caption||''}`});
+  }
+  const sec6=[
+    dh1('6.  Photo Log'),
+    body(`The following photographs were taken during the inspection on ${shortDate}.`),
+    ...(phItems.length
+      ? [{table:{dontBreakRows:true,widths:['*','*'],body:_imgPairRows(phItems)},layout:imgGridLayout,margin:[0,4,0,4]}]
+      : [body('No photographs recorded for this inspection.')])
+  ];
+
+  // Certification — author row always; drawn signatures stamp in when present;
+  // the reviewer block renders ONLY from an approved review (never free text
+  // when a real countersign exists).
+  const rv=opts.review||null;
+  const authorSigRow=(opts.authorSig&&opts.authorSig.b64)
+    ? [{text:'Signature:',bold:true,fontSize:10,fillColor:G_TEAL_LT,color:G_INK},{image:opts.authorSig.b64,width:128,height:41}]
+    : null;
+  const certRows=[
+    dInfoRow('Name:',logData.preparedBy||''),
+    dInfoRow('Title:','Environmental Inspector'),
+    ...(authorSigRow?[authorSigRow]:[]),
+    dInfoRow('Date:',shortDate)
+  ];
+  if(rv){
+    const rvDate=rv.dateMs?new Date(rv.dateMs).toLocaleDateString('en-US',{month:'numeric',day:'numeric',year:'2-digit'}):'';
+    certRows.push(dInfoRow('Reviewed by:',(rv.name||'')+(rv.title?', '+rv.title:'')+(rvDate?' — '+rvDate:'')));
+    if(rv.signature&&rv.signature.b64)
+      certRows.push([{text:'Reviewer signature:',bold:true,fontSize:10,fillColor:G_TEAL_LT,color:G_INK},{image:rv.signature.b64,width:128,height:41}]);
+  } else {
+    certRows.push(dInfoRow('Reviewed by:',logData.reviewedBy||''));
+  }
+  const certTbl=dInfoTable(certRows);
+  certTbl.margin=[0,2,0,0];
+  const certBlock=[{unbreakable:true,stack:[
+    {text:'Report Certification',bold:true,fontSize:11,color:G_TEAL,margin:[0,14,0,2]},
+    {canvas:[{type:'line',x1:0,y1:0,x2:CONTENT_W,y2:0,lineWidth:1,lineColor:G_AMBER}],margin:[0,0,0,5]},
+    body('I certify that the information contained in this Daily Environmental Compliance Report is accurate and complete to the best of my knowledge, and that all observations were conducted in accordance with the applicable Environmental Management and Construction Plan (EM&CP) and all other relevant permit conditions and regulatory requirements.'),
+    {text:'',margin:[0,0,0,4]},
+    certTbl
+  ]}];
+
+  const content=[
+    ...titleBlock,infoTbl,
+    dh1('1.  Weather Conditions'),wxTbl,
+    ...sec2,...sec3,...sec4,...sec5,...sec6,
+    ...certBlock
+  ];
+
+  const dd={
+    pageSize:'LETTER',
+    pageMargins:[MARG,80,MARG,58],
+    defaultStyle:{font:'Roboto',fontSize:10,color:G_INK},
+    header:()=>({
+      margin:[MARG,22,MARG,0],
+      table:{widths:['60%','40%'],body:[[
+        {text:(logData.project||'').toUpperCase(),bold:true,fontSize:10,color:G_TEAL,fillColor:G_TEAL_LT},
+        {text:'Daily Compliance Report',fontSize:9,color:G_TEAL,fillColor:G_TEAL_LT,alignment:'right'}
+      ]]},
+      layout:{hLineWidth:()=>0.5,vLineWidth:(i,node)=>(i===0||i===node.table.widths.length)?0.5:0,hLineColor:()=>HAIR,vLineColor:()=>HAIR,paddingLeft:()=>6,paddingRight:()=>6,paddingTop:()=>3,paddingBottom:()=>3}
+    }),
+    footer:(currentPage)=>({
+      margin:[MARG,14,MARG,0],
+      stack:[
+        {canvas:[{type:'line',x1:0,y1:0,x2:CONTENT_W,y2:0,lineWidth:0.6,lineColor:HAIR}]},
+        {text:`${logData.project||''}  |  Environmental Inspector Daily Report  |  Confidential  |  Page ${currentPage}`,
+         fontSize:8,color:'#888888',alignment:'center',margin:[0,4,0,0]}
+      ]
+    }),
+    ...(opts.watermark?{watermark:{text:opts.watermark,color:G_AMBER,opacity:0.08,bold:true}}:{}),
+    pageBreakBefore:(node,followingNodesOnPage)=>node.headlineLevel===1&&followingNodesOnPage.length===0,
+    content
+  };
+  const doc=pdfMake.createPdf(dd);
+  return doc.getBlob();
+}
+
+export async function dailyExportPdfNow(logData,polished,photoRefs,opts){
+  const blob=await dailyBuildPdf(logData,polished,photoRefs,opts);
+  const [y,m,d]=(logData.reportDate||new Date().toLocaleDateString('en-CA')).split('-');
+  const slug=String(logData.project||'GroundLog').replace(/[^a-zA-Z0-9]+/g,'_').replace(/^_+|_+$/g,'')||'GroundLog';
+  const fname=`${m}-${d}-${y}_${slug}-Daily_Inspection_Report.pdf`;
+  await saveFileNative(blob,fname,'application/pdf');
+  return blob;
+}
+
 // ═══ ESC PUNCHLIST PDF — the cross-category repair-flag deliverable ═══
 // Contractor-facing (ProSeed et al): every open 🚩 flag as a numbered item with
 // flag date, permit-derived due date (correction window), category, coordinates,

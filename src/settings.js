@@ -379,7 +379,8 @@ function _navSlotsKey(){
 function _navRoleDefaults(){
   try{
     const pid=(typeof _activeProjectId==='function')?_activeProjectId():'';
-    if(pid&&pid!=='default'&&typeof glMyRoleFor==='function'&&glMyRoleFor(pid)==='reviewer')
+    if(pid&&pid!=='default'&&typeof glMyRoleFor==='function'&&
+       (typeof glIsViewRole==='function'?glIsViewRole(glMyRoleFor(pid)):glMyRoleFor(pid)==='reviewer'))
       return ['projectSpace','map','photos'];
   }catch{}
   return null;

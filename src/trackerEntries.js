@@ -88,7 +88,8 @@ function _trForeign(entry){
 // Reviewer (Glasses) holds no write capability — block before localStorage so
 // the local cache can't diverge from what the rules will deny anyway.
 function _trReviewerBlocked(pid){
-  if(typeof window.glMyRoleFor === 'function' && window.glMyRoleFor(pid) === 'reviewer'){
+  const role = (typeof window.glMyRoleFor === 'function') ? window.glMyRoleFor(pid) : '';
+  if(role === 'reviewer' || role === 'signer'){
     if(typeof showCloudBanner === 'function') showCloudBanner('👓 You\'re viewing this project — drawings here are read-only for your role.');
     return true;
   }

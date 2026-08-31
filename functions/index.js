@@ -245,6 +245,66 @@ exports.contentReportAlert = onDocumentCreated(
 );
 
 // ═══════════════════════════════════════════════════════════════════════════
+// reviewAlert — §C review & sign-off notifications (8/31 build, Forest 9/10).
+//
+// Fires on submission writes: a NEW pending review notifies the reviewer, a
+// pending→approved/returned transition notifies the author. v1 delivery is
+// the Discord ops channel (badge-only in-app model, Tim relays); email is
+// scaffolded below and switched OFF until a provider is chosen — flip
+// EMAIL_ENABLED and fill _sendReviewEmail when we're ready (cost-tracker
+// entry required per feedback_track_costs_when_adding_services).
+// ═══════════════════════════════════════════════════════════════════════════
+const { onDocumentWritten } = require('firebase-functions/v2/firestore');
+const EMAIL_ENABLED = false;
+
+async function _sendReviewEmail(toUid, subject, bodyText) {
+  if (!EMAIL_ENABLED) { console.log('[reviewAlert] email disabled — would send to', toUid, ':', subject); return; }
+  // Provider goes here (M365 SMTP via GoDaddy aliases, or Resend). Look up the
+  // recipient address from the project membership doc or Auth record, send, done.
+}
+
+exports.reviewAlert = onDocumentWritten(
+  { document: 'projects/{pid}/submissions/{sid}', secrets: [WEBHOOK] },
+  async (event) => {
+    const before = event.data?.before?.exists ? event.data.before.data() : null;
+    const after = event.data?.after?.exists ? event.data.after.data() : null;
+    if (!after || !after.review) return;
+    const prevStatus = before?.review?.status || null;
+    const curStatus = after.review.status;
+    if (prevStatus === curStatus) return;   // no review transition in this write
+
+    let title = null, detail = null, notifyUid = null;
+    if (curStatus === 'pending') {
+      title = '✍ Report sent for review';
+      detail = `**${after.submittedByName || 'Author'}** sent **${after.date}** to **${after.review.reviewerName || 'reviewer'}** for review & signature.`;
+      notifyUid = after.review.reviewerUid;
+    } else if (prevStatus === 'pending' && curStatus === 'approved') {
+      title = '✓ Report approved & signed';
+      detail = `**${after.review.reviewerName || 'Reviewer'}** signed **${after.date}** (submitted by ${after.submittedByName || 'author'}).`;
+      notifyUid = after.submittedBy;
+    } else if (prevStatus === 'pending' && curStatus === 'returned') {
+      title = '↩ Report returned';
+      detail = `**${after.review.reviewerName || 'Reviewer'}** returned **${after.date}**${after.review.comment ? ': ' + String(after.review.comment).slice(0, 300) : ''}.`;
+      notifyUid = after.submittedBy;
+    }
+    if (!title) return;
+
+    try {
+      await postToDiscord(WEBHOOK.value(), {
+        embeds: [{
+          title: `${title} — ${after.projectName || event.params.pid}`,
+          description: `${detail}\nFirestore: projects/${event.params.pid}/submissions/${event.params.sid}`,
+          color: curStatus === 'approved' ? 0x27ae60 : curStatus === 'returned' ? 0xe74c3c : 0xc9a84c,
+          footer: { text: 'GroundLog · reviewAlert' },
+          timestamp: new Date().toISOString(),
+        }],
+      });
+    } catch (e) { console.warn('[reviewAlert] Discord post failed:', e.message); }
+    await _sendReviewEmail(notifyUid, title, detail.replace(/\*\*/g, ''));
+  }
+);
+
+// ═══════════════════════════════════════════════════════════════════════════
 // aiComplete — platform-hosted Claude proxy (8/26, App Store v1 / user #2 gate).
 //
 // Before this, the "hosted" key was an AES blob in appConfig/hosted readable by
