@@ -28,6 +28,7 @@ async function glSigLoad(){
 function glSigDraw(onSaved){
   const ov=document.createElement('div');
   ov.className='modal-overlay';
+  ov.style.zIndex='9800';   // 9/1: above the submission detail sheet (9050) — the pad opened BEHIND it on first Approve & Sign
   ov.innerHTML=`<div class="modal-box" style="max-width:500px">
     <h3 style="margin:0 0 4px">Draw your signature</h3>
     <p style="font-size:11px;color:var(--muted);margin:0 0 10px">Saved once to your account and stamped on every report you sign. Finger or stylus.</p>

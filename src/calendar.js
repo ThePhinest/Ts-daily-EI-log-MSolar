@@ -84,11 +84,22 @@ async function calLoadCloud(){
 function _calSubs(date){
   return (window._glSubsByDate||{})[date]||[];
 }
+// 9/1 (Tim): review state rides the calendar for reviewers — signed / awaiting
+// review / returned — so a signed report is one tap from the day it belongs to.
+function _calReviewDot(s,big){
+  const r=s&&s.review; if(!r||!r.status) return '';
+  const sz=big?'font-size:11px;':'';
+  if(r.status==='approved') return `<span class="cal-dot" style="color:var(--green);${sz}" title="Signed by ${(r.reviewerName||'reviewer').replace(/"/g,'')}">✓</span>`;
+  if(r.status==='pending')  return `<span class="cal-dot" style="color:var(--amber);${sz}" title="Awaiting review">⏳</span>`;
+  if(r.status==='returned') return `<span class="cal-dot" style="color:var(--red,#e0605a);${sz}" title="Returned with comment">↩</span>`;
+  return '';
+}
 function _calSubChips(subs){
   if(!subs.length||typeof window.glMemberChip!=='function') return '';
   const chips=subs.slice(0,3).map(s=>glMemberChip(s.submittedBy,s.submittedByName,12)).join('');
   const more=subs.length>3?'<span class="cal-dot" style="color:var(--muted2)">+'+(subs.length-3)+'</span>':'';
-  return chips+more;
+  const rev=subs.map(s=>_calReviewDot(s)).find(Boolean)||'';
+  return chips+more+rev;
 }
 
 async function calRender(){
@@ -147,6 +158,7 @@ function calOpenDay(date){
         ${typeof window.glMemberChip==='function'?glMemberChip(s.submittedBy,s.submittedByName,20):''}
         <span style="font-family:var(--mono);font-size:12px;color:var(--text);flex:1">${(s.submittedByName||'Project member')}</span>
         ${(s.version||1)>1?`<span class="gl-role-chip">v${s.version}</span>`:''}
+        ${s.review&&s.review.status?`<span style="font-family:var(--mono);font-size:10px;${s.review.status==='approved'?'color:var(--green)':s.review.status==='returned'?'color:var(--red,#e0605a)':'color:var(--amber)'}">${s.review.status==='approved'?'✓ signed':s.review.status==='returned'?'↩ returned':'⏳ awaiting review'}</span>`:''}
         <span style="font-family:var(--mono);font-size:10px;color:var(--muted2)">${new Date(s.submittedAt||0).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'})}</span>
         <span style="color:var(--muted2)">›</span>
       </div>`).join('');
