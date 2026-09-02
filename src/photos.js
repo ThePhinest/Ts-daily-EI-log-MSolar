@@ -569,6 +569,7 @@ async function phSetPublished(ids, publish, projectId){
         if(publish){
           const m = { id:p.id, date:p.date||'', caption:p.caption||'', thumb:p.thumb||'',
             projectId: pid, ownerUid: _currentUser.uid,
+            ownerName: (typeof window._glMyName==='function') ? window._glMyName() : (_currentUser.displayName||_currentUser.email||''),
             published: true, publishedAt: now, uploadedAt: p.uploadedAt||now };
           if(p.storageUrl) m.storageUrl = p.storageUrl;
           if(p.lat !== undefined){ m.lat = p.lat; m.lng = p.lng; }
@@ -657,10 +658,28 @@ function phJumpToShared(){
   if(!_phSharedOpen){ _phSharedOpen = true; _phRenderShared(); }
   document.getElementById('ph-shared')?.scrollIntoView({ behavior:'smooth', block:'start' });
 }
+// 9/1: filter the shared section by teammate (Tim: reviewers with several EIs).
+let _phSharedPerson = 'all';
+function _phSharedSetPerson(uid){ _phSharedPerson = uid || 'all'; _phRenderShared(); }
+window._phSharedSetPerson = _phSharedSetPerson;
+function _phOwnerName(p){
+  return p.ownerName || (typeof window.glMemberNameFor==='function' ? window.glMemberNameFor(p.ownerUid) : '') || 'Member';
+}
 function _phRenderShared(){
   const box = document.getElementById('ph-shared');
   if(!box) return;
-  const shared = (window._phShared||[]).slice()
+  const all = (window._phShared||[]).slice();
+  const owners = {};
+  all.forEach(p=>{ if(p.ownerUid && !owners[p.ownerUid]) owners[p.ownerUid] = _phOwnerName(p); });
+  const ownerIds = Object.keys(owners).sort((a,b)=>owners[a].localeCompare(owners[b]));
+  if(_phSharedPerson!=='all' && !owners[_phSharedPerson]) _phSharedPerson='all';
+  const personRow = ownerIds.length>1
+    ? '<div style="display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 10px">'
+      + `<button class="cl-fpill cl-fall${_phSharedPerson==='all'?' on':''}" onclick="_phSharedSetPerson('all')">All</button>`
+      + ownerIds.map(uid=>`<button class="cl-fpill${_phSharedPerson===uid?' on':''}" style="display:inline-flex;align-items:center;gap:6px" onclick="_phSharedSetPerson('${uid}')">${typeof window.glMemberChip==='function'?window.glMemberChip(uid,owners[uid],14):''}${owners[uid].replace(/</g,'&lt;')}</button>`).join('')
+      + '</div>'
+    : '';
+  const shared = all.filter(p=>_phSharedPerson==='all' || p.ownerUid===_phSharedPerson)
     .sort((a,b)=> b.date > a.date ? 1 : b.date < a.date ? -1 : (b.uploadedAt||0)-(a.uploadedAt||0));
   const cnt = document.getElementById('ph-shared-count');
   if(cnt) cnt.textContent = shared.length;
@@ -676,7 +695,7 @@ function _phRenderShared(){
           ${grouped[date].map(p=>`
             <div class="ph-thumb" onclick="phOpenLightbox('${p.id}',${idsLiteral})">
               <img src="${p.thumb}" alt="${(p.caption||'').replace(/"/g,'&quot;')}" loading="lazy">
-              <div class="ph-thumb-caption">${p.caption||''}</div>
+              <div class="ph-thumb-caption">${_phSharedPerson==='all'&&ownerIds.length>1?`<span style="opacity:.75">${_phOwnerName(p).split(' ')[0]} · </span>`:''}${p.caption||''}</div>
             </div>
           `).join('')}
         </div>
@@ -688,7 +707,7 @@ function _phRenderShared(){
       '<span class="ph-day-count">published by teammates</span>'+
       '<button class="btn btn-outline" style="font-size:10px;padding:4px 10px;margin-left:auto" onclick="event.stopPropagation();glShowProjectSpace()">📁 Project Space</button>'+
     '</div>'+
-    (_phSharedOpen ? body : '');
+    (_phSharedOpen ? personRow + body : '');
 }
 
 // ── Current filtered + sorted photo set (shared by library render + lightbox nav) ──

@@ -897,7 +897,7 @@ async function _doGenerate(){
     try{
       const all=JSON.parse((window.idbGet&&window.idbGet('cl_entries'))||'[]');
       const pidNow=(typeof _activeProjectId==='function')?_activeProjectId():null;
-      compEntries=all.filter(e=>{
+      compEntries=(typeof window.clEntriesForReport==='function')?window.clEntriesForReport(reportDate,pidNow):all.filter(e=>{
         if(e.deletedAt) return false;
         if(pidNow&&e.projectId&&e.projectId!==pidNow) return false;
         if(e.sourceReport===reportDate||e.date===reportDate) return true;

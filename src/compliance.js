@@ -51,7 +51,78 @@ async function clSaveCloud(){
     batch.set(_udb().collection('compliance').doc('entries'), { list: _clEntries, _ts: Date.now() });
     await batch.commit();
   }catch(e){ console.warn('clSaveCloud failed:', e.message); }
+  _clMirrorPublished().catch(e=>console.warn('clMirror failed:', e.message));
 }
+
+// ── 9/1: Published compliance entries mirror into the project ──
+// Submitting a day publishes the entries that appear in that day's report
+// (the open set + anything resolved that day — same filter the report uses);
+// later edits to a published entry re-mirror automatically so status changes
+// reach the project. Reviewers (view roles) read the mirror, read-only.
+// Path: projects/{pid}/complianceLog/{id} (rules: owner-or-published).
+const _clMirrorSig = new Map();
+function _clMirrorDoc(e){
+  return { id:e.id, date:e.date||'', level:e.level||'', location:e.location||'', corrective:e.corrective||'',
+    status:e.status||'Open', dateResolved:e.dateResolved||'', sourceReport:e.sourceReport||'', addedBy:e.addedBy||'',
+    projectId:e.projectId||'', ownerUid:_currentUser.uid, ownerName:(typeof window._glMyName==='function')?window._glMyName():(_currentUser.displayName||_currentUser.email||''),
+    published:true, publishedAt:e.publishedAt||Date.now(), _ts:Date.now() };
+}
+async function _clMirrorPublished(){
+  if(!db || !_fbReady || !_currentUser) return;
+  const pubs = _clEntries.filter(e=>e.published && e.projectId && e.projectId!=='default');
+  const todo = [];
+  pubs.forEach(e=>{
+    const d=_clMirrorDoc(e); const sig=JSON.stringify(Object.assign({},d,{_ts:0,ownerName:''}));
+    if(_clMirrorSig.get(e.id)!==sig){ todo.push([e,d,sig]); }
+  });
+  if(!todo.length) return;
+  const batch = db.batch();
+  todo.forEach(([e,d])=>batch.set(db.collection('projects').doc(e.projectId).collection('complianceLog').doc(e.id), d, {merge:true}));
+  await batch.commit();
+  todo.forEach(([e,,sig])=>_clMirrorSig.set(e.id,sig));
+}
+async function _clUnmirror(e){
+  try{ if(db && _fbReady && e && e.published && e.projectId && e.projectId!=='default')
+    await db.collection('projects').doc(e.projectId).collection('complianceLog').doc(e.id).delete(); }catch(_){}
+  _clMirrorSig.delete(e && e.id);
+}
+
+// The entries a daily report for `date` carries (report.js uses the same rule):
+// logged that day, OR open/in-progress as of that day, OR resolved that day.
+function clEntriesForReport(date, pid){
+  const all = clGetEntries();
+  return all.filter(e=>{
+    if(e.deletedAt) return false;
+    if(pid && e.projectId && e.projectId!==pid) return false;
+    if(e.sourceReport===date || e.date===date) return true;
+    if(!e.date || e.date>date) return false;
+    if(e.status==='Resolved') return e.dateResolved===date;
+    return true;
+  });
+}
+// Submit-day hook: publish that day's report entries to the project. Returns the count newly published.
+async function clPublishForDate(date, pid){
+  if(!pid || pid==='default') return 0;
+  const set = clEntriesForReport(date, pid);
+  let n=0; const now=Date.now();
+  set.forEach(e=>{ if(!e.published){ e.published=true; e.publishedAt=now; n++; } if(!e.projectId) e.projectId=pid; });
+  if(n || set.length){ clSaveLocal(); await _clMirrorPublished().catch(()=>{}); clSaveCloud(); }
+  return n;
+}
+// View roles: teammates' published entries for the active project.
+window._clShared = window._clShared || [];
+async function clLoadShared(pid){
+  window._clShared = [];
+  if(!db || !_fbReady || !_currentUser || !pid || pid==='default') return;
+  try{
+    const snap = await db.collection('projects').doc(pid).collection('complianceLog').where('published','==',true).get();
+    snap.forEach(d=>{ const v=d.data(); if(v.ownerUid!==_currentUser.uid) window._clShared.push(v); });
+  }catch(e){ /* not a member */ }
+}
+function _clIsViewRole(){
+  try{ const pid=_activeProjectId(); return !!(pid && pid!=='default' && window.glIsViewRole && window.glMyRoleFor && window.glIsViewRole(window.glMyRoleFor(pid))); }catch(_){ return false; }
+}
+if(typeof window!=='undefined'){ window.clEntriesForReport=clEntriesForReport; window.clPublishForDate=clPublishForDate; window.clLoadShared=clLoadShared; }
 
 async function clLoadCloud(){
   if(!db || !_fbReady) return false;
@@ -224,7 +295,11 @@ function clRender(){
   _clAmberHydrate();
   const search = (document.getElementById('cl-search')?.value||'').toLowerCase();
 
-  let entries = [..._clEntries].sort((a,b)=> b.date > a.date ? 1 : -1);
+  // 9/1: a Reviewer / Glasses member sees the project's PUBLISHED compliance
+  // entries (teammates', read-only) — same filters, owner chip on each card.
+  const viewRole=_clIsViewRole();
+  const source=viewRole?(window._clShared||[]):_clEntries;
+  let entries = [...source].sort((a,b)=> b.date > a.date ? 1 : -1);
 
   if(_projectFilterActive) entries = entries.filter(e => !e.projectId || e.projectId === _activeProjectId());
   if(_clFilterStatus.size) entries = entries.filter(e=>_clFilterStatus.has(e.status));
@@ -244,17 +319,17 @@ function clRender(){
   );
 
   // Update stats (based on ALL entries, not filtered)
-  const openCount = _clEntries.filter(e=>e.status==='Open'||e.status==='In Progress').length;
+  const openCount = source.filter(e=>e.status==='Open'||e.status==='In Progress').length;
   const el = document.getElementById('cl-stat-open');
   const et = document.getElementById('cl-stat-total');
   if(el) el.textContent = openCount;
-  if(et) et.textContent = _clEntries.length;
+  if(et) et.textContent = source.length;
 
   // Compliance Log card: open-count badge + persisted collapse state (#34)
   const logBadge=document.getElementById('cl-log-badge');
   if(logBadge){
     logBadge.textContent=openCount+' open';
-    logBadge.style.display=_clEntries.length?'':'none';
+    logBadge.style.display=source.length?'':'none';
     logBadge.style.opacity=openCount?'':'0.4';
   }
   const logCard=document.getElementById('cl-log-card');
@@ -270,13 +345,19 @@ function clRender(){
   if(!list) return;
 
   if(entries.length===0){
-    list.innerHTML = _clEntries.length===0
-      ? glEmptyState({
+    list.innerHTML = source.length===0
+      ? (viewRole
+        ? glEmptyState({
+            icon:'👀', title:'No compliance entries published yet',
+            body:'Entries appear here the moment a teammate submits a day whose report carries them — open items stay listed until the day they’re resolved.',
+            actions:[]
+          })
+        : glEmptyState({
           icon:'⚠️', title:'No compliance entries yet',
           body:'Observations, BMP issues, and regulatory flags get logged here — and auto-detected from your daily log narrative when you write one.',
           actions:[{ label:'+ Add Entry', onclick:'clShowForm()', primary:true }],
           academy:'tracker-log', academyLabel:'Tracking &amp; compliance'
-        })
+        }))
       : '<div class="cl-empty">No entries match the current filters.</div>';
     return;
   }
@@ -296,6 +377,7 @@ function clRender(){
         <span class="${clStatusClass(e.status)}">${e.status}</span>
         ${ageChip}
         <span class="cl-entry-source">${sourceLabel}</span>
+        ${viewRole&&e.ownerName?`<span style="display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:10px;color:var(--muted)">${typeof window.glMemberChip==='function'?window.glMemberChip(e.ownerUid,e.ownerName,14):''}${e.ownerName}</span>`:''}
       </div>
       <div class="cl-entry-body">
         <div>
@@ -308,10 +390,10 @@ function clRender(){
         </div>
         ${resolvedRow}
       </div>
-      <div class="cl-entry-footer">
+      ${viewRole?'':`<div class="cl-entry-footer">
         <button class="btn btn-outline" style="font-size:11px;padding:5px 12px" onclick="clEditEntry('${e.id}')">Edit</button>
         <button class="btn btn-ghost" style="font-size:11px;padding:5px 12px" onclick="clConfirmDelete('${e.id}')">Delete</button>
-      </div>
+      </div>`}
     </div>`;
   }).join('');
 }
@@ -449,6 +531,7 @@ function clConfirmDelete(id){
   document.getElementById('_clmc').onclick = function(){ ov.remove(); };
   document.getElementById('_clmok').onclick = function(){
     ov.remove();
+    _clUnmirror(e);
     _clEntries = _clEntries.filter(x=>x.id!==id);
     clSave();
     clRender();
@@ -3276,6 +3359,7 @@ async function clInit(){
   clLoadLocal();
   const fromCloud = await clLoadCloud();
   if(!fromCloud) clLoadLocal(); // fallback
+  if(_clIsViewRole()){ try{ await clLoadShared(_activeProjectId()); }catch(_){} }
   clRender();
   if(typeof glBootMark==='function') glBootMark('compliance',{cloud:!!fromCloud});
   _glMigrateCompliancePhaseD();

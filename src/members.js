@@ -839,7 +839,11 @@ function glBuildSubmissionPayload(state) {
     name: b.name || '', time: b.time || '', loc: b.loc || '', acts: b.acts || '',
     envcomp: b.envcomp || '', issues: b.issues || '', notes: b.notes || ''
   }));
-  return { fields, sky: state.sky || [], checklist, flags, crew };
+  // 9/1: stats the reviewer's calendar draws dots from (photos / tracker /
+  // compliance are filled in at submit time, after the publish batch).
+  const pf = state.fields || {};
+  const stats = { crew: crew.length, hours: !!(pf['p-timeIn'] && pf['p-timeOut']), summary: !!((fields.inspSummary || fields.inspectionSummary || '').trim()) };
+  return { fields, sky: state.sky || [], checklist, flags, crew, stats };
 }
 
 function _glSubmitSay(msg, bad) {
@@ -1067,6 +1071,10 @@ async function _glReviewSubmit(ov, payload, date, pid, markersById) {
   const rp = ov.querySelector('input[name="_gl-rev-picker"]:checked');
   if (rp && rp.value && ov._revSnap)
     reviewOpts = { reviewerUid: rp.value, reviewerName: rp.dataset.name || '', snapshot: ov._revSnap };
+  // 9/1: compliance entries carried by this day's report publish with the day
+  // (reviewers' compliance log), and a small stats block rides the payload so
+  // a reviewer's calendar can draw the same day dots the author sees.
+  try { if (typeof window.clPublishForDate === 'function') await window.clPublishForDate(date, pid); } catch (e) {}
   // 9/1: today's photo checkboxes double as the report selection — unchecked =
   // reportExclude, checked = back in. Earlier days' rows are untouched.
   try {
@@ -1090,8 +1098,18 @@ async function _glReviewSubmit(ov, payload, date, pid, markersById) {
     if (picks.marker.length)
       published += await glSetMarkersPublished(markersById, picks.marker, true, pid);
   } catch (e) { console.warn('submit-day publish batch:', e.message); }
+  try { payload.stats = Object.assign(payload.stats || {}, _glDayStats(date, pid)); } catch (e) {}
   ov.remove();
   await _glDoSubmitDay(payload, date, published, reviewOpts);
+}
+
+// 9/1: what's VISIBLE to the project for this day, counted after the publish
+// batch — photos + tracker entries published, compliance entries in the report.
+function _glDayStats(date, pid) {
+  const photos = (window._phPhotos || []).filter(p => p.date === date && p.published && (!p.projectId || p.projectId === pid)).length;
+  const tracker = (typeof trGetEntriesForProject === 'function' ? trGetEntriesForProject(pid) : []).filter(e => e.date === date && e.published).length;
+  const compliance = (typeof window.clEntriesForReport === 'function') ? window.clEntriesForReport(date, pid).length : 0;
+  return { photos, tracker, compliance };
 }
 
 // Publish/unpublish field markers: stamp the user's own doc + maintain the
@@ -1359,7 +1377,7 @@ async function glLoadCalendarSubmissions() {
   if (!pid || pid === 'default') return;
   try {
     const snap = await d.collection('projects').doc(pid).collection('submissions').get();
-    const latest = new Map();
+    const latest = new Map(), signedMax = new Map();
     window._glPSpaceCache = window._glPSpaceCache || {};
     snap.forEach(s => {
       const v = Object.assign({ _id: s.id }, s.data());
@@ -1368,13 +1386,29 @@ async function glLoadCalendarSubmissions() {
       const k = v.date + '|' + v.submittedBy;
       const cur = latest.get(k);
       if (!cur || (v.version || 1) > (cur.version || 1)) latest.set(k, v);
+      // 9/1 (Tim, "only resubmissions count"): remember the newest SIGNED version
+      // per day+person so a later resubmit can flag the signature as superseded.
+      if (v.review && v.review.status === 'approved' && v.status !== 'withdrawn')
+        signedMax.set(k, Math.max(signedMax.get(k) || 0, v.version || 1));
     });
-    latest.forEach(v => {
+    latest.forEach((v, k) => {
       if (v.status === 'withdrawn') return;
+      const sv = signedMax.get(k) || 0;
+      if (sv && (v.version || 1) > sv && !(v.review && v.review.status === 'approved')) v._supersededSigned = sv;
       (window._glSubsByDate[v.date] = window._glSubsByDate[v.date] || []).push(v);
     });
   } catch (e) { /* not a member of a shared project */ }
+  // Member display names — the calendar + photos person filters label chips
+  // with them (mirror docs older than 9/1 carry only ownerUid).
+  try {
+    const ms = await d.collection('projects').doc(pid).collection('members').get();
+    window._glMemberNames = {};
+    ms.forEach(m => { const v = m.data() || {}; window._glMemberNames[m.id] = v.displayName || v.email || 'Member'; });
+  } catch (e) {}
 }
+window.glMemberNameFor = function (uid) {
+  return (window._glMemberNames && window._glMemberNames[uid]) || '';
+};
 
 // Project Space — its own page (page-projectSpace); this renders the
 // submissions feed into it. Members-readable by rules.
@@ -1782,6 +1816,7 @@ function glUpdateReviewerLogState() {
 }
 
 window.glMyRoleFor = glMyRoleFor;
+window._glMyName = _glMyName;
 window.glIsViewRole = glIsViewRole;
 window.glMySubmittedDates = glMySubmittedDates;
 window.glRefreshMySubmittedDates = glRefreshMySubmittedDates;

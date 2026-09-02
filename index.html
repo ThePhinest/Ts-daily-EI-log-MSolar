@@ -2338,6 +2338,8 @@ Anticipated rain — AM weather monitoring expected"></textarea>
     <button class="cal-toggle-btn" id="cal-toggle-list" onclick="calSetView('list')">☰ List</button>
     <button class="btn btn-outline btn-proj-active" id="cal-proj-filter-btn" style="font-size:11px;padding:5px 12px" onclick="_toggleProjectFilter()">🏗️ Active Project</button>
   </div>
+  <!-- 9/1: teammate person filter (renders only when the project has other submitters) -->
+  <div id="cal-person-row" style="display:none;flex-wrap:wrap;gap:6px;margin:0 0 10px"></div>
 
   <!-- Day view (hidden by default) -->
   <div id="cal-day-view" style="display:none">

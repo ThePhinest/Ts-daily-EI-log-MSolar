@@ -81,8 +81,55 @@ async function calLoadCloud(){
 
 // Teammates' submitted days for this date, chips for a calendar cell.
 // Same person = same color (uid-hashed in glMemberChip); max 3 + overflow.
+// 9/1: person filter over teammates' submissions (Tim: a reviewer with several
+// EIs). 'all' stacks everyone's day dots (deduped) behind the person chips;
+// one person = that EI's calendar, same dots the author sees on their own.
+let _calPerson='all';
+function _calPersonKey(){ try{ return 'gl_cal_person_'+((typeof _activeProjectId==='function')?_activeProjectId():'default'); }catch(_){ return 'gl_cal_person'; } }
+function _calLoadPerson(){ try{ _calPerson=localStorage.getItem(_calPersonKey())||'all'; }catch(_){ _calPerson='all'; } }
+function calSetPerson(uid){
+  _calPerson=uid||'all';
+  try{ localStorage.setItem(_calPersonKey(),_calPerson); }catch(_){}
+  _calRenderPersonRow();
+  if(document.getElementById('cal-day-view').style.display!=='none') return;
+  calSetView(_calView);
+}
+window.calSetPerson=calSetPerson;
+function _calSubmitters(){
+  const out={};
+  Object.values(window._glSubsByDate||{}).forEach(list=>list.forEach(s=>{ if(s.submittedBy&&!out[s.submittedBy]) out[s.submittedBy]=s.submittedByName||'Member'; }));
+  return out;
+}
+function _calRenderPersonRow(){
+  const row=document.getElementById('cal-person-row'); if(!row) return;
+  const people=_calSubmitters(); const ids=Object.keys(people).sort((a,b)=>people[a].localeCompare(people[b]));
+  if(!ids.length){ row.style.display='none'; row.innerHTML=''; return; }
+  if(_calPerson!=='all'&&!people[_calPerson]) _calPerson='all';
+  row.style.display='flex';
+  row.innerHTML=`<button class="cl-fpill cl-fall${_calPerson==='all'?' on':''}" onclick="calSetPerson('all')">All</button>`
+    +ids.map(uid=>`<button class="cl-fpill${_calPerson===uid?' on':''}" style="display:inline-flex;align-items:center;gap:6px" onclick="calSetPerson('${uid}')">${typeof window.glMemberChip==='function'?glMemberChip(uid,people[uid],14):''}${String(people[uid]).replace(/</g,'&lt;')}</button>`).join('');
+}
+function _calIsViewRole(){
+  try{ const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default'; return !!(pid&&pid!=='default'&&typeof glIsViewRole==='function'&&typeof glMyRoleFor==='function'&&glIsViewRole(glMyRoleFor(pid))); }catch(_){ return false; }
+}
 function _calSubs(date){
-  return (window._glSubsByDate||{})[date]||[];
+  const list=(window._glSubsByDate||{})[date]||[];
+  return _calPerson==='all'?list:list.filter(s=>s.submittedBy===_calPerson);
+}
+// Day dots for teammates' submissions, from the payload stats block (9/1) —
+// the same vocabulary as calGetDotIndicators; deduped across submitters.
+function _calSubDots(subs){
+  const seen=new Set(), out=[];
+  const add=(key,html)=>{ if(!seen.has(key)){ seen.add(key); out.push(html); } };
+  subs.forEach(s=>{
+    const st=(s.payload&&s.payload.stats)||{};
+    add('log','<span class="cal-dot" style="color:var(--green)" title="Log submitted">●</span>');
+    if(st.compliance) add('cl','<span class="cal-dot" title="Compliance">❗</span>');
+    if(st.tracker) add('tr','<span class="cal-dot" title="Tracker entries">❗</span>');
+    if(st.photos) add('ph','<span class="cal-dot" title="Photos">📸</span>');
+    if(st.hours) add('hr','<span class="cal-dot" title="Hours">🕒</span>');
+  });
+  return out.join('');
 }
 // 9/1 (Tim): review state rides the calendar for reviewers — signed / awaiting
 // review / returned — so a signed report is one tap from the day it belongs to.
@@ -96,10 +143,12 @@ function _calReviewDot(s,big){
 }
 function _calSubChips(subs){
   if(!subs.length||typeof window.glMemberChip!=='function') return '';
-  const chips=subs.slice(0,3).map(s=>glMemberChip(s.submittedBy,s.submittedByName,12)).join('');
-  const more=subs.length>3?'<span class="cal-dot" style="color:var(--muted2)">+'+(subs.length-3)+'</span>':'';
+  // One person selected → their dots, no chip needed (the row says who).
+  const chips=_calPerson==='all'?subs.slice(0,3).map(s=>glMemberChip(s.submittedBy,s.submittedByName,12)).join(''):'';
+  const more=_calPerson==='all'&&subs.length>3?'<span class="cal-dot" style="color:var(--muted2)">+'+(subs.length-3)+'</span>':'';
   const rev=subs.map(s=>_calReviewDot(s)).find(Boolean)||'';
-  return chips+more+rev;
+  const sup=subs.some(s=>s._supersededSigned)?'<span class="cal-dot" style="color:var(--muted2)" title="An earlier signed version was superseded by a resubmit">⟳</span>':'';
+  return chips+more+_calSubDots(subs)+rev+sup;
 }
 
 async function calRender(){
@@ -113,6 +162,8 @@ async function calRender(){
   if(typeof glLoadCalendarSubmissions==='function'){
     try{ await glLoadCalendarSubmissions(); }catch(e){}
   }
+  _calLoadPerson();
+  _calRenderPersonRow();
   document.getElementById('cal-day-view').style.display='none';
   document.getElementById('cal-view-toggle').style.display='flex';
   const now=new Date();
@@ -159,6 +210,7 @@ function calOpenDay(date){
         <span style="font-family:var(--mono);font-size:12px;color:var(--text);flex:1">${(s.submittedByName||'Project member')}</span>
         ${(s.version||1)>1?`<span class="gl-role-chip">v${s.version}</span>`:''}
         ${s.review&&s.review.status?`<span style="font-family:var(--mono);font-size:10px;${s.review.status==='approved'?'color:var(--green)':s.review.status==='returned'?'color:var(--red,#e0605a)':'color:var(--amber)'}">${s.review.status==='approved'?'✓ signed':s.review.status==='returned'?'↩ returned':'⏳ awaiting review'}</span>`:''}
+        ${s._supersededSigned?`<span style="font-family:var(--mono);font-size:10px;color:var(--muted2)" title="The author resubmitted after this version was signed">⟳ v${s._supersededSigned} signed · superseded</span>`:''}
         <span style="font-family:var(--mono);font-size:10px;color:var(--muted2)">${new Date(s.submittedAt||0).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'})}</span>
         <span style="color:var(--muted2)">›</span>
       </div>`).join('');
@@ -424,7 +476,12 @@ function calRenderDayViewGrid(){
       </div>`;
     } else {
       const isPast=dateStr<=today;
-      if(isPast){
+      if(isPast&&_calIsViewRole()){
+        // 9/1: a Reviewer keeps no log of their own — quiet cell, nothing to start.
+        cells+=`<div class="cal-cell no-log${isToday?' today':''}" style="opacity:0.35">
+          <div class="cal-cell-num">${d}</div>
+        </div>`;
+      } else if(isPast){
         cells+=`<div class="cal-cell no-log${isToday?' today':''}" style="cursor:pointer;opacity:0.5" onclick="calOpenNewDay('${dateStr}')" title="Start log for this day">
           <div class="cal-cell-num">${d}</div>
         </div>`;
@@ -581,10 +638,17 @@ function calRenderList(){
     const subs=_calSubs(date);
     const chips=_calSubChips(subs);
     if(!rec){
+      if(!subs.length) return '';   // filtered out by the person chips
       const names=subs.map(s=>s.submittedByName||'Member').join(', ');
+      let text='Submitted by '+names;
+      if(subs.length===1){
+        const pf=(subs[0].payload&&subs[0].payload.fields)||{};
+        const sum=(pf.inspSummary||pf.inspectionSummary||'').trim().replace(/\r?\n.*/,'').split(/[.!?]/)[0].trim();
+        if(sum) text=(sum.length>60?sum.substring(0,60)+'…':sum)+(_calPerson==='all'?' — '+names:'');
+      }
       return `<div class="cal-row" onclick="calOpenDay('${date}')">
         <div class="cal-row-date">${dlFmtDisplay(date)}</div>
-        <div class="cal-row-summary">Submitted by ${names}</div>
+        <div class="cal-row-summary">${text.replace(/</g,'&lt;')}</div>
         <div class="cal-row-indicators">${chips}</div>
       </div>`;
     }
