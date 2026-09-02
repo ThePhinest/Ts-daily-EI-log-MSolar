@@ -391,6 +391,23 @@ function tcIsClosed(catOrId, projectId){
   return !!(cat && cat.closedAt);
 }
 
+// ── Typed plan total (#17, 9/2) ──
+// A category's PLAN can be the plan-sheet quantity (e.g. total silt fence / SSF on the job)
+// instead of only drawn plan geometry, so installed-% computes against the true job total
+// while installation is in progress. planQty is stored in planQtyUnit (the default unit at
+// save time) and converted to the caller's unit; unset → the drawn plan sum passes through.
+function tcPlanTotal(catOrId, projectId, drawnTotal, unit){
+  const cat = _tcResolve(catOrId, projectId);
+  const q = (cat && cat.planQty != null) ? parseFloat(cat.planQty) : NaN;
+  if(!(q > 0)) return drawnTotal;
+  const from = cat.planQtyUnit || cat.defaultUnit || (cat.measurementType === 'linear' ? 'ft' : 'ac');
+  return tcConvertMeasurement(q, from, unit || from);
+}
+function tcHasPlanQty(catOrId, projectId){
+  const cat = _tcResolve(catOrId, projectId);
+  return !!(cat && parseFloat(cat.planQty) > 0);
+}
+
 // Category identity chip — a small horizontal ramp of the category's state colors,
 // in order. Replaces the old single category-color dot everywhere a category is
 // listed. Self-maintaining: edit a state color and every chip updates. Falls back
@@ -454,6 +471,8 @@ if(typeof window !== 'undefined'){
   window.tcCategoryPhases       = tcCategoryPhases;
   window.tcCategoryMethods      = tcCategoryMethods;
   window.tcIsClosed             = tcIsClosed;
+  window.tcPlanTotal            = tcPlanTotal;
+  window.tcHasPlanQty           = tcHasPlanQty;
   window.TC_FILL_STYLES         = TC_FILL_STYLES;
   window.TC_LINE_STYLES         = TC_LINE_STYLES;
   window.TC_TEMPLATES           = TC_TEMPLATES;

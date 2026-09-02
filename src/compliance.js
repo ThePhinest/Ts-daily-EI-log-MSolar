@@ -1083,7 +1083,7 @@ function _catStateBars(cid, g, pid){
   const dcs=(typeof tcDefaultChildState==='function')?tcDefaultChildState(cat,pid):null;
   const measure=(e)=>(typeof trEntryMeasure==='function')?trEntryMeasure(e,defUnit,pid):0;
   const fmt=(v)=>(typeof tcFormatMeasurement==='function')?tcFormatMeasurement(v,defUnit):`${(v||0).toFixed(2)} ${defUnit}`;
-  const planTotal=planned.reduce((s,e)=>s+measure(e),0);
+  const planTotal=(typeof tcPlanTotal==='function')?tcPlanTotal(cid,pid,planned.reduce((s,e)=>s+measure(e),0),defUnit):planned.reduce((s,e)=>s+measure(e),0);   // #17: typed plan qty wins
   const stateTotal=(sid)=>installed.filter(e=>(e.state||(dcs?dcs.id:null))===sid).reduce((s,e)=>s+measure(e),0);
 
   if(mode==='running-balance'||mode==='running-total'){
@@ -2807,7 +2807,7 @@ async function _linearSheet(wb, cid, allEntries, pid){
   const measure=(e)=>(typeof trEntryMeasure==='function')?trEntryMeasure(e,defUnit,pid):0;
   const fmt=(v)=>(typeof tcFormatMeasurement==='function')?tcFormatMeasurement(v,defUnit):`${(v||0).toFixed(0)} ${defUnit}`;
   const stOf=(e)=>e.state||(dcs?dcs.id:null);
-  const planTotal=planned.reduce((s,e)=>s+measure(e),0);
+  const planTotal=(typeof tcPlanTotal==='function')?tcPlanTotal(cid,pid,planned.reduce((s,e)=>s+measure(e),0),defUnit):planned.reduce((s,e)=>s+measure(e),0);   // #17: typed plan qty wins
 
   const TEAL='006B75', WHITE='FFFFFF', AMBER_LIGHT='FDF5DC';
   const NC=7;
@@ -3020,7 +3020,7 @@ async function _seedingSheet(wb, cid, allEntries, pid){
   await _seedingSheetRender(wb,{
     pid, title:name, tabBase:'Seeding — '+name, defUnit, srcKey:cid, capDay:closedCap,
     childStates:states.filter(s=>!s.isPlanned), installed,
-    planTotal:planned.reduce((s,e)=>s+measure(e),0),
+    planTotal:(typeof tcPlanTotal==='function')?tcPlanTotal(cid,pid,planned.reduce((s,e)=>s+measure(e),0),defUnit):planned.reduce((s,e)=>s+measure(e),0),   // #17: typed plan qty wins
     stateOf:(e)=>e.state||(dcs?dcs.id:null),
     sectionTitle:'By Drawing (location)', groups,
     empty:!planned.length&&!installed.length,

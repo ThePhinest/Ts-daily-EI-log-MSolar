@@ -12,18 +12,31 @@ import { SnapPolygonMode, SnapLineMode, SnapPointMode, SnapModeDrawStyles } from
 // never throw (the snap engine calls this on every move).
 function _snapGetFeatures(){
   try{
-    if(!_activePlannedEntryId) return [];
+    if(!_activePlannedEntryId&&!(_drawMode&&_drawCategory)) return [];
     const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
-    const out=[];
+    const out=[]; const seen=new Set();
     const pushGeom=(e)=>{
-      if(!e||!e.geometry) return;
+      if(!e||!e.geometry||seen.has(e.id)) return;
       let g=e.geometry; if(typeof g==='string'){ try{ g=JSON.parse(g); }catch{ return; } }
-      if(g&&g.type) out.push({type:'Feature',id:'_snap-'+e.id,properties:{},geometry:g});
+      if(g&&g.type){ seen.add(e.id); out.push({type:'Feature',id:'_snap-'+e.id,properties:{},geometry:g}); }
     };
-    if(typeof trGetEntry==='function') pushGeom(trGetEntry(_activePlannedEntryId,pid));
-    if(typeof trGetEntriesForProject==='function'){
+    if(_activePlannedEntryId){
+      if(typeof trGetEntry==='function') pushGeom(trGetEntry(_activePlannedEntryId,pid));
+      if(typeof trGetEntriesForProject==='function'){
+        trGetEntriesForProject(pid)
+          .filter(e=>e.parentId===_activePlannedEntryId && !e.deletedAt && e.id!==_activePlannedEntryId)
+          .forEach(pushGeom);
+      }
+    }
+    // 9/2 (#52, Tim 8/21: "anchoring only, same category"): while drawing a category, its
+    // existing drawings in view (plans + states, never flags) are snap targets too — a new
+    // active-disturbance polygon ties into the one it butts against instead of retracing
+    // that edge. Viewport-bounded so a 1,000-run category never bogs the snap engine.
+    if(_drawMode&&_drawCategory&&typeof trGetEntriesForProject==='function'){
+      let b=null; try{ b=_mapInstance&&_mapInstance.getBounds(); }catch{}
+      const inView=(e)=>{ if(!b) return true; if(e.centroidLng==null||e.centroidLat==null) return true; return e.centroidLng>=b.getWest()-0.002&&e.centroidLng<=b.getEast()+0.002&&e.centroidLat>=b.getSouth()-0.002&&e.centroidLat<=b.getNorth()+0.002; };
       trGetEntriesForProject(pid)
-        .filter(e=>e.parentId===_activePlannedEntryId && !e.deletedAt && e.id!==_activePlannedEntryId)
+        .filter(e=>(e.categoryId===_drawCategory||e.category===_drawCategory)&&!e.deletedAt&&!e.deletedFromMap&&!e.archivedFromMap&&!e.temporary&&!(_shapeEdit&&e.id===_shapeEdit.id)&&inView(e))
         .forEach(pushGeom);
     }
     return out;
@@ -3082,6 +3095,8 @@ function _renderTrackerSheetNow(){
         <div style="display:flex;align-items:center;gap:6px;padding-left:28px">
           <span style="font-family:var(--mono);font-size:10px;color:var(--muted)">${editType==='linear'?'Linear':'Area'} ·</span>
           <select id="map-tc-edit-unit" class="map-tc-unit-sel">${editUnitOpts}</select>
+          <input type="number" id="map-tc-edit-planqty" inputmode="decimal" step="any" min="0" placeholder="Plan total" value="${c.planQty!=null?c.planQty:''}" title="Typed plan total from the plan sheets (e.g. total silt fence on the job) — becomes the % denominator instead of drawn plan geometry" style="width:96px;flex:none;padding:5px 8px;font-size:12px">
+          <span style="font-family:var(--mono);font-size:9.5px;color:var(--muted)">plan qty</span>
         </div>
         <div style="display:flex;align-items:center;gap:6px;padding-left:28px;flex-wrap:wrap">
           <select id="map-tc-edit-linestyle" class="map-tc-unit-sel">${lsOpts}</select>
@@ -3166,11 +3181,14 @@ async function mapTrackerSaveEdit(catId){
   const editedFillStyle=document.getElementById('map-tc-edit-fillstyle')?.value||existing.fillStyle||'solid';
   const editedFillOpacity=parseFloat(document.getElementById('map-tc-edit-fillopacity')?.value)??existing.fillOpacity??0.35;
   const editedLineOpacity=(()=>{ const v=parseFloat(document.getElementById('map-tc-edit-lineopacity')?.value); return isNaN(v)?(existing.lineOpacity??0.9):v; })();
+  // #17 (9/2): typed plan total (in the edited unit) — the true job quantity from the plan sheets;
+  // empty/0 clears it and the drawn plan geometry is the denominator again.
+  const editedPlanQty=(()=>{ const v=parseFloat(document.getElementById('map-tc-edit-planqty')?.value); return (v>0)?v:null; })();
   const _editColor=_tcEditingColor||existing.color;
   // Keep the plan (first) state's color = the category identity color (Part 1).
   const _editStates=(Array.isArray(existing.states)&&existing.states.length)
     ? existing.states.map(s=>s.isPlanned?{...s,color:_editColor}:s) : existing.states;
-  await tcSaveCategory({...existing,name,color:_editColor,...(_editStates?{states:_editStates}:{}),defaultUnit:editedUnit,lineStyle:editedLineStyle,lineWidth:editedLineWidth,lineOpacity:editedLineOpacity,fillStyle:editedFillStyle,fillOpacity:editedFillOpacity},pid);
+  await tcSaveCategory({...existing,name,color:_editColor,...(_editStates?{states:_editStates}:{}),defaultUnit:editedUnit,lineStyle:editedLineStyle,lineWidth:editedLineWidth,lineOpacity:editedLineOpacity,fillStyle:editedFillStyle,fillOpacity:editedFillOpacity,planQty:editedPlanQty,planQtyUnit:editedPlanQty!=null?editedUnit:null},pid);
   _tcEditingCatId=null;
   _tcEditingColor=null;
   _renderTrackerSheet();
@@ -4431,15 +4449,9 @@ function _endShapeEdit(){
   if(typeof mapRefreshDateLabels==='function') mapRefreshDateLabels();
 }
 
-function mapShapeEditSave(){
-  if(!_shapeEdit) return;
-  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
-  const entry=(typeof trGetEntry==='function')?trGetEntry(_shapeEdit.id,pid):null;
-  const f=_drawInstance?_drawInstance.get(_shapeEdit.fid):null;
-  const geom=f&&f.geometry;
-  // Degenerate shapes (a polygon collapsed below 3 points) can't be a valid record.
-  const bad=!geom||(geom.type==='Polygon'?(!geom.coordinates[0]||geom.coordinates[0].length<4):(!geom.coordinates||geom.coordinates.length<2));
-  if(!entry||bad){ mapShapeEditCancel(); return; }
+// Apply a new geometry to an entry record — centroid, auto "lat, lng" location, area/length
+// in the entry's unit. Shared by the reshape save and the linked-state follow (#33).
+function _applyGeomToEntry(entry, geom){
   entry.geometry=geom;
   const cen=_geoCentroid({geometry:geom});
   if(cen){ entry.centroidLng=cen.lng; entry.centroidLat=cen.lat; }
@@ -4461,6 +4473,20 @@ function mapShapeEditSave(){
       entry.acres=parseFloat(rawAc.toFixed(2));
     }
   }
+  return entry;
+}
+
+function mapShapeEditSave(){
+  if(!_shapeEdit) return;
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const entry=(typeof trGetEntry==='function')?trGetEntry(_shapeEdit.id,pid):null;
+  const f=_drawInstance?_drawInstance.get(_shapeEdit.fid):null;
+  const geom=f&&f.geometry;
+  // Degenerate shapes (a polygon collapsed below 3 points) can't be a valid record.
+  const bad=!geom||(geom.type==='Polygon'?(!geom.coordinates[0]||geom.coordinates[0].length<4):(!geom.coordinates||geom.coordinates.length<2));
+  if(!entry||bad){ mapShapeEditCancel(); return; }
+  const orig=_shapeEdit.orig;
+  _applyGeomToEntry(entry, geom);
   const saved=(typeof trSaveEntry==='function')?trSaveEntry(entry,pid):null;
   _endShapeEdit();
   if(saved){
@@ -4468,8 +4494,80 @@ function mapShapeEditSave(){
     if(typeof showCloudBanner==='function') showCloudBanner('📐 Shape updated — measurements recalculated.');
   }
   if(typeof clRenderTrackerCard==='function') clRenderTrackerCard();
+  if(saved) _offerLinkedReshape(entry, orig, geom, pid);
 }
 window.mapShapeEditSave=mapShapeEditSave;
+
+// ── 📐 Linked-state follow (design locked with Tim 7/31, built 9/2 — delta #33) ──
+// After a reshape, the other drawings in the SAME family (the plan underneath, sibling
+// states, the layers stacked on this one) whose outline matched the ORIGINAL shape within
+// a tolerance band (~3 ft per vertex: misclicks + not-quite-hit corners still match; partial
+// spans / stab areas never do) are offered to move with it. On confirm they SNAP to the exact
+// edited geometry (heals the original near-miss) and re-run measurement through the normal
+// save path. Self-selecting by geometric identity — no per-category config.
+const _LINK_TOL_FT=3;
+function _ftBetween(a,b){
+  const R=20902231; // earth radius, ft
+  const dLat=(b[1]-a[1])*Math.PI/180, dLng=(b[0]-a[0])*Math.PI/180, la=((a[1]+b[1])/2)*Math.PI/180;
+  return Math.hypot(dLat, dLng*Math.cos(la))*R;
+}
+// Max per-vertex distance (ft) between two same-type shapes with the same vertex count, trying
+// every ring start + both directions for polygons and both directions for lines. null = no match.
+function _geomMatchFt(a,b){
+  if(!a||!b||a.type!==b.type) return null;
+  const ra=a.type==='Polygon'?a.coordinates[0]:a.coordinates, rb=b.type==='Polygon'?b.coordinates[0]:b.coordinates;
+  if(!Array.isArray(ra)||!Array.isArray(rb)||ra.length!==rb.length||ra.length<2) return null;
+  if(a.type==='Polygon'){
+    const n=ra.length-1; if(n<3) return null;   // closing vertex repeats the first
+    let best=Infinity;
+    for(let off=0;off<n;off++){
+      for(const rev of [false,true]){
+        let mx=0;
+        for(let i=0;i<n;i++){ const j=rev?(((n-i+off)%n)+n)%n:(i+off)%n; const d=_ftBetween(ra[i],rb[j]); if(d>mx) mx=d; if(mx>_LINK_TOL_FT) break; }
+        if(mx<best) best=mx;
+        if(best<=_LINK_TOL_FT) return best;
+      }
+    }
+    return null;
+  }
+  if(a.type!=='LineString') return null;
+  const n=ra.length;
+  for(const rev of [false,true]){
+    let mx=0, ok=true;
+    for(let i=0;i<n;i++){ const d=_ftBetween(ra[i],rb[rev?n-1-i:i]); if(d>mx) mx=d; if(mx>_LINK_TOL_FT){ ok=false; break; } }
+    if(ok) return mx;
+  }
+  return null;
+}
+function _offerLinkedReshape(entry, orig, geom, pid){
+  try{
+    if(!orig||!geom||typeof trGetEntriesForProject!=='function'||typeof _confirmModal!=='function') return;
+    const me=window._currentUser?window._currentUser.uid:null;
+    const famRoot=entry.parentId||entry.id;
+    const family=trGetEntriesForProject(pid).filter(e=>e&&e.id!==entry.id&&!e.deletedAt&&!e.temporary&&e.geometry
+      &&(e.id===famRoot||e.parentId===famRoot||e.parentId===entry.id)
+      &&(!e.ownerUid||!me||e.ownerUid===me));   // rules: only the owner can move a drawing
+    const matches=[];
+    family.forEach(e=>{ let g=e.geometry; if(typeof g==='string'){ try{ g=JSON.parse(g); }catch{ return; } } const d=_geomMatchFt(orig,g); if(d!=null) matches.push({e,d}); });
+    if(!matches.length) return;
+    const esc=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;');
+    const label=e=>{ const cid=e.categoryId||e.category; const st=(typeof tcEntryState==='function')?tcEntryState(e,cid,pid):null; const nm=(typeof tcGetName==='function')?tcGetName(cid,pid):''; return `${esc(nm)} · ${e.entryType==='planned'?'Plan':esc((st&&st.label)||'State')}${e.date?' · '+esc(e.date):''}`; };
+    const lines=matches.map(x=>`<div style="margin:3px 0 0 6px">• ${label(x.e)} <span style="color:var(--muted)">(within ${x.d<0.5?'&lt;1':Math.round(x.d)} ft)</span></div>`).join('');
+    const many=matches.length>1;
+    _confirmModal(`This drawing shares its outline with ${many?matches.length+' other state layers':'another state layer'}:${lines}<div style="margin-top:8px">Move ${many?'them':'it'} with the new shape? ${many?'They snap':'It snaps'} to the exact edited outline and the measurements recalculate.</div>`, ()=>{
+      let n=0;
+      matches.forEach(({e})=>{
+        const fresh=(typeof trGetEntry==='function')?trGetEntry(e.id,pid):e; if(!fresh) return;
+        _applyGeomToEntry(fresh, JSON.parse(JSON.stringify(geom)));
+        if(typeof trSaveEntry==='function'&&trSaveEntry(fresh,pid)) n++;
+      });
+      mapRenderTrackerLayers();
+      if(typeof mapRefreshDateLabels==='function') mapRefreshDateLabels();
+      if(typeof clRenderTrackerCard==='function') clRenderTrackerCard();
+      if(n){ window.glHaptic&&window.glHaptic.success(); if(typeof showCloudBanner==='function') showCloudBanner(`📐 ${n} linked state${n>1?'s':''} moved with the shape.`); }
+    },'📐 Linked states','Move with it');
+  }catch(err){ console.warn('_offerLinkedReshape:',err); }
+}
 
 function mapShapeEditReset(){
   if(!_shapeEdit||!_drawInstance) return;
