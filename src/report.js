@@ -739,9 +739,10 @@ async function _rptAwaitUploads(photos,setStatus){
   if(!missing().length) return;
   setStatus('Waiting for photo uploads\u2026');
   const deadline=Date.now()+20000;
+  let recovered=false;
   while(missing().length&&Date.now()<deadline){
     try{ if(window.phRetryPendingUploads) await window.phRetryPendingUploads(); }catch(e){}
-    if(missing().length){ try{ if(window.phRecoverStorageUrls) await window.phRecoverStorageUrls(); }catch(e){} }
+    if(missing().length&&!recovered){ recovered=true; try{ if(window.phRecoverStorageUrls) await window.phRecoverStorageUrls(); }catch(e){} }
     if(missing().length) await new Promise(r=>setTimeout(r,1500));
   }
   const left=missing().length;

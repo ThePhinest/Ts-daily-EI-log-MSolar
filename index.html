@@ -1012,6 +1012,8 @@ button:disabled,button[disabled]{opacity:.45;cursor:not-allowed}
 /* PROJECT SWITCHER MODAL */
 .proj-switcher-overlay{position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,.6);display:flex;align-items:flex-end;justify-content:center}
 .proj-switcher-sheet{background:var(--s1);border:1px solid var(--border2);border-radius:12px 12px 0 0;width:100%;max-width:480px;padding:20px 20px calc(20px + env(safe-area-inset-bottom));max-height:80vh;overflow-y:auto}
+/* 9/1: a bottom sheet reads "stuck low" on a desktop window — center it there (phone keeps the sheet). */
+@media (min-width:700px){.proj-switcher-overlay{align-items:center}.proj-switcher-sheet{border-radius:12px;padding-bottom:20px}}
 .proj-switcher-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
 .proj-switcher-title{font-family:var(--cond);font-weight:700;font-size:14px;letter-spacing:.08em;text-transform:uppercase;color:var(--amber)}
 .proj-switcher-close{background:none;border:none;color:var(--muted2);font-size:20px;cursor:pointer;line-height:1;padding:2px 6px}
@@ -3928,6 +3930,7 @@ Anticipated rain — AM weather monitoring expected"></textarea>
         <button class="btn btn-outline" id="gl-diag-copy" style="font-size:11px;padding:7px 14px" onclick="glDiagCopy()">📋 Copy all</button>
         <button class="btn btn-outline" id="gl-diag-share" style="font-size:11px;padding:7px 14px" onclick="glDiagShare()">📤 Share .txt</button>
         <button class="btn btn-outline" style="font-size:11px;padding:7px 14px;color:var(--muted)" onclick="glDiagRender()">↻ Refresh</button>
+        <button class="btn btn-outline" style="font-size:11px;padding:7px 14px" onclick="glDiagRetryUploads()">⬆ Retry photo uploads</button>
       </div>
       <pre id="gl-diag-out" style="font-family:var(--mono);font-size:10.5px;line-height:1.45;color:var(--text);background:var(--s1);border:1px solid var(--border);border-radius:6px;padding:10px;white-space:pre-wrap;word-break:break-word;max-height:360px;overflow:auto;margin:0"></pre>
     </div>

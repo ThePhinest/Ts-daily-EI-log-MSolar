@@ -450,9 +450,10 @@ function phSave(){
 }
 
 // ── One-time recovery: re-fetch storageUrl for photos missing it ──
+const _phRecover404 = new Set();   // 9/1: one 404 per photo per session, not a flood on every pass
 async function phRecoverStorageUrls(){
   if(!storage || !_udb()) return;
-  const missing = window._phPhotos.filter(p => !p.storageUrl && p.filename);
+  const missing = window._phPhotos.filter(p => !p.storageUrl && p.filename && !_phRecover404.has(p.id));
   if(!missing.length) return;
   let fixed = 0;
   for(const p of missing){
@@ -461,7 +462,7 @@ async function phRecoverStorageUrls(){
       p.storageUrl = url;
       phMarkDirty(p.id);
       fixed++;
-    }catch(e){}
+    }catch(e){ _phRecover404.add(p.id); }
   }
   if(fixed > 0){
     phSave();
@@ -496,13 +497,32 @@ async function phRetryPendingUploads(){
         phSaveLocal(); phSaveCloudOne(p);
         window.idbDel(key);
         console.log('phRetryPendingUploads: healed '+id);
-      }catch(e){ /* still offline / weak signal — next trigger tries again */ }
+      }catch(e){
+        // still offline / weak signal — next trigger tries again; keep the reason
+        // so Diagnostics can show WHY a shot is still parked (9/1).
+        _phUploadLastErr={id,at:Date.now(),msg:(e&&(e.code||e.message))||'upload failed'};
+        console.warn('phRetryPendingUploads: '+id+' still pending —',e&&(e.code||e.message));
+      }
     }
   }finally{ _phRetryBusy=false; }
 }
 window.phRetryPendingUploads=phRetryPendingUploads;
 window.addEventListener('online',()=>{ setTimeout(phRetryPendingUploads,1500); });
 document.addEventListener('visibilitychange',()=>{ if(!document.hidden) setTimeout(phRetryPendingUploads,1500); });
+// 9/1: a weak-signal morning can leave shots parked for hours while the app
+// stays open in the foreground (no online/visibility event ever fires) —
+// sweep every 2 minutes whenever anything is parked.
+let _phUploadLastErr=null;
+setInterval(()=>{ try{ if(window.idbKeysWithPrefix&&window.idbKeysWithPrefix('cam_pending::').length) phRetryPendingUploads(); }catch(_){} },120000);
+// Diagnostics probe: what's parked, what never got a full-res copy, last error.
+function phUploadHealth(){
+  let pending=[]; try{ pending=(window.idbKeysWithPrefix?window.idbKeysWithPrefix('cam_pending::'):[]).map(k=>k.slice('cam_pending::'.length)); }catch(_){}
+  const noUrl=(window._phPhotos||[]).filter(p=>p.type==='camera'&&!p.storageUrl&&p.filename);
+  return { pending, pendingCount:pending.length, missingFullRes:noUrl.length,
+    missingIds:noUrl.map(p=>p.id), missingDates:[...new Set(noUrl.map(p=>p.date))].sort(),
+    lastErr:_phUploadLastErr };
+}
+window.phUploadHealth=phUploadHealth;
 
 // Find a photo by id — own library first, then the project's shared mirror
 // (other members' published photos, opened from map pins).
@@ -1663,6 +1683,13 @@ async function phSaveCameraPhoto(blob, meta){
   window._phPhotos=(window._phPhotos||[]);
   window._phPhotos.push(entry);
   phSaveLocal();
+  // 9/1 DURABLE-FIRST (Tim: two Sep-1 shots never uploaded, phone kept only the
+  // thumb). The old order was upload → park-on-failure, which loses the original
+  // whenever the upload dies WITHOUT rejecting: iOS suspending the WebView in a
+  // pocket, a memory-pressure reload, a force-close mid-put. Park the bytes in
+  // IDB before the first byte goes out; delete them only after the URL lands.
+  let parked=false;
+  try{ if(window.idbSet){ window.idbSet('cam_pending::'+id, blob); parked=true; } }catch(_){}
   (async()=>{
     try{
       if(!storage||!_fbReady) throw new Error('firebase not ready');
@@ -1674,12 +1701,12 @@ async function phSaveCameraPhoto(blob, meta){
       const live=(window._phPhotos||[]).find(x=>x.id===id)||entry;
       live.storageUrl=url; entry.storageUrl=url;
       phSaveLocal();
+      if(parked){ try{ window.idbDel('cam_pending::'+id); }catch(_){} }
     }catch(e){
       console.warn('phSaveCameraPhoto upload deferred:',e.message);
-      // Camera v2: park the original bytes in IDB so the retry pass can finish
-      // the upload later (reconnect / foreground / next boot) — the full-res
-      // shot survives a dead zone, not just the thumbnail.
-      try{ if(window.idbSet) window.idbSet('cam_pending::'+id, blob); }catch(_){}
+      _phUploadLastErr={id,at:Date.now(),msg:(e&&(e.code||e.message))||'upload failed'};
+      // Retry pass finishes it later (reconnect / foreground / boot / 2-min sweep).
+      if(!parked){ try{ if(window.idbSet) window.idbSet('cam_pending::'+id, blob); }catch(_){} }
     }
     phSaveCloudOne((window._phPhotos||[]).find(x=>x.id===id)||entry);
   })();

@@ -125,8 +125,21 @@ function glDiagRender(){
   let cam=[]; try{ cam=JSON.parse(localStorage.getItem('gl_cam_log')||'[]'); }catch{}
   let sw=[]; try{ sw=JSON.parse(localStorage.getItem('gl_sw_log')||'[]'); }catch{}
   const camTxt=cam.length?cam.slice(-12).map(c=>`${c.t}  ${c.ev}  ${Object.keys(c).filter(k=>k!=='t'&&k!=='ev').map(k=>k+'='+c[k]).join(' ')}`).join('\n'):'(none)';
-  out.textContent=glBootReport(false)+'\n\n── camera log (last 12) ──\n'+camTxt+'\n\n── sw log entries: '+sw.length;
+  let up='';
+  try{
+    const h=(typeof window.phUploadHealth==='function')?window.phUploadHealth():null;
+    if(h) up='\n\n── photo uploads ──\nparked on this device (will retry): '+h.pendingCount
+      +'\nlibrary photos with no full-res copy in the cloud: '+h.missingFullRes+(h.missingDates.length?'  ('+h.missingDates.join(', ')+')':'')
+      +(h.lastErr?'\nlast upload error: '+new Date(h.lastErr.at).toLocaleTimeString()+'  '+h.lastErr.id+'  '+h.lastErr.msg:'');
+  }catch{}
+  out.textContent=glBootReport(false)+up+'\n\n── camera log (last 12) ──\n'+camTxt+'\n\n── sw log entries: '+sw.length;
 }
+// 9/1: manual kick for parked camera uploads (weak-signal days).
+window.glDiagRetryUploads=async function(){
+  try{ if(typeof window.phRetryPendingUploads==='function') await window.phRetryPendingUploads(); }catch{}
+  glDiagRender();
+  if(typeof showCloudBanner==='function'){ const h=window.phUploadHealth?window.phUploadHealth():null; showCloudBanner(h&&h.pendingCount?('Still parked: '+h.pendingCount+' — will keep retrying.'):'✓ No parked uploads.'); }
+};
 window.glDiagRender=glDiagRender;
 // Opt-in error reporting (β.2). localStorage is what errorReporter reads;
 // prefsMirror carries the key to users/{uid}/settings/prefs.
