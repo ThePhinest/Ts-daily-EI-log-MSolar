@@ -40,6 +40,7 @@ import './wxRain.js'
 import './daily-log.js'
 import './dlCarry.js'
 import './openItems.js'
+import './alertRules.js'   // ⚡ user-controlled alert rules (9/2) — rides the Open Items spine
 import './firstRun.js'
 import './academy.js'
 import './docs.js'

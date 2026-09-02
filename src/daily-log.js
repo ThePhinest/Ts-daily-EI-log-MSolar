@@ -712,6 +712,7 @@ function _applyWeatherData(data,forecastOffset,rain,locLabel,past,nws){
     const rpHidden=document.getElementById('wxRainPast');
     if(rpHidden) rpHidden.value=json;
     _renderRainPast(json);
+    if(past&&typeof window.arWeatherUpdate==='function'){ try{ window.arWeatherUpdate({past}); }catch{} }   // ⚡ user rain-observed rules
   }
   // ── NWS official outlook row (second row in the Rain Outlook box) — the
   // comparison Tim asked for 8/21; the observed strip above is the referee ──
@@ -787,6 +788,7 @@ function _renderRainWeek(json){
   // Open Items spine: ≥trigger forecast days spawn a post-storm inspection item
   // (openItems.js dedupes per date; past-date snapshots are ignored there).
   if(typeof window.oiRainSync==='function'){ try{ window.oiRainSync(week,SWPPP_RAIN_TRIGGER_IN); }catch{} }
+  if(typeof window.arWeatherUpdate==='function'){ try{ window.arWeatherUpdate({week}); }catch{} }   // ⚡ user rain-forecast rules
 }
 
 // ── Rain Observed strip: 7 local-day tiles + a 7-day total from the persisted

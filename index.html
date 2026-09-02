@@ -746,6 +746,7 @@ button:disabled,button[disabled]{opacity:.45;cursor:not-allowed}
 .oi-rep-note{font-family:var(--mono);font-size:10px;color:var(--muted)}
 .oi-row{border:1px solid var(--border);border-radius:7px;background:var(--s1);margin-bottom:7px;overflow:hidden}
 .oi-row.expanded{border-color:var(--border2)}
+.oi-row.priority{border-color:var(--amber);box-shadow:inset 3px 0 0 var(--amber)} /* ⚡ alert-rule items (9/2) */
 .oi-row-main{display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:9px 11px;min-height:44px} /* 9/2 (#60): chips may wrap under the title instead of squeezing it to one letter per line */
 .oi-check{flex:none;width:22px;height:22px;border-radius:50%;border:2px solid var(--muted2);background:transparent;cursor:pointer;padding:0;transition:border-color .15s,background .15s}
 .oi-check:hover{border-color:var(--amber);background:var(--amber-bg)}
@@ -3521,6 +3522,15 @@ Anticipated rain — AM weather monitoring expected"></textarea>
       </label>
       <p class="config-hint">The daily summary announces itself with the GroundLog voice; item reminders use the stake-taps. Off = notifications still show, silently.</p>
       <p class="config-hint" style="margin-bottom:0">Scheduled notifications fire on the iOS app (even offline). On the web you'll get the in-app summary when a new day starts.</p>
+    </div>
+  </div>
+
+<div class="config-section" id="cfg-alerts">
+    <div class="config-head" onclick="toggleSection('cfg-alerts')"><span class="config-title">⚡ Alerts</span><span class="head-fade"></span><span class="config-sub">Rain triggers, overdue inspections, weekday reminders</span><span class="card-chevron">▾</span></div>
+    <div class="config-body">
+      <p class="config-hint">Rules you control. When one fires it becomes a ⚡ priority Open Item and, on the iOS app, a notification. Project alerts are set by the lead and reach everyone on the project; anyone can silence one on their own device. Personal alerts are yours alone. Rain rules use the same IEMRE site rainfall and Open-Meteo outlook as the daily log; a forecast rule of your own replaces the built-in 0.5" post-storm item.</p>
+      <div id="cfg-alerts-body"></div>
+      <p class="config-hint" style="margin-top:12px;margin-bottom:0">Alerts are evaluated when the app is open (boot, new day, weather refresh). Alerts while the app is closed need server push — on the roadmap.</p>
     </div>
   </div>
 

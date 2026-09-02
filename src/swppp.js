@@ -1504,6 +1504,8 @@ async function swpppBuildDocx(insp,cfg){
 
 // ── window exposure (onclick handlers + showPage hook) ──
 window.glRenderReportsPage = glRenderReportsPage;
+// ⚡ Alerts (alertRules.js): sorted inspection dates for the "inspection overdue" rule.
+window.swInspectionDates = async function(pid){ pid=pid||_swPid(); try{ await _swLoadAll(pid); }catch{} return (_swInsp[pid]||[]).map(i=>i&&i.date).filter(d=>/^\d{4}-\d{2}-\d{2}$/.test(d||'')).sort(); };
 window.swpppExportPhotosZip = swpppExportPhotosZip;
 window.swpppShowSetup = swpppShowSetup;
 window.swpppSaveSetup = swpppSaveSetup;

@@ -177,6 +177,7 @@ async function oiLoadForProject(){
   }catch(e){ console.warn('openItems load failed:', e.message); }
   oiSyncSources();
   _oiNotifSync();
+  if(typeof window.arOnProjectLoaded==='function'){ try{ window.arOnProjectLoaded(); }catch{} }   // ⚡ alert rules: load + evaluate for this project
 }
 
 function oiBoot(){
@@ -581,6 +582,7 @@ function oiRender(){
       const rep0=_oiRepeat(it);
       const repChip=rep0?'<span class="oi-chip" title="Repeats '+rep0+' — checking it off rolls it to the next date">🔁 '+rep0+'</span>':'';
       const remChip=it.remindAt?'<span class="oi-chip" title="Reminder set">🔔</span>':'';
+      const priChip=it.priority?'<span class="oi-chip over" title="Priority alert (Settings → ⚡ Alerts)">⚡</span>':'';
       const srcChip=it.source==='flag'
         ?'<span class="oi-chip" style="cursor:pointer" onclick="event.stopPropagation();clPunchlistGoto(\''+_oiEsc(it.sourceRef)+'\')" title="Repair flag — tap to view on map">🚩</span>'
         :it.source==='cl'?'<span class="oi-chip" title="Compliance Log entry — resolves both places">§8</span>':'';
@@ -640,12 +642,12 @@ function oiRender(){
           +'<button class="btn btn-outline" style="font-size:10.5px;padding:6px 12px;margin-left:auto" onclick="oiExpand(\''+it.id+'\')">Close</button>'
           +'</div></div>';
       }
-      return '<div class="oi-row'+(exp?' expanded':'')+'" data-id="'+it.id+'">'
+      return '<div class="oi-row'+(exp?' expanded':'')+(it.priority?' priority':'')+'" data-id="'+it.id+'">'
         +'<div class="oi-row-main">'
         +handle
         +'<button class="oi-check" onclick="oiResolve(\''+it.id+'\')" title="'+(kind==='note'?'Archive':'Resolve')+'"></button>'
         +'<div class="oi-text" onclick="oiExpand(\''+it.id+'\')">'+(kindIcon?'<span class="oi-kind">'+kindIcon+'</span> ':'')+_oiEsc(_oiTitle(it))+bodyPeek+'</div>'
-        +'<div class="oi-chips">'+srcChip+ckChip+repChip+remChip+dueChip+ageChip+'</div>'
+        +'<div class="oi-chips">'+priChip+srcChip+ckChip+repChip+remChip+dueChip+ageChip+'</div>'
         +'</div>'+detail+'</div>';
     }).join('');
   }
@@ -817,14 +819,40 @@ function _oiSpawn(opts,force){
     id:_oiGenId(), ownerUid:uid, kind:opts.kind||'task', text:opts.text||'',
     source:opts.source, sourceRef:opts.sourceRef,
     createdDate:cd, createdTs:isFinite(cts)?cts:Date.now(),
-    dueDate:opts.dueDate||'', remindAt:'',
+    dueDate:opts.dueDate||'', remindAt:opts.remindAt||'',
     status:'open', resolvedDate:'', resolvedTs:0, resolutionNote:'',
     includeInReport:false, visibility:'private', deleted:false, _mts:Date.now()
   };
+  // ⚡ alert-rule spawns (alertRules.js, 9/2): priority flag + optional repeat cadence on creation
+  if(opts.priority) it.priority=true;
+  if(opts.repeat){ it.repeat=opts.repeat; it.remindRepeat=opts.repeat; const rd=Array.isArray(opts.repeatDays)?opts.repeatDays.slice().sort():[]; it.repeatDays=rd; it.remindDays=rd.slice(); }
   _oiItems.push(it);
   _oiTouch(it);
   oiRender();
   return it;
+}
+
+// ── ⚡ Alert rules (alertRules.js) → PRIORITY items on the spine ──
+// Deduped per rule (+ per day for weather/inspection rules) through source/sourceRef, so a rule
+// fires once and a checked-off or deleted alert never respawns. A brand-new alert schedules its
+// local notification right away (remindAt ≈ now + 90 s).
+function oiSpawnAlert(opts,force){
+  if(_oiLoadedPid!==_oiPid()) return null;
+  const before=oiFindBySource('alert',opts.sourceRef);
+  const it=_oiSpawn({...opts, source:'alert'}, force);
+  if(it&&(!before||(force&&before.deleted&&!it.deleted))) _oiNotifSync();
+  return it;
+}
+// Rule deleted or silenced on this device → its OPEN alerts go (tombstone); resolved history stays.
+function oiRetireAlertRule(ruleId){
+  let changed=false;
+  _oiItems.forEach(it=>{
+    if(it.deleted||it.source!=='alert'||typeof it.sourceRef!=='string') return;
+    if(it.sourceRef!=='rule:'+ruleId&&!it.sourceRef.startsWith('rule:'+ruleId+':')) return;
+    if(it.status!=='open') return;
+    it.deleted=true; _oiTouch(it); changed=true;
+  });
+  if(changed){ if(_oiExpanded) _oiExpanded=null; oiRender(); _oiNotifSync(); }
 }
 
 // 🚩 Flags are OPT-IN (Tim's call 7/22): 📌 button on punchlist rows.
@@ -934,6 +962,9 @@ function oiSyncSources(){
 function oiRainSync(week,trig){
   if(!Array.isArray(week)) return;
   if(_oiLoadedPid!==_oiPid()) return;
+  // 9/2: once the user runs their OWN forecast rule (⚡ Alerts), the built-in 0.5" spawn steps aside —
+  // the user controls the parameters (Tim 8/29).
+  if(typeof window.arHasRule==='function'&&window.arHasRule('rain-forecast')) return;
   trig=(typeof trig==='number')?trig:0.5;
   const today=_oiToday();
   week.forEach(w=>{
@@ -1032,7 +1063,7 @@ async function _oiNotifSync(){
     const toSchedule=[];
     reminders.forEach(it=>{
       const base={
-        title:'📌 Open Item reminder',
+        title:it.priority?'⚡ GroundLog alert':'📌 Open Item reminder',
         body:oiItemLabel(it).slice(0,180),
         actionTypeId:'GL_OI_REMIND',
         extra:{oiId:it.id},
@@ -1098,6 +1129,8 @@ window.oiUnpinFlag = oiUnpinFlag;
 window.oiFlagPinned = oiFlagPinned;
 window.oiSyncSources = oiSyncSources;
 window.oiRainSync = oiRainSync;
+window.oiSpawnAlert = oiSpawnAlert;
+window.oiRetireAlertRule = oiRetireAlertRule;
 window.oiSetFilter = oiSetFilter;
 window.oiToggleSortDue = oiToggleSortDue;
 window.oiRemDayToggle = oiRemDayToggle;
