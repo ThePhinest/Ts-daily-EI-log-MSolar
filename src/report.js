@@ -629,6 +629,10 @@ function _buildSnapshot(logData, compEntries, skipPolish, photos, effectivePromp
     // pushed a 30-photo day's version doc past Firestore's 1 MiB cap → cache save
     // failed silently. Identity/caption/geo fields are the cache key; pixels aren't.
     delete ref.thumb;
+    // 9/1: a shot whose upload hasn't landed has no Storage URL for a REVIEWER's
+    // device to fetch — keep its thumb in the ref (only then, ~30 KB) so the
+    // review PDF prints a low-res copy instead of a caption-only cell.
+    if(!ref.storageUrl && p.thumb && String(p.thumb).startsWith('data:')) ref.thumb = p.thumb;
     return ref;
   }).sort((a,b) => String(a.id||'').localeCompare(String(b.id||'')));
   const compRefs = (compEntries||[]).slice().sort((a,b) => String(a.id||'').localeCompare(String(b.id||'')));

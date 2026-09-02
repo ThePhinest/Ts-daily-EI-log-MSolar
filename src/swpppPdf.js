@@ -90,7 +90,7 @@ async function _imgFor(pId,maxWpx,maxHpx){
     let blob=(typeof window.phExportBlobForRef==='function')?await window.phExportBlobForRef(p):null;
     if(!blob&&p.storageUrl){ try{ blob=await (await fetch(p.storageUrl)).blob(); }catch(e){} }
     if(!blob&&p.thumb){ const raw=p.thumb,b64=raw.includes(',')?raw.split(',')[1]:raw; const bin=atob(b64); const arr=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++)arr[i]=bin.charCodeAt(i); blob=new Blob([arr],{type:'image/jpeg'}); }
-    if(!blob) return null;
+    if(!blob){ console.warn('[daily-pdf] no image bytes for photo',p.id,{caption:p.caption,hasUrl:!!p.storageUrl,hasThumb:!!p.thumb,inLibrary:!!((window._phPhotos||[]).find(x=>x.id===p.id))}); return null; }
     blob=await stampIfCamera(p,blob);   // camera photos embed stamped, everywhere
     const ep=exportImageParams(p); blob=await exportImageBlob(blob,ep.maxPx,ep.quality);
     let w=maxWpx,h=Math.round(maxWpx*0.72);
