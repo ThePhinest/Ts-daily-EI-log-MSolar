@@ -646,10 +646,11 @@ function _phMirrorDoc(p, pid, now){
 }
 // One-time backfill (9/1): rewrite every already-published photo's mirror with
 // the full record so teammates' lightboxes stamp them too. Per project, once.
-async function _phRemirrorPublished(pid){
+async function _phRemirrorPublished(pid, force){
+  pid = pid || ((typeof _activeProjectId==='function') ? _activeProjectId() : null);
   if(!db || !_fbReady || !_currentUser || !pid || pid==='default') return;
   const flag='gl_ph_mirror_v2_'+pid;
-  try{ if(localStorage.getItem(flag)==='1') return; }catch(_){}
+  try{ if(!force && localStorage.getItem(flag)==='1') return; }catch(_){}
   const pubs=(window._phPhotos||[]).filter(p=>p.published && (!p.projectId || p.projectId===pid));
   try{
     for(let i=0;i<pubs.length;i+=400){
@@ -1959,6 +1960,7 @@ window.phToggleSwpppCurrent = phToggleSwpppCurrent;
 window.phToggleSeedCurrent = phToggleSeedCurrent;
 window.phSetPublished = phSetPublished;
 window.phSetReportExclude = phSetReportExclude;
+window.phRemirrorPublished = (force)=>_phRemirrorPublished(null, force);   // console/manual: phRemirrorPublished(true)
 window.phExportBlobForRef = phExportBlobForRef;
 window.phRecoverStorageUrls = phRecoverStorageUrls;
 window.phLoadShared = phLoadShared;
