@@ -84,6 +84,7 @@ async function calLoadCloud(){
 // 9/1: person filter over teammates' submissions (Tim: a reviewer with several
 // EIs). 'all' stacks everyone's day dots (deduped) behind the person chips;
 // one person = that EI's calendar, same dots the author sees on their own.
+const _hEsc=t=>String(t==null?'':t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 let _calPerson='all';
 function _calPersonKey(){ try{ return 'gl_cal_person_'+((typeof _activeProjectId==='function')?_activeProjectId():'default'); }catch(_){ return 'gl_cal_person'; } }
 function _calLoadPerson(){ try{ _calPerson=localStorage.getItem(_calPersonKey())||'all'; }catch(_){ _calPerson='all'; } }
@@ -107,7 +108,7 @@ function _calRenderPersonRow(){
   if(_calPerson!=='all'&&!people[_calPerson]) _calPerson='all';
   row.style.display='flex';
   row.innerHTML=`<button class="cl-fpill cl-fall${_calPerson==='all'?' on':''}" onclick="calSetPerson('all')">All</button>`
-    +ids.map(uid=>`<button class="cl-fpill${_calPerson===uid?' on':''}" style="display:inline-flex;align-items:center;gap:6px" onclick="calSetPerson('${uid}')">${typeof window.glMemberChip==='function'?glMemberChip(uid,people[uid],14):''}${String(people[uid]).replace(/</g,'&lt;')}</button>`).join('');
+    +ids.map(uid=>`<button class="cl-fpill${_calPerson===uid?' on':''}" style="display:inline-flex;align-items:center;gap:6px" onclick="calSetPerson('${_hEsc(uid)}')">${typeof window.glMemberChip==='function'?glMemberChip(uid,people[uid],14):''}${_hEsc(people[uid])}</button>`).join('');
 }
 function _calIsViewRole(){
   try{ const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default'; return !!(pid&&pid!=='default'&&typeof glIsViewRole==='function'&&typeof glMyRoleFor==='function'&&glIsViewRole(glMyRoleFor(pid))); }catch(_){ return false; }
@@ -207,7 +208,7 @@ function calOpenDay(date){
     const rows=_daySubs.map(s=>`
       <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);cursor:pointer" onclick="glShowSubmission('${s._id}')">
         ${typeof window.glMemberChip==='function'?glMemberChip(s.submittedBy,s.submittedByName,20):''}
-        <span style="font-family:var(--mono);font-size:12px;color:var(--text);flex:1">${(s.submittedByName||'Project member')}</span>
+        <span style="font-family:var(--mono);font-size:12px;color:var(--text);flex:1">${_hEsc(s.submittedByName||'Project member')}</span>
         ${(s.version||1)>1?`<span class="gl-role-chip">v${s.version}</span>`:''}
         ${s.review&&s.review.status?`<span style="font-family:var(--mono);font-size:10px;${s.review.status==='approved'?'color:var(--green)':s.review.status==='returned'?'color:var(--red,#e0605a)':'color:var(--amber)'}">${s.review.status==='approved'?'✓ signed':s.review.status==='returned'?'↩ returned':'⏳ awaiting review'}</span>`:''}
         ${s._supersededSigned?`<span style="font-family:var(--mono);font-size:10px;color:var(--muted2)" title="The author resubmitted after this version was signed">⟳ v${s._supersededSigned} signed · superseded</span>`:''}
@@ -639,7 +640,7 @@ function calRenderList(){
     const chips=_calSubChips(subs);
     if(!rec){
       if(!subs.length) return '';   // filtered out by the person chips
-      const names=subs.map(s=>s.submittedByName||'Member').join(', ');
+      const names=subs.map(s=>s.submittedByName||'Member').join(', ');   // escaped once, below, with the whole line
       let text='Submitted by '+names;
       if(subs.length===1){
         const pf=(subs[0].payload&&subs[0].payload.fields)||{};
@@ -648,7 +649,7 @@ function calRenderList(){
       }
       return `<div class="cal-row" onclick="calOpenDay('${date}')">
         <div class="cal-row-date">${dlFmtDisplay(date)}</div>
-        <div class="cal-row-summary">${text.replace(/</g,'&lt;')}</div>
+        <div class="cal-row-summary">${_hEsc(text)}</div>
         <div class="cal-row-indicators">${chips}</div>
       </div>`;
     }

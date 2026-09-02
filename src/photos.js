@@ -659,6 +659,7 @@ function phJumpToShared(){
   document.getElementById('ph-shared')?.scrollIntoView({ behavior:'smooth', block:'start' });
 }
 // 9/1: filter the shared section by teammate (Tim: reviewers with several EIs).
+const _hEsc=t=>String(t==null?'':t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 let _phSharedPerson = 'all';
 function _phSharedSetPerson(uid){ _phSharedPerson = uid || 'all'; _phRenderShared(); }
 window._phSharedSetPerson = _phSharedSetPerson;
@@ -676,7 +677,7 @@ function _phRenderShared(){
   const personRow = ownerIds.length>1
     ? '<div style="display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 10px">'
       + `<button class="cl-fpill cl-fall${_phSharedPerson==='all'?' on':''}" onclick="_phSharedSetPerson('all')">All</button>`
-      + ownerIds.map(uid=>`<button class="cl-fpill${_phSharedPerson===uid?' on':''}" style="display:inline-flex;align-items:center;gap:6px" onclick="_phSharedSetPerson('${uid}')">${typeof window.glMemberChip==='function'?window.glMemberChip(uid,owners[uid],14):''}${owners[uid].replace(/</g,'&lt;')}</button>`).join('')
+      + ownerIds.map(uid=>`<button class="cl-fpill${_phSharedPerson===uid?' on':''}" style="display:inline-flex;align-items:center;gap:6px" onclick="_phSharedSetPerson('${_hEsc(uid)}')">${typeof window.glMemberChip==='function'?window.glMemberChip(uid,owners[uid],14):''}${_hEsc(owners[uid])}</button>`).join('')
       + '</div>'
     : '';
   const shared = all.filter(p=>_phSharedPerson==='all' || p.ownerUid===_phSharedPerson)
@@ -685,7 +686,7 @@ function _phRenderShared(){
   if(cnt) cnt.textContent = shared.length;
   const grouped = {};
   shared.forEach(p=>{ if(!grouped[p.date]) grouped[p.date]=[]; grouped[p.date].push(p); });
-  const idsLiteral = '['+shared.map(p=>`'${p.id}'`).join(',')+']';
+  const idsLiteral = '['+shared.map(p=>`'${_hEsc(p.id)}'`).join(',')+']';
   const body = !shared.length
     ? '<div class="ph-empty" style="padding:16px 20px">No teammate photos yet — photos shared by project members appear here the moment they publish them.</div>'
     : Object.keys(grouped).sort((a,b)=>b>a?1:-1).map(date => `
@@ -693,9 +694,9 @@ function _phRenderShared(){
         <div class="ph-day-label">${phDayLabel(date)} <span class="ph-day-count">${grouped[date].length} photo${grouped[date].length>1?'s':''}</span></div>
         <div class="ph-grid">
           ${grouped[date].map(p=>`
-            <div class="ph-thumb" onclick="phOpenLightbox('${p.id}',${idsLiteral})">
-              <img src="${p.thumb}" alt="${(p.caption||'').replace(/"/g,'&quot;')}" loading="lazy">
-              <div class="ph-thumb-caption">${_phSharedPerson==='all'&&ownerIds.length>1?`<span style="opacity:.75">${_phOwnerName(p).split(' ')[0]} · </span>`:''}${p.caption||''}</div>
+            <div class="ph-thumb" onclick="phOpenLightbox('${_hEsc(p.id)}',${idsLiteral})">
+              <img src="${_hEsc(p.thumb)}" alt="${_hEsc(p.caption)}" loading="lazy">
+              <div class="ph-thumb-caption">${_phSharedPerson==='all'&&ownerIds.length>1?`<span style="opacity:.75">${_hEsc(_phOwnerName(p).split(' ')[0])} · </span>`:''}${_hEsc(p.caption)}</div>
             </div>
           `).join('')}
         </div>

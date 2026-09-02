@@ -60,6 +60,7 @@ async function clSaveCloud(){
 // later edits to a published entry re-mirror automatically so status changes
 // reach the project. Reviewers (view roles) read the mirror, read-only.
 // Path: projects/{pid}/complianceLog/{id} (rules: owner-or-published).
+const _hEsc=t=>String(t==null?'':t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 const _clMirrorSig = new Map();
 function _clMirrorDoc(e){
   return { id:e.id, date:e.date||'', level:e.level||'', location:e.location||'', corrective:e.corrective||'',
@@ -377,16 +378,16 @@ function clRender(){
         <span class="${clStatusClass(e.status)}">${e.status}</span>
         ${ageChip}
         <span class="cl-entry-source">${sourceLabel}</span>
-        ${viewRole&&e.ownerName?`<span style="display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:10px;color:var(--muted)">${typeof window.glMemberChip==='function'?window.glMemberChip(e.ownerUid,e.ownerName,14):''}${e.ownerName}</span>`:''}
+        ${viewRole&&e.ownerName?`<span style="display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:10px;color:var(--muted)">${typeof window.glMemberChip==='function'?window.glMemberChip(e.ownerUid,e.ownerName,14):''}${_hEsc(e.ownerName)}</span>`:''}
       </div>
       <div class="cl-entry-body">
         <div>
           <div class="cl-field-lbl">Location / Description</div>
-          <div class="cl-field-val">${e.location||'—'}</div>
+          <div class="cl-field-val">${_hEsc(e.location)||'—'}</div>
         </div>
         <div>
           <div class="cl-field-lbl">Corrective Action</div>
-          <div class="cl-field-val">${e.corrective||'—'}</div>
+          <div class="cl-field-val">${_hEsc(e.corrective)||'—'}</div>
         </div>
         ${resolvedRow}
       </div>
