@@ -653,9 +653,11 @@ async function _phRemirrorPublished(pid, force){
   try{ if(!force && localStorage.getItem(flag)==='1') return; }catch(_){}
   const pubs=(window._phPhotos||[]).filter(p=>p.published && (!p.projectId || p.projectId===pid));
   try{
-    for(let i=0;i<pubs.length;i+=400){
+    // merge:true + no thumb: the mirror already holds the thumbnail, and 400
+    // thumbs per batch would blow Firestore's ~10 MiB request cap.
+    for(let i=0;i<pubs.length;i+=150){
       const batch=db.batch();
-      pubs.slice(i,i+400).forEach(p=>batch.set(db.collection('projects').doc(pid).collection('photos').doc(p.id), _phMirrorDoc(p,pid), {merge:true}));
+      pubs.slice(i,i+150).forEach(p=>{ const m=_phMirrorDoc(p,pid); delete m.thumb; batch.set(db.collection('projects').doc(pid).collection('photos').doc(p.id), m, {merge:true}); });
       await batch.commit();
     }
     try{ localStorage.setItem(flag,'1'); }catch(_){}
