@@ -358,6 +358,9 @@ function _toast(msg){
 
 // ── open / close ──
 export async function camOpen(ctx){
+  // 9/2 (#57): a failed open used to leave _open=true with no viewfinder in the DOM, so every
+  // later 📸 tap silently returned ("second attempt didn't open the camera"). Stale flag → reset.
+  if(_open&&!document.getElementById('gl-camera')) _open=false;
   if(_open) return;
   _ctx=ctx||null;
   _open=true; _suspended=false; _coords=null; _heading=null; _headingAcc=null; _orientN=0; _orientStall=0;
@@ -366,6 +369,7 @@ export async function camOpen(ctx){
   try{ _tags=new Set(ctx&&Array.isArray(ctx.tags)?ctx.tags:JSON.parse(localStorage.getItem(_tagsKey())||'[]')); }catch{ _tags=new Set(); }
   // Seed the caption carry-forward from the per-project default on first use.
   { const l=_last(); if(!l.caption&&_defCap()){ _saveLast({...l,caption:_defCap()}); } }
+  try{
   _buildDom();
   document.documentElement.classList.add('camera-live');
   // Lock the interface to portrait for the whole camera session (native only —
@@ -392,6 +396,13 @@ export async function camOpen(ctx){
   camStampHydrate();               // cross-device stamp prefs (eventual — repaints on land)
   _renderOverlay();
   _clockTimer=setInterval(_renderOverlay,30000);
+  }catch(e){
+    // Anything outside the sensors/preview try (DOM build, orientation lock, zoom init)
+    // must also tear down cleanly — never strand _open=true / the app hidden (#57).
+    console.warn('camera open failed:',e);
+    _toast('✗ Camera failed to open');
+    camClose();
+  }
 }
 window.camOpen=camOpen;
 
@@ -413,6 +424,11 @@ export async function camClose(){
   // finally-shaped teardown: a failed stop must NEVER strand the app transparent.
   document.documentElement.classList.remove('camera-live');
   const el=document.getElementById('gl-camera'); if(el) el.remove();
+  // 9/2 (#62): the map canvas was measured while the app DOM was hidden / the portrait
+  // lock was active — re-measure once layout settles (bottom third rendered black after
+  // a repair-flag photo). Cheap no-op when the map isn't mounted.
+  const _rs=()=>{ try{ if(typeof window.mapResize==='function') window.mapResize(); }catch{} };
+  requestAnimationFrame(_rs); setTimeout(_rs,350); setTimeout(_rs,900);
 }
 window.camClose=camClose;
 

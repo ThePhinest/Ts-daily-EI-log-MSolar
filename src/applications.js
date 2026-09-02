@@ -454,8 +454,8 @@ function appRowsSet(apps, entryId){
     _autoProduct:'',_autoRate:'',_autoNotes:a.notes&&a.notesAuto===a.notes?a.notes:'',
   }));
   if(!_appRows.length) _appRows=[_appNewRow('seed')];
-  const n=document.getElementById('map-tr-notes');
-  if(n) n.dataset.auto='';
+  // #61 (9/2): dataset.auto is set by the edit-form opener from entry.notesAuto —
+  // don't wipe it here, or the drawing note stops following rate edits after a save.
   appRowsRender();
   sbEnsureCfg().then(()=>{ if(typeof mapRefreshEntryPhotoStrip==='function') mapRefreshEntryPhotoStrip(); });
 }

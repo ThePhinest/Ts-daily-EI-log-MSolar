@@ -461,7 +461,7 @@ function glRunStorageMigration() {
 
 function glSignOut() {
   if (!auth) return;
-  _confirmModal('Sign out of GroundLog on this device? Local caches on this device are cleared — your data stays saved in your account.', function() {
+  _confirmModal('Sign out of GroundLog on this device? Local caches on this device are cleared, including documents saved for offline (re-pin them after signing back in) — your data stays saved in your account.', function() {
     auth.signOut().then(function() {
       var _p; try { _p = _glClearDeviceStorage(); } catch (e) { _p = Promise.resolve(); }
       Promise.resolve(_p).catch(function(){}).then(function(){ location.reload(); });

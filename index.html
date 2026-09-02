@@ -258,7 +258,7 @@ html.camera-live body>*:not(#gl-camera){visibility:hidden}
 .tc-type-btn.active{background:var(--amber);color:#111;border-color:var(--amber);font-weight:700}
 .map-tc-unit-sel{background:var(--s1);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--mono);font-size:13px;padding:6px 8px;cursor:pointer;min-width:0}
 .gl-tracker-popup{z-index:5100!important}
-.gl-tracker-popup .mapboxgl-popup-content{background:rgba(0,0,0,0.82);color:#e8e8e8;padding:12px;border-radius:8px;border:1px solid rgba(255,255,255,.12);max-height:min(60dvh,calc(100dvh - var(--app-bar-h) - 120px));overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch} /* cap + internal scroll (8/16, #11): fully-expanded sections can no longer push the popup bottom off-screen */
+.gl-tracker-popup .mapboxgl-popup-content{background:rgba(0,0,0,0.82);color:#e8e8e8;padding:12px;border-radius:8px;border:1px solid rgba(255,255,255,.12);max-height:min(60dvh,calc(100dvh - var(--app-bar-h) - 120px));overflow-y:auto;-webkit-overflow-scrolling:touch} /* cap + internal scroll (8/16, #11): fully-expanded sections can no longer push the popup bottom off-screen. 9/2 (#45): dropped overscroll-behavior:contain — it killed momentum dead at the cap edge ("gets stuck, takes a few scrolls"); the map behind never page-scrolls, so chaining containment bought nothing */
 .gl-tracker-popup.mapboxgl-popup-anchor-bottom .mapboxgl-popup-tip{border-top-color:rgba(0,0,0,0.82)}
 .gl-tracker-popup.mapboxgl-popup-anchor-top .mapboxgl-popup-tip{border-bottom-color:rgba(0,0,0,0.82)}
 .gl-tracker-popup .mapboxgl-popup-close-button{color:#e8e8e8;font-size:20px;width:28px;height:28px;line-height:28px;padding:0;top:4px;right:4px}
@@ -746,12 +746,12 @@ button:disabled,button[disabled]{opacity:.45;cursor:not-allowed}
 .oi-rep-note{font-family:var(--mono);font-size:10px;color:var(--muted)}
 .oi-row{border:1px solid var(--border);border-radius:7px;background:var(--s1);margin-bottom:7px;overflow:hidden}
 .oi-row.expanded{border-color:var(--border2)}
-.oi-row-main{display:flex;align-items:center;gap:10px;padding:9px 11px;min-height:44px}
+.oi-row-main{display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:9px 11px;min-height:44px} /* 9/2 (#60): chips may wrap under the title instead of squeezing it to one letter per line */
 .oi-check{flex:none;width:22px;height:22px;border-radius:50%;border:2px solid var(--muted2);background:transparent;cursor:pointer;padding:0;transition:border-color .15s,background .15s}
 .oi-check:hover{border-color:var(--amber);background:var(--amber-bg)}
-.oi-text{flex:1;font-family:var(--body);font-size:14px;color:var(--text);line-height:1.4;cursor:pointer;word-break:break-word}
+.oi-text{flex:1 1 150px;min-width:0;font-family:var(--body);font-size:14px;color:var(--text);line-height:1.4;cursor:pointer;word-break:break-word}
 .oi-kind{font-size:12px}
-.oi-chips{display:flex;align-items:center;gap:5px;flex:none}
+.oi-chips{display:flex;align-items:center;gap:5px;flex:0 1 auto;flex-wrap:wrap;justify-content:flex-end;margin-left:auto}
 .oi-chip{font-family:var(--mono);font-size:9.5px;color:var(--muted);border:1px solid var(--border);border-radius:9px;padding:2px 7px;white-space:nowrap}
 .oi-chip.over{color:var(--amber);border-color:var(--amber);background:var(--amber-bg)}
 .oi-badge-due{color:var(--amber) !important}
@@ -2680,6 +2680,13 @@ Anticipated rain — AM weather monitoring expected"></textarea>
             <option value="3">3px</option>
             <option value="4">4px</option>
           </select>
+          <span id="map-tc-add-line-controls" style="display:none;align-items:center;gap:6px">
+            <select id="map-tc-add-lineopacity" class="map-tc-unit-sel" title="Line opacity">
+              <option value="0.45">Light</option>
+              <option value="0.7">Med</option>
+              <option value="0.9" selected>Dark</option>
+            </select>
+          </span>
           <span id="map-tc-add-fill-controls" style="display:flex;align-items:center;gap:6px">
             <select id="map-tc-add-fillstyle" class="map-tc-unit-sel">
               <option value="solid">■ Solid</option>

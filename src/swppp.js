@@ -792,7 +792,7 @@ function _swRenderForm(){
         <div class="sw-da-id">${esc(da.id)}</div>
         <div class="sw-da-desc">${esc(da.desc)}</div>
         <div>${_swSegHtml(gid, st.condition, [{v:'acceptable',l:'✓ Acceptable'},{v:'deficient',l:'⚠ Deficient',cls:'sw-warn'}], ['drainageAreas', da.id, 'condition'])}</div>
-        ${showAction?`<input type="text" class="sw-da-action" placeholder="Action required…" value="${esc(st.action||'')}" ${dis} oninput="swInp(event,'drainageAreas','${esc(da.id)}','action')">`:''}
+        ${showAction?`<textarea rows="1" class="sw-da-action auto-expand auto-line" placeholder="Action required…" ${dis} oninput="swInp(event,'drainageAreas','${esc(da.id)}','action')">${esc(st.action||'')}</textarea>`:''}
       </div>`;
     }).join('');
     return `<div class="card collapsed" id="sw-sec-da2"><div class="card-head" onclick="toggleSection('sw-sec-da2')"><span class="card-num">2</span><span class="card-title">Drainage Areas Inspected</span><span class="card-chevron">▾</span></div><div class="card-body">
@@ -818,7 +818,7 @@ function _swRenderForm(){
         <div class="sw-da-id">${esc(dp.id)}</div>
         <div class="sw-da-desc">${esc(dp.location)}<br><span style="color:var(--muted)">→ ${esc(dp.receiving)}</span></div>
         <div>${_swSegHtml(gid, st.condition||'', [{v:'acceptable',l:'✓ Acceptable'},{v:'deficient',l:'⚠ Deficient',cls:'sw-warn'}], ['dischargePoints', dp.id, 'condition'])}</div>
-        ${showNotes?`<input type="text" class="sw-da-action" placeholder="Issue / notes…" value="${esc(st.notes||'')}" ${dis} oninput="swInp(event,'dischargePoints','${esc(dp.id)}','notes')">`:''}
+        ${showNotes?`<textarea rows="1" class="sw-da-action auto-expand auto-line" placeholder="Issue / notes…" ${dis} oninput="swInp(event,'dischargePoints','${esc(dp.id)}','notes')">${esc(st.notes||'')}</textarea>`:''}
       </div>`;
     }).join('');
     return `<div class="card collapsed" id="sw-sec-dp"><div class="card-head" onclick="toggleSection('sw-sec-dp')"><span class="card-num">3</span><span class="card-title">Points of Discharge</span><span class="card-chevron">▾</span></div><div class="card-body">
@@ -885,7 +885,7 @@ function _swRenderForm(){
       return `<div class="sw-pp-row">
         <div class="sw-da-desc" style="font-weight:600">${esc(name)}</div>
         ${_swSegHtml(gid, st.controls||'', YNNA.map(o=>({v:o.v,l:o.v==='y'?'Controls ✓':(o.v==='n'?'Controls ✗':'N/A'),cls:o.v==='n'?'sw-warn':''})), ['pollution',name,'controls'])}
-        <input type="text" placeholder="Observations / action…" value="${esc(st.obs||'')}" ${dis} oninput="swInp(event,'pollution','${esc(name)}','obs')">
+        <textarea rows="1" class="auto-expand auto-line" placeholder="Observations / action…" ${dis} oninput="swInp(event,'pollution','${esc(name)}','obs')">${esc(st.obs||'')}</textarea>
       </div>`;
     }).join('');
     return `<div class="card collapsed" id="sw-sec-pp"><div class="card-head" onclick="toggleSection('sw-sec-pp')"><span class="card-num">6</span><span class="card-title">Pollution Prevention</span><span class="card-chevron">▾</span></div><div class="card-body">
@@ -907,7 +907,7 @@ function _swRenderForm(){
           ${_swSegHtml(g1, st.status||'', [{v:'not-started',l:'Not Started'},{v:'in-progress',l:'In Progress'},{v:'complete',l:'Complete'}], ['smps',s.name,'status'])}
           ${_swSegHtml(g2, st.compliance||'', [{v:'compliant',l:'Compliant'},{v:'non',l:'Non-Compliant',cls:'sw-bad'},{v:'na',l:'N/A'}], ['smps',s.name,'compliance'])}
         </div>
-        <input type="text" placeholder="Notes / action…" value="${esc(st.notes||'')}" ${dis} oninput="swInp(event,'smps','${esc(s.name)}','notes')">
+        <textarea rows="1" class="auto-expand auto-line" placeholder="Notes / action…" ${dis} oninput="swInp(event,'smps','${esc(s.name)}','notes')">${esc(st.notes||'')}</textarea>
       </div>`;
     }).join('');
     return `<div class="card collapsed" id="sw-sec-smp"><div class="card-head" onclick="toggleSection('sw-sec-smp')"><span class="card-num">7</span><span class="card-title">Post-Construction SMPs</span><span class="card-chevron">▾</span></div><div class="card-body">
@@ -954,7 +954,7 @@ function _swRenderForm(){
         <img src="${p.thumb||''}" class="sw-att-thumb">
         <div class="sw-att-fields">
           <input type="text" placeholder="Area / DA" value="${esc(m.area||'')}" ${dis} oninput="swMetaInp(event,'sketchMeta','${id}','area')">
-          <input type="text" placeholder="Status / description" value="${esc(m.desc||'')}" ${dis} oninput="swMetaInp(event,'sketchMeta','${id}','desc')">
+          <textarea rows="1" class="auto-expand auto-line" placeholder="Status / description" ${dis} oninput="swMetaInp(event,'sketchMeta','${id}','desc')">${esc(m.desc||'')}</textarea>
         </div>
       </div>`;
     }).join('');
@@ -975,7 +975,7 @@ function _swRenderForm(){
         <img src="${p.thumb||''}" class="sw-att-thumb">
         <div class="sw-att-fields">
           <input type="text" placeholder="Location / DA" value="${esc(m.loc||'')}" ${dis} oninput="swMetaInp(event,'photoMeta','${id}','loc')">
-          <input type="text" placeholder="Subject / description" value="${esc(m.subject||'')}" ${dis} oninput="swMetaInp(event,'photoMeta','${id}','subject')">
+          <textarea rows="1" class="auto-expand auto-line" placeholder="Subject / description" ${dis} oninput="swMetaInp(event,'photoMeta','${id}','subject')">${esc(m.subject||'')}</textarea>
         </div>
       </div>`;
     }).join('');
@@ -1450,7 +1450,7 @@ async function swpppBuildDocx(insp,cfg){
   .sw-da-row.sw-da-def{background:rgba(231,76,60,.06)}
   .sw-da-id{font-family:var(--mono);font-size:11px;font-weight:700;min-width:120px}
   .sw-da-desc{font-size:11px;color:var(--text);flex:1;min-width:160px;line-height:1.4}
-  .sw-da-action{width:100%;box-sizing:border-box}
+  .sw-da-action,.sw-pp-row textarea,.sw-att-fields textarea{width:100%;box-sizing:border-box;min-height:40px;font-size:15px}  /* 9/2 (#53): grid notes auto-grow instead of clipping */
   .sw-dp-row{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;padding:8px 2px;border-bottom:1px solid var(--s1)}
   .sw-dp-row input{flex:1;min-width:180px;box-sizing:border-box}
   .sw-bmp-row{padding:10px 2px;border-bottom:1px solid var(--s1)}

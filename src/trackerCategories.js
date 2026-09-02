@@ -163,6 +163,9 @@ async function tcDeleteCategory(catId, projectId){
     try {
       _tcStoragePath(pid).doc(catId).delete()
         .catch(e => console.warn('tcDeleteCategory Firestore:', e.message));
+      // 9/2 (#59): also drop the frozen pre-flip mirror (users/{uid}/projects/{pid})
+      // so no future migration pass can copy a deliberately deleted category back.
+      try{ const u=(typeof _projDataUser==='function')?_projDataUser(pid):null; if(u) u.collection('trackerCategories').doc(catId).delete().catch(()=>{}); }catch(e){ /* silent */ }
     } catch(e){ /* silent */ }
   }
 }

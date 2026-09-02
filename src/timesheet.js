@@ -32,7 +32,7 @@ function tsLoadConfig(projectId){
     return Object.assign({}, TS_DEFAULTS);
   }
 }
-function tsFormatDate(d){return d.toISOString().split('T')[0];}
+function tsFormatDate(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}   // local, not UTC (#103, 9/2)
 function tsParseDate(s){const[y,m,dd]=s.split('-').map(Number);return new Date(y,m-1,dd);}
 function tsGetWeekBounds(date){const cfg=tsLoadConfig();const d=new Date(date);d.setHours(0,0,0,0);const diff=(d.getDay()-cfg.weekStartDay+7)%7;const start=new Date(d);start.setDate(d.getDate()-diff);const end=new Date(start);end.setDate(start.getDate()+6);return{start,end};}
 function tsWeekDates(start){const dates=[];for(let i=0;i<7;i++){const d=new Date(start);d.setDate(start.getDate()+i);dates.push(d);}return dates;}

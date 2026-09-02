@@ -648,7 +648,9 @@ export async function punchlistBuildPdf(opts){
     const ims=[];
     for(const pId of (e.photoIds||[])){
       const im=await _imgFor(pId,250,300);
-      if(im) ims.push({im,cap:`${id} — photographed at flag time`});
+      // 9/2 (#54): the caption saved on the flag (photoCaptions) or the photo's own caption
+      // wins; "photographed at flag time" is only the fallback for an uncaptioned shot.
+      if(im){ const c=String((e.photoCaptions||{})[pId]||(im.p&&im.p.caption)||'').trim(); ims.push({im,cap:`${id} — ${c||'photographed at flag time'}`}); }
     }
     itemBlocks.push(
       {table:{headerRows:1,dontBreakRows:true,widths:cols(12,22,16,16),body:[

@@ -215,6 +215,13 @@ async function _glMigrateWorkProductFlip() {
     try {
       const oldRoot = _udb().collection('projects').doc(pid);
       const newRoot = db.collection('projects').doc(pid);
+      // 9/2 (#59, resurrecting categories): the localStorage stamp dies with every
+      // sign-out / uid-fence purge (_glClearDeviceStorage), and a re-run re-copied
+      // every OLD-root category the user had since deleted at the shared root.
+      // Durable stamp = a field on the user's own old-root project doc; a device
+      // without the local flag reads it and skips.
+      const oldMeta = await oldRoot.get().catch(() => null);
+      if (oldMeta && oldMeta.exists && oldMeta.data().workProductFlippedAt) { localStorage.setItem(key, '1'); continue; }
       let batch = db.batch(), n = 0;
       const queue = async (ref, payload) => {
         batch.set(ref, payload);
@@ -234,6 +241,15 @@ async function _glMigrateWorkProductFlip() {
         const prev = have.get(d.id);
         if (!prev || (x.updatedAt || 0) >= (prev.updatedAt || 0)) have.set(d.id, x);
       }));
+      // Already-migrated guard (9/2): the flip copies everything in ONE pass, so if
+      // the shared root already holds this user's work product, anything missing
+      // there was deleted on purpose — never copy it back. Stamp and stop.
+      const newC = await newRoot.collection('trackerCategories').get();
+      if (ownE.size || newC.size) {
+        await oldRoot.set({ workProductFlippedAt: Date.now() }, { merge: true }).catch(() => {});
+        localStorage.setItem(key, '1');
+        continue;
+      }
       for (const d of oldE.docs) {
         const e = d.data();
         const cur = have.get(d.id);
@@ -245,10 +261,7 @@ async function _glMigrateWorkProductFlip() {
       }
 
       // Categories — live reference data; most already mirrored by chunk 2a.
-      const [oldC, newC] = await Promise.all([
-        oldRoot.collection('trackerCategories').get(),
-        newRoot.collection('trackerCategories').get()
-      ]);
+      const oldC = await oldRoot.collection('trackerCategories').get();   // newC fetched above
       const haveCats = new Set(newC.docs.map(d => d.id));
       for (const d of oldC.docs) {
         if (haveCats.has(d.id)) continue;
@@ -269,6 +282,7 @@ async function _glMigrateWorkProductFlip() {
       }
 
       if (n) await batch.commit();
+      await oldRoot.set({ workProductFlippedAt: Date.now() }, { merge: true }).catch(() => {});
       localStorage.setItem(key, '1');
       if (copiedTotal) console.log('GroundLog flip: migrated work product for', p.projectName || pid);
     } catch (e) {

@@ -3013,6 +3013,9 @@ function _renderTrackerSheetNow(){
       const fsOpts=['solid','hatch','crosshatch','outline'].map(s=>`<option value="${s}"${s===(c.fillStyle||'solid')?' selected':''}>${fsLabels[s]||s}</option>`).join('');
       const foOpts=[['0.15','Light'],['0.35','Med'],['0.6','Dark']].map(([v,l])=>`<option value="${v}"${String(v)===String(c.fillOpacity??0.35)?' selected':''}>${l}</option>`).join('');
       const fillCtls=editType!=='linear'?`<select id="map-tc-edit-fillstyle" class="map-tc-unit-sel">${fsOpts}</select><select id="map-tc-edit-fillopacity" class="map-tc-unit-sel">${foOpts}</select>`:'';
+      // Line opacity (Light/Med/Dark) for LINEAR categories — the fill dropdown's twin (#29, 9/2).
+      const loOpts=[['0.45','Light'],['0.7','Med'],['0.9','Dark']].map(([v,l])=>`<option value="${v}"${String(v)===String(c.lineOpacity??0.9)?' selected':''}>${l}</option>`).join('');
+      const lineCtls=editType==='linear'?`<select id="map-tc-edit-lineopacity" class="map-tc-unit-sel" title="Line opacity">${loOpts}</select>`:'';
       return `<div class="map-tc-row editing" style="flex-wrap:wrap;gap:6px">
         <div style="display:flex;align-items:center;gap:8px;width:100%">
           <input type="color" class="map-tc-edit-color" id="map-tc-edit-preview" value="${(_tcEditingColor&&/^#[0-9A-Fa-f]{6}$/.test(_tcEditingColor))?_tcEditingColor:((c.color&&/^#[0-9A-Fa-f]{6}$/.test(c.color))?c.color:'#888888')}" oninput="window.mapSetEditColor&&window.mapSetEditColor(this.value)" title="Category color" style="padding:0">
@@ -3027,7 +3030,7 @@ function _renderTrackerSheetNow(){
         <div style="display:flex;align-items:center;gap:6px;padding-left:28px;flex-wrap:wrap">
           <select id="map-tc-edit-linestyle" class="map-tc-unit-sel">${lsOpts}</select>
           <select id="map-tc-edit-linewidth" class="map-tc-unit-sel">${lwOpts}</select>
-          ${fillCtls}
+          ${lineCtls}${fillCtls}
         </div>
       </div>`;
     }
@@ -3106,11 +3109,12 @@ async function mapTrackerSaveEdit(catId){
   const editedLineWidth=parseInt(document.getElementById('map-tc-edit-linewidth')?.value)||existing.lineWidth||2;
   const editedFillStyle=document.getElementById('map-tc-edit-fillstyle')?.value||existing.fillStyle||'solid';
   const editedFillOpacity=parseFloat(document.getElementById('map-tc-edit-fillopacity')?.value)??existing.fillOpacity??0.35;
+  const editedLineOpacity=(()=>{ const v=parseFloat(document.getElementById('map-tc-edit-lineopacity')?.value); return isNaN(v)?(existing.lineOpacity??0.9):v; })();
   const _editColor=_tcEditingColor||existing.color;
   // Keep the plan (first) state's color = the category identity color (Part 1).
   const _editStates=(Array.isArray(existing.states)&&existing.states.length)
     ? existing.states.map(s=>s.isPlanned?{...s,color:_editColor}:s) : existing.states;
-  await tcSaveCategory({...existing,name,color:_editColor,...(_editStates?{states:_editStates}:{}),defaultUnit:editedUnit,lineStyle:editedLineStyle,lineWidth:editedLineWidth,fillStyle:editedFillStyle,fillOpacity:editedFillOpacity},pid);
+  await tcSaveCategory({...existing,name,color:_editColor,...(_editStates?{states:_editStates}:{}),defaultUnit:editedUnit,lineStyle:editedLineStyle,lineWidth:editedLineWidth,lineOpacity:editedLineOpacity,fillStyle:editedFillStyle,fillOpacity:editedFillOpacity},pid);
   _tcEditingCatId=null;
   _tcEditingColor=null;
   _renderTrackerSheet();
@@ -3574,6 +3578,8 @@ function mapTcSetAddType(type){
   }
   const fillCtls=document.getElementById('map-tc-add-fill-controls');
   if(fillCtls) fillCtls.style.display=type==='linear'?'none':'';
+  const lineCtls=document.getElementById('map-tc-add-line-controls');
+  if(lineCtls) lineCtls.style.display=type==='linear'?'flex':'none';
 }
 // Template picker on the Add sheet — seeds measurement type, then the schema
 // is merged in on save (mapTrackerSaveAdd). 2026-06-03.
@@ -3621,6 +3627,7 @@ async function mapTrackerSaveAdd(){
   const lineWidth=parseInt(document.getElementById('map-tc-add-linewidth')?.value)||2;
   const fillStyle=measurementType==='linear'?'solid':(document.getElementById('map-tc-add-fillstyle')?.value||'solid');
   const fillOpacity=parseFloat(document.getElementById('map-tc-add-fillopacity')?.value)||0.35;
+  const lineOpacity=parseFloat(document.getElementById('map-tc-add-lineopacity')?.value)||0.9;
   // Seed the category schema from the chosen template; explicit user choices
   // (name/color/type/unit/styling) override the template defaults.
   const template=_tcAddingTemplate||'seeding';
@@ -3628,7 +3635,7 @@ async function mapTrackerSaveAdd(){
   // Plan (first) state's color = the category identity color (locked 2026-06-18) — no gray default.
   const _catColor=_tcAddingColor||'#E67E22';
   if(Array.isArray(schema.states)){ const _ps=schema.states.find(s=>s.isPlanned)||schema.states[0]; if(_ps) _ps.color=_catColor; }
-  await tcSaveCategory({...schema,template,name,color:_catColor,measurementType,defaultUnit,lineStyle,lineWidth,fillStyle,fillOpacity},pid);
+  await tcSaveCategory({...schema,template,name,color:_catColor,measurementType,defaultUnit,lineStyle,lineWidth,lineOpacity,fillStyle,fillOpacity},pid);
   mapTrackerHideAdd();
   _renderTrackerSheet();
 }
@@ -4536,6 +4543,10 @@ function mapSaveTrackerEntry(){
     labelText:document.getElementById('map-tr-label-text')?.value.trim()||null,
     labelColor:(()=>{const v=document.getElementById('map-tr-label-color')?.value;return (v&&/^#[0-9A-Fa-f]{6}$/.test(v))?v:null;})(),
     notes:document.getElementById('map-tr-notes').value.trim()||null,
+    // 9/2 (#61): remember whether Notes still equals the auto-generated application block, so
+    // editing rates on a SAVED entry keeps regenerating the drawing's note (never-clobber
+    // used to reset on reopen → row note updated, drawing note drifted).
+    notesAuto:(()=>{ const el=document.getElementById('map-tr-notes'); const v=(el&&el.value||'').trim(); return (v&&el.dataset.auto&&v===el.dataset.auto.trim())?v:null; })(),
     photoIds:[..._pendingPhotoIds],
     photoTypes:{..._pendingPhotoTypes},
     photoCaptions:{..._pendingPhotoCaptions},
@@ -5006,7 +5017,10 @@ function _addCategoryLineLayer(srcId,cat){
   // widths revert automatically when the filter clears.
   const lw=(cat.lineWidth||2)*((_escCapFilter||_seedCapFilter||_distCapFilter)?1.8:1);
   const lineColor=['coalesce',['get','stateColor'],color];
-  const paint={'line-color':lineColor,'line-width':['case',['get','faint'],Math.max(1,lw-0.5),lw],'line-opacity':['case',['get','faint'],0.45,0.9]};
+  // Category line opacity (Light .45 / Med .7 / Dark .9, default .9 = the pre-9/2 constant);
+  // planned (faint) runs scale down with it.
+  const lo=(cat.lineOpacity!=null&&!isNaN(parseFloat(cat.lineOpacity)))?parseFloat(cat.lineOpacity):0.9;
+  const paint={'line-color':lineColor,'line-width':['case',['get','faint'],Math.max(1,lw-0.5),lw],'line-opacity':['case',['get','faint'],Math.min(0.45,+(lo*0.55).toFixed(3)),lo]};
   // Per-STATE line style (ties the schema editor's state Style dropdown to the map;
   // GL JS v3 line-dasharray is data-driven). Each feature carries `stateStyle`
   // (state's style, falling back to the category-level lineStyle) — solid renders
@@ -7353,6 +7367,7 @@ function mapEditTrackerEntry(entryId){
   document.getElementById('map-tr-date').value=entry.date||'';
   document.getElementById('map-tr-location').value=entry.location||'';
   document.getElementById('map-tr-notes').value=entry.notes||'';
+  document.getElementById('map-tr-notes').dataset.auto=(entry.notesAuto&&entry.notesAuto===entry.notes)?entry.notes:'';   // #61: still auto → keeps following the rows
   const dd=_populateEntryDropdowns(_drawCategory);
   // State picker — pre-select the entry's current state (child overlays only).
   const editStateRow=document.getElementById('map-tr-state-row');

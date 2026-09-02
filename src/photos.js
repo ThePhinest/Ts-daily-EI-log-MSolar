@@ -152,7 +152,7 @@ async function phHandleFiles(files){
     let photoDate = date;
     if(exif.takenAt){
       const d = new Date(exif.takenAt);
-      if(!isNaN(d)) photoDate = d.toISOString().split('T')[0];
+      if(!isNaN(d)) photoDate = d.toLocaleDateString('en-CA');   // 9/2 (#103): LOCAL day — toISOString put evening shots on tomorrow's date (UTC)
     }
 
     // Thumbnail only for in-app display
