@@ -1037,6 +1037,23 @@ function _swRenderForm(){
 function swpppExport(id){
   _confirmModal('Build and export this inspection as a DOCX report?',()=>{ _swpppExportNow(id); },'Export report','Export');
 }
+// After a QI export (DOCX or PDF) offer the SWPPP disturbance tracker XLSX so both can be
+// forwarded together to the contractor / whoever needs them (Tim 7/21, delta #19). Only
+// when the project has a running-balance / running-total (disturbance) category.
+function _swOfferDisturbanceXlsx(pid){
+  try{
+    const cats=(typeof tcGetCategories==='function')?tcGetCategories(pid):[];
+    const dist=cats.filter(c=>{ const m=(typeof tcProgressMode==='function')?tcProgressMode(c,pid):''; return m==='running-balance'||m==='running-total'; });
+    if(!dist.length||typeof window._exportCategoriesDeliverable!=='function'||typeof _confirmModal!=='function') return;
+    const names=dist.map(c=>c.name).join(', ');
+    _confirmModal(`Also export the disturbance tracker (${names}) as XLSX to forward with this report?`, async()=>{
+      try{
+        const entries=(typeof trGetEntriesForProject==='function')?trGetEntriesForProject(pid):[];
+        await window._exportCategoriesDeliverable(dist.map(c=>({cid:c.id,seedOnly:false})), entries, pid);
+      }catch(e){ console.warn('disturbance xlsx after QI export failed:',e); alert('Disturbance export failed: '+e.message); }
+    },'Disturbance tracker','Export XLSX');
+  }catch(e){ console.warn('_swOfferDisturbanceXlsx:',e); }
+}
 // PDF twin of the DOCX export — same document, house pdfmake render
 // (lazy module: pdfmake + fonts never touch the main bundle). The DOCX stays
 // the working/signing format; the PDF is the distributed record (Tim 7/13).
@@ -1055,6 +1072,7 @@ async function _swpppExportPdfNow(id){
   try{
     const [{swpppExportPdfNow},sig]=await Promise.all([import('./swpppPdf.js'),_swLoadSig()]);
     await swpppExportPdfNow(insp,cfg,sig);
+    _swOfferDisturbanceXlsx(pid);
   }catch(e){ console.error('swppp pdf export failed:',e); alert('PDF export failed: '+e.message); }
   finally{ btns.forEach(b=>{ b.innerHTML=b.dataset.oldHtml||((window.glPdfIcon?window.glPdfIcon(13):'⬇')+' PDF'); b.disabled=false; }); }
 }
@@ -1072,6 +1090,7 @@ async function _swpppExportNow(id){
     const [y,m,d]=(insp.date||new Date().toLocaleDateString('en-CA')).split('-');
     const fname=`${(cfg.projectTitle||'Project').replace(/[^\w]+/g,'_')}-QI_Stormwater_Inspection_Report_${parseInt(m)}-${parseInt(d)}-${y.slice(2)}.docx`;
     await saveFileNative(blob,fname,'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    _swOfferDisturbanceXlsx(pid);
   }catch(e){ console.error('swppp export failed:',e); alert('Export failed: '+e.message); }
   finally{ btns.forEach(b=>{ b.textContent=b.dataset.oldTxt||'⬇ Export DOCX'; b.disabled=false; }); }
 }

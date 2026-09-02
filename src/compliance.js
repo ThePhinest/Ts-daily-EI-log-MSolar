@@ -1580,6 +1580,7 @@ async function _glShareOrDownload(blob, filename, mimeType){
   URL.revokeObjectURL(url);
 }
 window._glShareOrDownload=_glShareOrDownload;
+window._exportCategoriesDeliverable=_exportCategoriesDeliverable;   // swppp.js: disturbance XLSX offered after a QI export (#19)
 
 // ── Tracker log export — scheme picker modal ──
 // Per-category deliverables: pick one OR MORE categories — they combine into a single

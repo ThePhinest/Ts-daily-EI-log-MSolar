@@ -2704,13 +2704,62 @@ function mapShowExportModal(){
   document.getElementById('map-export-modal').style.display='block';
 }
 
-function mapExportKml(){
+async function mapExportKml(){
   const incPhotos = document.getElementById('exp-photo-pins').checked;
   const incMarkers = document.getElementById('exp-field-markers').checked;
   const incKml = document.getElementById('exp-kml-layers').checked;
+  const incTracker = !!document.getElementById('exp-tracker-drawings')?.checked;
   const projectName = (JSON.parse(localStorage.getItem('msf_projectconfig')||'{}').projectName) || 'Project';
   const date = new Date().toLocaleDateString('en-CA');
   let placemarks = '';
+  let styleXml = '';
+  // 🗺 Tracker drawings (9/2, delta #110 — "does the tracker data travel with the map data?"
+  // It didn't: only pins/markers/imported KML went out). Now every live drawing exports in
+  // a Folder per category, styled by its state color (planned = thin + faint), carrying the
+  // tracker record as ExtendedData (Google Earth shows it in the balloon; GIS reads the fields).
+  if(incTracker && typeof trGetEntriesForProject==='function'){
+    const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+    const esc=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    const kmlColor=(hex,alpha)=>{ const c=String(hex||'#888888').replace('#',''); const h=/^[0-9A-Fa-f]{6}$/.test(c)?c:'888888'; return ((alpha||'ff')+h.slice(4,6)+h.slice(2,4)+h.slice(0,2)).toLowerCase(); }; // KML = aabbggrr
+    const ring=r=>r.map(c=>c[0]+','+c[1]+',0').join(' ');
+    const geomXml=g=>{
+      if(!g||!g.type||!Array.isArray(g.coordinates)) return '';
+      if(g.type==='Point') return `<Point><coordinates>${g.coordinates[0]},${g.coordinates[1]},0</coordinates></Point>`;
+      if(g.type==='LineString') return `<LineString><tessellate>1</tessellate><coordinates>${ring(g.coordinates)}</coordinates></LineString>`;
+      if(g.type==='MultiLineString') return `<MultiGeometry>${g.coordinates.map(l=>`<LineString><tessellate>1</tessellate><coordinates>${ring(l)}</coordinates></LineString>`).join('')}</MultiGeometry>`;
+      const poly=p=>`<Polygon><tessellate>1</tessellate><outerBoundaryIs><LinearRing><coordinates>${ring(p[0])}</coordinates></LinearRing></outerBoundaryIs>${p.slice(1).map(r=>`<innerBoundaryIs><LinearRing><coordinates>${ring(r)}</coordinates></LinearRing></innerBoundaryIs>`).join('')}</Polygon>`;
+      if(g.type==='Polygon') return poly(g.coordinates);
+      if(g.type==='MultiPolygon') return `<MultiGeometry>${g.coordinates.map(poly).join('')}</MultiGeometry>`;
+      return '';
+    };
+    const byCat=new Map();
+    trGetEntriesForProject(pid)
+      .filter(e=>e&&e.geometry&&!e.deletedAt&&!e.deletedFromMap&&!e.archivedFromMap)
+      .forEach(e=>{ const k=e.categoryId||e.category||'uncategorized'; if(!byCat.has(k)) byCat.set(k,[]); byCat.get(k).push(e); });
+    const styles=new Map();
+    byCat.forEach((list,cid)=>{
+      const catName=(typeof tcGetName==='function')?tcGetName(cid,pid):String(cid);
+      let folder=`  <Folder><name>${esc(catName)}</name>\n`;
+      list.sort((a,b)=>String(a.date||'').localeCompare(String(b.date||''))).forEach(e=>{
+        const geo=geomXml(e.geometry); if(!geo) return;
+        const st=(typeof tcEntryState==='function')?tcEntryState(e,cid,pid):null;
+        const planned=e.entryType==='planned';
+        const color=(st&&st.color)||((typeof tcGetColor==='function')?tcGetColor(cid,pid):'#888888');
+        const sid='gl-'+String(color).replace('#','').toLowerCase()+(planned?'-plan':'');
+        if(!styles.has(sid)) styles.set(sid,`<Style id="${sid}"><LineStyle><color>${kmlColor(color,planned?'99':'ff')}</color><width>${planned?1.5:2.5}</width></LineStyle><PolyStyle><color>${kmlColor(color,planned?'33':'66')}</color></PolyStyle><IconStyle><color>${kmlColor(color)}</color><scale>0.9</scale></IconStyle></Style>`);
+        const meas=(e.measurementValue!=null&&e.measurementValue!=='')?`${e.measurementValue} ${e.measurementUnit||''}`.trim():(e.acres!=null?`${e.acres} ac`:'');
+        const kind=planned?'Planned':(e.temporary?('Repair flag'+(e.tempStatus==='resolved'?' (fixed)':' (open)')):'Installed');
+        const name=`${catName}${st&&st.label?' · '+st.label:''}${e.date?' · '+e.date:''}`;
+        const data=[['Category',catName],['State',st?st.label:(planned?'Planned':'')],['Type',kind],['Date',e.date],['Measurement',meas],['Location',e.location],['Phase',e.phase],['Method',e.method],['Contractor',e.contractor],['Label',e.tempLabel],['Notes',e.notes],['Photos',Array.isArray(e.photoIds)&&e.photoIds.length?String(e.photoIds.length):''],['GroundLog ID',e.id]]
+          .filter(([k,v])=>v!=null&&String(v).trim()!=='');
+        const ext=`<ExtendedData>${data.map(([k,v])=>`<Data name="${esc(k)}"><value>${esc(v)}</value></Data>`).join('')}</ExtendedData>`;
+        folder+=`    <Placemark><name>${esc(name)}</name><styleUrl>#${sid}</styleUrl>${ext}${geo}</Placemark>\n`;
+      });
+      folder+='  </Folder>\n';
+      placemarks+=folder;
+    });
+    styleXml=[...styles.values()].join('\n')+(styles.size?'\n':'');
+  }
   if(incPhotos){
     (window._phPhotos||[]).filter(p=>p.lat&&p.lng).forEach(p=>{
       placemarks += `  <Placemark><name>${(p.caption||p.date||'Photo').replace(/&/g,'&amp;')}</name><Point><coordinates>${p.lng},${p.lat},0</coordinates></Point></Placemark>\n`;
@@ -2739,12 +2788,19 @@ function mapExportKml(){
       });
     });
   }
-  const kml = `<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2">\n<Document>\n<name>${projectName} GL ${date}</name>\n${placemarks}</Document>\n</kml>`;
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([kml],{type:'application/vnd.google-earth.kml+xml'}));
-  a.download = `${projectName}_GL_${date}.kml`;
-  a.click();
+  const kml = `<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2">\n<Document>\n<name>${projectName} GL ${date}</name>\n${styleXml}${placemarks}</Document>\n</kml>`;
+  const fname=`${projectName.replace(/[^\w]+/g,'_')}_GL_${date}.kml`;
+  const blob=new Blob([kml],{type:'application/vnd.google-earth.kml+xml'});
   document.getElementById('map-export-modal').style.display='none';
+  // House save path (share sheet on iOS, download on web) — the old bare <a download> was
+  // a no-op inside the native wrapper.
+  if(typeof window.saveFileNative==='function'){
+    try{ await window.saveFileNative(blob,fname,'application/vnd.google-earth.kml+xml'); return; }catch(e){ console.warn('kml save via saveFileNative failed, falling back:',e); }
+  }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = fname;
+  a.click();
 }
 
 async function mapLoadSettingsFields(){
