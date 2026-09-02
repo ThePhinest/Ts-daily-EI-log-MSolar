@@ -567,15 +567,7 @@ async function phSetPublished(ids, publish, projectId){
           { published: p.published, publishedAt: p.publishedAt }, { merge:true });
         const mref = db.collection('projects').doc(pid).collection('photos').doc(p.id);
         if(publish){
-          const m = { id:p.id, date:p.date||'', caption:p.caption||'', thumb:p.thumb||'',
-            projectId: pid, ownerUid: _currentUser.uid,
-            ownerName: (typeof window._glMyName==='function') ? window._glMyName() : (_currentUser.displayName||_currentUser.email||''),
-            published: true, publishedAt: now, uploadedAt: p.uploadedAt||now };
-          if(p.storageUrl) m.storageUrl = p.storageUrl;
-          if(p.lat !== undefined){ m.lat = p.lat; m.lng = p.lng; }
-          if(p.direction !== undefined) m.direction = p.direction;
-          if(p.takenAt) m.takenAt = p.takenAt;
-          batch.set(mref, m);
+          batch.set(mref, _phMirrorDoc(p, pid, now));
         } else {
           batch.delete(mref);
         }
@@ -626,6 +618,48 @@ async function phExportBlobForRef(ref){
     return new Blob([arr],{type:'image/jpeg'});
   }
   return null;
+}
+
+// The project-mirror copy of a published photo. 9/1: carries the WHOLE camera
+// metadata record (type, locLabel, gpsAcc, alt, tags…) — the stamp overlay a
+// teammate sees renders from these on demand (two-layer model), so a mirror
+// without `type:'camera'` showed reviewers a clean, unstamped photo (Tim 9/1).
+function _phMirrorDoc(p, pid, now){
+  now = now || Date.now();
+  const m = { id:p.id, date:p.date||'', caption:p.caption||'', thumb:p.thumb||'',
+    projectId: pid, ownerUid: _currentUser.uid,
+    ownerName: (typeof window._glMyName==='function') ? window._glMyName() : (_currentUser.displayName||_currentUser.email||''),
+    published: true, publishedAt: p.publishedAt||now, uploadedAt: p.uploadedAt||now };
+  if(p.storageUrl) m.storageUrl = p.storageUrl;
+  if(p.filename) m.filename = p.filename;
+  if(p.type) m.type = p.type;
+  if(p.lat !== undefined){ m.lat = p.lat; m.lng = p.lng; }
+  if(p.direction !== undefined) m.direction = p.direction;
+  if(p.takenAt) m.takenAt = p.takenAt;
+  if(p.locLabel != null) m.locLabel = p.locLabel;
+  if(p.gpsAcc !== undefined) m.gpsAcc = p.gpsAcc;
+  if(p.alt !== undefined) m.alt = p.alt;
+  if(p.software) m.software = p.software;
+  m.swppp = !!p.swppp; m.seedTag = !!p.seedTag; m.repairTag = !!p.repairTag;
+  if(p.plCap) m.plCap = true;
+  return m;
+}
+// One-time backfill (9/1): rewrite every already-published photo's mirror with
+// the full record so teammates' lightboxes stamp them too. Per project, once.
+async function _phRemirrorPublished(pid){
+  if(!db || !_fbReady || !_currentUser || !pid || pid==='default') return;
+  const flag='gl_ph_mirror_v2_'+pid;
+  try{ if(localStorage.getItem(flag)==='1') return; }catch(_){}
+  const pubs=(window._phPhotos||[]).filter(p=>p.published && (!p.projectId || p.projectId===pid));
+  try{
+    for(let i=0;i<pubs.length;i+=400){
+      const batch=db.batch();
+      pubs.slice(i,i+400).forEach(p=>batch.set(db.collection('projects').doc(pid).collection('photos').doc(p.id), _phMirrorDoc(p,pid), {merge:true}));
+      await batch.commit();
+    }
+    try{ localStorage.setItem(flag,'1'); }catch(_){}
+    if(pubs.length) console.log('photos: re-mirrored '+pubs.length+' published photos with full records');
+  }catch(e){ console.warn('photo re-mirror deferred:', e.message); }
 }
 
 // ── Other members' published photos for the active project (map pins +
@@ -696,7 +730,7 @@ function _phRenderShared(){
           ${grouped[date].map(p=>`
             <div class="ph-thumb" onclick="phOpenLightbox('${_hEsc(p.id)}',${idsLiteral})">
               <img src="${_hEsc(p.thumb)}" alt="${_hEsc(p.caption)}" loading="lazy">
-              <div class="ph-thumb-caption">${_phSharedPerson==='all'&&ownerIds.length>1?`<span style="opacity:.75">${_hEsc(_phOwnerName(p).split(' ')[0])} · </span>`:''}${_hEsc(p.caption)}</div>
+              <div class="ph-thumb-caption">${_phSharedPerson==='all'&&ownerIds.length>1?`<span style="opacity:.75">${_hEsc(_phOwnerName(p).split(' ')[0])} · </span>`:''}${p.locLabel?`<span style="color:var(--amber)">${_hEsc(p.locLabel)}</span> · `:''}${_hEsc(p.caption)}</div>
             </div>
           `).join('')}
         </div>
@@ -1022,8 +1056,12 @@ async function _phLbShow(index){
   // caption line, map pins, and the SWPPP photo-log Location column).
   const locRow = document.getElementById('ph-lb-loc-row');
   const locInp = document.getElementById('ph-lb-loc');
-  if(locRow) locRow.style.display = isCam ? 'flex' : 'none';
-  if(locInp){ locInp.value = p.locLabel||''; locInp.readOnly = !own; }
+  // 9/1: a teammate's camera photo shows its location too (read-only, no history picker).
+  const showLoc = isCam || (!own && p.type==='camera' && p.locLabel);
+  if(locRow) locRow.style.display = showLoc ? 'flex' : 'none';
+  const locHist = document.getElementById('ph-lb-loc-hist');
+  if(locHist) locHist.style.display = own ? '' : 'none';
+  if(locInp){ locInp.value = p.locLabel||''; locInp.readOnly = !own; locInp.placeholder = own ? 'Location label (e.g. W21)' : 'Location'; }
   document.querySelectorAll('.ph-lb-hist').forEach(el=>el.remove()); // stale ＋ list from the prior photo
   _phLbResetZoom();
   _phLbRenderMeta(p);
@@ -1652,6 +1690,7 @@ async function phInit(){
   if(typeof glBootMark==='function') glBootMark('ph-done',{cloud:fromCloud,count:(window._phPhotos||[]).length});
   phRecoverStorageUrls();
   phRetryPendingUploads();   // finish any camera uploads a dead zone deferred
+  try{ _phRemirrorPublished((typeof _activeProjectId==='function')?_activeProjectId():null); }catch(_){}
   _glMigratePhaseD();
   // Other members' published photos (shared projects) — feed the map pins.
   phLoadShared().then(()=>{
