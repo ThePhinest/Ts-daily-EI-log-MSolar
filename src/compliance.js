@@ -1612,6 +1612,7 @@ function _showTlogExportModal(getEntries, pid){
   });
 
   const selected=new Set();
+  let zipAuto=true;   // 9/2: attach the full-res Photos ZIP whenever the workbook thumbnailed older months (Tim-approved default)
   const ov=document.createElement('div');
   ov.className='modal-overlay';
   ov.style.cssText='z-index:9500';
@@ -1639,6 +1640,7 @@ function _showTlogExportModal(getEntries, pid){
             </button>`).join('')
           :`<div style="font-family:var(--mono);font-size:11px;color:var(--muted);padding:8px 0">No categories in the current filter.</div>`}
         </div>
+        <label style="display:flex;align-items:flex-start;gap:8px;font-family:var(--mono);font-size:10.5px;color:var(--muted);margin-bottom:10px;flex-shrink:0;cursor:pointer;line-height:1.4"><input type="checkbox" id="_exp-zip-auto" ${zipAuto?'checked':''} style="width:16px;height:16px;accent-color:var(--amber);flex:none;margin-top:1px"> Also save the full-res Photos ZIP when older months embed as thumbnails</label>
         <button id="_exp-go" ${nSel?'':'disabled'} style="flex-shrink:0;width:100%;padding:12px;background:${nSel?'var(--amber)':'var(--s2,#1a2a38)'};color:${nSel?'#000':'var(--muted)'};font-family:var(--cond);font-weight:700;font-size:14px;letter-spacing:.06em;border:none;border-radius:8px;cursor:${nSel?'pointer':'default'};margin-bottom:8px">⬇ Export${nSel?` (${nSel})`:''}</button>
         <button class="_exp-zip" style="flex-shrink:0;width:100%;padding:10px;background:none;color:var(--text);font-family:var(--mono);font-size:11px;border:1px solid var(--border);border-radius:8px;cursor:pointer;margin-bottom:8px">🖼 Photos (ZIP)</button>
         <button id="_exp-cancel" style="flex-shrink:0;width:100%;padding:9px;background:none;color:var(--muted);font-family:var(--mono);font-size:11px;border:1px solid var(--border);border-radius:8px;cursor:pointer">Cancel</button>
@@ -1649,15 +1651,25 @@ function _showTlogExportModal(getEntries, pid){
       btn.onclick=()=>{ const k=btn.dataset.key; if(selected.has(k)) selected.delete(k); else selected.add(k); render(); };
     });
     ov.querySelector('#_exp-cancel').onclick=()=>ov.remove();
+    const zipAutoEl=ov.querySelector('#_exp-zip-auto');
+    if(zipAutoEl) zipAutoEl.onchange=()=>{ zipAuto=!!zipAutoEl.checked; };
     const goBtn=ov.querySelector('#_exp-go');
     if(goBtn) goBtn.onclick=async()=>{
       if(!selected.size) return;
       goBtn.textContent='Building…'; ov.querySelectorAll('button').forEach(b=>b.style.pointerEvents='none');
+      const selKeys=[...selected];
+      _xlsxThumbUsed=false;
       try{
-        const sels=[...selected].map(k=>{ const c=cats.find(x=>x.key===k); return {cid:c.cid, seedOnly:!!c.seedOnly}; });
+        const sels=selKeys.map(k=>{ const c=cats.find(x=>x.key===k); return {cid:c.cid, seedOnly:!!c.seedOnly}; });
         await _exportCategoriesDeliverable(sels, getEntries(), pid);
       }
       catch(err){ console.warn('category export failed',err); }
+      // Older months embedded as thumbnails → the full-res set follows as the Photos ZIP
+      // (same category scope), so nothing is lost from the deliverable.
+      if(zipAuto&&_xlsxThumbUsed){
+        goBtn.textContent='Photos ZIP…';
+        try{ await _tlogExportPhotoZip(getEntries(), pid, selKeys); }catch(err){ console.warn('photo zip failed',err); }
+      }
       ov.remove();
     };
     ov.querySelector('._exp-zip').onclick=async()=>{
@@ -2591,9 +2603,15 @@ async function _embedCaptures(ws, wb, installed, pid, NC){
 // collapses with it (twoCellAnchor → the image hides when the rows collapse). `owners` =
 // the drawing's entries (planned parent + its layers) whose map_captures belong here. This
 // replaces the separate bottom "Map Captures" list — captures live with their drawing.
+let _xlsxThumbUsed=false;   // set when a workbook embedded thumbnail-grade photos (→ offer/attach the full-res ZIP)
 async function _embedCapturesInline(ws, wb, owners, NC, opts){
   // opts.allPhotos: embed EVERY attached photo (repair-flag field photos), not just
   // map captures / seed tags — a flag's photo IS its evidence, always belongs inline.
+  // opts.thumb (9/2, Tim-approved default): photos under a collapsed PRIOR month embed
+  // at thumbnail grade (smaller pixels + a narrower span) so a long seeding tab stops
+  // ballooning month over month; the current month stays full report grade and the
+  // full-res originals ride the Photos ZIP.
+  const thumb=!!(opts&&opts.thumb);
   const caps=[];
   (owners||[]).forEach(e=>{ if(!e) return; const types=e.photoTypes||{}; (e.photoIds||[]).forEach(id=>{
     const ph=(window._phPhotos||[]).find(p=>p.id===id);
@@ -2612,7 +2630,7 @@ async function _embedCapturesInline(ws, wb, owners, NC, opts){
   for(const {ph,e,kind} of caps){
     const tag=kind==='capture'?'📷 Map capture':(kind==='field'?'📷 Field photo':'🌱 Seed tag photo');
     const fillArgb=kind==='capture'?'FDF5DC':(kind==='field'?'FBEAEA':'EAF5EA'); // amber / red / green tints
-    const lbl=ws.addRow([`▸ ${tag} · ${e.date||''}   ( click the + in the far-left margin to expand ↓ )`]);
+    const lbl=ws.addRow([`▸ ${tag} · ${e.date||''}${thumb?' · thumbnail — full-res in the Photos ZIP':''}   ( click the + in the far-left margin to expand ↓ )`]);
     ws.mergeCells(lbl.number,1,lbl.number,NC);
     lbl.getCell(1).font={bold:true,size:10,color:{argb:'FF006B75'}};
     lbl.getCell(1).fill={type:'pattern',pattern:'solid',fgColor:{argb:fillArgb}};
@@ -2633,17 +2651,23 @@ async function _embedCapturesInline(ws, wb, owners, NC, opts){
       if(Math.round(rangeW*aspect)>MAXHPX){
         for(let i=0;i<cum.length;i++){ if(Math.round(cum[i]*aspect)<=MAXHPX){ brCol=i+1; rangeW=cum[i]; } }
       }
+      if(thumb){   // prior-month photo: widest span ≤ ~460 px (about half the sheet), never wider than the full-grade span
+        const TW=460; let bc=1, rw=cum[0];
+        for(let i=0;i<cum.length;i++){ if(cum[i]<=TW){ bc=i+1; rw=cum[i]; } }
+        if(rw<rangeW){ brCol=bc; rangeW=rw; }
+        _xlsxThumbUsed=true;
+      }
       const totalPt=Math.round(Math.round(rangeW*aspect)*0.75); // px→pt, aspect-correct to the span
       const K=Math.max(1,Math.ceil(totalPt/ROWMAXPT));          // split a tall image across rows
       const perRowPt=Math.max(15,Math.round(totalPt/K));        // so each stays under Excel's cap
       // Re-encode at a modest size + JPEG so the workbook stays small. The originals can be
       // multi-MB each (full phone photos); a ~720px JPEG is tens of KB and is plenty for a
       // report — embedding the originals was bloating the file dozens of × over.
-      const EMB=720, es=Math.min(1, EMB/Math.max(bmp.width,bmp.height));
+      const EMB=thumb?420:720, es=Math.min(1, EMB/Math.max(bmp.width,bmp.height));
       const cw=Math.max(1,Math.round(bmp.width*es)), chh=Math.max(1,Math.round(bmp.height*es));
       const cv=document.createElement('canvas'); cv.width=cw; cv.height=chh;
       cv.getContext('2d').drawImage(bmp,0,0,cw,chh); bmp.close();
-      const jblob=await new Promise(res=>cv.toBlob(res,'image/jpeg',0.72));
+      const jblob=await new Promise(res=>cv.toBlob(res,'image/jpeg',thumb?0.62:0.72));
       const dataUrl=await _blobToDataURL(jblob);
       const raw=dataUrl.substring(dataUrl.indexOf(',')+1);
       // K grouped rows, all collapsed by default (one level deeper than the month
@@ -2816,7 +2840,7 @@ async function _linearSheet(wb, cid, allEntries, pid){
 
   // ── Installation Summary — per-state totals vs plan, color-coded bars ──
   const sh=ws.addRow(['INSTALLATION SUMMARY — totals vs plan']); ws.mergeCells(sh.number,1,sh.number,NC);
-  sh.getCell(1).font={bold:true,size:15,color:{argb:'FF0F1F2E'}};
+  sh.getCell(1).font={bold:true,size:15,color:{argb:'FF006B75'}};
   sh.getCell(1).fill={type:'pattern',pattern:'solid',fgColor:{argb:'C9A84C'}};
   sh.getCell(1).alignment={vertical:'middle',horizontal:'left',indent:1}; sh.height=28;
   const hdr=ws.addRow(['','State','Length','% of Plan']);
@@ -3122,7 +3146,7 @@ async function _seedingSheetRender(wb, o){
 
   // ── Coverage Summary — the headline section: AMBER band, larger, all columns ──
   const sh=ws.addRow([hasPlan?'COVERAGE SUMMARY — totals vs plan':'SEEDING SUMMARY — totals']); ws.mergeCells(sh.number,1,sh.number,NC);
-  sh.getCell(1).font={bold:true,size:15,color:{argb:'FF0F1F2E'}};
+  sh.getCell(1).font={bold:true,size:15,color:{argb:'FF006B75'}};
   sh.getCell(1).fill={type:'pattern',pattern:'solid',fgColor:{argb:'C9A84C'}};
   sh.getCell(1).alignment={vertical:'middle',horizontal:'left',indent:1}; sh.height=28;
   const hdr=ws.addRow(COLS);
@@ -3243,7 +3267,8 @@ async function _seedingSheetRender(wb, o){
       _xlFitRowHeight(r,COLW,10,30); // grows past the 30px padding when notes/mix/method wrap
       if(mLevel){ r.outlineLevel=mLevel; r.hidden=mHidden; }
       // Flat event lists carry each event's captures/photos right under its own row.
-      if(perRowCaptures) await _embedCapturesInline(ws, wb, [e], NC, mLevel?{baseLevel:mLevel,startHidden:mHidden}:undefined);
+      // Collapsed (prior) months → thumbnail-grade photos; the latest month stays full grade.
+      if(perRowCaptures) await _embedCapturesInline(ws, wb, [e], NC, mLevel?{baseLevel:mLevel,startHidden:mHidden,thumb:!!mHidden}:undefined);
     };
     // 📅 Monthly collapsible groups (Tim 8/17) — only when a group spans 2+ months:
     // latest month opens expanded, older months collapsed under their band row.
@@ -3259,7 +3284,7 @@ async function _seedingSheetRender(wb, o){
         const covSum=inMonth.reduce((a,e)=>a+measure(e),0);
         const mh=ws.addRow([`📅 ${label} — ${inMonth.length} event${inMonth.length>1?'s':''} · ${fmt(covSum)}${collapsed?'   ( + expands ↓ )':''}`]);
         ws.mergeCells(mh.number,1,mh.number,NC);
-        mh.getCell(1).font={bold:true,size:11,color:{argb:'FF0F1F2E'}};
+        mh.getCell(1).font={bold:true,size:11,color:{argb:'FF006B75'}};
         mh.getCell(1).fill={type:'pattern',pattern:'solid',fgColor:{argb:'F0E6C8'}};
         mh.height=20;
         for(const e of inMonth) await writeEvent(e,1,collapsed);

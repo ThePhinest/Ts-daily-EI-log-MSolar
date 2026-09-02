@@ -292,7 +292,9 @@ async function rptCallClaude(logData, compEntries, systemPromptIn){
 async function rptBuildDocx(logData,polished,photos){
   if(!window.docx) throw new Error('Report library not loaded. Please refresh and try again.');
   const{Document,Packer,Paragraph,TextRun,Table,TableRow,TableCell,AlignmentType,BorderStyle,WidthType,ShadingType,ImageRun,Footer,Header,PageNumber,NumberFormat}=window.docx;
-  const BLUE='1F3864',LT_BLUE='D9E2F3',MID_BLUE='2E5496',WHITE='FFFFFF';
+  // GroundLog palette (9/2 brand pass — Office blue retired): teal bands, teal-tint info cells,
+  // amber rules under sub-heads. Per-tenant branding still overrides via config where wired.
+  const BLUE='006B75',LT_BLUE='E4EFEE',MID_BLUE='006B75',WHITE='FFFFFF',RULE='C9A84C';
   const bdr={style:BorderStyle.SINGLE,size:1,color:'AAAAAA'};
   const borders={top:bdr,bottom:bdr,left:bdr,right:bdr};
   const noBdr={style:BorderStyle.NONE,size:0,color:'FFFFFF'};
@@ -307,7 +309,7 @@ async function rptBuildDocx(logData,polished,photos){
   // Helpers
   const spacer=(pts=80)=>new Paragraph({spacing:{before:0,after:pts}});
   const h1=(text)=>new Paragraph({children:[new TextRun({text,bold:true,color:WHITE,font:'Arial',size:24})],shading:{fill:BLUE,type:ShadingType.CLEAR},spacing:{before:200,after:100}});
-  const h2=(text)=>new Paragraph({children:[new TextRun({text,bold:true,color:MID_BLUE,font:'Arial',size:22})],border:{bottom:{style:BorderStyle.SINGLE,size:6,color:MID_BLUE,space:1}},spacing:{before:160,after:60}});
+  const h2=(text)=>new Paragraph({children:[new TextRun({text,bold:true,color:MID_BLUE,font:'Arial',size:22})],border:{bottom:{style:BorderStyle.SINGLE,size:6,color:RULE,space:1}},spacing:{before:160,after:60}});
   const body=(text)=>new Paragraph({children:[new TextRun({text,font:'Arial',size:20})],spacing:{before:40,after:40}});
   const bullet=(text)=>new Paragraph({children:[new TextRun({text:'\u2022  '+text,font:'Arial',size:20})],indent:{left:360},spacing:{before:20,after:20}});
   const infoRow=(label,value)=>new TableRow({children:[
@@ -457,7 +459,7 @@ async function rptBuildDocx(logData,polished,photos){
   // Certification
   const certBlock=[
     spacer(120),
-    new Paragraph({children:[new TextRun({text:'Report Certification',bold:true,font:'Arial',size:22,color:MID_BLUE})],border:{bottom:{style:BorderStyle.SINGLE,size:6,color:MID_BLUE,space:1}},spacing:{before:0,after:60}}),
+    new Paragraph({children:[new TextRun({text:'Report Certification',bold:true,font:'Arial',size:22,color:MID_BLUE})],border:{bottom:{style:BorderStyle.SINGLE,size:6,color:RULE,space:1}},spacing:{before:0,after:60}}),
     body('I certify that the information contained in this Daily Environmental Compliance Report is accurate and complete to the best of my knowledge, and that all observations were conducted in accordance with the applicable Environmental Management and Construction Plan (EM\u0026CP) and all other relevant permit conditions and regulatory requirements.'),
     spacer(80),
     new Table({rows:[

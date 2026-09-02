@@ -37,6 +37,12 @@ async function _getPdfMake(){
 
 // ── palette + metrics (DOCX constants; sizes are half-points there → pt here) ──
 const BLUE='#1F3864', LT_BLUE='#D9E2F3', MID_BLUE='#2E5496', AMBER='#FFF2CC', HAIR='#AAAAAA';
+// Palette switch for the shared builders (9/2 brand pass): the QI report keeps the Office
+// blue its recipients have seen all project (Tim 8/31: QI stays blue until the mid-project
+// freeze lifts); every other PDF built here runs GroundLog teal/amber. Each builder sets it.
+const PAL_OFFICE={h:BLUE,lt:LT_BLUE,mid:MID_BLUE,hot:AMBER};
+const PAL_GL={h:'#006B75',lt:'#E4EFEE',mid:'#006B75',hot:'#F7EFD9'};
+let _pal=PAL_OFFICE;
 const PAGE_W=612, MARG=54, CONTENT_W=PAGE_W-2*MARG;   // Letter, 0.75" side margins
 // Column widths for a hairLayout table: pdfmake ADDS cell padding (6+6/col) and the
 // 0.5pt hairlines ON TOP of fixed widths, so raw %-of-content columns overpack the
@@ -65,15 +71,15 @@ const imgGridLayout={
 };
 
 // ── shared builders ──
-const h1=(text)=>({table:{widths:['*'],body:[[{text,bold:true,color:'#FFFFFF',fontSize:12,fillColor:BLUE,border:[false,false,false,false]}]]},
+const h1=(text)=>({table:{widths:['*'],body:[[{text,bold:true,color:'#FFFFFF',fontSize:12,fillColor:_pal.h,border:[false,false,false,false]}]]},
   layout:{hLineWidth:()=>0,vLineWidth:()=>0,paddingLeft:()=>6,paddingRight:()=>6,paddingTop:()=>3,paddingBottom:()=>3},
   headlineLevel:1, margin:[0,10,0,5]});
 const note=(text)=>text?{text,fontSize:8,italics:true,color:'#555555',margin:[0,0,0,3]}:{text:'',margin:[0,0,0,0]};
 const body=(textOrRuns,opts)=>Object.assign({text:textOrRuns,fontSize:10,margin:[0,2,0,2]},opts||{});
-const hcell=(text)=>({text,bold:true,color:'#FFFFFF',fillColor:BLUE,fontSize:9});
+const hcell=(text)=>({text,bold:true,color:'#FFFFFF',fillColor:_pal.h,fontSize:9});
 const cell=(text,o)=>{o=o||{};return {text:String(text==null?'':text),fontSize:o.size||9,bold:!!o.bold,italics:!!o.i,fillColor:o.fill,color:o.color};};
 const infoRow=(label,value)=>[
-  {text:label,bold:true,fontSize:10,fillColor:LT_BLUE},
+  {text:label,bold:true,fontSize:10,fillColor:_pal.lt},
   (value&&value.text!==undefined)||Array.isArray(value)?{text:value,fontSize:10}:{text:String(value==null?'':value),fontSize:10}
 ];
 const infoTable=(rows)=>({table:{dontBreakRows:true,widths:[160,'*'],body:rows},layout:hairLayout,margin:[0,2,0,4]});
@@ -119,6 +125,7 @@ function _imgPairRows(items){
 
 // ═══ the builder — same data prep as swpppBuildDocx, pdfmake doc-definition out ═══
 export async function swpppBuildPdf(insp,cfg,sig){
+  _pal=PAL_OFFICE;   // QI report: Office blue by decision (mid-project freeze)
   const pdfMake=await _getPdfMake();
 
   // Date formatting
@@ -601,6 +608,7 @@ export async function dailyExportPdfNow(logData,polished,photoRefs,opts){
 // Same house chrome as the QI report; photos ride exportImg like every export.
 export async function punchlistBuildPdf(opts){
   opts=opts||{};
+  _pal=PAL_GL;   // GroundLog deliverable → house palette (9/2 brand pass)
   const pdfMake=await _getPdfMake();
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
   const cfg=(typeof loadProjectConfig==='function')?loadProjectConfig():{};
@@ -643,7 +651,7 @@ export async function punchlistBuildPdf(opts){
     const e=sorted[i];
     const id=plId(e,i);
     const du=dueOf(e), over=du&&now>du;
-    const hot=over?{fill:AMBER,bold:true}:{};
+    const hot=over?{fill:_pal.hot,bold:true}:{};
     const dOpen=daysOpen(e);
     const ims=[];
     for(const pId of (e.photoIds||[])){
@@ -703,8 +711,8 @@ export async function punchlistBuildPdf(opts){
     header:()=>({
       margin:[MARG,22,MARG,0],
       table:{widths:['60%','40%'],body:[[
-        {text:projName.toUpperCase(),bold:true,fontSize:10,color:BLUE,fillColor:LT_BLUE},
-        {text:'ESC Punchlist',fontSize:9,color:MID_BLUE,fillColor:LT_BLUE,alignment:'right'}
+        {text:projName.toUpperCase(),bold:true,fontSize:10,color:_pal.h,fillColor:_pal.lt},
+        {text:'ESC Punchlist',fontSize:9,color:_pal.mid,fillColor:_pal.lt,alignment:'right'}
       ]]},
       layout:{hLineWidth:()=>0.5,vLineWidth:(i,node)=>(i===0||i===node.table.widths.length)?0.5:0,hLineColor:()=>HAIR,vLineColor:()=>HAIR,paddingLeft:()=>6,paddingRight:()=>6,paddingTop:()=>3,paddingBottom:()=>3}
     }),
@@ -729,14 +737,15 @@ export async function punchlistBuildPdf(opts){
 // file for forwarding to the contractor). Same house chrome as everything else.
 export async function avBuildPdf(visits, cfg, opts){
   opts=opts||{};
+  _pal=PAL_GL;   // GroundLog deliverable → house palette (9/2 brand pass)
   const pdfMake=await _getPdfMake();
   const pretty=(d)=>{ const p=String(d||'').split('-'); return p.length===3?`${parseInt(p[1])}/${parseInt(p[2])}/${p[0]}`:String(d||''); };
   const content=[
     {table:{widths:['*'],body:[[{
       stack:[
         {text:opts.single?'AGENCY VISIT REPORT':'AGENCY VISIT LOG',bold:true,fontSize:16,color:'#FFFFFF'},
-        {text:cfg.projectName||'',fontSize:10,color:'#D9E2F3',margin:[0,2,0,0]}
-      ],fillColor:BLUE,border:[false,false,false,false],margin:[0,4,0,4]
+        {text:cfg.projectName||'',fontSize:10,color:'#E4EFEE',margin:[0,2,0,0]}
+      ],fillColor:_pal.h,border:[false,false,false,false],margin:[0,4,0,4]
     }]]},layout:{hLineWidth:()=>0,vLineWidth:()=>0,paddingLeft:()=>8,paddingRight:()=>8,paddingTop:()=>4,paddingBottom:()=>4},margin:[0,0,0,6]},
     infoTable([
       infoRow('Generated', pretty(new Date().toLocaleDateString('en-CA'))),
@@ -755,8 +764,8 @@ export async function avBuildPdf(visits, cfg, opts){
     content.push(body(v.notes||'—'));
     if(v.followUps){
       content.push({table:{widths:['*'],body:[[{
-        stack:[{text:'FOLLOW-UP ITEMS',bold:true,fontSize:8,color:'#7A5C00'},{text:v.followUps,fontSize:10,margin:[0,2,0,0]}],
-        fillColor:AMBER,border:[false,false,false,false]
+        stack:[{text:'FOLLOW-UP ITEMS',bold:true,fontSize:8,color:'#8B6914'},{text:v.followUps,fontSize:10,margin:[0,2,0,0]}],
+        fillColor:_pal.hot,border:[false,false,false,false]
       }]]},layout:{hLineWidth:()=>0,vLineWidth:()=>0,paddingLeft:()=>6,paddingRight:()=>6,paddingTop:()=>4,paddingBottom:()=>4},margin:[0,4,0,4]});
     }
     if(Array.isArray(v.photoIds)&&v.photoIds.length){
