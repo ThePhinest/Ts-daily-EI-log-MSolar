@@ -958,15 +958,18 @@ async function _glShowSubmitReview(payload, date, pid) {
   }
   const _lastRevRaw = (function(){ try { return localStorage.getItem('gl_last_reviewer_' + pid) || ''; } catch (e) { return ''; } })();
   const _lastRev = _revMembers.some(mm => mm.uid === _lastRevRaw) ? _lastRevRaw : '';
-  const revSection = _revMembers.length ? `
+  // 9/1: the section ALWAYS renders — a project with no eligible reviewer says
+  // so instead of silently hiding the feature (Tim: "didn't get an option").
+  const revSection = `
     <div style="margin-top:14px;border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:9px 12px">
       <div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:4px">✍ Review &amp; sign-off</div>
-      ${_revSnap ? `
+      ${!_revMembers.length ? `<div style="font-size:10.5px;color:var(--muted2)">No Reviewer ✍ or Lead on this project yet — invite one from <b>Members</b> and their name will appear here so you can send the day's report for review &amp; signature.</div>`
+      : _revSnap ? `
         <div style="font-size:10.5px;color:var(--muted2);margin-bottom:6px">Attaches your generated report (v${_revSnap.version}) — your reviewer signs the exact document you'll export.</div>
         <label style="display:flex;align-items:center;gap:10px;padding:5px 0;cursor:pointer;font-size:12px"><input type="radio" name="_gl-rev-picker" value=""${_lastRev ? '' : ' checked'} style="accent-color:var(--amber,#C9A84C);width:15px;height:15px;flex-shrink:0">No review — just share the day</label>
         ${_revMembers.map(mm => `<label style="display:flex;align-items:center;gap:10px;padding:5px 0;cursor:pointer;font-size:12px"><input type="radio" name="_gl-rev-picker" value="${_glEsc(mm.uid)}" data-name="${_glEsc(mm.name)}"${_lastRev === mm.uid ? ' checked' : ''} style="accent-color:var(--amber,#C9A84C);width:15px;height:15px;flex-shrink:0"><span>Send to <b>${_glEsc(mm.name)}</b> for review &amp; signature</span></label>`).join('')}`
       : `<div style="font-size:10.5px;color:var(--muted2)">Generate this day's report first (Daily Log → Generate Report) to attach it here for review &amp; signature.</div>`}
-    </div>` : '';
+    </div>`;
 
   const mDate = m => new Date(m.createdAt || 0).toLocaleDateString('en-CA');
   // Row text = main text color, date = amber — keeps the fields visually
@@ -1006,7 +1009,7 @@ async function _glShowSubmitReview(payload, date, pid) {
       <span style="font-size:10.5px;color:var(--muted2)">always included</span>
     </div>
     ${dayCount ? `<div class="gl-inv-label" style="margin-top:12px;color:var(--amber,#C9A84C)">This day's items (${dayCount})</div>
-      ${dayE.map(e => entryRow(e, true)).join('')}${dayP.map(p => photoRow(p, true)).join('')}${dayM.map(m => markerRow(m, true)).join('')}`
+      ${dayE.map(e => entryRow(e, true)).join('')}${dayP.map(p => photoRow(p, !p.reportExclude)).join('')}${dayM.map(m => markerRow(m, true)).join('')}`
     : '<div class="proj-row-meta" style="margin-top:12px;white-space:normal;overflow:visible;text-overflow:unset">No unpublished drawings, photos or markers for this day.</div>'}
     ${preCount ? `<div style="margin-top:12px;border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:8px 10px">
       <div style="display:flex;align-items:center;gap:10px;cursor:pointer;user-select:none">
@@ -1024,7 +1027,7 @@ async function _glShowSubmitReview(payload, date, pid) {
       <button class="modal-cancel" id="_gl-rev-cancel">Cancel</button>
       <button class="modal-confirm" id="_gl-rev-submit" style="background:var(--s3);border-color:var(--s3)">Submit day</button>
     </div>
-    <div class="proj-row-meta" style="margin-top:10px;white-space:normal;overflow:visible;text-overflow:unset">Unchecked items stay private — they'll be offered again next submit, or share them any time from the map. You can keep editing after submitting; reviewers see a resubmit only when you post one.</div>
+    <div class="proj-row-meta" style="margin-top:10px;white-space:normal;overflow:visible;text-overflow:unset">Unchecked items stay private — they'll be offered again next submit, or share them any time from the map. <span style="color:var(--text)">Unchecking one of today's photos also leaves it out of the day's report</span> (and vice versa — one choice, both places). You can keep editing after submitting; reviewers see a resubmit only when you post one.</div>
   </div>`;
   document.body.appendChild(ov);
   ov._revSnap = _revSnap;   // review attachment rides the sheet element to submit time
@@ -1064,6 +1067,20 @@ async function _glReviewSubmit(ov, payload, date, pid, markersById) {
   const rp = ov.querySelector('input[name="_gl-rev-picker"]:checked');
   if (rp && rp.value && ov._revSnap)
     reviewOpts = { reviewerUid: rp.value, reviewerName: rp.dataset.name || '', snapshot: ov._revSnap };
+  // 9/1: today's photo checkboxes double as the report selection — unchecked =
+  // reportExclude, checked = back in. Earlier days' rows are untouched.
+  try {
+    if (typeof window.phSetReportExclude === 'function') {
+      const inc = [], exc = [];
+      ov.querySelectorAll('input[type=checkbox][data-type="photo"]').forEach(cb => {
+        const p = (window._phPhotos || []).find(x => x.id === cb.dataset.id);
+        if (!p || p.date !== date) return;
+        (cb.checked ? inc : exc).push(p.id);
+      });
+      if (exc.length) await window.phSetReportExclude(exc, true);
+      if (inc.length) await window.phSetReportExclude(inc, false);
+    }
+  } catch (e) { console.warn('submit-day report flags:', e.message); }
   let published = 0;
   try {
     if (picks.entry.length && typeof trSetPublished === 'function')

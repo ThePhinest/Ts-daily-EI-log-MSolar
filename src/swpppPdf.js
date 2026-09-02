@@ -84,8 +84,11 @@ async function _imgFor(pId,maxWpx,maxHpx){
   const p=(window._phPhotos||[]).find(x=>x.id===pId);
   if(!p) return null;
   try{
-    let blob=null;
-    if(p.storageUrl){ try{ blob=await (await fetch(p.storageUrl)).blob(); }catch(e){} }
+    // 9/1: photos.js resolves the bytes (Storage → author's live library copy →
+    // thumb) so a shot still uploading at generate time prints on the author's
+    // device instead of a caption-only cell (Tim, 9/1: photos 15 + 17 missing).
+    let blob=(typeof window.phExportBlobForRef==='function')?await window.phExportBlobForRef(p):null;
+    if(!blob&&p.storageUrl){ try{ blob=await (await fetch(p.storageUrl)).blob(); }catch(e){} }
     if(!blob&&p.thumb){ const raw=p.thumb,b64=raw.includes(',')?raw.split(',')[1]:raw; const bin=atob(b64); const arr=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++)arr[i]=bin.charCodeAt(i); blob=new Blob([arr],{type:'image/jpeg'}); }
     if(!blob) return null;
     blob=await stampIfCamera(p,blob);   // camera photos embed stamped, everywhere

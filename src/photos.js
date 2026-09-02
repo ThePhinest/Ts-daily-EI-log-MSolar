@@ -332,6 +332,8 @@ function _phDocFor(p){
   if(p.repairTag) doc.repairTag = true;
   if(p.gpsAcc !== undefined) doc.gpsAcc = p.gpsAcc;
   if(p.published !== undefined){ doc.published = p.published; doc.publishedAt = p.publishedAt || null; }
+  // 📄 report exclusion (9/1): explicit falsy so re-including syncs across devices.
+  doc.reportExclude = !!p.reportExclude;
   return doc;
 }
 
@@ -561,6 +563,48 @@ async function phSetPublished(ids, publish, projectId){
     }catch(e){ console.warn('phSetPublished:', e.message); }
   }
   return touched.length;
+}
+
+// ── 📄 Report photo selection (9/1) ──
+// One flag drives both the daily report's photo picker and the submit-day
+// sheet: reportExclude=true means "not in the report" AND shows unchecked at
+// submit; checking it in either place clears the flag. Stored on the user's
+// own photo doc (cloud + IDB) so re-exports and the reviewer snapshot honor it.
+async function phSetReportExclude(ids, exclude){
+  const list = Array.isArray(ids) ? ids : [ids];
+  const touched = [];
+  list.forEach(id => {
+    const p = (window._phPhotos||[]).find(x=>x.id===id);
+    if(!p) return;
+    if(!!p.reportExclude === !!exclude) return;
+    p.reportExclude = !!exclude;
+    touched.push(p.id);
+  });
+  if(!touched.length) return 0;
+  phSaveLocal();
+  phMarkDirty(touched);
+  if(db && _fbReady && _currentUser){ try{ await phSaveCloud(); }catch(e){ console.warn('phSetReportExclude:', e.message); } }
+  return touched.length;
+}
+
+// Export bytes for a SNAPSHOT photo ref (report.js / swpppPdf.js): the healed
+// Storage copy first; on the author's own device fall back to the live library
+// record (offline-pending camera original → Storage → thumb) so a shot whose
+// upload hadn't landed at generate time still prints. A reviewer's device has
+// no library copy — it gets the Storage URL or nothing, by design.
+async function phExportBlobForRef(ref){
+  if(!ref) return null;
+  if(ref.storageUrl){ try{ const r=await fetch(ref.storageUrl); if(r.ok) return await r.blob(); }catch(e){} }
+  const live = ref.id ? _phById(ref.id) : null;
+  if(live){ try{ const b=await _phFullBlob(live); if(b) return b; }catch(e){} }
+  const raw = ref.thumb||'';
+  if(raw.startsWith('data:')){
+    const b64=raw.split(',')[1]; const bin=atob(b64);
+    const arr=new Uint8Array(bin.length);
+    for(let i=0;i<bin.length;i++) arr[i]=bin.charCodeAt(i);
+    return new Blob([arr],{type:'image/jpeg'});
+  }
+  return null;
 }
 
 // ── Other members' published photos for the active project (map pins +
@@ -1828,6 +1872,9 @@ window.phReportCurrent = phReportCurrent;
 window.phToggleSwpppCurrent = phToggleSwpppCurrent;
 window.phToggleSeedCurrent = phToggleSeedCurrent;
 window.phSetPublished = phSetPublished;
+window.phSetReportExclude = phSetReportExclude;
+window.phExportBlobForRef = phExportBlobForRef;
+window.phRecoverStorageUrls = phRecoverStorageUrls;
 window.phLoadShared = phLoadShared;
 window._phById = _phById;
 window.phConfirmDelete = phConfirmDelete;

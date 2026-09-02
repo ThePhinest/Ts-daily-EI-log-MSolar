@@ -434,7 +434,11 @@ async function rptBuildDocx(logData,polished,photos){
     for(let j=i;j<Math.min(i+2,dayPhotos.length);j++){
       const p=dayPhotos[j];
       try{
-        let imgData;if(p.storageUrl){let blob=await (await fetch(p.storageUrl)).blob();blob=await stampIfCamera(p,blob);const ep=exportImageParams(p);blob=await exportImageBlob(blob,ep.maxPx,ep.quality);imgData=await blob.arrayBuffer();}else{const raw=p.thumb;const b64=raw.includes(',')?raw.split(',')[1]:raw;imgData=_b64ToArrayBuffer(b64);}
+        let imgData;
+        let blob=(typeof window.phExportBlobForRef==='function')?await window.phExportBlobForRef(p):null;   // 9/1: Storage → live library copy → thumb
+        if(!blob&&p.storageUrl) blob=await (await fetch(p.storageUrl)).blob();
+        if(blob){blob=await stampIfCamera(p,blob);const ep=exportImageParams(p);blob=await exportImageBlob(blob,ep.maxPx,ep.quality);imgData=await blob.arrayBuffer();}
+        else{const raw=p.thumb||'';const b64=raw.includes(',')?raw.split(',')[1]:raw;imgData=_b64ToArrayBuffer(b64);}
         cells.push(new TableCell({borders:noBorders,width:{size:50,type:WidthType.PERCENTAGE},margins:{top:40,bottom:40,left:40,right:40},children:[
           new Paragraph({alignment:AlignmentType.CENTER,children:[new ImageRun({data:imgData,transformation:{width:331,height:248}})]}),
           new Paragraph({alignment:AlignmentType.CENTER,children:[new TextRun({text:`Photo ${j+1} \u2014 ${p.caption||''}`,font:'Arial',size:18,italics:true})],spacing:{before:40,after:60}})
@@ -652,7 +656,92 @@ function _categorizeChanges(prevSnap, currSnap){
   }
   // A change in opted-in resolved Open Items is a mechanical (table) change.
   if(JSON.stringify(prevSnap.oiRefs||[]) !== JSON.stringify(currSnap.oiRefs||[])) mechanicalCount++;
-  return {mechanicalCount, narrativeFields};
+  // 9/1: photo selection is mechanical (the pictures re-flow, prose unchanged);
+  // compliance entries are NARRATIVE — the report's compliance table is Claude
+  // output, so a new/changed entry needs a fresh polish to appear.
+  const photoIds=snap=>(snap.photoRefs||[]).map(p=>p.id).sort().join(',');
+  const photoChanged=photoIds(prevSnap)!==photoIds(currSnap);
+  if(photoChanged) mechanicalCount++;
+  if(JSON.stringify(prevSnap.compEntries||[]) !== JSON.stringify(currSnap.compEntries||[])) narrativeFields.push('Compliance issues');
+  return {mechanicalCount, narrativeFields, photoChanged};
+}
+
+// 9/1 — Generate-Report photo picker (same tap grid as the SWPPP photo picker).
+// Resolves to the selected photo records, or null on cancel. Persists the
+// choice as reportExclude on each photo so re-exports, the reviewer snapshot
+// and the submit-day sheet all agree.
+function _rptPickPhotos(reportDate,pool){
+  if(!pool.length) return Promise.resolve([]);
+  if(!document.getElementById('sw-css')&&!document.getElementById('rpt-pick-css')){
+    const st=document.createElement('style'); st.id='rpt-pick-css';
+    st.textContent=`.sw-pick-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(90px,1fr));gap:8px;max-height:46vh;overflow-y:auto}
+.sw-pick{position:relative;border:2px solid transparent;border-radius:8px;overflow:hidden;cursor:pointer;height:0;padding-bottom:75%;background:var(--s2,#1a2a38)}
+.sw-pick img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
+.sw-pick.on{border-color:var(--amber)}
+.sw-pick.on::after{content:'\u2713';position:absolute;top:4px;right:4px;background:var(--amber);color:#000;border-radius:50%;width:18px;height:18px;font-size:12px;display:flex;align-items:center;justify-content:center}
+.sw-pick-date{position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.55);color:#fff;font-family:var(--mono);font-size:8px;padding:2px 4px}`;
+    document.head.appendChild(st);
+  }
+  const sorted=pool.slice().sort((a,b)=>(a.uploadedAt||0)-(b.uploadedAt||0));
+  return new Promise(resolve=>{
+    const ov=document.createElement('div'); ov.className='modal-overlay'; ov.id='rpt-pick-ov';
+    const esc=t=>String(t||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+    const cells=sorted.map(p=>`<div class="sw-pick${p.reportExclude?'':' on'}" data-id="${esc(p.id)}" title="${esc(p.caption)}">
+      <img src="${p.thumb||''}" loading="lazy">
+      <span class="sw-pick-date">${esc(p.caption||p.date||'')}</span>
+    </div>`).join('');
+    ov.innerHTML=`<div class="modal-box" style="max-width:560px">
+      <h3 style="margin:0 0 4px">Photos for this report</h3>
+      <p style="font-size:11px;color:var(--muted);margin:0 0 10px">Tap to include or leave out. Your choice sticks \u2014 it also sets what's checked when you submit the day to the project. <span id="rpt-pick-count"></span></p>
+      <div class="sw-pick-grid" id="rpt-pick-grid">${cells}</div>
+      <div style="display:flex;gap:10px;justify-content:space-between;align-items:center;margin-top:12px">
+        <button class="btn btn-outline" style="font-size:11px" id="rpt-pick-all">Select all</button>
+        <div style="display:flex;gap:10px">
+          <button class="btn btn-outline" id="rpt-pick-cancel">Cancel</button>
+          <button class="btn" id="rpt-pick-ok">Use selected</button>
+        </div>
+      </div>
+    </div>`;
+    document.body.appendChild(ov);
+    const grid=ov.querySelector('#rpt-pick-grid');
+    const count=()=>{ const n=grid.querySelectorAll('.sw-pick.on').length; ov.querySelector('#rpt-pick-count').textContent=`${n} of ${sorted.length} selected.`; };
+    grid.querySelectorAll('.sw-pick').forEach(el=>{ el.onclick=()=>{ el.classList.toggle('on'); count(); }; });
+    count();
+    ov.querySelector('#rpt-pick-all').onclick=()=>{ const all=grid.querySelectorAll('.sw-pick'); const allOn=grid.querySelectorAll('.sw-pick.on').length===all.length; all.forEach(el=>el.classList.toggle('on',!allOn)); count(); };
+    const done=async ok=>{
+      if(!ok){ ov.remove(); resolve(null); return; }
+      const on=new Set(Array.from(grid.querySelectorAll('.sw-pick.on')).map(el=>el.dataset.id));
+      ov.remove();
+      const inc=sorted.filter(p=>on.has(p.id)).map(p=>p.id), exc=sorted.filter(p=>!on.has(p.id)).map(p=>p.id);
+      if(typeof window.phSetReportExclude==='function'){
+        try{ await window.phSetReportExclude(exc,true); await window.phSetReportExclude(inc,false); }catch(e){}
+      }
+      resolve(sorted.filter(p=>on.has(p.id)));
+    };
+    ov.querySelector('#rpt-pick-cancel').onclick=()=>done(false);
+    ov.querySelector('#rpt-pick-ok').onclick=()=>done(true);
+    ov.onclick=e=>{ if(e.target===ov) done(false); };
+  });
+}
+
+// 9/1 — a camera shot saves local-first with storageUrl '' and heals when the
+// background upload lands; a snapshot built in that window has no URL for it,
+// so the PDF (which renders from refs) printed caption-only cells. Wait briefly
+// for in-flight uploads, kick the retry/recover passes, then continue — the
+// author's export still falls back to the local copy (phExportBlobForRef), but
+// a reviewer's device can only print what's in Storage, so say so.
+async function _rptAwaitUploads(photos,setStatus){
+  const missing=()=>photos.filter(p=>!p.storageUrl&&p.filename);
+  if(!missing().length) return;
+  setStatus('Waiting for photo uploads\u2026');
+  const deadline=Date.now()+20000;
+  while(missing().length&&Date.now()<deadline){
+    try{ if(window.phRetryPendingUploads) await window.phRetryPendingUploads(); }catch(e){}
+    if(missing().length){ try{ if(window.phRecoverStorageUrls) await window.phRecoverStorageUrls(); }catch(e){} }
+    if(missing().length) await new Promise(r=>setTimeout(r,1500));
+  }
+  const left=missing().length;
+  if(left) setStatus(`\u26a0 ${left} photo${left===1?'':'s'} not uploaded yet \u2014 included from this device; a reviewer copy would miss ${left===1?'it':'them'} until the upload lands.`,'var(--amber)');
 }
 
 async function _loadReportVersions(reportDate){
@@ -795,9 +884,31 @@ async function _doGenerate(){
     };
     const reportDate=logData.reportDate;
     // Get compliance entries for this report date
+    // 9/1 (Tim: "isn't showing the open Level 3 issue"): a compliance entry
+    // stays in every daily report from the day it's opened until the day it's
+    // resolved (inclusive) — not only on the day it was logged. Project-scoped
+    // like clGetOpenEntries (legacy rows without a projectId still count).
     let compEntries=[];
-    try{const all=JSON.parse((window.idbGet&&window.idbGet('cl_entries'))||'[]');compEntries=all.filter(e=>e.sourceReport===reportDate||e.date===reportDate);}catch(e){}
-    const photos=_phPhotos.filter(p=>p.date===reportDate);
+    try{
+      const all=JSON.parse((window.idbGet&&window.idbGet('cl_entries'))||'[]');
+      const pidNow=(typeof _activeProjectId==='function')?_activeProjectId():null;
+      compEntries=all.filter(e=>{
+        if(e.deletedAt) return false;
+        if(pidNow&&e.projectId&&e.projectId!==pidNow) return false;
+        if(e.sourceReport===reportDate||e.date===reportDate) return true;
+        if(!e.date||e.date>reportDate) return false;           // opened after this report's day
+        if(e.status==='Resolved') return e.dateResolved===reportDate;  // resolved today = last appearance
+        return true;                                            // Open / In Progress carries forward
+      });
+    }catch(e){}
+    // 9/1: photo selection — the day's photos minus any flagged reportExclude
+    // (set here in the picker OR by unchecking at submit-day; one flag, both
+    // places). Picker is the SWPPP-style tap grid, all-in by default.
+    const dayPool=_phPhotos.filter(p=>p.date===reportDate);
+    const picked=await _rptPickPhotos(reportDate,dayPool);
+    if(!picked){ setStatus('Cancelled.'); clearStatusSoon(); return; }
+    const photos=picked;
+    await _rptAwaitUploads(photos,setStatus);
     const skipPolish=(window._rptSkipPolish===true);
 
     // Stage 4 (C10, 2026-05-08): assemble effective system prompt from the
@@ -879,8 +990,9 @@ async function _doGenerate(){
     const genTime=_fmtGenTime(latest.generatedAtMs);
     let modalMsg;
     if(diff.narrativeFields.length===0){
-      const n=diff.mechanicalCount;
-      modalMsg=`You generated a report for today at <strong>${genTime}</strong>. You've updated ${n} field value${n===1?'':'s'} since then but the narrative content is unchanged.<br><br>Re-exporting will give you that report with the new values filled in. Generating a new version will create a fresh report \u2014 the narrative may read slightly differently.`;
+      const n=diff.mechanicalCount-(diff.photoChanged?1:0);
+      const what=[n?`${n} field value${n===1?'':'s'}`:'',diff.photoChanged?'the photo selection':''].filter(Boolean).join(' and ')||'a field value';
+      modalMsg=`You generated a report for today at <strong>${genTime}</strong>. You've updated ${what} since then but the narrative content is unchanged.<br><br>Re-exporting will give you that report with the new values and photos filled in. Generating a new version will create a fresh report \u2014 the narrative may read slightly differently.`;
     } else {
       const fieldList=diff.narrativeFields.slice(0,5).map(f=>`<em>${f}</em>`).join(', ')+(diff.narrativeFields.length>5?', \u2026':'');
       const n=diff.narrativeFields.length;
@@ -898,7 +1010,19 @@ async function _doGenerate(){
       return;
     }
     if(choice==='primary'){
-      // Re-export existing \u2014 no API call, no new version
+      if(diff.narrativeFields.length===0){
+        // 9/1: mechanical-only change (values / photo selection / open items) —
+        // keep the existing prose but render the CURRENT snapshot, exactly as
+        // the modal promises, and save it as a version so the hash on file
+        // matches what was exported (the \u00a7C reviewer stamp is hash-gated).
+        const newVer=(latest.version||0)+1;
+        _saveReportVersion(reportDate,currSnap,latest.polished,currHash,newVer,effectivePromptHash).catch(e=>console.warn('[report-cache] write failed:',e));
+        await assembleAndSave(latest.polished,currSnap,currHash);
+        setStatus('\u2713 Report re-exported with your updates.');
+        clearStatusSoon();
+        return;
+      }
+      // Narrative changed but the user wants the original \u2014 no API call, no new version
       await assembleAndSave(latest.polished,latest.inputSnapshot,latest.inputHash);
       setStatus('\u2713 Existing report re-exported.');
       clearStatusSoon();
