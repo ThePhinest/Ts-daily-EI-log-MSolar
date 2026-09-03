@@ -662,6 +662,35 @@ function appSyncEntryNotes(force){
   }
 }
 function appEntryNotesRegen(){ appSyncEntryNotes(true); }
+// 9/2 evening (Tim: "nothing updates on a saved entry — not the drawing note, not the seeding
+// note"): the never-clobber stamps used to die with the modal, so a SAVED entry's product /
+// rate / notes could never follow a spec or rate change again. On edit-open the stamps are
+// recovered by CONTENT IDENTITY: a stored value that still equals what the engine would
+// generate for it is treated as auto (keeps flowing); anything hand-typed stays untouched.
+// `res` = the seeding-spec resolution for the entry's stored where/purpose/date/method.
+function appMarkAutoByContent(res){
+  const acres=_appAcres();
+  const pid=_sbPid();
+  const cfg=(typeof ssGetCfg==='function')?ssGetCfg(pid):null;
+  const amendSel={where:document.getElementById('map-tr-where')?.value||'', date:document.getElementById('map-tr-date')?.value||''};
+  _appRows.forEach(r=>{
+    const gen=glAppSummaryLine(_rowAsApp(r),acres);
+    if(r.notes&&r.notes===gen) r._autoNotes=gen;
+    if(r.type==='seed'){
+      if(res&&res.product&&r.product===res.product) r._autoProduct=r.product;
+      if(res&&res.rate!=null&&r.rate!==''&&String(+r.rate)===String(+res.rate)) r._autoRate=r.rate;
+    } else if(cfg&&typeof ssResolveAmendment==='function'){
+      try{ const rule=ssResolveAmendment(cfg,{type:r.type,...amendSel}); if(rule&&rule.rate!=null&&r.rate!==''&&String(+r.rate)===String(+rule.rate)) r._autoRate=r.rate; }catch{}
+    }
+    if(r.rate!==''&&!r._autoRate&&r.product){ const rt=sbRateFor(r.product); if(rt!=null&&String(+r.rate)===String(+rt)) r._autoRate=r.rate; }   // materials-list default rate
+  });
+  const el=document.getElementById('map-tr-notes');
+  if(el&&!el.dataset.auto&&!(typeof window._glEntryIsPlanned==='function'&&window._glEntryIsPlanned())){
+    const block=_appRows.filter(r=>r.product||r.rate!==''||r.actual!=='').map(r=>glAppSummaryLine(_rowAsApp(r),acres)).filter(Boolean).join('\n');
+    if(block&&el.value.trim()===block.trim()) el.dataset.auto=el.value;
+  }
+}
+window.appMarkAutoByContent=appMarkAutoByContent;
 // Acres changed → refresh every row's required + auto notes.
 function appRowsRecalc(){
   _appRows.forEach(r=>_appRowAutoNotes(r));

@@ -4242,15 +4242,34 @@ function _trWhereInit(storedWhere){
   const sel=document.getElementById('map-tr-where');
   if(sel) sel.value=storedWhere||'';
   _trSpecSync(false);
+  // 9/2: recover the never-clobber stamps from stored content (see appMarkAutoByContent) —
+  // runs again after the async config load so the spec resolution is available on first open.
+  if(typeof appMarkAutoByContent==='function') appMarkAutoByContent(_trSpecResolve());
   if(typeof ssEnsureCfg==='function') ssEnsureCfg(pid).then(()=>{
     _trWherePopulate();
     const s2=document.getElementById('map-tr-where');
     if(s2&&!s2.value) s2.value=storedWhere||'';
     _trSpecSync(false);
+    if(typeof appMarkAutoByContent==='function') appMarkAutoByContent(_trSpecResolve());
   });
 }
 function mapTrWhereChanged(){ _trSpecSync(true); }
 window.mapTrWhereChanged=mapTrWhereChanged;
+// The seeding-spec resolution for the form's CURRENT where / purpose / date / method (no fill).
+function _trSpecResolve(){
+  try{
+    const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+    const cfg=(typeof ssGetCfg==='function')?ssGetCfg(pid):null;
+    const where=document.getElementById('map-tr-where')?.value||'';
+    if(!cfg||!where||typeof ssResolve!=='function') return null;
+    const st=_trSelectedState();
+    let purpose=(typeof ssStatePurpose==='function')?ssStatePurpose(cfg,st?st.label:''):null;
+    if(!purpose) purpose=document.getElementById('map-tr-purpose')?.value||'temporary';
+    const date=document.getElementById('map-tr-date')?.value||'';
+    const method=document.getElementById('map-tr-method')?.value||'';
+    return ssResolve(cfg,{where,purpose,date,method});
+  }catch{ return null; }
+}
 function _trSpecSync(fill){
   const notesEl=document.getElementById('map-tr-spec-notes');
   const pw=document.getElementById('map-tr-purpose-wrap');

@@ -623,6 +623,33 @@ async function _hashSnapshot(snapshot){
   return Array.from(new Uint8Array(hashBuf)).map(b => b.toString(16).padStart(2,'0')).join('');
 }
 
+// Compliance table rows = the snapshot's entries (authoritative), polished text borrowed
+// from Claude's rows when they line up (same count → by index; else by level + overlap).
+function _rptWithCurrentCompliance(polished, snapshot){
+  try{
+    const entries=(snapshot&&Array.isArray(snapshot.compEntries))?snapshot.compEntries:null;
+    if(!entries) return polished;
+    const prows=(polished&&Array.isArray(polished.complianceIssues))?polished.complianceIssues.slice():[];
+    const lvl=e=>{ const v=String(e.level==null?'':e.level).trim(); return /^level/i.test(v)?v:(v?'Level '+v:''); };
+    const norm=s=>String(s||'').toLowerCase().replace(/[^a-z0-9 ]/g,' ').split(/\s+/).filter(w=>w.length>3);
+    const aligned=prows.length===entries.length;
+    const used=new Set();
+    const rows=entries.map((e,i)=>{
+      let p=null;
+      if(aligned) p=prows[i];
+      else{
+        const words=norm(e.location);
+        let best=-1,score=0;
+        prows.forEach((row,j)=>{ if(used.has(j)) return; if(lvl(row)!==lvl(e)) return; const rw=norm(row.description); const s=words.filter(w=>rw.includes(w)).length; if(s>score){ score=s; best=j; } });
+        if(best>=0&&score>0){ p=prows[best]; used.add(best); }
+      }
+      return {level:lvl(e)||(p&&p.level)||'', description:(p&&p.description)||e.location||'', corrective:(p&&p.corrective)||e.corrective||'', status:e.status||(p&&p.status)||'', dateResolved:e.dateResolved||''};
+    });
+    if(!rows.length) return polished;   // no entries → the polished "no issues" row stands
+    return Object.assign({}, polished, {complianceIssues:rows});
+  }catch(err){ console.warn('[report] compliance merge failed, using polished rows:',err); return polished; }
+}
+
 function _buildSnapshot(logData, compEntries, skipPolish, photos, effectivePromptHash){
   const photoRefs = (photos||[]).map(p => {
     const ref = {...p};
@@ -954,6 +981,13 @@ async function _doGenerate(){
     // sign-off (\u00a7C) stamps in when its snapshot hash matches this content.
     const assembleAndSave=async(polishedToUse,snapshotToUse,hashForUse)=>{
       setStatus('Assembling report\u2026');
+      // 9/2 (Tim: "daily report doesn't include the 4 Level 3 observations I added today"):
+      // the compliance TABLE used to be whatever Claude returned on the last polish, so a
+      // re-export from cache (the mechanical-change path) silently dropped entries added
+      // since. Rows now come from the snapshot's entries — Claude's polished wording is
+      // kept where a row lines up, raw entry text fills the rest. Level/status/dates are
+      // always the entry's own.
+      polishedToUse=_rptWithCurrentCompliance(polishedToUse,snapshotToUse);
       const [pdfMod,authorSig,logo]=await Promise.all([
         import('./swpppPdf.js'),
         (typeof window.glSigLoad==='function')?window.glSigLoad().catch(()=>null):Promise.resolve(null),

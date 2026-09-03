@@ -1914,7 +1914,9 @@ async function _exportCategoriesDeliverable(sels, entries, pid){
   }
   // 🌱 Amendments: lime/fert/mulch applications across the selected sources (typed
   // rows + state-based recordings). Summary front tab + one tab per type with data.
-  const amRows=_glAmendmentRows(new Set(meta.filter(m=>!m.isLinear).map(m=>m.cid)), entries, pid);
+  // 9/2 (#12 fix): amendments ride SEEDING sources only — a disturbance-tracker export (e.g. offered
+  // after a QI report) no longer drags the Amendments/Fertilizer tabs along.
+  const amRows=_glAmendmentRows(new Set(meta.filter(m=>m.isSeeding).map(m=>m.cid)), entries, pid);
   if(amRows.length) _amendmentsSummarySheet(wb, amRows, pid);
   for(const m of meta){
     if(m.seedOnly) await _stabSeedingSheet(wb, m.cid, entries, pid);
@@ -2605,6 +2607,14 @@ async function _embedCaptures(ws, wb, installed, pid, NC){
 // the drawing's entries (planned parent + its layers) whose map_captures belong here. This
 // replaces the separate bottom "Map Captures" list — captures live with their drawing.
 let _xlsxThumbUsed=false;   // set when a workbook embedded thumbnail-grade photos (→ offer/attach the full-res ZIP)
+// Bounded-parallel fetch (9/2, Tim: the seeding export "felt like 10 minutes" — every photo was
+// downloaded one after another). Results come back in input order; a failure yields null.
+async function _clFetchPool(items, n, fn){
+  const out=new Array(items.length); let i=0;
+  const worker=async()=>{ while(i<items.length){ const k=i++; try{ out[k]=await fn(items[k],k); }catch{ out[k]=null; } } };
+  await Promise.all(Array.from({length:Math.min(n,items.length)},worker));
+  return out;
+}
 async function _embedCapturesInline(ws, wb, owners, NC, opts){
   // opts.allPhotos: embed EVERY attached photo (repair-flag field photos), not just
   // map captures / seed tags — a flag's photo IS its evidence, always belongs inline.
@@ -2626,9 +2636,17 @@ async function _embedCapturesInline(ws, wb, owners, NC, opts){
   // Cumulative pixel widths of ALL data columns (≈ charWidth*7+5), read from THIS sheet, so
   // the image can span the full sheet width regardless of the sheet's column layout.
   const cum=[]; { let a=0; for(let i=1;i<=NC;i++){ a+=Math.round((((ws.getColumn(i).width)||10)*7)+5); cum[i-1]=a; } }
-  const MAXHPX=1100;  // ceiling on the expanded photo height so tall portraits stay sane
   const ROWMAXPT=380; // one Excel row caps ~409pt — keep each grouped row under it
+  // Photos (seed tags / field shots) sit in a compact block — about columns A–F and ~15 rows
+  // (Tim 9/2: "no need to have them that large under their respective seeding info");
+  // map captures keep the wide span so their baked-in legend text stays readable.
+  const PHOTO_COLS=Math.min(NC,6), PHOTO_MAXHPX=400;
+  // Download every image up front, 4 at a time — the row-building loop below only re-encodes.
+  const blobs=await _clFetchPool(caps,4,async(c)=>{ const resp=await fetch(c.ph.storageUrl); if(!resp.ok) return null; return await resp.blob(); });
+  let ci=-1;
   for(const {ph,e,kind} of caps){
+    ci++;
+    const MAXHPX=kind==='capture'?1100:PHOTO_MAXHPX;
     const tag=kind==='capture'?'📷 Map capture':(kind==='field'?'📷 Field photo':'🌱 Seed tag photo');
     const fillArgb=kind==='capture'?'FDF5DC':(kind==='field'?'FBEAEA':'EAF5EA'); // amber / red / green tints
     const lbl=ws.addRow([`▸ ${tag} · ${e.date||''}${thumb?' · thumbnail — full-res in the Photos ZIP':''}   ( click the + in the far-left margin to expand ↓ )`]);
@@ -2641,14 +2659,15 @@ async function _embedCapturesInline(ws, wb, owners, NC, opts){
     // label row rides the month's outline level and hides with it.
     if(opts&&opts.baseLevel){ lbl.outlineLevel=opts.baseLevel; lbl.hidden=!!opts.startHidden; }
     try{
-      const resp=await fetch(ph.storageUrl); if(!resp.ok) continue;
-      const blob=await resp.blob();
+      const blob=blobs[ci]; if(!blob) continue;
       const bmp=await createImageBitmap(blob);
       const aspect=bmp.height/bmp.width;
-      // Default: span the FULL sheet width (Nick: expand the photo out to the last column —
-      // M on seeding, G on disturbance). If that makes a tall/portrait photo exceed the height
-      // ceiling, step the width back to the widest span that fits — keeps aspect, never stretches.
-      let brCol=NC, rangeW=cum[NC-1];
+      // Default: span the FULL sheet width for map captures (Nick: expand the photo out to the
+      // last column); photos start at the compact PHOTO_COLS span. If that makes a tall/portrait
+      // image exceed the height ceiling, step the width back to the widest span that fits —
+      // keeps aspect, never stretches.
+      const startCol=kind==='capture'?NC:PHOTO_COLS;
+      let brCol=startCol, rangeW=cum[startCol-1];
       if(Math.round(rangeW*aspect)>MAXHPX){
         for(let i=0;i<cum.length;i++){ if(Math.round(cum[i]*aspect)<=MAXHPX){ brCol=i+1; rangeW=cum[i]; } }
       }
@@ -2664,7 +2683,7 @@ async function _embedCapturesInline(ws, wb, owners, NC, opts){
       // Re-encode at a modest size + JPEG so the workbook stays small. The originals can be
       // multi-MB each (full phone photos); a ~720px JPEG is tens of KB and is plenty for a
       // report — embedding the originals was bloating the file dozens of × over.
-      const EMB=thumb?420:720, es=Math.min(1, EMB/Math.max(bmp.width,bmp.height));
+      const EMB=thumb?420:(kind==='capture'?720:560), es=Math.min(1, EMB/Math.max(bmp.width,bmp.height));
       const cw=Math.max(1,Math.round(bmp.width*es)), chh=Math.max(1,Math.round(bmp.height*es));
       const cv=document.createElement('canvas'); cv.width=cw; cv.height=chh;
       cv.getContext('2d').drawImage(bmp,0,0,cw,chh); bmp.close();
@@ -3326,6 +3345,9 @@ async function _tlogExportPhotoZip(entries, pid, selKeys){
   const _zipExt=(blob,fallback)=>blob&&blob.type==='image/jpeg'?'jpg':(fallback||'png');
   if(selCids) entries=entries.filter(e=>selCids.has(e.categoryId||e.category));
 
+  // Collect every job first, then download 4 at a time (9/2: the ZIP "felt like 6+ minutes"
+  // fetching one photo after another), then file them in order.
+  const jobs=[];
   for(const e of entries){
     const types=e.photoTypes||{};
     // Bundle a photo if it's tagged material_tag OR if the photo record type is map_capture
@@ -3337,24 +3359,19 @@ async function _tlogExportPhotoZip(entries, pid, selKeys){
     if(!includeIds.length) continue;
     const catName=(e.categoryName||(typeof tcGetName==='function'?tcGetName(e.categoryId,pid):'Unknown'))
       .replace(/[^a-zA-Z0-9 _-]/g,'').trim();
-    const folder=zip.folder(`${e.date||'unknown'} ${catName}`.trim());
-    for(const photoId of includeIds){
+    const folderName=`${e.date||'unknown'} ${catName}`.trim();
+    includeIds.forEach((photoId,i)=>{
       const photo=(window._phPhotos||[]).find(p=>p.id===photoId);
-      if(!photo?.storageUrl) continue;
-      try{
-        const resp=await fetch(photo.storageUrl);
-        if(!resp.ok) continue;
-        const blob=await _zipBlob(await resp.blob(),photo);
-        const ext=_zipExt(blob,(photo.filename||'photo.jpg').split('.').pop()||'jpg');
-        const captionSource=(e.photoCaptions||{})[photoId]||photo?.caption||null;
-        const idx=includeIds.indexOf(photoId)+1;
-        const safeName=captionSource
-          ?captionSource.replace(/[^a-zA-Z0-9 _-]/g,'').trim().slice(0,50)
-          :`${e.date||'photo'}-${catName}-${idx}`;
-        folder.file(`${safeName}.${ext}`,blob);
-      }catch{ /* skip failed fetches silently */ }
-    }
+      if(!photo?.storageUrl) return;
+      const captionSource=(e.photoCaptions||{})[photoId]||photo?.caption||null;
+      const safeName=captionSource
+        ?captionSource.replace(/[^a-zA-Z0-9 _-]/g,'').trim().slice(0,50)
+        :`${e.date||'photo'}-${catName}-${i+1}`;
+      jobs.push({folderName, photo, safeName, fallbackExt:(photo.filename||'photo.jpg').split('.').pop()||'jpg'});
+    });
   }
+  const got=await _clFetchPool(jobs,4,async(j)=>{ const resp=await fetch(j.photo.storageUrl); if(!resp.ok) return null; return await _zipBlob(await resp.blob(),j.photo); });
+  jobs.forEach((j,i)=>{ const blob=got[i]; if(!blob) return; zip.folder(j.folderName).file(`${j.safeName}.${_zipExt(blob,j.fallbackExt)}`,blob); });
 
   // 🌱 Seeding-status captures — the full-res archive for people outside the app
   // (legend + date + brand baked in = self-explaining). Scoped to the checked seed
@@ -3363,17 +3380,14 @@ async function _tlogExportPhotoZip(entries, pid, selKeys){
       &&(!selKeySet||p.seedCap.sources.some(k=>selKeySet.has(k))))
     .sort((a,b)=>String(a.date||'').localeCompare(String(b.date||'')));
   if(seedCaps.length){
-    const folder=zip.folder('Seeding captures');
-    for(const ph of seedCaps){
-      try{
-        const resp=await fetch(ph.storageUrl);
-        if(!resp.ok) continue;
-        const blob=await _zipBlob(await resp.blob());
-        const ext=_zipExt(blob,(ph.filename||'map-view.png').split('.').pop()||'png');
-        const cap=(ph.caption||'Seeding status').replace(/[^a-zA-Z0-9 _-]/g,'').trim().slice(0,50);
-        folder.file(`${ph.date||'undated'} — ${cap||'Seeding status'}.${ext}`,blob);
-      }catch{ /* skip failed fetches silently */ }
-    }
+    const folder=zip.folder('Seeding map captures');   // 9/2 (Tim): name says what they are
+    const capBlobs=await _clFetchPool(seedCaps,4,async(ph)=>{ const resp=await fetch(ph.storageUrl); if(!resp.ok) return null; return await _zipBlob(await resp.blob()); });
+    seedCaps.forEach((ph,i)=>{
+      const blob=capBlobs[i]; if(!blob) return;
+      const ext=_zipExt(blob,(ph.filename||'map-view.png').split('.').pop()||'png');
+      const cap=(ph.caption||'Seeding status').replace(/[^a-zA-Z0-9 _-]/g,'').trim().slice(0,50);
+      folder.file(`${ph.date||'undated'} — ${cap||'Seeding status'}.${ext}`,blob);
+    });
   }
 
   const buf=await zip.generateAsync({type:'blob'});
