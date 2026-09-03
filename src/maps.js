@@ -4270,6 +4270,7 @@ function _trSpecResolve(){
     return ssResolve(cfg,{where,purpose,date,method});
   }catch{ return null; }
 }
+window._trSpecResolve=_trSpecResolve;
 function _trSpecSync(fill){
   const notesEl=document.getElementById('map-tr-spec-notes');
   const pw=document.getElementById('map-tr-purpose-wrap');

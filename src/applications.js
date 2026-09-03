@@ -457,7 +457,11 @@ function appRowsSet(apps, entryId){
   // #61 (9/2): dataset.auto is set by the edit-form opener from entry.notesAuto —
   // don't wipe it here, or the drawing note stops following rate edits after a save.
   appRowsRender();
-  sbEnsureCfg().then(()=>{ if(typeof mapRefreshEntryPhotoStrip==='function') mapRefreshEntryPhotoStrip(); });
+  sbEnsureCfg().then(()=>{
+    if(typeof mapRefreshEntryPhotoStrip==='function') mapRefreshEntryPhotoStrip();
+    // Materials list may have landed after the edit-open stamp pass — stamp again (9/2 late).
+    if(typeof appMarkAutoByContent==='function') appMarkAutoByContent((typeof window._trSpecResolve==='function')?window._trSpecResolve():null);
+  });
 }
 // Rows → storable applications array (empty rows dropped).
 function appRowsGet(){
@@ -579,6 +583,7 @@ function appRowType(i,type){
 }
 function appRowField(i,k,v){
   const r=_appRows[i]; if(!r) return;
+  const prevProduct=r.product;
   r[k]=v;
   // A hand-typed product/rate ends its auto stamp (never re-clobbered after).
   if(k==='product'&&v!==r._autoProduct) r._autoProduct='';
@@ -587,7 +592,12 @@ function appRowField(i,k,v){
   // with lbs/ac → the rate fills itself, never clobbering a hand-entered one.
   if(k==='product'){
     const rt=sbRateFor(v);
-    if(rt!=null&&(!r.rate||r.rate===r._autoRate)){
+    // 9/2 late (Tim: rye 100 vs bedrock 35 — "that should change, right?"): on a SAVED entry the
+    // auto stamp may be gone, so also treat a rate that still equals the OLD product's list
+    // rate as auto — content identity at change time, no stamp needed.
+    const prevRt=(prevProduct&&prevProduct!==v)?sbRateFor(prevProduct):null;
+    const wasListRate=prevRt!=null&&r.rate!==''&&String(+r.rate)===String(+prevRt);
+    if(rt!=null&&(!r.rate||r.rate===r._autoRate||wasListRate)){
       r.rate=String(rt); r._autoRate=r.rate;
       const box=document.getElementById('map-tr-apps')?.children[i];
       const rEl=box?box.querySelector('input[data-f="rate"]'):null;
