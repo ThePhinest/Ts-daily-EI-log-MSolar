@@ -294,7 +294,9 @@ async function rptBuildDocx(logData,polished,photos){
   const{Document,Packer,Paragraph,TextRun,Table,TableRow,TableCell,AlignmentType,BorderStyle,WidthType,ShadingType,ImageRun,Footer,Header,PageNumber,NumberFormat}=window.docx;
   // GroundLog palette (9/2 brand pass — Office blue retired): teal bands, teal-tint info cells,
   // amber rules under sub-heads. Per-tenant branding still overrides via config where wired.
-  const BLUE='006B75',LT_BLUE='E4EFEE',MID_BLUE='006B75',WHITE='FFFFFF',RULE='C9A84C';
+  // 9/5: palette from the project's branding (brand.js); GroundLog colors when none is set.
+  const _bd=(typeof window.glBrandDocx==='function')?window.glBrandDocx(_activeProjectId()):null;
+  const BLUE=_bd?_bd.BLUE:'006B75',LT_BLUE=_bd?_bd.LT_BLUE:'E4EFEE',MID_BLUE=_bd?_bd.MID_BLUE:'006B75',WHITE=_bd?_bd.HTEXT:'FFFFFF',RULE=_bd?_bd.RULE:'C9A84C';
   const bdr={style:BorderStyle.SINGLE,size:1,color:'AAAAAA'};
   const borders={top:bdr,bottom:bdr,left:bdr,right:bdr};
   const noBdr={style:BorderStyle.NONE,size:0,color:'FFFFFF'};
@@ -329,19 +331,8 @@ async function rptBuildDocx(logData,polished,photos){
   ]});
   // Logo + subtitle block — logo is per-project data (see header comment).
   let _logo=null;
-  try{
-    const _pid=_activeProjectId();
-    if(_pid&&_pid!=='active'&&typeof db!=='undefined'&&db&&_fbReady){
-      const _pd=await _udb().collection('settings').doc(_pid).get();
-      if(_pd.exists&&_pd.data().reportLogoB64){
-        _logo={
-          b64:String(_pd.data().reportLogoB64).replace(/^data:image\/\w+;base64,/,''),
-          w:_pd.data().reportLogoW||200,
-          h:_pd.data().reportLogoH||50
-        };
-      }
-    }
-  }catch(e){ /* no logo is a valid state — never block report generation */ }
+  try{ const L=await _rptLoadLogo(); if(L&&L.b64) _logo={b64:String(L.b64).replace(/^data:image\/\w+;base64,/,''),w:L.w||200,h:L.h||50}; }
+  catch(e){ /* no logo is a valid state — never block report generation */ }
   const titleBlock=[];
   if(_logo){
     titleBlock.push(new Paragraph({alignment:AlignmentType.CENTER,children:[new ImageRun({data:_b64ToArrayBuffer(_logo.b64),transformation:{width:_logo.w,height:_logo.h}})],spacing:{before:160,after:60}}));
@@ -524,6 +515,8 @@ async function rptBuildDocx(logData,polished,photos){
 // ── Per-project report logo (shared by the PDF export; the DOCX builder keeps
 //    its own internal load) ──
 async function _rptLoadLogo(){
+  // 9/5: branding doc first (every member), legacy per-user location as fallback.
+  try{ if(typeof window.glBrandLogo==='function'){ const b=await window.glBrandLogo(_activeProjectId()); if(b||b===null) return b; } }catch(e){}
   try{
     const _pid=_activeProjectId();
     if(_pid&&_pid!=='active'&&typeof db!=='undefined'&&db&&_fbReady){
@@ -672,7 +665,7 @@ function _rptWithCurrentCompliance(polished, snapshot){
         prows.forEach((row,j)=>{ if(used.has(j)) return; if(lvl(row)!==lvl(e)) return; const rw=norm(row.description); const s=words.filter(w=>rw.includes(w)).length; if(s>score){ score=s; best=j; } });
         if(best>=0&&score>0){ p=prows[best]; used.add(best); }
       }
-      return {level:lvl(e)||(p&&p.level)||'', description:(p&&p.description)||e.location||'', corrective:(p&&p.corrective)||e.corrective||'', status:e.status||(p&&p.status)||'', dateResolved:e.dateResolved||'', photoIds:Array.isArray(e.photoIds)?e.photoIds.slice():[]};
+      return {level:lvl(e)||(p&&p.level)||'', description:(e.cmpNum?('CMP-'+String(e.cmpNum).padStart(2,'0')+' — '):'')+((p&&p.description)||e.location||''), corrective:(p&&p.corrective)||e.corrective||'', status:e.status||(p&&p.status)||'', dateResolved:e.dateResolved||'', photoIds:Array.isArray(e.photoIds)?e.photoIds.slice():[]};
     });
     if(!rows.length) return polished;   // no entries → the polished "no issues" row stands
     return Object.assign({}, polished, {complianceIssues:rows});
@@ -712,7 +705,9 @@ function _buildSnapshot(logData, compEntries, skipPolish, photos, effectivePromp
     .sort((a,b) => String(a.id||'').localeCompare(String(b.id||'')));
   // effectivePromptHash (added 2026-05-08, C10) folds the user's assembled prompt
   // into the cache key. Identical inputs but different prompt config = cache miss.
-  return {logData, compEntries: compRefs, skipPolish: !!skipPolish, photoRefs, compPhotoRefs, oiRefs, effectivePromptHash: effectivePromptHash || ''};
+  // 9/5: resolved brand colors ride the snapshot — the reviewer renders the author's palette, and a branding change is a real content change (new version).
+  const brand = (typeof window.glBrandSnapshot==='function') ? window.glBrandSnapshot(_activeProjectId()) : null;
+  return {logData, compEntries: compRefs, skipPolish: !!skipPolish, photoRefs, compPhotoRefs, oiRefs, brand, effectivePromptHash: effectivePromptHash || ''};
 }
 
 function _categorizeChanges(prevSnap, currSnap){
@@ -1039,6 +1034,7 @@ async function _doGenerate(){
       await pdfMod.dailyExportPdfNow(snapshotToUse.logData,polishedToUse,snapshotToUse.photoRefs||[],{
         oiRes,
         compPhotoRefs:snapshotToUse.compPhotoRefs||[],
+        brand:snapshotToUse.brand||null,
         authorSig:(authorSig&&authorSig.b64)?authorSig:null,
         logo,
         review:(review&&!review.stale)?review:null
@@ -1147,13 +1143,9 @@ async function rptLoadReportLogoUI(){
   img.style.display='none'; clearBtn.style.display='none';
   try{
     const pid=_activeProjectId();
-    if(!pid||pid==='default'||typeof db==='undefined'||!db||!_fbReady) return;
-    const d=await _udb().collection('settings').doc(pid).get();
-    if(d.exists&&d.data().reportLogoB64){
-      img.src=d.data().reportLogoB64;
-      img.style.display='';
-      clearBtn.style.display='';
-    }
+    if(!pid||pid==='default') return;
+    const L=await _rptLoadLogo();
+    if(L&&L.b64){ img.src=L.b64; img.style.display=''; clearBtn.style.display=''; }
   }catch(e){}
 }
 
@@ -1181,9 +1173,9 @@ function rptSaveReportLogo(files){
     let h=50,w=Math.round(50*c.width/c.height);
     if(w>260){w=260;h=Math.round(260*c.height/c.width);}
     try{
-      await _udb().collection('settings').doc(pid).set({reportLogoB64:dataUrl,reportLogoW:w,reportLogoH:h,_ts:Date.now()},{merge:true});
+      const res=await window.glBrandSave(pid,{logoB64:dataUrl,logoW:w,logoH:h});
       rptLoadReportLogoUI();
-      _rptLogoStatus('✓ Logo saved');
+      _rptLogoStatus(res&&res.ok?'✓ Logo saved':'Saved locally only — a project lead has to set branding',!(res&&res.ok));
     }catch(e){_rptLogoStatus('Save failed: '+(e.message||'error'),true);}
   };
   img.onerror=function(){URL.revokeObjectURL(url);_rptLogoStatus('Could not read that image.',true);};
@@ -1194,8 +1186,7 @@ async function rptClearReportLogo(){
   const pid=_activeProjectId();
   if(!pid||pid==='default') return;
   try{
-    const del=window.firebase.firestore.FieldValue.delete();
-    await _udb().collection('settings').doc(pid).set({reportLogoB64:del,reportLogoW:del,reportLogoH:del,_ts:Date.now()},{merge:true});
+    await window.glBrandSave(pid,{logoB64:null,logoW:null,logoH:null});
     rptLoadReportLogoUI();
     _rptLogoStatus('✓ Logo removed');
   }catch(e){_rptLogoStatus('Remove failed: '+(e.message||'error'),true);}

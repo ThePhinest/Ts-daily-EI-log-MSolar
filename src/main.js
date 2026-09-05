@@ -28,6 +28,7 @@ import './compliance.js'
 import './projects.js'
 import './members.js'
 import './settings.js'
+import './brand.js'      // 🎨 per-project report branding + user presets (9/5)
 import './timesheet.js'
 import './timesheetMigration.js'
 import './trackerEntries.js'

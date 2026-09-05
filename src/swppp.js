@@ -202,7 +202,10 @@ function swpppNewInspection(){
     insp.corrective = openCl.map(e=>({
       dateId: e.date || today,
       location: e.location || '',
-      desc: 'Open compliance item' + (e.level?` (Level ${e.level})`:'') + ' — carried from the Compliance log',
+      // 9/5 (Tim): the old boilerplate sentence here had to be deleted and retyped every
+      // report. The row now carries the item's handle + level; the description IS the
+      // compliance entry's Location / Description, the action its corrective text.
+      desc: [(e.cmpNum&&typeof clCmpFmt==='function')?clCmpFmt(e.cmpNum):'', e.level?`Level ${e.level}`:''].filter(Boolean).join(' · '),
       action: e.corrective || '',
       fromComplianceId: e.id
     }));
@@ -1145,7 +1148,9 @@ async function _swpppExportPhotosZipNow(id){
 async function swpppBuildDocx(insp,cfg){
   if(!window.docx) throw new Error('Report library not loaded — refresh and try again.');
   const{Document,Packer,Paragraph,TextRun,Table,TableRow,TableCell,AlignmentType,BorderStyle,WidthType,ShadingType,ImageRun,Footer,Header,PageNumber}=window.docx;
-  const BLUE='1F3864',LT_BLUE='D9E2F3',MID_BLUE='2E5496',WHITE='FFFFFF',AMBER='FFF2CC';
+  // 9/5: follows project branding only when its "QI report uses this branding" toggle is on; else Office blue (mid-project freeze).
+  const _bq=(typeof window.glBrandDocx==='function')?window.glBrandDocx((insp&&insp.projectId)||((typeof _activeProjectId==='function')?_activeProjectId():'default'),{forQi:true}):null;
+  const BLUE=_bq?_bq.BLUE:'1F3864',LT_BLUE=_bq?_bq.LT_BLUE:'D9E2F3',MID_BLUE=_bq?_bq.MID_BLUE:'2E5496',WHITE=_bq?_bq.HTEXT:'FFFFFF',AMBER=_bq?_bq.HOT:'FFF2CC';
   const bdr={style:BorderStyle.SINGLE,size:1,color:'AAAAAA'};
   const borders={top:bdr,bottom:bdr,left:bdr,right:bdr};
   const noBdr={style:BorderStyle.NONE,size:0,color:'FFFFFF'};

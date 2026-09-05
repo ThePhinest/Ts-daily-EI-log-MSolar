@@ -954,15 +954,14 @@ async function _glShowSubmitReview(payload, date, pid) {
         const v = vs.docs[0].data();
         const authorSig = (typeof window.glSigLoad === 'function') ? await window.glSigLoad() : null;
         let logo = null;
-        try {
-          const pd = await _udb().collection('settings').doc(pid).get();
-          if (pd.exists && pd.data().reportLogoB64) logo = { b64: String(pd.data().reportLogoB64), w: pd.data().reportLogoW || 200, h: pd.data().reportLogoH || 50 };
-        } catch (e) {}
+        try { logo = (typeof window._rptLoadLogo === 'function') ? await window._rptLoadLogo() : null; } catch (e) {}   // 9/5: branding doc → legacy fallback
         _revSnap = {
           logData: (v.inputSnapshot || {}).logData || null,
           polished: v.polished || {},
           photoRefs: (v.inputSnapshot || {}).photoRefs || [],
           oiRefs: (v.inputSnapshot || {}).oiRefs || [],
+          compPhotoRefs: (v.inputSnapshot || {}).compPhotoRefs || [],   // 9/5 compliance photos
+          brand: (v.inputSnapshot || {}).brand || null,                   // 9/5 branding parity
           inputHash: v.inputHash || '', version: v.version || 1,
           authorSig: authorSig || null, logo
         };
@@ -1662,7 +1661,7 @@ async function glReviewViewPdf(id) {
       dateMs: s.review.reviewedAt || 0, signature: s.review.signature || null
     } : null;
     await pdfMod.dailyExportPdfNow(snap.logData, snap.polished, snap.photoRefs, {
-      oiRes: snap.oiRefs || [], compPhotoRefs: snap.compPhotoRefs || [], authorSig: snap.authorSig || null, logo: snap.logo || null,
+      oiRes: snap.oiRefs || [], compPhotoRefs: snap.compPhotoRefs || [], brand: snap.brand || null, authorSig: snap.authorSig || null, logo: snap.logo || null,
       review: rv, watermark: (s.review && s.review.status !== 'approved') ? 'UNDER REVIEW' : ''
     });
   } catch (e) {

@@ -9,10 +9,49 @@ var _clEditId = null;
 // ── Helpers ──
 function clGenId(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
 
+// 🎨 XLSX palette (9/5): every workbook color comes from the project's branding
+// (brand.js). Cached per export — _xbReset() at each export entry point.
+var _xbCur=null;
+function _xbReset(){ _xbCur=null; }
+function _xb(){
+  if(!_xbCur){
+    _xbCur=(typeof window.glBrandXl==='function')
+      ? window.glBrandXl((typeof _activeProjectId==='function')?_activeProjectId():'default')
+      : {teal:'006B75',am:'C9A84C',amLt:'FDF5DC',tl:'E4EFEE',htx:'FFFFFF',ftl:'FF006B75',fam:'FFC9A84C'};
+  }
+  return _xbCur;
+}
+
 function clLevelLabel(l){
   const m = {'1':'Level 1 — Observation','2':'Level 2 — Corrective Action','3':'Level 3 — Non-Compliance','4':'Level 4 — Stop Work Order'};
   return m[String(l)] || 'Level '+l;
 }
+
+// ── CMP numbers (9/5, Tim): a permanent per-project sequence, CMP-01 … — the handle a
+// crew can call on the radio, mirroring the flags' PL numbers. Assigned at creation,
+// backfilled oldest-first for entries that predate it; a deleted entry keeps its number
+// reserved through a per-project high-water mark (IDB), so numbers are never reissued.
+function clCmpFmt(n){ return n ? 'CMP-'+String(n).padStart(2,'0') : ''; }
+function _clCmpHwm(pid){ try{ return parseInt((window.idbGet&&window.idbGet('cl_cmpmax::'+pid))||'0',10)||0; }catch{ return 0; } }
+function _clCmpBump(pid, n){ try{ if(n>_clCmpHwm(pid)&&window.idbSet) window.idbSet('cl_cmpmax::'+pid, String(n)); }catch{} }
+function clNextCmpNum(pid){
+  let max=_clCmpHwm(pid);
+  _clEntries.forEach(e=>{ if((!e.projectId||e.projectId===pid)&&e.cmpNum>max) max=e.cmpNum; });
+  return max+1;
+}
+function clEnsureCmpNums(pid){
+  pid=pid||((typeof _activeProjectId==='function')?_activeProjectId():'default');
+  if(!_clEntries.length) clLoadLocal();
+  const missing=_clEntries.filter(e=>(!e.projectId||e.projectId===pid)&&!e.cmpNum);
+  if(!missing.length) return false;
+  let next=clNextCmpNum(pid);
+  missing.sort((a,b)=>(a.date||'')<(b.date||'')?-1:(a.date||'')>(b.date||'')?1:String(a.id).localeCompare(String(b.id)))
+    .forEach(e=>{ e.cmpNum=next++; });
+  _clCmpBump(pid, next-1);
+  clSave();
+  return true;
+}
+if(typeof window!=='undefined'){ window.clCmpFmt=clCmpFmt; window.clEnsureCmpNums=clEnsureCmpNums; window.clLevelLabel=clLevelLabel; }
 
 function clLevelClass(l){ return 'cl-level cl-level-'+l; }
 
@@ -300,6 +339,7 @@ function clRender(){
   // 9/1: a Reviewer / Glasses member sees the project's PUBLISHED compliance
   // entries (teammates', read-only) — same filters, owner chip on each card.
   const viewRole=_clIsViewRole();
+  if(!viewRole){ try{ clEnsureCmpNums(); }catch(e){} }
   const source=viewRole?(window._clShared||[]):_clEntries;
   let entries = [...source].sort((a,b)=> b.date > a.date ? 1 : -1);
 
@@ -375,6 +415,7 @@ function clRender(){
     <div class="cl-entry" id="cle-${e.id}">
       <div class="cl-entry-head">
         <span class="cl-entry-date">${clFmtDate(e.date)}</span>
+        ${e.cmpNum?`<span style="font-family:var(--mono);font-size:10px;font-weight:700;color:var(--red);letter-spacing:.04em">${clCmpFmt(e.cmpNum)}</span>`:''}
         <span class="${clLevelClass(e.level)}">${clLevelLabel(e.level)}</span>
         <span class="${clStatusClass(e.status)}">${e.status}</span>
         ${ageChip}
@@ -520,7 +561,7 @@ function clEditEntry(id){
   document.getElementById('cl-f-resolved').value = e.dateResolved||'';
   document.getElementById('cl-f-source').value = e.sourceReport||'';
   document.getElementById('cl-f-resolved-wrap').style.display = e.status==='Resolved'?'block':'none';
-  document.getElementById('cl-form-title').textContent = 'Edit Compliance Entry';
+  document.getElementById('cl-form-title').textContent = 'Edit '+(e.cmpNum?clCmpFmt(e.cmpNum):'Compliance Entry');
   _clDraftId = null;
   _clFormPhotoIds = Array.isArray(e.photoIds)?e.photoIds.slice():[];
   _clFormPhotosRender();
@@ -564,14 +605,18 @@ function clSubmitForm(){
 
   if(_clEditId){
     const idx = _clEntries.findIndex(x=>x.id===_clEditId);
+    entry.cmpNum = prev ? (prev.cmpNum||null) : null;
     if(idx>=0) _clEntries[idx] = entry;
   } else {
+    entry.cmpNum = clNextCmpNum(entry.projectId);
+    _clCmpBump(entry.projectId, entry.cmpNum);
     _clEntries.push(entry);
   }
 
   clSave();
   clHideForm();
   clRender();
+  if(typeof clRenderPunchlist==='function'){ try{ clRenderPunchlist(); }catch{} }
 }
 
 // ── Programmatic API — SWPPP QI report tie-in (swppp.js) ──
@@ -586,8 +631,10 @@ function clAddEntries(items){
   if(!Array.isArray(items) || !items.length) return 0;
   if(!_clEntries.length) clLoadLocal();
   items.forEach(it => {
+    const _n = clNextCmpNum(_activeProjectId()); _clCmpBump(_activeProjectId(), _n);
     _clEntries.push({
       id: clGenId(),
+      cmpNum: _n,
       date: it.date || new Date().toLocaleDateString('en-CA'),
       level: it.level || 2,
       location: it.location || '',
@@ -720,7 +767,15 @@ function clRenderPunchlist(){
   if(typeof trEnsurePlNums==='function'){ try{ trEnsurePlNums(pid); }catch(e){} }
   const open=(typeof trGetOpenTemporary==='function')?trGetOpenTemporary(pid):[];
   const resolved=(typeof trGetResolvedTemporary==='function')?trGetResolvedTemporary(pid):[];
-  if(!open.length&&!resolved.length){ el.style.display='none'; return; }
+  // 9/5 (Tim): open Compliance Log entries ride the punchlist too — red, CMP-numbered,
+  // interleaved with the 🚩 flags by date; resolved ones join the fixed history.
+  const _vr=_clIsViewRole();
+  if(!_vr){ try{ clEnsureCmpNums(pid); }catch(e){} }
+  if(!_vr&&!_clEntries.length) clLoadLocal();
+  const _clAll=_vr?[]:_clEntries.filter(e=>!e.projectId||e.projectId===pid);
+  const cmpOpen=_clAll.filter(e=>e.status!=='Resolved');
+  const cmpFixed=_clAll.filter(e=>e.status==='Resolved');
+  if(!open.length&&!resolved.length&&!cmpOpen.length&&!cmpFixed.length){ el.style.display='none'; return; }
   const fmtWhen=ts=>{ if(!ts) return ''; const d=new Date(ts); return `${d.getMonth()+1}/${d.getDate()}/${String(d.getFullYear()).slice(2)}`; };
   const rowHtml=(e,isOpen)=>{
     const catName=e.categoryName||(typeof tcGetName==='function'?tcGetName(e.categoryId,pid):'')||'—';
@@ -745,17 +800,44 @@ function clRenderPunchlist(){
       ${btns}
     </div>`;
   };
-  const openRows=open.map(e=>rowHtml(e,true)).join('');
-  const resolvedBlock=resolved.length?`<div style="margin-top:6px">
+  const cmpRowHtml=(e,isOpen)=>{
+    const photos=(e.photoIds||[]).map(_clPhotoById).filter(Boolean);
+    const thumb=photos.length?`<img src="${photos[0].thumb}" onclick="phOpenLightbox('${photos[0].id}',[${photos.map(p=>`'${p.id}'`).join(',')}])" style="width:44px;height:34px;object-fit:cover;border-radius:4px;cursor:pointer;flex-shrink:0;border:1px solid var(--border2)">`:'';
+    const age=_clAgeInfo(e);
+    const btns=isOpen
+      ?`<div style="display:flex;gap:6px;flex-shrink:0">
+          <button onclick="event.stopPropagation();if(typeof phOpenCamera==='function')phOpenCamera({attach:{type:'cl',id:'${e.id}'}})" title="Take a photo — attached to this compliance item" style="background:var(--s1);border:1px solid var(--border);color:var(--muted);font-family:var(--mono);font-size:10px;padding:5px 8px;border-radius:5px;cursor:pointer">📸</button>
+          <button onclick="event.stopPropagation();clEditEntry('${e.id}')" style="background:var(--s1);border:1px solid var(--border);color:var(--muted);font-family:var(--mono);font-size:10px;padding:5px 8px;border-radius:5px;cursor:pointer">✎ Edit</button>
+          <button onclick="event.stopPropagation();clPunchlistResolveCmp('${e.id}')" style="background:rgba(39,174,96,0.15);border:1px solid var(--green,#27AE60);color:var(--green,#27AE60);font-family:var(--mono);font-size:10px;padding:5px 8px;border-radius:5px;cursor:pointer">✓ Resolved</button>
+        </div>`
+      :`<button onclick="event.stopPropagation();clPunchlistReopenCmp('${e.id}')" style="background:var(--s1);border:1px solid var(--border);color:var(--muted);font-family:var(--mono);font-size:10px;padding:5px 8px;border-radius:5px;cursor:pointer;flex-shrink:0">↩ Reopen</button>`;
+    return `<div style="display:flex;align-items:center;gap:8px;padding:8px 4px;border-bottom:1px solid var(--border)">
+      ${thumb}
+      <div style="flex:1;min-width:0">
+        <div style="font-family:var(--mono);font-size:12px;color:${isOpen?'var(--red)':'var(--muted)'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${isOpen?'⚠':'✓'} ${e.cmpNum?`<b>${clCmpFmt(e.cmpNum)}</b> · `:''}${_hEsc(e.location||'Compliance item')}</div>
+        <div style="font-family:var(--mono);font-size:10px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_hEsc(clLevelLabel(e.level))} · logged ${_hEsc(e.date||'')}${isOpen?(age?` · ${age.days<1?'<1':age.days}d open${age.over?' ⚠':''}`:''):(e.dateResolved?` · resolved ${clFmtDate(e.dateResolved)}`:'')}${e.status==='In Progress'?' · in progress':''}</div>
+        ${e.corrective?`<div style="font-family:var(--mono);font-size:10px;color:${isOpen?'var(--text)':'var(--muted)'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">→ ${_hEsc(e.corrective)}</div>`:''}
+      </div>
+      ${btns}
+    </div>`;
+  };
+  const _dk=e=>e.date||'';
+  const merged=[...open.map(e=>({k:'pl',e})),...cmpOpen.map(e=>({k:'cmp',e}))].sort((a,b)=>_dk(a.e)<_dk(b.e)?-1:_dk(a.e)>_dk(b.e)?1:0);
+  const openRows=merged.map(it=>it.k==='pl'?rowHtml(it.e,true):cmpRowHtml(it.e,true)).join('');
+  const _rk=it=>it.k==='pl'?(it.e.resolvedAt||0):(it.e.dateResolved?new Date(it.e.dateResolved+'T12:00:00').getTime():0);
+  const mergedFixed=[...resolved.map(e=>({k:'pl',e})),...cmpFixed.map(e=>({k:'cmp',e}))].sort((a,b)=>_rk(b)-_rk(a));
+  const nOpen=merged.length;
+  const resolvedBlock=mergedFixed.length?`<div style="margin-top:6px">
     <div onclick="const b=this.nextElementSibling;const on=b.style.display==='none';b.style.display=on?'block':'none';this.querySelector('span:last-child').textContent=on?'▾':'▸'" style="display:flex;align-items:center;gap:6px;cursor:pointer;font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;padding:6px 4px;user-select:none">
-      <span>Fixed history (${resolved.length})</span><span style="margin-left:auto">▸</span>
+      <span>Fixed history (${mergedFixed.length})</span><span style="margin-left:auto">▸</span>
     </div>
-    <div style="display:none">${resolved.map(e=>rowHtml(e,false)).join('')}</div>
+    <div style="display:none">${mergedFixed.map(it=>it.k==='pl'?rowHtml(it.e,false):cmpRowHtml(it.e,false)).join('')}</div>
   </div>`:'';
+  const mixChip=(open.length&&cmpOpen.length)?`<span style="font-family:var(--mono);font-size:9px;color:var(--muted);margin-right:6px;white-space:nowrap">🚩${open.length} · <span style="color:var(--red)">⚠${cmpOpen.length}</span></span>`:'';
   el.innerHTML=`<div class="card${_clCardCollapsed('punch')?' collapsed':''}">
-    <div class="card-head" onclick="clToggleCard('punch')"><span class="card-num">🚩</span><span class="card-title">Punchlist</span><span class="head-fade"></span><span class="card-badge"${open.length?'':' style="opacity:.4"'}>${open.length} open</span><button onclick="event.stopPropagation();clExportPunchlist()" title="Export punchlist PDF" style="background:none;border:1px solid var(--border);border-radius:10px;color:var(--muted);font-family:var(--mono);font-size:10px;padding:3px 8px;cursor:pointer;flex-shrink:0">${window.glPdfIcon?window.glPdfIcon(12):'📤'} PDF</button><span class="card-chevron">▾</span></div>
+    <div class="card-head" onclick="clToggleCard('punch')"><span class="card-num">🚩</span><span class="card-title">Punchlist</span><span class="head-fade"></span>${mixChip}<span class="card-badge"${nOpen?'':' style="opacity:.4"'}>${nOpen} open</span><button onclick="event.stopPropagation();clExportPunchlist()" title="Export punchlist PDF" style="background:none;border:1px solid var(--border);border-radius:10px;color:var(--muted);font-family:var(--mono);font-size:10px;padding:3px 8px;cursor:pointer;flex-shrink:0">${window.glPdfIcon?window.glPdfIcon(12):'📤'} PDF</button><span class="card-chevron">▾</span></div>
     <div class="card-body" style="padding-top:4px">
-      ${open.length?openRows:`<div style="font-family:var(--mono);font-size:11px;color:var(--muted);padding:8px 4px">Nothing needs attention. Flag repairs from any drawing's popup on the map.</div>`}
+      ${nOpen?openRows:`<div style="font-family:var(--mono);font-size:11px;color:var(--muted);padding:8px 4px">Nothing needs attention. Flag repairs from any drawing's popup on the map; open Compliance Log entries land here too.</div>`}
       ${resolvedBlock}
     </div>
   </div>`;
@@ -774,10 +856,35 @@ function clPunchlistReopen(entryId){
   if(typeof mapRenderTrackerLayers==='function'){ try{ mapRenderTrackerLayers(); }catch{} }
   clRenderPunchlist();
 }
+// 9/5: compliance items on the punchlist — resolve / reopen from the card. Open Items'
+// §8 mirror follows through oiSyncSources (called at the end of clRenderPunchlist).
+function clPunchlistResolveCmp(id){
+  const e=_clEntries.find(x=>x.id===id); if(!e) return;
+  const tag=e.cmpNum?clCmpFmt(e.cmpNum):'this compliance item';
+  const go=()=>{
+    e.status='Resolved';
+    if(!e.dateResolved) e.dateResolved=new Date().toLocaleDateString('en-CA');
+    clSave();
+    if(document.getElementById('page-compliance')?.classList.contains('active')) clRender();
+    clRenderPunchlist();
+    if(typeof showCloudBanner==='function') showCloudBanner('✓ '+tag+' resolved — filed in the punchlist history.');
+  };
+  if(typeof _confirmModal==='function') _confirmModal(`Mark ${tag} resolved today? It stays in the Compliance Log and the punchlist's fixed history.`, go, 'Resolve', 'Resolve');
+  else go();
+}
+function clPunchlistReopenCmp(id){
+  const e=_clEntries.find(x=>x.id===id); if(!e) return;
+  e.status='Open'; e.dateResolved='';
+  clSave();
+  if(document.getElementById('page-compliance')?.classList.contains('active')) clRender();
+  clRenderPunchlist();
+}
 if(typeof window!=='undefined'){
   window.clRenderPunchlist=clRenderPunchlist;
   window.clPunchlistGoto=clPunchlistGoto;
   window.clPunchlistReopen=clPunchlistReopen;
+  window.clPunchlistResolveCmp=clPunchlistResolveCmp;
+  window.clPunchlistReopenCmp=clPunchlistReopenCmp;
 }
 
 // Boot/perf gate (8/24, boot timeline on Tim's phone): this render is the
@@ -1789,7 +1896,7 @@ function _tlogLightenHex(hex, t){
 // one row per BMP category with removals (gross installed, removed, %, net in
 // ground). Units stay per-category (ft vs ac) so there's no cross-unit total.
 function _removalSummarySheet(wb, rows, pid){
-  const TEAL='006B75', WHITE='FFFFFF';
+  const TEAL=_xb().teal, WHITE=_xb().htx;
   const ws=wb.addWorksheet('Removal — Summary');
   ws.columns=[{width:30},{width:18},{width:16},{width:13},{width:18}];
   ws.addRow(['BMP REMOVAL — SUMMARY']); ws.mergeCells(1,1,1,5);
@@ -1814,7 +1921,7 @@ function _removalSummarySheet(wb, rows, pid){
     const r=ws.addRow([x.name, fmt(x.grossTerm), '− '+fmt(x.removedTotal), pct!=null?pct:'', fmt(x.net)]);
     r.getCell(1).font={name:'Calibri',size:11,bold:true};
     r.getCell(3).font={name:'Calibri',size:11,bold:true,color:{argb:'FFC0392B'}};
-    r.getCell(5).font={name:'Calibri',size:11,bold:true,color:{argb:'FF006B75'}};
+    r.getCell(5).font={name:'Calibri',size:11,bold:true,color:{argb:_xb().ftl}};
     if(pct!=null){
       r.getCell(4).numFmt='0"%"';
       r.getCell(4).font={name:'Calibri',size:11,bold:true,color:{argb:over?'FFC0392B':'FF5D6D7E'}};
@@ -1849,7 +1956,7 @@ const _AM_LABEL={lime:'Lime',fertilizer:'Fertilizer',mulch:'Mulch',other:'Other 
 // type × product × rate with coverage, required, and actual totals. Record-only —
 // parcels and requirements vary too much for a fake %-progress bar (Tim 8/17).
 function _amendmentsSummarySheet(wb, rows, pid){
-  const TEAL='006B75', WHITE='FFFFFF';
+  const TEAL=_xb().teal, WHITE=_xb().htx;
   const ws=wb.addWorksheet('Amendments — Summary');
   ws.columns=[{width:14},{width:30},{width:16},{width:16},{width:10},{width:18},{width:18}];
   ws.addRow(['SOIL AMENDMENTS — SUMMARY']); ws.mergeCells(1,1,1,7);
@@ -1893,10 +2000,10 @@ function _amendmentsSummarySheet(wb, rows, pid){
     const band=(ri%2===1)?'EAF5EA':null;
     r.eachCell({includeEmpty:true},c=>{
       if(band) c.fill={type:'pattern',pattern:'solid',fgColor:{argb:band}};
-      c.border={bottom:{style:'thin',color:{argb:'FFC9A84C'}}};
+      c.border={bottom:{style:'thin',color:{argb:_xb().fam}}};
     });
     r.getCell(1).font={name:'Calibri',size:11,bold:true};
-    r.getCell(7).font={name:'Calibri',size:11,bold:true,color:{argb:'FF006B75'}};
+    r.getCell(7).font={name:'Calibri',size:11,bold:true,color:{argb:_xb().ftl}};
     r.height=20;
   });
   const note=ws.addRow(['ℹ  Record-only: application requirements vary by parcel, so no % progress is implied. Full per-event records are on each type\'s tab.']);
@@ -1908,7 +2015,7 @@ function _amendmentsSummarySheet(wb, rows, pid){
 // Per-type tab (Lime / Fertilizer / …): one row per application event, date-sorted,
 // with that application's OWN notes.
 function _amendmentTypeSheet(wb, type, rows, pid){
-  const TEAL='006B75', WHITE='FFFFFF';
+  const TEAL=_xb().teal, WHITE=_xb().htx;
   let base=String(_AM_LABEL[type]||type).replace(/[\\\/\?\*\[\]:]/g,'').slice(0,31);
   let nm=base, n=2;
   while(wb.getWorksheet(nm)){ nm=base.slice(0,28)+' '+n; n++; }
@@ -1957,7 +2064,7 @@ function _amendmentTypeSheet(wb, type, rows, pid){
       c.font={name:'Calibri',size:10};
       c.alignment={vertical:'top',wrapText:true};
       if(band) c.fill={type:'pattern',pattern:'solid',fgColor:{argb:band}};
-      c.border={bottom:{style:'thin',color:{argb:'FFC9A84C'}}};
+      c.border={bottom:{style:'thin',color:{argb:_xb().fam}}};
     });
     r.getCell(1).font={name:'Calibri',size:10,bold:true};
     _xlFitRowHeight(r,COLW,10,20);
@@ -1972,6 +2079,7 @@ function _amendmentTypeSheet(wb, type, rows, pid){
 // coverage-vs-plan seeding sheet). Pick pre-seeding + restoration + seeding-on-disturbance
 // and the whole seed-tracking picture lands in a single file, fronted by a roll-up tab.
 async function _exportCategoriesDeliverable(sels, entries, pid){
+  _xbReset(); try{ if(typeof window.glBrandEnsure==='function') await window.glBrandEnsure(pid); }catch(e){}
   if(!Array.isArray(sels) || !sels.length) return;
   sels=sels.map(s=>typeof s==='string'?{cid:s,seedOnly:false}:s); // back-compat: bare cids
   const {default:ExcelJS}=await import('exceljs');
@@ -2053,13 +2161,14 @@ async function _exportCategoriesDeliverable(sels, entries, pid){
 // (_exportCategoryDeliverable); no longer reachable from the UI. Kept temporarily; remove
 // in a follow-up cleanup pass.
 async function _tlogExportXlsx(scheme, entries, pid){
+  _xbReset(); try{ if(typeof window.glBrandEnsure==='function') await window.glBrandEnsure(pid); }catch(e){}
   const {default:ExcelJS}=await import('exceljs');
   const wb=new ExcelJS.Workbook();
   wb.creator='GroundLog'; wb.created=new Date();
   const ws=wb.addWorksheet('Tracker Log');
 
-  const TEAL='006B75', AMBER='C9A84C', WHITE='FFFFFF';
-  const TEAL_LIGHT='E8F4F5', GRAY_LIGHT='F2F2F2', GRAY_ROW='F9F9F9', AMBER_LIGHT='FDF5DC';
+  const TEAL=_xb().teal, AMBER=_xb().am, WHITE=_xb().htx;
+  const TEAL_LIGHT='E8F4F5', GRAY_LIGHT='F2F2F2', GRAY_ROW='F9F9F9', AMBER_LIGHT=_xb().amLt;
   const NCOLS=16;
 
   const cols=[
@@ -2219,7 +2328,7 @@ async function _tlogExportXlsx(scheme, entries, pid){
       ]);
       styleRow(pRow,true,AMBER_LIGHT,scheme==='category');
       pRow.eachCell({includeEmpty:true},cell=>{
-        cell.border={...(cell.border||{}),bottom:{style:'thin',color:{argb:'C9A84C'}}};
+        cell.border={...(cell.border||{}),bottom:{style:'thin',color:{argb:_xb().am}}};
       });
 
       installed.forEach((e,ci)=>{
@@ -2267,7 +2376,7 @@ async function _tlogExportXlsx(scheme, entries, pid){
         ]);
         styleRow(tRow,true,AMBER_LIGHT,scheme==='category');
         tRow.eachCell({includeEmpty:true},cell=>{
-          cell.border={...(cell.border||{}),bottom:{style:'thin',color:{argb:'C9A84C'}}};
+          cell.border={...(cell.border||{}),bottom:{style:'thin',color:{argb:_xb().am}}};
         });
       }
       installed.forEach((e,ci)=>{
@@ -2286,7 +2395,7 @@ async function _tlogExportXlsx(scheme, entries, pid){
     rules:[{
       type:'dataBar',
       cfvo:[{type:'num',value:0},{type:'num',value:100}],
-      color:{argb:'FFC9A84C'},
+      color:{argb:_xb().fam},
     }],
   });
 
@@ -2340,7 +2449,7 @@ function _blobToDataURL(blob){ return new Promise((res,rej)=>{ const r=new FileR
 // only — mixed sources share no plan denominator, so no % / bars — and deliberately NO
 // photos: those live on the source tabs.
 async function _allSeedingSummarySheet(wb, srcs, entries, pid){
-  const TEAL='006B75', WHITE='FFFFFF', AMBER_LIGHT='FDF5DC';
+  const TEAL=_xb().teal, WHITE=_xb().htx, AMBER_LIGHT=_xb().amLt;
   const NC=8;
   const ws=wb.addWorksheet('All Seeding — Summary');
   const COLW=[30,26,14,11,26,16,16,16];
@@ -2413,7 +2522,7 @@ async function _allSeedingSummarySheet(wb, srcs, entries, pid){
           req?req.toLocaleString()+(reqU?' '+reqU:''):'', act?act.toLocaleString()+(actU?' '+actU:''):'',
         ]);
         r.eachCell({includeEmpty:true},c=>{ c.font={name:'Calibri',size:11}; c.alignment={vertical:'middle',wrapText:true}; });
-        if(first) r.getCell(1).font={name:'Calibri',size:11,bold:true,color:{argb:'FF006B75'}};
+        if(first) r.getCell(1).font={name:'Calibri',size:11,bold:true,color:{argb:_xb().ftl}};
         const fill=_xlHex(s.color);
         if(fill){ r.getCell(2).fill={type:'pattern',pattern:'solid',fgColor:{argb:fill}}; r.getCell(2).font={name:'Calibri',size:11,bold:true,color:{argb:_xlContrast(s.color)}}; }
         _xlFitRowHeight(r,COLW,11,20); first=false;
@@ -2425,10 +2534,10 @@ async function _allSeedingSummarySheet(wb, srcs, entries, pid){
   const _physTags=(typeof sbTagCountFor==='function')?sbTagCountFor(_usedRows,pid,_led).count:null;   // physical tags across every row
   if(_physTags!=null) grandTags=_physTags;
   const gr=ws.addRow(['GRAND TOTAL — all seeding','',(Math.round(grandAc*100)/100)+' ac',grandTags||'','','','','']);
-  gr.getCell(1).font={bold:true,size:16}; gr.getCell(3).font={bold:true,size:16,color:{argb:'FF006B75'}}; gr.getCell(4).font={bold:true,size:14};
+  gr.getCell(1).font={bold:true,size:16}; gr.getCell(3).font={bold:true,size:16,color:{argb:_xb().ftl}}; gr.getCell(4).font={bold:true,size:14};
   for(let c=1;c<=NC;c++){
     gr.getCell(c).fill={type:'pattern',pattern:'solid',fgColor:{argb:AMBER_LIGHT}};
-    gr.getCell(c).border={top:{style:'medium',color:{argb:'FFC9A84C'}},bottom:{style:'medium',color:{argb:'FFC9A84C'}},...(c===1?{left:{style:'medium',color:{argb:'FFC9A84C'}}}:{}),...(c===NC?{right:{style:'medium',color:{argb:'FFC9A84C'}}}:{})};
+    gr.getCell(c).border={top:{style:'medium',color:{argb:_xb().fam}},bottom:{style:'medium',color:{argb:_xb().fam}},...(c===1?{left:{style:'medium',color:{argb:_xb().fam}}}:{}),...(c===NC?{right:{style:'medium',color:{argb:_xb().fam}}}:{})};
   }
   gr.height=30;
   const nt=ws.addRow(['↳ every seed source combined — per-source detail & photos on the following tabs']);
@@ -2525,7 +2634,7 @@ async function _disturbanceSheet(wb, cid, allEntries, pid){
   const rt=(typeof _runningTotals==='function')?_runningTotals(cid,installed,childStates,defUnit,pid,mode):{perState:{},open:0};
   const fmt=(v)=>(typeof tcFormatMeasurement==='function')?tcFormatMeasurement(v,defUnit):`${(v||0).toFixed(2)} ${defUnit}`;
 
-  const TEAL='006B75', WHITE='FFFFFF', AMBER_LIGHT='FDF5DC';
+  const TEAL=_xb().teal, WHITE=_xb().htx, AMBER_LIGHT=_xb().amLt;
   const NC=7;
   // Sheet name: ≤31 chars, no \ / ? * [ ] : — and unique within the workbook.
   let base=('Disturbance — '+name).replace(/[\\\/\?\*\[\]:]/g,'').slice(0,31);
@@ -2573,12 +2682,12 @@ async function _disturbanceSheet(wb, cid, allEntries, pid){
   });
   // Total open — the headline number: larger (16pt) + bordered band so it stands out.
   const totR=ws.addRow(['TOTAL open disturbed', fmt(rt.open)]);
-  totR.getCell(1).font={bold:true,size:16}; totR.getCell(2).font={bold:true,size:16,color:{argb:'FF006B75'}};
+  totR.getCell(1).font={bold:true,size:16}; totR.getCell(2).font={bold:true,size:16,color:{argb:_xb().ftl}};
   // Band the amber fill + top rule across the whole row to the last column (col G) so it reads
   // as one unit with the caption below it (Tim: extend the gold all the way over like row 14).
   for(let c=1;c<=NC;c++){
     totR.getCell(c).fill={type:'pattern',pattern:'solid',fgColor:{argb:AMBER_LIGHT}};
-    totR.getCell(c).border={top:{style:'medium',color:{argb:'FFC9A84C'}},...(c===1?{left:{style:'medium',color:{argb:'FFC9A84C'}}}:{}),...(c===NC?{right:{style:'medium',color:{argb:'FFC9A84C'}}}:{})};
+    totR.getCell(c).border={top:{style:'medium',color:{argb:_xb().fam}},...(c===1?{left:{style:'medium',color:{argb:_xb().fam}}}:{}),...(c===NC?{right:{style:'medium',color:{argb:_xb().fam}}}:{})};
   }
   totR.height=30;
   // Spell out WHICH states this open total counts (Nick: make clear it's the active + inactive
@@ -2591,7 +2700,7 @@ async function _disturbanceSheet(wb, cid, allEntries, pid){
   noteR.getCell(1).font={italic:true,size:9,color:{argb:'FF7A6A2E'}};
   // Fill + a continuous bottom border across the full merged width so it reads as one band with
   // the total above it (merged-cell borders must be set on every underlying cell).
-  for(let c=1;c<=NC;c++){ noteR.getCell(c).fill={type:'pattern',pattern:'solid',fgColor:{argb:AMBER_LIGHT}}; noteR.getCell(c).border={bottom:{style:'medium',color:{argb:'FFC9A84C'}},...(c===1?{left:{style:'medium',color:{argb:'FFC9A84C'}}}:{}),...(c===NC?{right:{style:'medium',color:{argb:'FFC9A84C'}}}:{})}; }
+  for(let c=1;c<=NC;c++){ noteR.getCell(c).fill={type:'pattern',pattern:'solid',fgColor:{argb:AMBER_LIGHT}}; noteR.getCell(c).border={bottom:{style:'medium',color:{argb:_xb().fam}},...(c===1?{left:{style:'medium',color:{argb:_xb().fam}}}:{}),...(c===NC?{right:{style:'medium',color:{argb:_xb().fam}}}:{})}; }
   noteR.getCell(1).alignment={vertical:'middle',horizontal:'left',indent:1};
   noteR.height=16;
   const cap=cat.disturbanceCap;
@@ -2656,7 +2765,7 @@ async function _disturbanceSheet(wb, cid, allEntries, pid){
 // self-contained deliverable). Shared by the disturbance + seeding sheets. The separate
 // photo-ZIP remains for bulk/full-res photos.
 async function _embedCaptures(ws, wb, installed, pid, NC){
-  const TEAL='006B75', WHITE='FFFFFF';
+  const TEAL=_xb().teal, WHITE=_xb().htx;
   const caps=[];
   installed.forEach(e=>{ (e.photoIds||[]).forEach(id=>{
     const ph=(window._phPhotos||[]).find(p=>p.id===id);
@@ -2737,12 +2846,12 @@ async function _embedCapturesInline(ws, wb, owners, NC, opts){
     ci++;
     const MAXHPX=kind==='capture'?1100:PHOTO_MAXHPX;
     const tag=kind==='capture'?'📷 Map capture':(kind==='field'?'📷 Field photo':'🌱 Seed tag photo');
-    const fillArgb=kind==='capture'?'FDF5DC':(kind==='field'?'FBEAEA':'EAF5EA'); // amber / red / green tints
+    const fillArgb=kind==='capture'?_xb().amLt:(kind==='field'?'FBEAEA':'EAF5EA'); // amber / red / green tints
     const lbl=ws.addRow([`▸ ${tag} · ${e.date||''}${thumb?' · thumbnail — full-res in the Photos ZIP':''}   ( click the + in the far-left margin to expand ↓ )`]);
     ws.mergeCells(lbl.number,1,lbl.number,NC);
-    lbl.getCell(1).font={bold:true,size:10,color:{argb:'FF006B75'}};
+    lbl.getCell(1).font={bold:true,size:10,color:{argb:_xb().ftl}};
     lbl.getCell(1).fill={type:'pattern',pattern:'solid',fgColor:{argb:fillArgb}};
-    lbl.getCell(1).border={top:{style:'thin',color:{argb:'FFC9A84C'}}};
+    lbl.getCell(1).border={top:{style:'thin',color:{argb:_xb().fam}}};
     lbl.height=18;
     // Nested inside a collapsed month group (seeding tabs' monthly collapse): the
     // label row rides the month's outline level and hides with it.
@@ -2824,7 +2933,7 @@ async function _embedDistStatusCapture(ws, wb, cid, NC){
   const caps=all.filter(p=>(p.date||'')===day).sort((a,b)=>(a.uploadedAt||0)-(b.uploadedAt||0));
   await _embedStatusCapRows(ws, wb, caps, NC,
     ph=>`▸ 🚧 Disturbance status capture · ${ph.date||''}${ph.caption?' — '+ph.caption:''}   ( click the + in the far-left margin to expand ↓ )`,
-    'FDF5DC');
+    _xb().amLt);
 }
 
 // Shared row/image writer for the status-capture embeds (seeding + disturbance):
@@ -2835,9 +2944,9 @@ async function _embedStatusCapRows(ws, wb, caps, NC, lblFor, fillArgb){
   for(const ph of caps){
     const lbl=ws.addRow([lblFor(ph)]);
     ws.mergeCells(lbl.number,1,lbl.number,NC);
-    lbl.getCell(1).font={bold:true,size:10,color:{argb:'FF006B75'}};
+    lbl.getCell(1).font={bold:true,size:10,color:{argb:_xb().ftl}};
     lbl.getCell(1).fill={type:'pattern',pattern:'solid',fgColor:{argb:fillArgb}};
-    lbl.getCell(1).border={top:{style:'thin',color:{argb:'FFC9A84C'}}};
+    lbl.getCell(1).border={top:{style:'thin',color:{argb:_xb().fam}}};
     lbl.height=18;
     try{
       const resp=await fetch(ph.storageUrl); if(!resp.ok) continue;
@@ -2917,7 +3026,7 @@ async function _linearSheet(wb, cid, allEntries, pid){
   const stOf=(e)=>e.state||(dcs?dcs.id:null);
   const planTotal=(typeof tcPlanTotal==='function')?tcPlanTotal(cid,pid,planned.reduce((s,e)=>s+measure(e),0),defUnit):planned.reduce((s,e)=>s+measure(e),0);   // #17: typed plan qty wins
 
-  const TEAL='006B75', WHITE='FFFFFF', AMBER_LIGHT='FDF5DC';
+  const TEAL=_xb().teal, WHITE=_xb().htx, AMBER_LIGHT=_xb().amLt;
   const NC=7;
   let base=('BMP — '+name).replace(/[\\\/\?\*\[\]:]/g,'').slice(0,31);
   let nm=base, n=2;
@@ -2949,8 +3058,8 @@ async function _linearSheet(wb, cid, allEntries, pid){
 
   // ── Installation Summary — per-state totals vs plan, color-coded bars ──
   const sh=ws.addRow(['INSTALLATION SUMMARY — totals vs plan']); ws.mergeCells(sh.number,1,sh.number,NC);
-  sh.getCell(1).font={bold:true,size:15,color:{argb:'FF006B75'}};
-  sh.getCell(1).fill={type:'pattern',pattern:'solid',fgColor:{argb:'C9A84C'}};
+  sh.getCell(1).font={bold:true,size:15,color:{argb:_xb().ftl}};
+  sh.getCell(1).fill={type:'pattern',pattern:'solid',fgColor:{argb:_xb().am}};
   sh.getCell(1).alignment={vertical:'middle',horizontal:'left',indent:1}; sh.height=28;
   const hdr=ws.addRow(['','State','Length','% of Plan']);
   hdr.eachCell({includeEmpty:true},c=>{ c.font={bold:true,size:10,color:{argb:WHITE}}; c.fill={type:'pattern',pattern:'solid',fgColor:{argb:TEAL}}; });
@@ -2985,21 +3094,21 @@ async function _linearSheet(wb, cid, allEntries, pid){
     rr.height=20;
     const nr=ws.addRow(['','In ground (net)', fmt(ri.net), planTotal>0?Math.round((ri.net/planTotal)*100):'' ]);
     nr.getCell(2).font={bold:true,size:12};
-    nr.getCell(3).font={bold:true,size:12,color:{argb:'FF006B75'}};
+    nr.getCell(3).font={bold:true,size:12,color:{argb:_xb().ftl}};
     nr.getCell(4).font={bold:true,size:12};
     if(planTotal>0){
       nr.getCell(4).numFmt='0"%"';
-      ws.addConditionalFormatting({ ref:`D${nr.number}`, rules:[{type:'dataBar',cfvo:[{type:'num',value:0},{type:'num',value:100}],color:{argb:'FF006B75'}}] });
+      ws.addConditionalFormatting({ ref:`D${nr.number}`, rules:[{type:'dataBar',cfvo:[{type:'num',value:0},{type:'num',value:100}],color:{argb:_xb().ftl}}] });
     }
     nr.height=22;
   }
   // Planned total — banded headline (the denominator).
   const pr=ws.addRow(['','Planned (total)', fmt(planTotal)]);
-  pr.getCell(2).font={bold:true,size:14}; pr.getCell(3).font={bold:true,size:14,color:{argb:'FF006B75'}};
-  const _tb={top:{style:'medium',color:{argb:'FFC9A84C'}},bottom:{style:'medium',color:{argb:'FFC9A84C'}}};
+  pr.getCell(2).font={bold:true,size:14}; pr.getCell(3).font={bold:true,size:14,color:{argb:_xb().ftl}};
+  const _tb={top:{style:'medium',color:{argb:_xb().fam}},bottom:{style:'medium',color:{argb:_xb().fam}}};
   for(let c=1;c<=NC;c++){
     pr.getCell(c).fill={type:'pattern',pattern:'solid',fgColor:{argb:AMBER_LIGHT}};
-    pr.getCell(c).border={..._tb,...(c===1?{left:{style:'medium',color:{argb:'FFC9A84C'}}}:{}),...(c===NC?{right:{style:'medium',color:{argb:'FFC9A84C'}}}:{})};
+    pr.getCell(c).border={..._tb,...(c===1?{left:{style:'medium',color:{argb:_xb().fam}}}:{}),...(c===NC?{right:{style:'medium',color:{argb:_xb().fam}}}:{})};
   }
   pr.height=26;
   ws.addRow([]);
@@ -3170,7 +3279,7 @@ async function _seedingSheetRender(wb, o){
   const fmt=(v)=>(typeof tcFormatMeasurement==='function')?tcFormatMeasurement(v,defUnit):`${(v||0).toFixed(2)} ${defUnit}`;
   const stOf=o.stateOf||((e)=>e.state||null);
 
-  const TEAL='006B75', WHITE='FFFFFF', AMBER_LIGHT='FDF5DC';
+  const TEAL=_xb().teal, WHITE=_xb().htx, AMBER_LIGHT=_xb().amLt;
   // Full client-facing column set (the old Tracker Log columns the seed reports need).
   const NC=13;
   let base=String(o.tabBase||'Seeding').replace(/[\\\/\?\*\[\]:]/g,'').slice(0,31);
@@ -3255,8 +3364,8 @@ async function _seedingSheetRender(wb, o){
 
   // ── Coverage Summary — the headline section: AMBER band, larger, all columns ──
   const sh=ws.addRow([hasPlan?'COVERAGE SUMMARY — totals vs plan':'SEEDING SUMMARY — totals']); ws.mergeCells(sh.number,1,sh.number,NC);
-  sh.getCell(1).font={bold:true,size:15,color:{argb:'FF006B75'}};
-  sh.getCell(1).fill={type:'pattern',pattern:'solid',fgColor:{argb:'C9A84C'}};
+  sh.getCell(1).font={bold:true,size:15,color:{argb:_xb().ftl}};
+  sh.getCell(1).fill={type:'pattern',pattern:'solid',fgColor:{argb:_xb().am}};
   sh.getCell(1).alignment={vertical:'middle',horizontal:'left',indent:1}; sh.height=28;
   const hdr=ws.addRow(COLS);
   hdr.eachCell({includeEmpty:true},c=>{ c.font={bold:true,size:10,color:{argb:WHITE}}; c.fill={type:'pattern',pattern:'solid',fgColor:{argb:TEAL}}; c.alignment={vertical:'middle',wrapText:true}; });
@@ -3298,13 +3407,13 @@ async function _seedingSheetRender(wb, o){
   const pr=ws.addRow(hasPlan
     ?['Planned area (total)', fmt(planTotal)]
     :['Total seeded (all events)', fmt(installed.reduce((s,e)=>s+measure(e),0))]);
-  pr.getCell(1).font={bold:true,size:14}; pr.getCell(2).font={bold:true,size:14,color:{argb:'FF006B75'}};
+  pr.getCell(1).font={bold:true,size:14}; pr.getCell(2).font={bold:true,size:14,color:{argb:_xb().ftl}};
   // Band the whole row out to the last column (Nick: extend the total-row formatting to col M
   // for consistency) — amber fill across, medium top/bottom rule, closed off left + right.
-  const _tb={top:{style:'medium',color:{argb:'FFC9A84C'}},bottom:{style:'medium',color:{argb:'FFC9A84C'}}};
+  const _tb={top:{style:'medium',color:{argb:_xb().fam}},bottom:{style:'medium',color:{argb:_xb().fam}}};
   for(let c=1;c<=NC;c++){
     pr.getCell(c).fill={type:'pattern',pattern:'solid',fgColor:{argb:AMBER_LIGHT}};
-    pr.getCell(c).border={..._tb,...(c===1?{left:{style:'medium',color:{argb:'FFC9A84C'}}}:{}),...(c===NC?{right:{style:'medium',color:{argb:'FFC9A84C'}}}:{})};
+    pr.getCell(c).border={..._tb,...(c===1?{left:{style:'medium',color:{argb:_xb().fam}}}:{}),...(c===NC?{right:{style:'medium',color:{argb:_xb().fam}}}:{})};
   }
   pr.height=26;
   // (Per-row color-coded data bars were added in the loop above.)
@@ -3326,13 +3435,13 @@ async function _seedingSheetRender(wb, o){
     // Per-group TITLE bar — drawing name + (location), with the plan area on the right.
     const dh=ws.addRow([label, planArea!=null?`Plan: ${fmt(planArea)}`:'']);
     ws.mergeCells(dh.number,2,dh.number,NC);
-    dh.getCell(1).font={bold:true,size:13,color:{argb:'FF006B75'}};
+    dh.getCell(1).font={bold:true,size:13,color:{argb:_xb().ftl}};
     dh.getCell(1).fill={type:'pattern',pattern:'solid',fgColor:{argb:'E8F4F5'}};
-    dh.getCell(2).font={bold:true,italic:true,size:11,color:{argb:'FF006B75'}};
+    dh.getCell(2).font={bold:true,italic:true,size:11,color:{argb:_xb().ftl}};
     dh.getCell(2).fill={type:'pattern',pattern:'solid',fgColor:{argb:'E8F4F5'}};
     dh.getCell(2).alignment={horizontal:'right'}; dh.height=24;
     const ch=ws.addRow(COLS);
-    ch.eachCell({includeEmpty:true},c=>{ c.font={bold:true,size:10,color:{argb:'FF006B75'}}; c.fill={type:'pattern',pattern:'solid',fgColor:{argb:'E8F4F5'}}; c.border={bottom:{style:'thin',color:{argb:'FF006B75'}}}; c.alignment={vertical:'middle',wrapText:true}; }); ch.height=20;
+    ch.eachCell({includeEmpty:true},c=>{ c.font={bold:true,size:10,color:{argb:_xb().ftl}}; c.fill={type:'pattern',pattern:'solid',fgColor:{argb:'E8F4F5'}}; c.border={bottom:{style:'thin',color:{argb:_xb().ftl}}}; c.alignment={vertical:'middle',wrapText:true}; }); ch.height=20;
     // Flat event lists read chronologically; plan groups read state-order then date.
     const sorted=kids.slice().sort(sortByDate
       ?(a,b)=>String(a.date||'').localeCompare(String(b.date||''))
@@ -3393,7 +3502,7 @@ async function _seedingSheetRender(wb, o){
         const covSum=inMonth.reduce((a,e)=>a+measure(e),0);
         const mh=ws.addRow([`📅 ${label} — ${inMonth.length} event${inMonth.length>1?'s':''} · ${fmt(covSum)}${collapsed?'   ( + expands ↓ )':''}`]);
         ws.mergeCells(mh.number,1,mh.number,NC);
-        mh.getCell(1).font={bold:true,size:11,color:{argb:'FF006B75'}};
+        mh.getCell(1).font={bold:true,size:11,color:{argb:_xb().ftl}};
         mh.getCell(1).fill={type:'pattern',pattern:'solid',fgColor:{argb:'F0E6C8'}};
         mh.height=20;
         for(const e of inMonth) await writeEvent(e,1,collapsed);

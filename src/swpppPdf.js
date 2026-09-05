@@ -14,6 +14,7 @@
 // public-domain license) carrying just ☐ (U+2610), ☒ (U+2612), ✔ (U+2714).
 // Checkbox runs switch to it inline; everything else stays Roboto.
 
+import { glBrandEnsure, glBrandPdfPal, glBrandPalFromCfg } from './brand.js';
 import { saveFileNative } from './saveFile.js';
 import { exportImageBlob, exportImageParams, stampIfCamera } from './exportImg.js';
 
@@ -43,6 +44,13 @@ const BLUE='#1F3864', LT_BLUE='#D9E2F3', MID_BLUE='#2E5496', AMBER='#FFF2CC', HA
 const PAL_OFFICE={h:BLUE,lt:LT_BLUE,mid:MID_BLUE,hot:AMBER};
 const PAL_GL={h:'#006B75',lt:'#E4EFEE',mid:'#006B75',hot:'#F7EFD9'};
 let _pal=PAL_OFFICE;
+// 9/5: palettes come from the project's branding (brand.js). forQi → the QI report
+// follows branding only when the project's applyToQi toggle is on (else Office blue).
+async function _palFor(forQi){
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  try{ await glBrandEnsure(pid); }catch(e){}
+  return glBrandPdfPal(pid,{forQi:!!forQi})||(forQi?PAL_OFFICE:PAL_GL);
+}
 const PAGE_W=612, MARG=54, CONTENT_W=PAGE_W-2*MARG;   // Letter, 0.75" side margins
 // Column widths for a hairLayout table: pdfmake ADDS cell padding (6+6/col) and the
 // 0.5pt hairlines ON TOP of fixed widths, so raw %-of-content columns overpack the
@@ -71,12 +79,12 @@ const imgGridLayout={
 };
 
 // ── shared builders ──
-const h1=(text)=>({table:{widths:['*'],body:[[{text,bold:true,color:'#FFFFFF',fontSize:12,fillColor:_pal.h,border:[false,false,false,false]}]]},
+const h1=(text)=>({table:{widths:['*'],body:[[{text,bold:true,color:_pal.hText||'#FFFFFF',fontSize:12,fillColor:_pal.h,border:[false,false,false,false]}]]},
   layout:{hLineWidth:()=>0,vLineWidth:()=>0,paddingLeft:()=>6,paddingRight:()=>6,paddingTop:()=>3,paddingBottom:()=>3},
   headlineLevel:1, margin:[0,10,0,5]});
 const note=(text)=>text?{text,fontSize:8,italics:true,color:'#555555',margin:[0,0,0,3]}:{text:'',margin:[0,0,0,0]};
 const body=(textOrRuns,opts)=>Object.assign({text:textOrRuns,fontSize:10,margin:[0,2,0,2]},opts||{});
-const hcell=(text)=>({text,bold:true,color:'#FFFFFF',fillColor:_pal.h,fontSize:9});
+const hcell=(text)=>({text,bold:true,color:_pal.hText||'#FFFFFF',fillColor:_pal.h,fontSize:9});
 const cell=(text,o)=>{o=o||{};return {text:String(text==null?'':text),fontSize:o.size||9,bold:!!o.bold,italics:!!o.i,fillColor:o.fill,color:o.color};};
 const infoRow=(label,value)=>[
   {text:label,bold:true,fontSize:10,fillColor:_pal.lt},
@@ -125,7 +133,7 @@ function _imgPairRows(items){
 
 // ═══ the builder — same data prep as swpppBuildDocx, pdfmake doc-definition out ═══
 export async function swpppBuildPdf(insp,cfg,sig){
-  _pal=PAL_OFFICE;   // QI report: Office blue by decision (mid-project freeze)
+  _pal=await _palFor(true);   // QI: branding only when the project's applyToQi toggle is on (else Office blue)
   const pdfMake=await _getPdfMake();
 
   // Date formatting
@@ -394,20 +402,28 @@ export async function swpppExportPdfNow(insp,cfg,sig){
 // from each ref's own storageUrl, never from the local _phPhotos cache.
 // opts: { logo:{b64,w,h}, authorSig:{b64,w,h}, review:{name,title,dateMs,
 //         signature:{b64,w,h}}, oiRes:[…] (snapshot oiRefs), watermark }
-const G_TEAL='#006B75', G_TEAL_LT='#E4EFEE', G_AMBER='#C9A84C', G_INK='#1A1A1A';
-const dh1=(text)=>({table:{widths:['*'],body:[[{text,bold:true,color:'#FFFFFF',fontSize:12,fillColor:G_TEAL,border:[false,false,false,false]}]]},
+// Daily-report palette — set per build from the snapshot's brand (reviewer parity) or the project's branding.
+let _d={h:'#006B75',lt:'#E4EFEE',rule:'#C9A84C',ink:'#1A1A1A',hText:'#FFFFFF'};
+async function _dFor(brandCfg){
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  let pal=null;
+  if(brandCfg&&(brandCfg.primary||brandCfg.accent)) pal=glBrandPalFromCfg(brandCfg);
+  else { try{ await glBrandEnsure(pid); }catch(e){} pal=glBrandPdfPal(pid); }
+  return {h:pal.h,lt:pal.lt,rule:pal.rule,ink:'#1A1A1A',hText:pal.hText||'#FFFFFF'};
+}
+const dh1=(text)=>({table:{widths:['*'],body:[[{text,bold:true,color:_d.hText,fontSize:12,fillColor:_d.h,border:[false,false,false,false]}]]},
   layout:{hLineWidth:()=>0,vLineWidth:()=>0,paddingLeft:()=>6,paddingRight:()=>6,paddingTop:()=>3,paddingBottom:()=>3},
   headlineLevel:1, margin:[0,10,0,5]});
 const dh2=(text)=>({stack:[
-  {text,bold:true,fontSize:11,color:G_TEAL,margin:[0,8,0,2]},
-  {canvas:[{type:'line',x1:0,y1:0,x2:CONTENT_W,y2:0,lineWidth:1,lineColor:G_AMBER}],margin:[0,0,0,4]}
+  {text,bold:true,fontSize:11,color:_d.h,margin:[0,8,0,2]},
+  {canvas:[{type:'line',x1:0,y1:0,x2:CONTENT_W,y2:0,lineWidth:1,lineColor:_d.rule}],margin:[0,0,0,4]}
 ]});
 const dInfoRow=(label,value)=>[
-  {text:label,bold:true,fontSize:10,fillColor:G_TEAL_LT,color:G_INK},
+  {text:label,bold:true,fontSize:10,fillColor:_d.lt,color:_d.ink},
   (value&&value.text!==undefined)||Array.isArray(value)?{text:value,fontSize:10}:{text:String(value==null?'':value),fontSize:10}
 ];
 const dInfoTable=(rows)=>({table:{dontBreakRows:true,widths:[160,'*'],body:rows},layout:hairLayout,margin:[0,2,0,4]});
-const dhcell=(text)=>({text,bold:true,color:'#FFFFFF',fillColor:G_TEAL,fontSize:9});
+const dhcell=(text)=>({text,bold:true,color:_d.hText,fillColor:_d.h,fontSize:9});
 
 // Photo ref (snapshot shape: storageUrl, caption, camera fields; NO thumb) → sized dataUrl
 async function _dailyImg(p,maxWpx,maxHpx){
@@ -428,6 +444,7 @@ async function _dailyImg(p,maxWpx,maxHpx){
 
 export async function dailyBuildPdf(logData,polished,photoRefs,opts){
   opts=opts||{};
+  _d=await _dFor(opts.brand||null);   // 9/5 branding: snapshot brand wins (reviewer renders the author's colors)
   const pdfMake=await _getPdfMake();
   const [y,m,d]=(logData.reportDate||new Date().toLocaleDateString('en-CA')).split('-');
   const dt=new Date(parseInt(y),parseInt(m)-1,parseInt(d));
@@ -440,7 +457,7 @@ export async function dailyBuildPdf(logData,polished,photoRefs,opts){
     const lb=opts.logo.b64.startsWith('data:')?opts.logo.b64:('data:image/png;base64,'+opts.logo.b64);
     titleBlock.push({image:lb,width:Math.round((opts.logo.w||200)*0.75),height:Math.round((opts.logo.h||50)*0.75),alignment:'center',margin:[0,4,0,3]});
   }
-  titleBlock.push({text:'Daily Environmental Compliance Report',fontSize:11,color:G_TEAL,alignment:'center',margin:[0,0,0,8]});
+  titleBlock.push({text:'Daily Environmental Compliance Report',fontSize:11,color:_d.h,alignment:'center',margin:[0,0,0,8]});
 
   const infoTbl=dInfoTable([
     dInfoRow('Report Date:',longDate),
@@ -546,7 +563,7 @@ export async function dailyBuildPdf(logData,polished,photoRefs,opts){
   // when a real countersign exists).
   const rv=opts.review||null;
   const authorSigRow=(opts.authorSig&&opts.authorSig.b64)
-    ? [{text:'Signature:',bold:true,fontSize:10,fillColor:G_TEAL_LT,color:G_INK},{image:opts.authorSig.b64,width:128,height:41}]
+    ? [{text:'Signature:',bold:true,fontSize:10,fillColor:_d.lt,color:_d.ink},{image:opts.authorSig.b64,width:128,height:41}]
     : null;
   const certRows=[
     dInfoRow('Name:',logData.preparedBy||''),
@@ -558,15 +575,15 @@ export async function dailyBuildPdf(logData,polished,photoRefs,opts){
     const rvDate=rv.dateMs?new Date(rv.dateMs).toLocaleDateString('en-US',{month:'numeric',day:'numeric',year:'2-digit'}):'';
     certRows.push(dInfoRow('Reviewed by:',(rv.name||'')+(rv.title?', '+rv.title:'')+(rvDate?' — '+rvDate:'')));
     if(rv.signature&&rv.signature.b64)
-      certRows.push([{text:'Reviewer signature:',bold:true,fontSize:10,fillColor:G_TEAL_LT,color:G_INK},{image:rv.signature.b64,width:128,height:41}]);
+      certRows.push([{text:'Reviewer signature:',bold:true,fontSize:10,fillColor:_d.lt,color:_d.ink},{image:rv.signature.b64,width:128,height:41}]);
   } else {
     certRows.push(dInfoRow('Reviewed by:',logData.reviewedBy||''));
   }
   const certTbl=dInfoTable(certRows);
   certTbl.margin=[0,2,0,0];
   const certBlock=[{unbreakable:true,stack:[
-    {text:'Report Certification',bold:true,fontSize:11,color:G_TEAL,margin:[0,14,0,2]},
-    {canvas:[{type:'line',x1:0,y1:0,x2:CONTENT_W,y2:0,lineWidth:1,lineColor:G_AMBER}],margin:[0,0,0,5]},
+    {text:'Report Certification',bold:true,fontSize:11,color:_d.h,margin:[0,14,0,2]},
+    {canvas:[{type:'line',x1:0,y1:0,x2:CONTENT_W,y2:0,lineWidth:1,lineColor:_d.rule}],margin:[0,0,0,5]},
     body('I certify that the information contained in this Daily Environmental Compliance Report is accurate and complete to the best of my knowledge, and that all observations were conducted in accordance with the applicable Environmental Management and Construction Plan (EM&CP) and all other relevant permit conditions and regulatory requirements.'),
     {text:'',margin:[0,0,0,4]},
     certTbl
@@ -582,12 +599,12 @@ export async function dailyBuildPdf(logData,polished,photoRefs,opts){
   const dd={
     pageSize:'LETTER',
     pageMargins:[MARG,80,MARG,58],
-    defaultStyle:{font:'Roboto',fontSize:10,color:G_INK},
+    defaultStyle:{font:'Roboto',fontSize:10,color:_d.ink},
     header:()=>({
       margin:[MARG,22,MARG,0],
       table:{widths:['60%','40%'],body:[[
-        {text:(logData.project||'').toUpperCase(),bold:true,fontSize:10,color:G_TEAL,fillColor:G_TEAL_LT},
-        {text:'Daily Compliance Report',fontSize:9,color:G_TEAL,fillColor:G_TEAL_LT,alignment:'right'}
+        {text:(logData.project||'').toUpperCase(),bold:true,fontSize:10,color:_d.h,fillColor:_d.lt},
+        {text:'Daily Compliance Report',fontSize:9,color:_d.h,fillColor:_d.lt,alignment:'right'}
       ]]},
       layout:{hLineWidth:()=>0.5,vLineWidth:(i,node)=>(i===0||i===node.table.widths.length)?0.5:0,hLineColor:()=>HAIR,vLineColor:()=>HAIR,paddingLeft:()=>6,paddingRight:()=>6,paddingTop:()=>3,paddingBottom:()=>3}
     }),
@@ -599,7 +616,7 @@ export async function dailyBuildPdf(logData,polished,photoRefs,opts){
          fontSize:8,color:'#888888',alignment:'center',margin:[0,4,0,0]}
       ]
     }),
-    ...(opts.watermark?{watermark:{text:opts.watermark,color:G_AMBER,opacity:0.08,bold:true}}:{}),
+    ...(opts.watermark?{watermark:{text:opts.watermark,color:_d.rule,opacity:0.08,bold:true}}:{}),
     pageBreakBefore:(node,followingNodesOnPage)=>node.headlineLevel===1&&followingNodesOnPage.length===0,
     content
   };
@@ -623,7 +640,7 @@ export async function dailyExportPdfNow(logData,polished,photoRefs,opts){
 // Same house chrome as the QI report; photos ride exportImg like every export.
 export async function punchlistBuildPdf(opts){
   opts=opts||{};
-  _pal=PAL_GL;   // GroundLog deliverable → house palette (9/2 brand pass)
+  _pal=await _palFor(false);   // project branding (9/5); GroundLog palette when none is set
   const pdfMake=await _getPdfMake();
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
   const cfg=(typeof loadProjectConfig==='function')?loadProjectConfig():{};
@@ -641,7 +658,17 @@ export async function punchlistBuildPdf(opts){
   const esc=s=>String(s==null?'':s);
 
   const sorted=[...open].sort((a,b)=>(a.date||'')<(b.date||'')?-1:1);   // oldest (most overdue) first
-  const overdue=sorted.filter(e=>{ const du=dueOf(e); return du&&now>du; }).length;
+  // 9/5 (Tim): open Compliance Log entries are punchlist items too — CMP-numbered, red-accented,
+  // interleaved with the flags by date; resolved ones join the verification record.
+  if(typeof window.clEnsureCmpNums==='function'){ try{ window.clEnsureCmpNums(pid); }catch(e){} }
+  const clAll=(typeof window.clGetEntries==='function')?window.clGetEntries().filter(e=>!e.projectId||e.projectId===pid):[];
+  const cmpSorted=clAll.filter(e=>e.status!=='Resolved').sort((a,b)=>(a.date||'')<(b.date||'')?-1:1);
+  const cmpFixed=(opts.includeFixed!==false)?clAll.filter(e=>e.status==='Resolved'):[];
+  const merged=[...sorted.map(e=>({k:'pl',e})),...cmpSorted.map(e=>({k:'cmp',e}))].sort((a,b)=>(a.e.date||'')<(b.e.date||'')?-1:(a.e.date||'')>(b.e.date||'')?1:0);
+  const RED='#B03A2E';
+  const lvlLabel=l=>(typeof window.clLevelLabel==='function')?window.clLevelLabel(l):('Level '+l);
+  const cmpId=e=>(typeof window.clCmpFmt==='function'&&e.cmpNum)?window.clCmpFmt(e.cmpNum):('CMP-'+String(e.cmpNum||0).padStart(2,'0'));
+  const overdue=merged.filter(it=>{ const du=dueOf(it.e); return du&&now>du; }).length;
   const today=new Date();
   const longDate=today.toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});
 
@@ -651,8 +678,8 @@ export async function punchlistBuildPdf(opts){
     infoRow('Prepared by:',`${cfg.preparedBy||''}${cfg.org?'  |  '+cfg.org:''}`),
     ...(opts.attention?[infoRow('Attention:',esc(opts.attention))]:[]),
     infoRow('Correction window:',`${winHrs} hours from identification`),
-    infoRow('Open items:',String(sorted.length)+(overdue?`   —   ${overdue} past the correction window`:'')),
-    ...(fixed.length?[infoRow('Fixed to date:',String(fixed.length))]:[])
+    infoRow('Open items:',String(merged.length)+(cmpSorted.length?`   (${sorted.length} repair flag${sorted.length===1?'':'s'}, ${cmpSorted.length} compliance)`:'')+(overdue?`   —   ${overdue} past the correction window`:'')),
+    ...((fixed.length+cmpFixed.length)?[infoRow('Fixed to date:',String(fixed.length+cmpFixed.length))]:[])
   ];
 
   // Item ids are the flags' PERMANENT plNum (assigned at creation, backfilled
@@ -662,8 +689,31 @@ export async function punchlistBuildPdf(opts){
   const plId=(e,i)=>e.plNum?('PL-'+String(e.plNum).padStart(2,'0')):('PL-'+String(i+1).padStart(2,'0'));
   const daysOpen=e=>{ const t=new Date((e.date||'')+'T00:00:00').getTime(); return isNaN(t)?null:Math.max(0,Math.floor((now-t)/86400000)); };
   const itemBlocks=[];
-  for(let i=0;i<sorted.length;i++){
-    const e=sorted[i];
+  const cmpBlock=async(e)=>{
+    const id=cmpId(e);
+    const du=dueOf(e), over=du&&now>du;
+    const hot=over?{fill:_pal.hot,bold:true}:{};
+    const dOpen=daysOpen(e);
+    const ims=[];
+    for(const pId of (e.photoIds||[])){
+      const im=await _imgFor(pId,250,300);
+      if(im){ const c=String((e.photoCaptions||{})[pId]||(im.p&&im.p.caption)||'').trim(); ims.push({im,cap:`${id} — ${c||'compliance photo'}`}); }
+    }
+    const rc=(t)=>({text:t,bold:true,color:'#FFFFFF',fillColor:RED,fontSize:9});
+    return [
+      {table:{headerRows:1,dontBreakRows:true,widths:cols(12,22,16,16),body:[
+        [rc('Item'),rc('Level'),rc('Logged'),rc('Due'),rc('Status')],
+        [cell(id,{bold:true,color:RED}),cell(lvlLabel(e.level)),cell(fmtD(e.date)+(dOpen!=null?`  (${dOpen}d)`:'')),cell(du?fmtTs(du):'—',hot),cell((e.status==='In Progress'?'IN PROGRESS':'OPEN')+(over?' — OVERDUE':''),Object.assign({bold:true},hot))]
+      ]},layout:hairLayout,margin:[0,8,0,2]},
+      body([{text:'Location / description:  ',bold:true},{text:esc(e.location||'—')}]),
+      body([{text:'Corrective action:  ',bold:true},{text:esc(e.corrective||'—')}]),
+      body([{text:'Source:  ',bold:true},{text:'Compliance Log'+(e.sourceReport?`  ·  report ${fmtD(e.sourceReport)}`:'')}],{fontSize:8,color:'#555555',margin:[0,0,0,2]}),
+      ...(ims.length?[{table:{dontBreakRows:true,widths:['*','*'],body:_imgPairRows(ims)},layout:imgGridLayout,margin:[0,3,0,2]}]:[])
+    ];
+  };
+  for(let i=0;i<merged.length;i++){
+    const e=merged[i].e;
+    if(merged[i].k==='cmp'){ itemBlocks.push(...await cmpBlock(e)); continue; }
     const id=plId(e,i);
     const du=dueOf(e), over=du&&now>du;
     const hot=over?{fill:_pal.hot,bold:true}:{};
@@ -687,8 +737,10 @@ export async function punchlistBuildPdf(opts){
   }
 
   const fxSorted=[...fixed].sort((a,b)=>(b.resolvedAt||0)-(a.resolvedAt||0));
-  const fxBody=[[hcell('Item'),hcell('Deficiency'),hcell('BMP / Category'),hcell('Flagged'),hcell('Fixed'),hcell('Resolution')]];
+  const fxBody=[[hcell('Item'),hcell('Deficiency'),hcell('BMP / Level'),hcell('Flagged'),hcell('Fixed'),hcell('Resolution')]];
   fxSorted.forEach(e=>fxBody.push([cell(e.plNum?('PL-'+String(e.plNum).padStart(2,'0')):'—',{bold:true}),cell(esc(e.tempLabel||'Repair')),cell(catName(e)),cell(fmtD(e.date)),cell(fmtTs(e.resolvedAt)),cell(esc(e.resolveNote||'—'))]));
+  [...cmpFixed].sort((a,b)=>(b.dateResolved||'')<(a.dateResolved||'')?-1:1)
+    .forEach(e=>fxBody.push([cell(cmpId(e),{bold:true,color:RED}),cell(esc(e.location||'—')),cell(lvlLabel(e.level)),cell(fmtD(e.date)),cell(fmtD(e.dateResolved)),cell(esc(e.corrective||'—'))]));
 
   // 🚩 Overview captures (FAB punchlist capture flow) — every shot from the
   // NEWEST capture day fronts the report, so "where is PL-NN" is answered
@@ -711,8 +763,8 @@ export async function punchlistBuildPdf(opts){
       ...overviewIms.map(im=>({image:im.dataUrl,width:Math.min(im.w,CONTENT_W),margin:[0,4,0,8]}))
     ]:[]),
     h1(`${++sec}.  Open Items — Corrective Action Required`),
-    note(`Items are listed oldest first. Photos were taken in the field at the time each item was flagged; GPS coordinates locate the flag on the site map.`),
-    ...(sorted.length?itemBlocks:[body('No open items — nothing currently requires attention.')]),
+    note(`Items are listed oldest first. Photos were taken in the field at the time each item was flagged; GPS coordinates locate the flag on the site map.${cmpSorted.length?' Compliance Log entries (CMP-) show their compliance level in place of a BMP category.':''}`),
+    ...(merged.length?itemBlocks:[body('No open items — nothing currently requires attention.')]),
     ...(fixed.length?[
       h1(`${++sec}.  Fixed — Verification Record`),
       {table:{headerRows:1,dontBreakRows:true,widths:cols(9,24,17,10,10),body:fxBody},layout:hairLayout,margin:[0,2,0,4]}
@@ -752,7 +804,7 @@ export async function punchlistBuildPdf(opts){
 // file for forwarding to the contractor). Same house chrome as everything else.
 export async function avBuildPdf(visits, cfg, opts){
   opts=opts||{};
-  _pal=PAL_GL;   // GroundLog deliverable → house palette (9/2 brand pass)
+  _pal=await _palFor(false);   // project branding (9/5); GroundLog palette when none is set
   const pdfMake=await _getPdfMake();
   const pretty=(d)=>{ const p=String(d||'').split('-'); return p.length===3?`${parseInt(p[1])}/${parseInt(p[2])}/${p[0]}`:String(d||''); };
   const content=[
