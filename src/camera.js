@@ -21,6 +21,15 @@ import { CameraPreview } from '@capgo/camera-preview';
 import { ScreenOrientation } from '@capacitor/screen-orientation';
 
 let _open=false, _suspended=false, _busy=false;
+// 9/5 (Tim 9/3, TOP PRIORITY security): the native preview kept running behind the app
+// after the viewfinder was gone (green camera dot lit, live image visible through the
+// keyboard band on the daily log). Cause class: a native start() that was still in
+// flight when the session ended — ✕ during open, a lock-screen resume racing a close,
+// a reframe restart — resolved AFTER camClose()'s stop(), leaving an orphan session that
+// nothing ever stopped again (camClose short-circuits once _open is false). Every
+// open/close/suspend bumps _gen; a start that lands in a different generation stops
+// itself; camEnsureStopped() reconciles on every app foreground.
+let _gen=0;
 let _geoWatch=null, _coords=null, _heading=null;
 // Compass health (8/24): iOS reports webkitCompassAccuracy in ±degrees, <0 =
 // reading invalid (magnetometer needs calibration / steel nearby). We also count
@@ -363,7 +372,7 @@ export async function camOpen(ctx){
   if(_open&&!document.getElementById('gl-camera')) _open=false;
   if(_open) return;
   _ctx=ctx||null;
-  _open=true; _suspended=false; _coords=null; _heading=null; _headingAcc=null; _orientN=0; _orientStall=0;
+  _open=true; _gen++; _suspended=false; _coords=null; _heading=null; _headingAcc=null; _orientN=0; _orientStall=0;
   // Armed tags: launch context wins (e.g. 📷 from a punchlist item arms 🚩),
   // else the per-project remembered set.
   try{ _tags=new Set(ctx&&Array.isArray(ctx.tags)?ctx.tags:JSON.parse(localStorage.getItem(_tagsKey())||'[]')); }catch{ _tags=new Set(); }
@@ -381,7 +390,7 @@ export async function camOpen(ctx){
   _uiRot=0; _applyUiRot();
   try{
     await _startSensors();          // permission prompts ride the opening tap gesture
-    await _startPreview();
+    if(!await _startPreview()) return;   // closed while starting — _startPreview already stopped the native session
   }catch(e){
     console.warn('camera start failed:',e);
     _toast('✗ Camera unavailable — check permissions');
@@ -408,7 +417,7 @@ window.camOpen=camOpen;
 
 export async function camClose(){
   if(!_open&&!document.getElementById('gl-camera')){ return; }
-  _open=false; _suspended=false;
+  _open=false; _gen++; _suspended=false;
   _flushPendingRoll();
   clearInterval(_clockTimer); _clockTimer=null;
   clearTimeout(_stripTimer); _stripTimer=null;
@@ -432,7 +441,29 @@ export async function camClose(){
 }
 window.camClose=camClose;
 
+// Reconciler: the camera must never run while the viewfinder isn't open. Called on every
+// app foreground (main.js appStateChange) — stop() on an idle camera just rejects (caught).
+export async function camEnsureStopped(){
+  if(_open) return;
+  try{ await CameraPreview.stop(); }catch{}
+}
+window.camEnsureStopped=camEnsureStopped;
+
+// Resolves true when the preview is live for the CURRENT session; false when the session
+// ended (close / suspend) while the native start was in flight — the orphan is stopped here.
 async function _startPreview(){
+  const g=_gen;
+  try{ await _startPreviewRaw(); }
+  catch(e){
+    // A session left over from a previous life of this module (or the 8/27 "second attempt
+    // didn't open") — the plugin rejects start() while one is running. Stop + retry once.
+    if(/already|running|started/i.test(String(e&&e.message||e))){ try{ await CameraPreview.stop(); }catch{} await _startPreviewRaw(); }
+    else throw e;
+  }
+  if(g!==_gen||!_open||_suspended){ try{ await CameraPreview.stop(); }catch{} return false; }
+  return true;
+}
+async function _startPreviewRaw(){
   await CameraPreview.start({
     parent:'gl-cam-feed',       // web: <video> mounts here; native ignores + renders toBack
     toBack:true,
@@ -465,7 +496,7 @@ function _onReframe(){
   _reframeT=setTimeout(async()=>{
     if(!_open||_suspended) return;
     if(_isNative()){
-      try{ await CameraPreview.stop(); await _startPreview(); _zoomInit(); }
+      try{ await CameraPreview.stop(); if(!await _startPreview()) return; _zoomInit(); }
       catch(e){ console.warn('camera reframe restart failed:',e&&e.message); }
     }
     _renderOverlay();   // web <video> follows CSS; overlay repaints either way
@@ -614,11 +645,11 @@ async function _onVis(){
   // native session on hide, restart on return (lock screen / app switcher safe).
   if(!_open) return;
   if(document.hidden){
-    _suspended=true;
+    _suspended=true; _gen++;          // a resume start still in flight must not outlive this
     try{ await CameraPreview.stop(); }catch{}
   } else if(_suspended){
-    _suspended=false;
-    try{ await _startPreview(); _zoomInit(); }
+    _suspended=false; _gen++;
+    try{ if(!await _startPreview()) return; _zoomInit(); }
     catch(e){ console.warn('camera resume failed:',e); _toast('✗ Camera lost — reopening'); camClose(); }
   }
 }

@@ -92,6 +92,11 @@ if (Capacitor.isNativePlatform && Capacitor.isNativePlatform()) {
     if (isActive && typeof window.kmlReconcileLayers === 'function') {
       window.kmlReconcileLayers()
     }
+    // 9/5 security: the native camera preview must never outlive the viewfinder. The
+    // camera chunk defines this once it has ever loaded (no chunk = no camera started).
+    if (isActive && typeof window.camEnsureStopped === 'function') {
+      window.camEnsureStopped()
+    }
   })
 }
 
