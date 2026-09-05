@@ -55,9 +55,9 @@ for (const file of targets) {
 }
 
 if (findings.length) {
-  console.error(`\n✗ Branding guard: ${findings.length} finding${findings.length === 1 ? '' : 's'}\n`);
-  findings.forEach(f => console.error('  ' + f));
-  console.error(`\n  Rule: output colors/logos come from src/brand.js (project doc → per-report profile → presets).\n  A genuine last-resort fallback line may end with  // ${MARK}\n`);
+  console.log(`\n✗ Branding guard: ${findings.length} finding${findings.length === 1 ? '' : 's'}\n`);
+  findings.forEach(f => console.log('  ' + f));
+  console.log(`\n  Rule: output colors/logos come from src/brand.js (project doc → per-report profile → presets).\n  A genuine last-resort fallback line may end with  // ${MARK}\n`);
   process.exit(1);
 }
 console.log(`✓ Branding guard clean (${targets.length} file${targets.length === 1 ? '' : 's'})`);
