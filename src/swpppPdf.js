@@ -14,7 +14,7 @@
 // public-domain license) carrying just ☐ (U+2610), ☒ (U+2612), ✔ (U+2714).
 // Checkbox runs switch to it inline; everything else stays Roboto.
 
-import { glBrandEnsure, glBrandPdfPal, glBrandPalFromCfg } from './brand.js';
+import { glBrandEnsure, glBrandPdfPal, glBrandPalFromCfg, glBrandAttribution, GL_ATTRIB_TEXT } from './brand.js';
 import { saveFileNative } from './saveFile.js';
 import { exportImageBlob, exportImageParams, stampIfCamera } from './exportImg.js';
 
@@ -46,6 +46,12 @@ const PAL_GL={h:'#006B75',lt:'#E4EFEE',mid:'#006B75',hot:'#F7EFD9'};
 let _pal=PAL_OFFICE;
 // 9/5: palettes come from the project's branding (brand.js). forQi → the QI report
 // follows branding only when the project's applyToQi toggle is on (else Office blue).
+// 9/5: small "Generated with GroundLog" line under every PDF footer (project toggle; a
+// caller may force it via opts.attribution — the branding preview does).
+function _attribLine(opts){
+  const on=(opts&&opts.attribution!==undefined)?!!opts.attribution:glBrandAttribution((typeof _activeProjectId==='function')?_activeProjectId():'default');
+  return on?[{text:GL_ATTRIB_TEXT,fontSize:7,color:'#9A9A9A',alignment:'center',margin:[0,2,0,0]}]:[];
+}
 async function _palFor(forQi){
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
   try{ await glBrandEnsure(pid); }catch(e){}
@@ -373,7 +379,8 @@ export async function swpppBuildPdf(insp,cfg,sig){
       stack:[
         {canvas:[{type:'line',x1:0,y1:0,x2:CONTENT_W,y2:0,lineWidth:0.6,lineColor:HAIR}]},
         {text:`${cfg.projectTitle||''}  |  SPDES QI Stormwater Inspection Report  |  ${parseInt(m)}/${parseInt(d)}/${y.slice(2)}  |  Page ${currentPage}`,
-         fontSize:8,color:'#888888',alignment:'center',margin:[0,4,0,0]}
+         fontSize:8,color:'#888888',alignment:'center',margin:[0,4,0,0]},
+        ..._attribLine(typeof opts!=='undefined'?opts:null)
       ]
     }),
     // keepNext equivalent: never strand a section header at the bottom of a page
@@ -455,7 +462,7 @@ export async function dailyBuildPdf(logData,polished,photoRefs,opts){
   const titleBlock=[];
   if(opts.logo&&opts.logo.b64){
     const lb=opts.logo.b64.startsWith('data:')?opts.logo.b64:('data:image/png;base64,'+opts.logo.b64);
-    titleBlock.push({image:lb,width:Math.round((opts.logo.w||200)*0.75),height:Math.round((opts.logo.h||50)*0.75),alignment:'center',margin:[0,4,0,3]});
+    titleBlock.push({image:lb,width:Math.round((opts.logo.w||200)*0.75),height:Math.round((opts.logo.h||50)*0.75),alignment:opts.logo.align||'center',margin:[0,4,0,3]});
   }
   titleBlock.push({text:'Daily Environmental Compliance Report',fontSize:11,color:_d.h,alignment:'center',margin:[0,0,0,8]});
 
@@ -494,22 +501,23 @@ export async function dailyBuildPdf(logData,polished,photoRefs,opts){
 
   // 3. Compliance
   const compIssues=polished.complianceIssues||[{level:'No issues identified',description:'All areas inspected — no compliance concerns observed.',corrective:'N/A',status:'Compliant',dateResolved:''}];
-  const compBody=[[dhcell('Level'),dhcell('Location / Description'),dhcell('Corrective Action'),dhcell('Status')],
-    ...compIssues.map(i=>[cell(i.level),cell(i.description),cell(i.corrective),cell(i.status)])];
-  // 9/5: photos attached to compliance entries print under the table (2-up), captioned
-  // with the row they document. Refs come from the snapshot (reviewer-safe), falling back
-  // to the author's library.
+  // 9/5: photos attached to a compliance entry print directly UNDER that entry's row
+  // (Tim: "item and photos, next item and photos") as a full-width row inside the same
+  // table. Refs come from the snapshot (reviewer-safe), falling back to the author's library.
   const cpRefs=opts.compPhotoRefs||[];
   const cpFind=id=>cpRefs.find(r=>r.id===id)||(photoRefs||[]).find(r=>r.id===id)||(window._phPhotos||[]).find(p=>p.id===id)||(window._phShared||[]).find(p=>p.id===id)||null;
-  const cpItems=[];
-  for(const row of compIssues){
-    for(const pid of (row.photoIds||[])){
+  const compBody=[[dhcell('Level'),dhcell('Location / Description'),dhcell('Corrective Action'),dhcell('Status')]];
+  for(const i of compIssues){
+    compBody.push([cell(i.level),cell(i.description),cell(i.corrective),cell(i.status)]);
+    const ims=[];
+    for(const pid of (i.photoIds||[])){
       const ref=cpFind(pid); if(!ref) continue;
-      const im=await _dailyImg(ref,331,300);
-      if(im) cpItems.push({im,cap:`${row.level||'Compliance'} — ${String(row.description||'').slice(0,90)}${ref.caption?' · '+ref.caption:''}`});
+      const im=await _dailyImg(ref,300,260);
+      if(im) ims.push({im,cap:ref.caption?String(ref.caption):(ref.date?`Photo · ${ref.date}`:'Photo')});
     }
+    if(ims.length) compBody.push([{colSpan:4,fillColor:'#FAFAFA',table:{dontBreakRows:true,widths:['*','*'],body:_imgPairRows(ims)},layout:imgGridLayout,margin:[0,2,0,2]},{},{},{}]);
   }
-  const cpBlock=cpItems.length?[dh2('Compliance Photos'),{table:{dontBreakRows:true,widths:['*','*'],body:_imgPairRows(cpItems)},layout:imgGridLayout,margin:[0,2,0,6]}]:[];
+  const cpBlock=[];
   const sec3=[
     dh1('3.  Compliance Issues'),
     dh2('Agency Inspections'),
@@ -613,7 +621,8 @@ export async function dailyBuildPdf(logData,polished,photoRefs,opts){
       stack:[
         {canvas:[{type:'line',x1:0,y1:0,x2:CONTENT_W,y2:0,lineWidth:0.6,lineColor:HAIR}]},
         {text:`${logData.project||''}  |  Environmental Inspector Daily Report  |  Confidential  |  Page ${currentPage}`,
-         fontSize:8,color:'#888888',alignment:'center',margin:[0,4,0,0]}
+         fontSize:8,color:'#888888',alignment:'center',margin:[0,4,0,0]},
+        ..._attribLine(typeof opts!=='undefined'?opts:null)
       ]
     }),
     ...(opts.watermark?{watermark:{text:opts.watermark,color:_d.rule,opacity:0.08,bold:true}}:{}),
@@ -664,7 +673,7 @@ export async function punchlistBuildPdf(opts){
   const clAll=(typeof window.clGetEntries==='function')?window.clGetEntries().filter(e=>!e.projectId||e.projectId===pid):[];
   const cmpSorted=clAll.filter(e=>e.status!=='Resolved').sort((a,b)=>(a.date||'')<(b.date||'')?-1:1);
   const cmpFixed=(opts.includeFixed!==false)?clAll.filter(e=>e.status==='Resolved'):[];
-  const merged=[...sorted.map(e=>({k:'pl',e})),...cmpSorted.map(e=>({k:'cmp',e}))].sort((a,b)=>(a.e.date||'')<(b.e.date||'')?-1:(a.e.date||'')>(b.e.date||'')?1:0);
+  const merged=[...cmpSorted.map(e=>({k:'cmp',e})),...sorted.map(e=>({k:'pl',e}))];   // Tim 9/5: compliance items first, then the flags
   const RED='#B03A2E';
   const lvlLabel=l=>(typeof window.clLevelLabel==='function')?window.clLevelLabel(l):('Level '+l);
   const cmpId=e=>(typeof window.clCmpFmt==='function'&&e.cmpNum)?window.clCmpFmt(e.cmpNum):('CMP-'+String(e.cmpNum||0).padStart(2,'0'));
@@ -788,7 +797,8 @@ export async function punchlistBuildPdf(opts){
       stack:[
         {canvas:[{type:'line',x1:0,y1:0,x2:CONTENT_W,y2:0,lineWidth:0.6,lineColor:HAIR}]},
         {text:`${projName}  |  ESC Punchlist  |  ${today.getMonth()+1}/${today.getDate()}/${String(today.getFullYear()).slice(2)}  |  Page ${currentPage}`,
-         fontSize:8,color:'#888888',alignment:'center',margin:[0,4,0,0]}
+         fontSize:8,color:'#888888',alignment:'center',margin:[0,4,0,0]},
+        ..._attribLine(typeof opts!=='undefined'?opts:null)
       ]
     }),
     pageBreakBefore:(node,followingNodesOnPage)=>node.headlineLevel===1&&followingNodesOnPage.length===0,
@@ -850,6 +860,7 @@ export async function avBuildPdf(visits, cfg, opts){
     defaultStyle:{font:'Roboto',fontSize:10},
     footer:(page,total)=>({columns:[
       {text:cfg.projectName||'',fontSize:7,color:'#888888',margin:[MARG,0,0,0]},
+      ...(_attribLine(opts).length?[{text:GL_ATTRIB_TEXT,fontSize:7,color:'#9A9A9A',alignment:'center'}]:[]),
       {text:`${page} / ${total}`,alignment:'right',fontSize:7,color:'#888888',margin:[0,0,MARG,0]}
     ],margin:[0,10,0,0]}),
     content

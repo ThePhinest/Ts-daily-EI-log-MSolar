@@ -822,7 +822,9 @@ function clRenderPunchlist(){
     </div>`;
   };
   const _dk=e=>e.date||'';
-  const merged=[...open.map(e=>({k:'pl',e})),...cmpOpen.map(e=>({k:'cmp',e}))].sort((a,b)=>_dk(a.e)<_dk(b.e)?-1:_dk(a.e)>_dk(b.e)?1:0);
+  // Tim 9/5: compliance items first (together, oldest first), then the repair flags.
+  const _byDate=(a,b)=>_dk(a.e)<_dk(b.e)?-1:_dk(a.e)>_dk(b.e)?1:0;
+  const merged=[...cmpOpen.map(e=>({k:'cmp',e})).sort(_byDate),...open.map(e=>({k:'pl',e})).sort(_byDate)];
   const openRows=merged.map(it=>it.k==='pl'?rowHtml(it.e,true):cmpRowHtml(it.e,true)).join('');
   const _rk=it=>it.k==='pl'?(it.e.resolvedAt||0):(it.e.dateResolved?new Date(it.e.dateResolved+'T12:00:00').getTime():0);
   const mergedFixed=[...resolved.map(e=>({k:'pl',e})),...cmpFixed.map(e=>({k:'cmp',e}))].sort((a,b)=>_rk(b)-_rk(a));
@@ -2152,6 +2154,9 @@ async function _exportCategoriesDeliverable(sels, entries, pid){
   } else {
     fname=`${allSeeding?'seeding':'tracker'}-report-${safeProj}-${today}.xlsx`;
   }
+  if(typeof window.glBrandAttribution==='function'&&window.glBrandAttribution(pid)){   // 9/5 print footer, project toggle
+    wb.worksheets.forEach(ws=>{ try{ ws.headerFooter=Object.assign({},ws.headerFooter||{},{oddFooter:'&L&8&K9A9A9A'+(window.GL_ATTRIB_TEXT||'Generated with GroundLog · groundlog.io')+'&R&8Page &P of &N'}); }catch(e){} });
+  }
   const buf=await wb.xlsx.writeBuffer();
   const blob=new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
   await _glShareOrDownload(blob, fname, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
@@ -2422,6 +2427,9 @@ async function _tlogExportXlsx(scheme, entries, pid){
   });
 
   // ── Download / Share ──
+  if(typeof window.glBrandAttribution==='function'&&window.glBrandAttribution(pid)){   // 9/5 print footer, project toggle
+    wb.worksheets.forEach(ws=>{ try{ ws.headerFooter=Object.assign({},ws.headerFooter||{},{oddFooter:'&L&8&K9A9A9A'+(window.GL_ATTRIB_TEXT||'Generated with GroundLog · groundlog.io')+'&R&8Page &P of &N'}); }catch(e){} });
+  }
   const buf=await wb.xlsx.writeBuffer();
   const blob=new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
   const safeName=(cfg.projectName||pid).replace(/[^a-zA-Z0-9 _-]/g,'').trim().replace(/\s+/g,'-');

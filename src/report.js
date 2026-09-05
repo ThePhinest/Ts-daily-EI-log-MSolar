@@ -331,11 +331,11 @@ async function rptBuildDocx(logData,polished,photos){
   ]});
   // Logo + subtitle block — logo is per-project data (see header comment).
   let _logo=null;
-  try{ const L=await _rptLoadLogo(); if(L&&L.b64) _logo={b64:String(L.b64).replace(/^data:image\/\w+;base64,/,''),w:L.w||200,h:L.h||50}; }
+  try{ const L=await _rptLoadLogo(); if(L&&L.b64) _logo={b64:String(L.b64).replace(/^data:image\/\w+;base64,/,''),w:L.w||200,h:L.h||50,align:L.align||'center'}; }
   catch(e){ /* no logo is a valid state — never block report generation */ }
   const titleBlock=[];
   if(_logo){
-    titleBlock.push(new Paragraph({alignment:AlignmentType.CENTER,children:[new ImageRun({data:_b64ToArrayBuffer(_logo.b64),transformation:{width:_logo.w,height:_logo.h}})],spacing:{before:160,after:60}}));
+    titleBlock.push(new Paragraph({alignment:_logo.align==='left'?AlignmentType.LEFT:_logo.align==='right'?AlignmentType.RIGHT:AlignmentType.CENTER,children:[new ImageRun({data:_b64ToArrayBuffer(_logo.b64),transformation:{width:_logo.w,height:_logo.h}})],spacing:{before:160,after:60}}));
   }
   titleBlock.push(new Paragraph({alignment:AlignmentType.CENTER,children:[new TextRun({text:'Daily Environmental Compliance Report',font:'Arial',size:22,color:MID_BLUE})],spacing:{before:_logo?0:160,after:160}}));
   // Info table
@@ -376,21 +376,23 @@ async function rptBuildDocx(logData,polished,photos){
     new TableCell({borders,shading:{fill:BLUE,type:ShadingType.CLEAR},margins:{top:60,bottom:60,left:80,right:80},children:[new Paragraph({children:[new TextRun({text:'Corrective Action',bold:true,color:WHITE,font:'Arial',size:18})]})]}),
     new TableCell({borders,shading:{fill:BLUE,type:ShadingType.CLEAR},margins:{top:60,bottom:60,left:80,right:80},children:[new Paragraph({children:[new TextRun({text:'Status',bold:true,color:WHITE,font:'Arial',size:18})]})]})
   ]});
-  const compRows=compIssues.map(issue=>new TableRow({children:[
-    new TableCell({borders,margins:{top:60,bottom:60,left:80,right:80},children:[new Paragraph({children:[new TextRun({text:issue.level||'',font:'Arial',size:18})]})]}),
-    new TableCell({borders,margins:{top:60,bottom:60,left:80,right:80},children:[new Paragraph({children:[new TextRun({text:issue.description||'',font:'Arial',size:18})]})]}),
-    new TableCell({borders,margins:{top:60,bottom:60,left:80,right:80},children:[new Paragraph({children:[new TextRun({text:issue.corrective||'',font:'Arial',size:18})]})]}),
-    new TableCell({borders,margins:{top:60,bottom:60,left:80,right:80},children:[new Paragraph({children:[new TextRun({text:issue.status||'',font:'Arial',size:18})]})]})
-  ]}));
-  const compTable=new Table({rows:[compHdr,...compRows]});
-  // 9/5: photos attached to the day's compliance entries, 2-up under the table.
-  const cpRows=[];
-  {
+  // 9/5: an entry's photos print directly UNDER its row (Tim: "item and photos, next item and
+  // photos") \u2014 a full-width spanned row inside the same table.
+  const compRows=[];
+  for(const issue of compIssues){
+    compRows.push(new TableRow({children:[
+      new TableCell({borders,margins:{top:60,bottom:60,left:80,right:80},children:[new Paragraph({children:[new TextRun({text:issue.level||'',font:'Arial',size:18})]})]}),
+      new TableCell({borders,margins:{top:60,bottom:60,left:80,right:80},children:[new Paragraph({children:[new TextRun({text:issue.description||'',font:'Arial',size:18})]})]}),
+      new TableCell({borders,margins:{top:60,bottom:60,left:80,right:80},children:[new Paragraph({children:[new TextRun({text:issue.corrective||'',font:'Arial',size:18})]})]}),
+      new TableCell({borders,margins:{top:60,bottom:60,left:80,right:80},children:[new Paragraph({children:[new TextRun({text:issue.status||'',font:'Arial',size:18})]})]})
+    ]}));
     const cpList=[];
-    compIssues.forEach(row=>(row.photoIds||[]).forEach(id=>{
+    (issue.photoIds||[]).forEach(id=>{
       const p=(window._phPhotos||[]).find(x=>x.id===id)||(window._phShared||[]).find(x=>x.id===id);
-      if(p) cpList.push({p,cap:`${row.level||'Compliance'} \u2014 ${String(row.description||'').slice(0,90)}${p.caption?' \u00b7 '+p.caption:''}`});
-    }));
+      if(p) cpList.push({p,cap:p.caption?String(p.caption):(p.date?`Photo \u00b7 ${p.date}`:'Photo')});
+    });
+    if(!cpList.length) continue;
+    const photoRowsHere=[];
     for(let i=0;i<cpList.length;i+=2){
       const cells=[];
       for(let j=i;j<Math.min(i+2,cpList.length);j++){
@@ -402,15 +404,22 @@ async function rptBuildDocx(logData,polished,photos){
           if(blob){blob=await stampIfCamera(p,blob);const ep=exportImageParams(p);blob=await exportImageBlob(blob,ep.maxPx,ep.quality);imgData=await blob.arrayBuffer();}
           else{const raw=p.thumb||'';const b64=raw.includes(',')?raw.split(',')[1]:raw;imgData=_b64ToArrayBuffer(b64);}
           cells.push(new TableCell({borders:noBorders,width:{size:50,type:WidthType.PERCENTAGE},margins:{top:40,bottom:40,left:40,right:40},children:[
-            new Paragraph({alignment:AlignmentType.CENTER,children:[new ImageRun({data:imgData,transformation:{width:331,height:248}})]}),
+            new Paragraph({alignment:AlignmentType.CENTER,children:[new ImageRun({data:imgData,transformation:{width:300,height:225}})]}),
             new Paragraph({alignment:AlignmentType.CENTER,children:[new TextRun({text:cap,font:'Arial',size:18,italics:true})],spacing:{before:40,after:60}})
           ]}));
         }catch(e){cells.push(new TableCell({borders:noBorders,width:{size:50,type:WidthType.PERCENTAGE},children:[new Paragraph({children:[new TextRun({text:cap,font:'Arial',size:18})]})]}));}
       }
       if(cells.length===1) cells.push(new TableCell({borders:noBorders,width:{size:50,type:WidthType.PERCENTAGE},children:[new Paragraph({children:[]})]}));
-      cpRows.push(new TableRow({children:cells}));
+      photoRowsHere.push(new TableRow({children:cells}));
     }
+    compRows.push(new TableRow({children:[
+      new TableCell({borders,columnSpan:4,shading:{fill:'FAFAFA',type:ShadingType.CLEAR},margins:{top:40,bottom:40,left:80,right:80},children:[
+        new Table({borders:noBorders,width:{size:100,type:WidthType.PERCENTAGE},rows:photoRowsHere})
+      ]})
+    ]}));
   }
+  const compTable=new Table({rows:[compHdr,...compRows]});
+  const cpRows=[];
   const sec3=[
     h1('3.  Compliance Issues'),spacer(60),
     h2('Agency Inspections'),
@@ -489,7 +498,9 @@ async function rptBuildDocx(logData,polished,photos){
       infoRow('Reviewed by:',logData.reviewedBy)
     ]})
   ];
-  // Footer — top border line, centered text, page number
+  // Footer — top border line, centered text, page number (+ 9/5 GroundLog attribution, project toggle)
+  const _attribOn=(typeof window.glBrandAttribution==='function')?window.glBrandAttribution(_activeProjectId()):true;
+  const _attribParas=()=>_attribOn?[new Paragraph({alignment:AlignmentType.CENTER,spacing:{before:20},children:[new TextRun({text:window.GL_ATTRIB_TEXT||'Generated with GroundLog  ·  groundlog.io',font:'Arial',size:13,color:'AAAAAA'})]})]:[];
   const footer=new Footer({children:[new Paragraph({
     alignment:AlignmentType.CENTER,
     border:{top:{style:BorderStyle.SINGLE,size:6,color:'AAAAAA',space:4}},
@@ -498,7 +509,7 @@ async function rptBuildDocx(logData,polished,photos){
       new TextRun({text:`${logData.project}  |  Environmental Inspector Daily Report  |  Confidential  |  Page `,font:'Arial',size:16,color:'888888'}),
       new TextRun({children:[PageNumber.CURRENT],font:'Arial',size:16,color:'888888'})
     ]
-  })]});
+  }),..._attribParas()]});
   // Word header — repeats on every page
   const wordHeader=new Header({children:[headerTable]});
   // Assemble — headerTable now in section header, not body

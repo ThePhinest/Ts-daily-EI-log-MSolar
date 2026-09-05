@@ -121,10 +121,21 @@ async function glBrandSave(pid, patch){
 }
 
 // ── logo (branding doc → legacy per-user project settings) ──
+// Display size: logoW/logoH are the base dims stored at upload (50 px tall, ratio kept);
+// logoDispH (Tim 9/5: "the logo is tiny") scales the pair, capped at the page's content
+// width; logoAlign = left | center | right.
+function glBrandLogoDims(cfg){
+  const baseW=cfg.logoW||200, baseH=cfg.logoH||50;
+  let h=Math.max(20, Math.min(160, parseInt(cfg.logoDispH,10)||baseH));
+  let w=Math.round(baseW*h/baseH);
+  const MAXW=660;                      // ≈ 495 pt, the Letter content width
+  if(w>MAXW){ w=MAXW; h=Math.round(baseH*w/baseW); }
+  return { w, h, align: ['left','center','right'].includes(cfg.logoAlign) ? cfg.logoAlign : 'center' };
+}
 async function glBrandLogo(pid){
   pid = _brPid(pid);
   const cfg = await glBrandEnsure(pid);
-  if(cfg && cfg.logoB64) return { b64:String(cfg.logoB64), w:cfg.logoW||200, h:cfg.logoH||50 };
+  if(cfg && cfg.logoB64){ const d=glBrandLogoDims(cfg); return { b64:String(cfg.logoB64), w:d.w, h:d.h, align:d.align }; }
   if(cfg && cfg.logoB64===null) return null;   // explicitly removed
   // legacy location (pre-9/5): only the author's device can read it
   try{
@@ -209,8 +220,29 @@ function _brUISet(primary, accent, applyToQi){
   if(applyToQi!==undefined && _brField('cfg-brand-qi')) _brField('cfg-brand-qi').checked=!!applyToQi;
   glBrandUIPreview();
 }
+// Logo controls + the live header preview (HTML approximation of the PDF title block).
+function _brLogoUIValues(){
+  const h=parseInt(_brField('cfg-brand-logo-h')?.value,10);
+  const al=_brField('cfg-brand-logo-align')?.value;
+  return { logoDispH: isFinite(h)?h:null, logoAlign: ['left','center','right'].includes(al)?al:'center' };
+}
+async function glBrandUILogoPreview(){
+  const pid=_brPid();
+  const cfg=(await glBrandEnsure(pid))||{};
+  const wrap=_brField('cfg-brand-pv-logo-wrap'), img=_brField('cfg-brand-pv-logo');
+  if(!wrap||!img) return;
+  const L=await glBrandLogo(pid);
+  if(!L||!L.b64){ wrap.style.display='none'; return; }
+  const lv=_brLogoUIValues();
+  const d=glBrandLogoDims(Object.assign({}, cfg, { logoW:cfg.logoW||L.w, logoH:cfg.logoH||L.h, logoDispH:lv.logoDispH||cfg.logoDispH, logoAlign:lv.logoAlign }));
+  img.src=L.b64; img.style.height=Math.round(d.h*0.6)+'px'; img.style.width='auto';
+  wrap.style.display='flex'; wrap.style.justifyContent=d.align==='left'?'flex-start':d.align==='right'?'flex-end':'center';
+  const lbl=_brField('cfg-brand-logo-h-val'); if(lbl) lbl.textContent=(lv.logoDispH||cfg.logoDispH||cfg.logoH||50)+' px tall';
+}
 function glBrandUIPreview(){
   const v=_brUIValues(); const r=glBrandResolveCfg(v);
+  const t=_brField('cfg-brand-pv-title'); if(t) t.style.color=r.primary;
+  glBrandUILogoPreview().catch(()=>{});
   // color inputs follow the hex fields and vice versa
   const pc=_brField('cfg-brand-primary'), ac=_brField('cfg-brand-accent');
   if(pc && pc.value.toUpperCase()!==r.primary) pc.value=r.primary;
@@ -237,14 +269,18 @@ async function glBrandInitUI(){
   const pid=_brPid();
   const cfg = await glBrandEnsure(pid);
   const r = glBrandResolveCfg(cfg);
+  const lh=_brField('cfg-brand-logo-h'); if(lh) lh.value=String((cfg&&cfg.logoDispH)||(cfg&&cfg.logoH)||50);
+  const la=_brField('cfg-brand-logo-align'); if(la) la.value=(cfg&&cfg.logoAlign)||'center';
+  const at=_brField('cfg-brand-attrib'); if(at) at.checked=!(cfg&&cfg.attribution===false);
   _brUISet(r.primary, r.accent, r.applyToQi);
   const nm=_brField('cfg-brand-name'); if(nm) nm.textContent = cfg&&cfg.name ? ('Preset: '+cfg.name) : '';
 }
 async function glBrandUISave(){
   const pid=_brPid();
   if(!pid || pid==='default'){ _brStatus('Create a project first.', true); return; }
-  const v=_brUIValues();
-  const res = await glBrandSave(pid, { primary:v.primary, accent:v.accent, applyToQi:v.applyToQi });
+  const v=_brUIValues(); const lv=_brLogoUIValues();
+  const attribution=_brField('cfg-brand-attrib')?!!_brField('cfg-brand-attrib').checked:true;
+  const res = await glBrandSave(pid, { primary:v.primary, accent:v.accent, applyToQi:v.applyToQi, logoDispH:lv.logoDispH||null, logoAlign:lv.logoAlign, attribution });
   if(res.ok) _brStatus(res.local ? '✓ Saved on this device' : '✓ Branding saved — every export of this project uses it');
   else _brStatus(res.permission ? 'Saved locally only — a project lead has to set branding' : 'Save failed: '+(res.error&&res.error.message||'error'), true);
 }
@@ -285,7 +321,43 @@ function glBrandSaveAsPreset(){
   };
 }
 
+// "Generated with GroundLog" attribution on exports — on unless the project turns it off.
+function glBrandAttribution(pid){ const c=glBrandGet(pid); return !(c && c.attribution===false); }
+const GL_ATTRIB_TEXT='Generated with GroundLog  ·  groundlog.io';
+
+// Preview a one-page sample daily report with the CURRENT (unsaved) branding + logo controls,
+// so the logo size/alignment can be judged on the real render before saving.
+async function glBrandPreviewPdf(){
+  const pid=_brPid();
+  _brStatus('Rendering sample…');
+  try{
+    const v=_brUIValues(); const lv=_brLogoUIValues();
+    const cfg=Object.assign({}, (await glBrandEnsure(pid))||{}, { primary:v.primary, accent:v.accent, logoDispH:lv.logoDispH, logoAlign:lv.logoAlign });
+    const L=await glBrandLogo(pid);
+    const logo=L&&L.b64?Object.assign({b64:L.b64}, glBrandLogoDims(Object.assign({}, cfg, {logoW:cfg.logoW||L.w, logoH:cfg.logoH||L.h}))):null;
+    const pc=(typeof loadProjectConfig==='function')?loadProjectConfig():{};
+    const today=new Date().toLocaleDateString('en-CA');
+    const logData={ reportDate:today, preparedBy:pc.preparedBy||'Inspector', org:pc.org||'', project:pc.projectName||'Sample Project', activePhase:pc.activePhase||'Civil Construction', contractor:pc.contractor||'—', reviewedBy:pc.reviewedBy||'',
+      weather:{ sky:['Partly Cloudy'], tempAM:'58', tempPM:'74', precip:'0', wind:'4 mph W', soilConditions:'Dry', upcomingForecast:'Clear, high 76°F' }, lookahead:'' };
+    const polished={ contractorActivities:'Sample paragraph — this preview only shows how the branding renders. Crews conducted routine erosion-control maintenance along the perimeter.',
+      fieldObservationsOpening:'The EI conducted a site-wide inspection of all active work areas.', fieldObservationsBullets:['Perimeter silt fence intact and functional.','Stabilized construction entrance maintained.'], fieldObservationsClosing:'No deficiencies observed.',
+      complianceIssues:[{level:'Level 1',description:'Sample observation — minor sediment accumulation at outlet.',corrective:'Clean out and monitor.',status:'Resolved',dateResolved:today}],
+      agencyInspection:'No agency inspections conducted today.', landownerContact:'None.', rteObservation:'None observed.', generalComms:'None.', lookaheadBullets:['Continue perimeter maintenance.'] };
+    const mod=await import('./swpppPdf.js');
+    const blob=await mod.dailyBuildPdf(logData, polished, [], { logo, brand:{primary:cfg.primary, accent:cfg.accent}, attribution:glBrandAttribution(pid) });
+    const isNative=!!(window.Capacitor&&window.Capacitor.isNativePlatform&&window.Capacitor.isNativePlatform());
+    if(isNative&&typeof saveFileNative==='function') await saveFileNative(blob,'GroundLog-branding-preview.pdf','application/pdf');
+    else { const u=URL.createObjectURL(blob); window.open(u,'_blank'); setTimeout(()=>URL.revokeObjectURL(u),60000); }
+    _brStatus('✓ Sample rendered');
+  }catch(e){ console.warn('[brand] preview failed:', e); _brStatus('Preview failed: '+(e.message||'error'), true); }
+}
+
 // ── seams ──
+window.glBrandAttribution=glBrandAttribution;
+window.GL_ATTRIB_TEXT=GL_ATTRIB_TEXT;
+window.glBrandPreviewPdf=glBrandPreviewPdf;
+window.glBrandLogoDims=glBrandLogoDims;
+window.glBrandUILogoPreview=glBrandUILogoPreview;
 window.glBrandEnsure=glBrandEnsure;
 window.glBrandGet=glBrandGet;
 window.glBrandResolve=glBrandResolve;
@@ -305,4 +377,4 @@ window.glBrandUIPreset=glBrandUIPreset;
 window.glBrandUISave=glBrandUISave;
 window.glBrandPickPreset=glBrandPickPreset;
 window.glBrandSaveAsPreset=glBrandSaveAsPreset;
-export { glBrandEnsure, glBrandGet, glBrandResolve, glBrandPalFromCfg, glBrandPdfPal, glBrandDocx, glBrandXl, glBrandLogo, glBrandSnapshot };
+export { glBrandEnsure, glBrandGet, glBrandResolve, glBrandPalFromCfg, glBrandPdfPal, glBrandDocx, glBrandXl, glBrandLogo, glBrandSnapshot, glBrandAttribution, GL_ATTRIB_TEXT };

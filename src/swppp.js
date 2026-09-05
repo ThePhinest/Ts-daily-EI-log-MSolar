@@ -1398,10 +1398,12 @@ async function swpppBuildDocx(insp,cfg){
   ];
 
   // Footer + repeating page header
+  const _attribOn=(typeof window.glBrandAttribution==='function')?window.glBrandAttribution((insp&&insp.projectId)||((typeof _activeProjectId==='function')?_activeProjectId():'default')):true;
+  const _attribParas=()=>_attribOn?[new Paragraph({alignment:AlignmentType.CENTER,spacing:{before:20},children:[new TextRun({text:window.GL_ATTRIB_TEXT||'Generated with GroundLog  ·  groundlog.io',font:'Arial',size:13,color:'AAAAAA'})]})]:[];
   const footer=new Footer({children:[new Paragraph({alignment:AlignmentType.CENTER,border:{top:{style:BorderStyle.SINGLE,size:6,color:'AAAAAA',space:4}},spacing:{before:80},children:[
     new TextRun({text:`${cfg.projectTitle||''}  |  SPDES QI Stormwater Inspection Report  |  ${parseInt(m)}/${parseInt(d)}/${y.slice(2)}  |  Page `,font:'Arial',size:16,color:'888888'}),
     new TextRun({children:[PageNumber.CURRENT],font:'Arial',size:16,color:'888888'})
-  ]})]});
+  ]}),..._attribParas()]});
   const wordHeader=new Header({children:[new Table({width:{size:100,type:WidthType.PERCENTAGE},borders:noBorders,rows:[new TableRow({children:[
     new TableCell({borders:{top:bdr,left:bdr,bottom:bdr,right:noBdr},shading:{fill:LT_BLUE,type:ShadingType.CLEAR},width:{size:60,type:WidthType.PERCENTAGE},margins:{top:60,bottom:60,left:120,right:120},children:[new Paragraph({children:[new TextRun({text:(cfg.projectTitle||'').toUpperCase(),bold:true,font:'Arial',size:20,color:BLUE})]})]}),
     new TableCell({borders:{top:bdr,left:noBdr,bottom:bdr,right:bdr},shading:{fill:LT_BLUE,type:ShadingType.CLEAR},width:{size:40,type:WidthType.PERCENTAGE},margins:{top:60,bottom:60,left:120,right:120},children:[new Paragraph({alignment:AlignmentType.RIGHT,children:[new TextRun({text:'QI Inspection Report',font:'Arial',size:18,color:MID_BLUE})]})]})
