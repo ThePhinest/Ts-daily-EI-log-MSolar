@@ -1149,7 +1149,7 @@ async function swpppBuildDocx(insp,cfg){
   if(!window.docx) throw new Error('Report library not loaded — refresh and try again.');
   const{Document,Packer,Paragraph,TextRun,Table,TableRow,TableCell,AlignmentType,BorderStyle,WidthType,ShadingType,ImageRun,Footer,Header,PageNumber}=window.docx;
   // 9/5: follows project branding only when its "QI report uses this branding" toggle is on; else Office blue (mid-project freeze).
-  const _bq=(typeof window.glBrandDocx==='function')?window.glBrandDocx((insp&&insp.projectId)||((typeof _activeProjectId==='function')?_activeProjectId():'default'),{forQi:true}):null;
+  const _bq=(typeof window.glBrandDocx==='function')?window.glBrandDocx((insp&&insp.projectId)||((typeof _activeProjectId==='function')?_activeProjectId():'default'),{key:'qi'}):null;
   const BLUE=_bq?_bq.BLUE:'1F3864',LT_BLUE=_bq?_bq.LT_BLUE:'D9E2F3',MID_BLUE=_bq?_bq.MID_BLUE:'2E5496',WHITE=_bq?_bq.HTEXT:'FFFFFF',AMBER=_bq?_bq.HOT:'FFF2CC';
   const bdr={style:BorderStyle.SINGLE,size:1,color:'AAAAAA'};
   const borders={top:bdr,bottom:bdr,left:bdr,right:bdr};

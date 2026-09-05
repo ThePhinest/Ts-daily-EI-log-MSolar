@@ -52,10 +52,10 @@ function _attribLine(opts){
   const on=(opts&&opts.attribution!==undefined)?!!opts.attribution:glBrandAttribution((typeof _activeProjectId==='function')?_activeProjectId():'default');
   return on?[{text:GL_ATTRIB_TEXT,fontSize:7,color:'#9A9A9A',alignment:'center',margin:[0,2,0,0]}]:[];
 }
-async function _palFor(forQi){
+async function _palFor(key){
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
   try{ await glBrandEnsure(pid); }catch(e){}
-  return glBrandPdfPal(pid,{forQi:!!forQi})||(forQi?PAL_OFFICE:PAL_GL);
+  return glBrandPdfPal(pid,{key})||(key==='qi'?PAL_OFFICE:PAL_GL);
 }
 const PAGE_W=612, MARG=54, CONTENT_W=PAGE_W-2*MARG;   // Letter, 0.75" side margins
 // Column widths for a hairLayout table: pdfmake ADDS cell padding (6+6/col) and the
@@ -139,7 +139,7 @@ function _imgPairRows(items){
 
 // ═══ the builder — same data prep as swpppBuildDocx, pdfmake doc-definition out ═══
 export async function swpppBuildPdf(insp,cfg,sig){
-  _pal=await _palFor(true);   // QI: branding only when the project's applyToQi toggle is on (else Office blue)
+  _pal=await _palFor('qi');   // QI: per-report choice (legacy toggle → Office blue)
   const pdfMake=await _getPdfMake();
 
   // Date formatting
@@ -415,7 +415,7 @@ async function _dFor(brandCfg){
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
   let pal=null;
   if(brandCfg&&(brandCfg.primary||brandCfg.accent)) pal=glBrandPalFromCfg(brandCfg);
-  else { try{ await glBrandEnsure(pid); }catch(e){} pal=glBrandPdfPal(pid); }
+  else { try{ await glBrandEnsure(pid); }catch(e){} pal=glBrandPdfPal(pid,{key:'daily'}); }
   return {h:pal.h,lt:pal.lt,rule:pal.rule,ink:'#1A1A1A',hText:pal.hText||'#FFFFFF'};
 }
 const dh1=(text)=>({table:{widths:['*'],body:[[{text,bold:true,color:_d.hText,fontSize:12,fillColor:_d.h,border:[false,false,false,false]}]]},
@@ -649,7 +649,7 @@ export async function dailyExportPdfNow(logData,polished,photoRefs,opts){
 // Same house chrome as the QI report; photos ride exportImg like every export.
 export async function punchlistBuildPdf(opts){
   opts=opts||{};
-  _pal=await _palFor(false);   // project branding (9/5); GroundLog palette when none is set
+  _pal=await _palFor('punchlist');   // per-report branding (9/5)
   const pdfMake=await _getPdfMake();
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
   const cfg=(typeof loadProjectConfig==='function')?loadProjectConfig():{};
@@ -814,7 +814,7 @@ export async function punchlistBuildPdf(opts){
 // file for forwarding to the contractor). Same house chrome as everything else.
 export async function avBuildPdf(visits, cfg, opts){
   opts=opts||{};
-  _pal=await _palFor(false);   // project branding (9/5); GroundLog palette when none is set
+  _pal=await _palFor('agency');   // per-report branding (9/5)
   const pdfMake=await _getPdfMake();
   const pretty=(d)=>{ const p=String(d||'').split('-'); return p.length===3?`${parseInt(p[1])}/${parseInt(p[2])}/${p[0]}`:String(d||''); };
   const content=[

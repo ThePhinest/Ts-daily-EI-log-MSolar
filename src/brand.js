@@ -31,6 +31,24 @@
 // on a project name (feedback_no_project_specific_hardcoding).
 
 const GL_BRAND_DEFAULT = { primary:'#006B75', accent:'#C9A84C', applyToQi:false };
+// Per-report profiles (Tim 9/5): each export type follows the project default unless the
+// branding doc's perReport[key] says otherwise — 'groundlog' | 'office' (house looks, no
+// logo) | a profile SNAPSHOT {name, primary, accent, logoB64|'default', logoW, logoH,
+// logoDispH, logoAlign} copied from a saved preset so every member renders it without
+// access to the author's presets. null = project default. Legacy applyToQi maps onto the
+// 'qi' key (false → 'office') until a choice is stored.
+const GL_REPORT_KEYS = [
+  { key:'daily',        label:'Daily report',                         sub:'PDF + DOCX' },
+  { key:'qi',           label:'SWPPP QI inspection report',           sub:'PDF + DOCX' },
+  { key:'punchlist',    label:'Punchlist',                            sub:'PDF' },
+  { key:'agency',       label:'Agency visit report',                  sub:'PDF' },
+  { key:'categoryXlsx', label:'Seeding / disturbance / linear exports', sub:'XLSX deliverables' },
+  { key:'trackerLog',   label:'Tracker log export',                   sub:'XLSX' },
+];
+const GL_HOUSE = {
+  groundlog: { name:'GroundLog',   primary:'#006B75', accent:'#C9A84C', logoB64:null },
+  office:    { name:'Office blue', primary:'#1F3864', accent:'#2E5496', logoB64:null },
+};
 const GL_BRAND_OFFICE  = { primary:'#1F3864', accent:'#2E5496' };
 const _OFFICE_PDF  = { h:'#1F3864', lt:'#D9E2F3', mid:'#2E5496', hot:'#FFF2CC', rule:'#2E5496', hText:'#FFFFFF' };
 const _OFFICE_DOCX = { BLUE:'1F3864', LT_BLUE:'D9E2F3', MID_BLUE:'2E5496', RULE:'2E5496', HOT:'FFF2CC', HTEXT:'FFFFFF' };
@@ -78,7 +96,7 @@ function glBrandResolveCfg(cfg){
   };
 }
 function glBrandGet(pid){ const v=_brCfg[_brPid(pid)]; return v===undefined ? null : v; }
-function glBrandResolve(pid){ return glBrandResolveCfg(glBrandGet(pid)); }
+function glBrandResolve(pid, key){ return glBrandResolveCfg(key ? glBrandProfileFor(pid,key) : glBrandGet(pid)); }
 
 async function glBrandEnsure(pid){
   pid = _brPid(pid);
@@ -132,11 +150,14 @@ function glBrandLogoDims(cfg){
   if(w>MAXW){ w=MAXW; h=Math.round(baseH*w/baseW); }
   return { w, h, align: ['left','center','right'].includes(cfg.logoAlign) ? cfg.logoAlign : 'center' };
 }
-async function glBrandLogo(pid){
+async function glBrandLogo(pid, key){
   pid = _brPid(pid);
-  const cfg = await glBrandEnsure(pid);
+  await glBrandEnsure(pid);
+  const cfg = key ? glBrandProfileFor(pid, key) : (glBrandGet(pid) || null);
+  if(cfg && cfg._house) return null;           // house looks carry no logo
   if(cfg && cfg.logoB64){ const d=glBrandLogoDims(cfg); return { b64:String(cfg.logoB64), w:d.w, h:d.h, align:d.align }; }
   if(cfg && cfg.logoB64===null) return null;   // explicitly removed
+  if(key && cfg && cfg!==glBrandGet(pid)) return null;   // an override snapshot without a logo
   // legacy location (pre-9/5): only the author's device can read it
   try{
     const u=_brUdb();
@@ -148,27 +169,73 @@ async function glBrandLogo(pid){
   return null;
 }
 
+// ── per-report profile ──
+function _brChoice(cfg, key){
+  if(!key) return null;
+  const pr=(cfg&&cfg.perReport)||{};
+  if(Object.prototype.hasOwnProperty.call(pr,key)) return pr[key]||null;
+  if(key==='qi' && !(cfg&&cfg.applyToQi)) return 'office';   // legacy toggle → house Office blue
+  return null;
+}
+// The cfg-shaped object a consumer should render with for {pid,key}; the project doc itself
+// when no override is stored. Snapshot logos may say 'default' → the project's logo.
+function glBrandProfileFor(pid, key){
+  const cfg = glBrandGet(pid);            // may be null (no branding doc yet) — callers treat null as "project default"
+  const c = _brChoice(cfg||{}, key);
+  if(!c) return cfg;                      // same object as glBrandGet → glBrandLogo knows to try the legacy logo location
+  if(typeof c==='string') return Object.assign({ _house:c }, GL_HOUSE[c]||GL_HOUSE.groundlog);
+  const snap = Object.assign({}, c), base = cfg||{};
+  if(snap.logoB64==='default'){ snap.logoB64=base.logoB64||null; snap.logoW=base.logoW; snap.logoH=base.logoH; if(snap.logoDispH==null) snap.logoDispH=base.logoDispH; if(!snap.logoAlign) snap.logoAlign=base.logoAlign; }
+  return snap;
+}
+function glBrandChoiceLabel(pid, key){
+  const cfg = glBrandGet(pid) || {};
+  const c = _brChoice(cfg, key);
+  if(!c) return 'Project default' + (cfg.name ? ' — ' + cfg.name : '');
+  if(typeof c==='string') return (GL_HOUSE[c]||{}).name || c;
+  return c.name || 'Custom';
+}
+// choice: null (project default) | 'groundlog' | 'office' | a saved preset object
+async function glBrandSetReport(pid, key, choice){
+  pid=_brPid(pid);
+  const cfg = (await glBrandEnsure(pid)) || {};
+  let stored = choice;
+  if(choice && typeof choice==='object'){
+    stored = { name:choice.name||'Custom', primary:brHex(choice.primary)||GL_BRAND_DEFAULT.primary, accent:brHex(choice.accent)||GL_BRAND_DEFAULT.accent,
+      logoB64: choice.logoB64 ? (cfg.logoB64 && choice.logoB64===cfg.logoB64 ? 'default' : choice.logoB64) : null,
+      logoW: choice.logoW||null, logoH: choice.logoH||null, logoDispH: choice.logoDispH||null, logoAlign: choice.logoAlign||'center' };
+  }
+  const perReport = Object.assign({}, cfg.perReport||{}, { [key]: stored });
+  const probe = JSON.stringify(Object.assign({}, cfg, { perReport }));
+  if(probe.length > 900000) return { ok:false, error:new Error('Too many distinct logos for one project — reuse the project logo or a smaller image.'), size:true };
+  return glBrandSave(pid, { perReport });
+}
+
 // ── palettes ──
 function _brPalFromResolved(r){ return { h:r.primary, lt:r.tint, mid:r.primary, hot:r.hot, rule:r.accent, hText:r.hText }; }
 function glBrandPalFromCfg(cfg){ return _brPalFromResolved(glBrandResolveCfg(cfg)); }
+function _brKey(o){ return o && (o.key || (o.forQi ? 'qi' : null)) || null; }
 function glBrandPdfPal(pid, o){
-  const r = glBrandResolve(pid);
-  if(o && o.forQi && !r.applyToQi) return _OFFICE_PDF;
-  return _brPalFromResolved(r);
+  const key=_brKey(o);
+  const prof = key ? glBrandProfileFor(pid,key) : null;
+  if(prof && prof._house==='office') return _OFFICE_PDF;
+  return _brPalFromResolved(glBrandResolve(pid, key));
 }
 function glBrandDocx(pid, o){
-  const r = glBrandResolve(pid);
-  if(o && o.forQi && !r.applyToQi) return _OFFICE_DOCX;
+  const key=_brKey(o);
+  const prof = key ? glBrandProfileFor(pid,key) : null;
+  if(prof && prof._house==='office') return _OFFICE_DOCX;
+  const r = glBrandResolve(pid, key);
   const s = h => String(h).replace('#','');
   return { BLUE:s(r.primary), LT_BLUE:s(r.tint), MID_BLUE:s(r.primary), RULE:s(r.accent), HOT:s(r.hot), HTEXT:s(r.hText) };
 }
-function glBrandXl(pid){
-  const r = glBrandResolve(pid);
+function glBrandXl(pid, key){
+  const r = glBrandResolve(pid, key||null);
   const s = h => String(h).replace('#','');
   return { teal:s(r.primary), am:s(r.accent), amLt:s(r.amberLight), tl:s(r.tint), htx:s(r.hText), ftl:'FF'+s(r.primary), fam:'FF'+s(r.accent) };
 }
 // What rides the review snapshot: the resolved colors only (logo already rides separately).
-function glBrandSnapshot(pid){ const r=glBrandResolve(pid); return { primary:r.primary, accent:r.accent }; }
+function glBrandSnapshot(pid, key){ const r=glBrandResolve(pid, key||null); return { primary:r.primary, accent:r.accent }; }
 
 // ── user presets ──
 async function glBrandPresetsList(){
@@ -190,7 +257,7 @@ async function glBrandPresetSave(name, pid){
   return Object.assign({id:ref.id}, doc);
 }
 async function glBrandPresetApply(preset, pid){
-  const patch = { primary:preset.primary, accent:preset.accent, applyToQi:!!preset.applyToQi, name:preset.name||'' };
+  const patch = { primary:preset.primary, accent:preset.accent, name:preset.name||'' };
   if(preset.logoB64){ patch.logoB64=preset.logoB64; patch.logoW=preset.logoW||200; patch.logoH=preset.logoH||50; }
   return glBrandSave(pid, patch);
 }
@@ -274,13 +341,55 @@ async function glBrandInitUI(){
   const at=_brField('cfg-brand-attrib'); if(at) at.checked=!(cfg&&cfg.attribution===false);
   _brUISet(r.primary, r.accent, r.applyToQi);
   const nm=_brField('cfg-brand-name'); if(nm) nm.textContent = cfg&&cfg.name ? ('Preset: '+cfg.name) : '';
+  glBrandRenderReportRows();
+}
+function _brEsc(t){ return String(t==null?'':t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;'); }
+function glBrandRenderReportRows(){
+  const host=_brField('cfg-brand-reports'); if(!host) return;
+  const pid=_brPid();
+  host.innerHTML = GL_REPORT_KEYS.map(k=>{
+    const lbl=glBrandChoiceLabel(pid,k.key);
+    const isDefault=/^Project default/.test(lbl);
+    return `<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:var(--s1)">
+      <div style="flex:1;min-width:0">
+        <div style="font-family:var(--mono);font-size:12px;color:var(--text)">${_brEsc(k.label)} <span style="color:var(--muted);font-size:10px">${_brEsc(k.sub)}</span></div>
+        <div style="font-family:var(--mono);font-size:10px;color:${isDefault?'var(--muted)':'var(--amber)'};margin-top:2px">${_brEsc(lbl)}</div>
+      </div>
+      <button class="btn btn-outline" style="font-size:11px;padding:5px 10px;flex-shrink:0" onclick="glBrandPickReport('${k.key}')">Change</button>
+    </div>`;
+  }).join('');
+}
+async function glBrandPickReport(key){
+  const k=GL_REPORT_KEYS.find(x=>x.key===key); if(!k || typeof glPick!=='function') return;
+  const pid=_brPid();
+  const cfg=(await glBrandEnsure(pid))||{};
+  const presets=await glBrandPresetsList();
+  const rows=[
+    { value:'__default', label:'Project default'+(cfg.name?' — '+cfg.name:''), sub:`${brHex(cfg.primary)||GL_BRAND_DEFAULT.primary} · ${brHex(cfg.accent)||GL_BRAND_DEFAULT.accent}${cfg.logoB64?' · project logo':''}`, icon:'🏗️', accent:true },
+    { value:'groundlog', label:'GroundLog', sub:'Teal / amber house look · no logo', icon:'🟢' },
+    { value:'office',    label:'Office blue', sub:'Classic blue · no logo', icon:'🔵' },
+    ...presets.map(p=>({ value:'preset:'+p.id, label:p.name||'Branding', sub:`${p.primary} · ${p.accent}${p.logoB64?' · logo':''}`, meta:new Date(p.createdAt||0).toLocaleDateString(), icon:'🎨' }))
+  ];
+  glPick({
+    title:'Branding for: '+k.label,
+    placeholder:'Search…',
+    rows,
+    onPick: async (v)=>{
+      let choice=null;
+      if(v==='groundlog'||v==='office') choice=v;
+      else if(String(v).startsWith('preset:')){ choice=presets.find(p=>'preset:'+p.id===v)||null; }
+      const res=await glBrandSetReport(pid, key, choice);
+      glBrandRenderReportRows();
+      _brStatus(res.ok ? `✓ ${k.label} → ${glBrandChoiceLabel(pid,key)}` : (res.size ? res.error.message : (res.permission ? 'Saved locally only — a project lead has to set branding' : 'Save failed')), !res.ok);
+    }
+  });
 }
 async function glBrandUISave(){
   const pid=_brPid();
   if(!pid || pid==='default'){ _brStatus('Create a project first.', true); return; }
   const v=_brUIValues(); const lv=_brLogoUIValues();
   const attribution=_brField('cfg-brand-attrib')?!!_brField('cfg-brand-attrib').checked:true;
-  const res = await glBrandSave(pid, { primary:v.primary, accent:v.accent, applyToQi:v.applyToQi, logoDispH:lv.logoDispH||null, logoAlign:lv.logoAlign, attribution });
+  const res = await glBrandSave(pid, { primary:v.primary, accent:v.accent, logoDispH:lv.logoDispH||null, logoAlign:lv.logoAlign, attribution });
   if(res.ok) _brStatus(res.local ? '✓ Saved on this device' : '✓ Branding saved — every export of this project uses it');
   else _brStatus(res.permission ? 'Saved locally only — a project lead has to set branding' : 'Save failed: '+(res.error&&res.error.message||'error'), true);
 }
@@ -315,7 +424,7 @@ function glBrandSaveAsPreset(){
   ov.querySelector('#_brPresetOk').onclick=async()=>{
     const name=(inp.value||'').trim(); if(!name){ inp.focus(); return; }
     // unsaved field edits count — save the project first so the preset matches what's on screen
-    const v=_brUIValues(); await glBrandSave(_brPid(), { primary:v.primary, accent:v.accent, applyToQi:v.applyToQi, name });
+    const v=_brUIValues(); await glBrandSave(_brPid(), { primary:v.primary, accent:v.accent, name });
     try{ await glBrandPresetSave(name, _brPid()); ov.remove(); await glBrandInitUI(); _brStatus(`✓ Preset "${name}" saved to your account`); }
     catch(e){ _brStatus('Preset save failed: '+(e.message||'error'), true); }
   };
@@ -354,6 +463,12 @@ async function glBrandPreviewPdf(){
 
 // ── seams ──
 window.glBrandAttribution=glBrandAttribution;
+window.glBrandProfileFor=glBrandProfileFor;
+window.glBrandChoiceLabel=glBrandChoiceLabel;
+window.glBrandSetReport=glBrandSetReport;
+window.glBrandRenderReportRows=glBrandRenderReportRows;
+window.glBrandPickReport=glBrandPickReport;
+window.GL_REPORT_KEYS=GL_REPORT_KEYS;
 window.GL_ATTRIB_TEXT=GL_ATTRIB_TEXT;
 window.glBrandPreviewPdf=glBrandPreviewPdf;
 window.glBrandLogoDims=glBrandLogoDims;

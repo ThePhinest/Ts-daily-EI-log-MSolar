@@ -11,12 +11,12 @@ function clGenId(){ return Date.now().toString(36) + Math.random().toString(36).
 
 // 🎨 XLSX palette (9/5): every workbook color comes from the project's branding
 // (brand.js). Cached per export — _xbReset() at each export entry point.
-var _xbCur=null;
-function _xbReset(){ _xbCur=null; }
+var _xbCur=null, _xbKey='categoryXlsx';
+function _xbReset(key){ _xbCur=null; if(key) _xbKey=key; }
 function _xb(){
   if(!_xbCur){
     _xbCur=(typeof window.glBrandXl==='function')
-      ? window.glBrandXl((typeof _activeProjectId==='function')?_activeProjectId():'default')
+      ? window.glBrandXl((typeof _activeProjectId==='function')?_activeProjectId():'default', _xbKey)
       : {teal:'006B75',am:'C9A84C',amLt:'FDF5DC',tl:'E4EFEE',htx:'FFFFFF',ftl:'FF006B75',fam:'FFC9A84C'};
   }
   return _xbCur;
@@ -2081,7 +2081,7 @@ function _amendmentTypeSheet(wb, type, rows, pid){
 // coverage-vs-plan seeding sheet). Pick pre-seeding + restoration + seeding-on-disturbance
 // and the whole seed-tracking picture lands in a single file, fronted by a roll-up tab.
 async function _exportCategoriesDeliverable(sels, entries, pid){
-  _xbReset(); try{ if(typeof window.glBrandEnsure==='function') await window.glBrandEnsure(pid); }catch(e){}
+  _xbReset('categoryXlsx'); try{ if(typeof window.glBrandEnsure==='function') await window.glBrandEnsure(pid); }catch(e){}
   if(!Array.isArray(sels) || !sels.length) return;
   sels=sels.map(s=>typeof s==='string'?{cid:s,seedOnly:false}:s); // back-compat: bare cids
   const {default:ExcelJS}=await import('exceljs');
@@ -2166,7 +2166,7 @@ async function _exportCategoriesDeliverable(sels, entries, pid){
 // (_exportCategoryDeliverable); no longer reachable from the UI. Kept temporarily; remove
 // in a follow-up cleanup pass.
 async function _tlogExportXlsx(scheme, entries, pid){
-  _xbReset(); try{ if(typeof window.glBrandEnsure==='function') await window.glBrandEnsure(pid); }catch(e){}
+  _xbReset('trackerLog'); try{ if(typeof window.glBrandEnsure==='function') await window.glBrandEnsure(pid); }catch(e){}
   const {default:ExcelJS}=await import('exceljs');
   const wb=new ExcelJS.Workbook();
   wb.creator='GroundLog'; wb.created=new Date();

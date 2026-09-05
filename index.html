@@ -3305,14 +3305,14 @@ Anticipated rain — AM weather monitoring expected"></textarea>
           <button class="btn btn-outline" style="font-size:11px;padding:6px 10px" onclick="glBrandSaveAsPreset()">＋ Save as preset</button>
           <button class="btn btn-outline" style="font-size:11px;padding:6px 10px" onclick="glBrandPreviewPdf()" title="Renders a one-page sample daily report with what's on screen right now">👁 Preview sample PDF</button>
         </div>
-        <label style="display:flex;align-items:flex-start;gap:8px;font-family:var(--mono);font-size:11px;color:var(--muted);margin-bottom:8px;cursor:pointer;line-height:1.5">
-          <input type="checkbox" id="cfg-brand-qi" style="margin-top:3px"> SWPPP QI inspection report uses this branding too. Off = the QI report stays Office blue (a mid-project freeze).
-        </label>
         <label style="display:flex;align-items:flex-start;gap:8px;font-family:var(--mono);font-size:11px;color:var(--muted);margin-bottom:12px;cursor:pointer;line-height:1.5">
           <input type="checkbox" id="cfg-brand-attrib" checked style="margin-top:3px"> Small "Generated with GroundLog · groundlog.io" line in export footers.
         </label>
         <button class="btn btn-amber" style="font-size:11px;padding:7px 14px" onclick="glBrandUISave()">Save Branding</button>
         <span id="cfg-brand-status" style="font-family:var(--mono);font-size:11px;color:var(--green);margin-left:12px;opacity:0;transition:opacity .4s"></span>
+        <div class="field" style="margin:16px 0 4px"><label>Per-report branding</label></div>
+        <p class="config-hint">Each export follows the project branding above unless you pick something else here — e.g. the daily report branded for the client while the seeding export stays GroundLog. Picks save immediately. The QI report defaults to Office blue on projects that froze it.</p>
+        <div id="cfg-brand-reports" style="display:flex;flex-direction:column;gap:6px;margin-bottom:6px"></div>
       </div>
     </div>
   </div>

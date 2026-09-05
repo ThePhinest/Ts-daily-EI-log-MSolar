@@ -295,7 +295,7 @@ async function rptBuildDocx(logData,polished,photos){
   // GroundLog palette (9/2 brand pass — Office blue retired): teal bands, teal-tint info cells,
   // amber rules under sub-heads. Per-tenant branding still overrides via config where wired.
   // 9/5: palette from the project's branding (brand.js); GroundLog colors when none is set.
-  const _bd=(typeof window.glBrandDocx==='function')?window.glBrandDocx(_activeProjectId()):null;
+  const _bd=(typeof window.glBrandDocx==='function')?window.glBrandDocx(_activeProjectId(),{key:'daily'}):null;
   const BLUE=_bd?_bd.BLUE:'006B75',LT_BLUE=_bd?_bd.LT_BLUE:'E4EFEE',MID_BLUE=_bd?_bd.MID_BLUE:'006B75',WHITE=_bd?_bd.HTEXT:'FFFFFF',RULE=_bd?_bd.RULE:'C9A84C';
   const bdr={style:BorderStyle.SINGLE,size:1,color:'AAAAAA'};
   const borders={top:bdr,bottom:bdr,left:bdr,right:bdr};
@@ -527,7 +527,7 @@ async function rptBuildDocx(logData,polished,photos){
 //    its own internal load) ──
 async function _rptLoadLogo(){
   // 9/5: branding doc first (every member), legacy per-user location as fallback.
-  try{ if(typeof window.glBrandLogo==='function'){ const b=await window.glBrandLogo(_activeProjectId()); if(b||b===null) return b; } }catch(e){}
+  try{ if(typeof window.glBrandLogo==='function'){ const b=await window.glBrandLogo(_activeProjectId(),'daily'); if(b||b===null) return b; } }catch(e){}
   try{
     const _pid=_activeProjectId();
     if(_pid&&_pid!=='active'&&typeof db!=='undefined'&&db&&_fbReady){
@@ -717,7 +717,7 @@ function _buildSnapshot(logData, compEntries, skipPolish, photos, effectivePromp
   // effectivePromptHash (added 2026-05-08, C10) folds the user's assembled prompt
   // into the cache key. Identical inputs but different prompt config = cache miss.
   // 9/5: resolved brand colors ride the snapshot — the reviewer renders the author's palette, and a branding change is a real content change (new version).
-  const brand = (typeof window.glBrandSnapshot==='function') ? window.glBrandSnapshot(_activeProjectId()) : null;
+  const brand = (typeof window.glBrandSnapshot==='function') ? window.glBrandSnapshot(_activeProjectId(),'daily') : null;
   return {logData, compEntries: compRefs, skipPolish: !!skipPolish, photoRefs, compPhotoRefs, oiRefs, brand, effectivePromptHash: effectivePromptHash || ''};
 }
 
