@@ -1156,7 +1156,9 @@ async function rptLoadReportLogoUI(){
     const pid=_activeProjectId();
     if(!pid||pid==='default') return;
     const L=await _rptLoadLogo();
-    if(L&&L.b64){ img.src=L.b64; img.style.display=''; clearBtn.style.display=''; }
+    const trimBtn=document.getElementById('cfg-report-logo-trim');
+    if(trimBtn) trimBtn.style.display='none';
+    if(L&&L.b64){ img.src=L.b64; img.style.display=''; clearBtn.style.display=''; if(trimBtn) trimBtn.style.display=''; }
   }catch(e){}
 }
 
@@ -1167,31 +1169,46 @@ function rptSaveReportLogo(files){
   if(!pid||pid==='default'){_rptLogoStatus('Create a project first.',true);return;}
   const img=new Image();
   const url=URL.createObjectURL(f);
-  img.onload=async function(){
-    URL.revokeObjectURL(url);
-    // Normalize: downscale to ≤600px wide, JPEG on white (DOCX page is white;
-    // also caps the base64 well under the 1 MiB Firestore doc limit).
-    const scale=Math.min(1,600/img.naturalWidth);
-    const c=document.createElement('canvas');
-    c.width=Math.max(1,Math.round(img.naturalWidth*scale));
-    c.height=Math.max(1,Math.round(img.naturalHeight*scale));
-    const ctx=c.getContext('2d');
-    ctx.fillStyle='#fff'; ctx.fillRect(0,0,c.width,c.height);
-    ctx.drawImage(img,0,0,c.width,c.height);
-    const dataUrl=c.toDataURL('image/jpeg',0.85);
-    if(dataUrl.length>250000){_rptLogoStatus('Image too large — try a simpler logo.',true);return;}
-    // Display dims in the DOCX: height 50, keep ratio, cap width 260.
-    let h=50,w=Math.round(50*c.width/c.height);
-    if(w>260){w=260;h=Math.round(260*c.height/c.width);}
-    try{
-      const res=await window.glBrandSave(pid,{logoB64:dataUrl,logoW:w,logoH:h});
-      rptLoadReportLogoUI();
-      _rptLogoStatus(res&&res.ok?'✓ Logo saved':'Saved locally only — a project lead has to set branding',!(res&&res.ok));
-    }catch(e){_rptLogoStatus('Save failed: '+(e.message||'error'),true);}
-  };
+  img.onload=function(){ URL.revokeObjectURL(url); _rptLogoFromImage(img,pid); };
   img.onerror=function(){URL.revokeObjectURL(url);_rptLogoStatus('Could not read that image.',true);};
   img.src=url;
 }
+// Trim the file's empty margin (brand.js), normalize (≤600 px wide, JPEG on white — the
+// page is white and it caps the base64 well under the 1 MiB Firestore doc limit), save.
+async function _rptLogoFromImage(img,pid){
+  const src=(typeof window.glBrandTrimCanvas==='function')?window.glBrandTrimCanvas(img):img;
+  const sw=src.naturalWidth||src.width, sh=src.naturalHeight||src.height;
+  const scale=Math.min(1,600/sw);
+  const c=document.createElement('canvas');
+  c.width=Math.max(1,Math.round(sw*scale));
+  c.height=Math.max(1,Math.round(sh*scale));
+  const ctx=c.getContext('2d');
+  ctx.fillStyle='#fff'; ctx.fillRect(0,0,c.width,c.height);
+  ctx.drawImage(src,0,0,c.width,c.height);
+  const dataUrl=c.toDataURL('image/jpeg',0.85);
+  if(dataUrl.length>250000){_rptLogoStatus('Image too large — try a simpler logo.',true);return;}
+  // Base display dims: height 50, keep ratio, cap width 260 (the size slider scales from here).
+  let h=50,w=Math.round(50*c.width/c.height);
+  if(w>260){w=260;h=Math.round(260*c.height/c.width);}
+  try{
+    const res=await window.glBrandSave(pid,{logoB64:dataUrl,logoW:w,logoH:h});
+    rptLoadReportLogoUI();
+    if(typeof window.glBrandUIPreview==='function') window.glBrandUIPreview();
+    _rptLogoStatus(res&&res.ok?'✓ Logo saved':'Saved locally only — a project lead has to set branding',!(res&&res.ok));
+  }catch(e){_rptLogoStatus('Save failed: '+(e.message||'error'),true);}
+}
+// ✂ Re-process the logo already on the project: trims the baked-in white margin (Tim 9/5).
+async function rptTrimReportLogo(){
+  const pid=_activeProjectId();
+  if(!pid||pid==='default') return;
+  const L=await _rptLoadLogo();
+  if(!L||!L.b64){ _rptLogoStatus('No logo to trim.',true); return; }
+  const img=new Image();
+  img.onload=function(){ _rptLogoFromImage(img,pid); };
+  img.onerror=function(){ _rptLogoStatus('Could not read the stored logo.',true); };
+  img.src=L.b64.startsWith('data:')?L.b64:('data:image/jpeg;base64,'+L.b64);
+}
+window.rptTrimReportLogo=rptTrimReportLogo;
 
 async function rptClearReportLogo(){
   const pid=_activeProjectId();

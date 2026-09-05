@@ -138,6 +138,35 @@ async function glBrandSave(pid, patch){
   }
 }
 
+// Trim the empty margin baked into a logo file (Tim 9/5: "so much empty space all around
+// it"): bounding box of pixels that are neither transparent nor near-white, plus a 2 %
+// breathing margin. Returns a canvas (the input when nothing to trim).
+function glBrandTrimCanvas(img){
+  const w=img.naturalWidth||img.width, h=img.naturalHeight||img.height;
+  if(!w||!h) return img;
+  const c=document.createElement('canvas'); c.width=w; c.height=h;
+  const ctx=c.getContext('2d',{willReadFrequently:true}); ctx.drawImage(img,0,0);
+  let data; try{ data=ctx.getImageData(0,0,w,h).data; }catch(e){ return img; }
+  let minX=w, minY=h, maxX=-1, maxY=-1;
+  for(let y=0;y<h;y++){
+    for(let x=0;x<w;x++){
+      const i=(y*w+x)*4, a=data[i+3];
+      if(a<16) continue;                                   // transparent
+      if(data[i]>242&&data[i+1]>242&&data[i+2]>242) continue;   // near-white
+      if(x<minX)minX=x; if(x>maxX)maxX=x; if(y<minY)minY=y; if(y>maxY)maxY=y;
+    }
+  }
+  if(maxX<0) return img;
+  const pad=Math.round(Math.max(maxX-minX,maxY-minY)*0.02);
+  minX=Math.max(0,minX-pad); minY=Math.max(0,minY-pad); maxX=Math.min(w-1,maxX+pad); maxY=Math.min(h-1,maxY+pad);
+  const cw=maxX-minX+1, ch=maxY-minY+1;
+  if(cw>=w-2&&ch>=h-2) return img;                        // nothing meaningful to trim
+  const out=document.createElement('canvas'); out.width=cw; out.height=ch;
+  out.getContext('2d').drawImage(c,minX,minY,cw,ch,0,0,cw,ch);
+  return out;
+}
+window.glBrandTrimCanvas=glBrandTrimCanvas;
+
 // ── logo (branding doc → legacy per-user project settings) ──
 // Display size: logoW/logoH are the base dims stored at upload (50 px tall, ratio kept);
 // logoDispH (Tim 9/5: "the logo is tiny") scales the pair, capped at the page's content

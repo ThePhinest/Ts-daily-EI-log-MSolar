@@ -3265,6 +3265,7 @@ Anticipated rain — AM weather monitoring expected"></textarea>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
           <img id="cfg-report-logo-preview" alt="" style="display:none;height:34px;background:#fff;border-radius:4px;padding:2px">
           <button class="btn btn-outline" style="font-size:11px;padding:7px 14px" onclick="document.getElementById('cfg-report-logo-input').click()">Upload Logo</button>
+          <button class="btn btn-outline" id="cfg-report-logo-trim" style="font-size:11px;padding:7px 14px;display:none" onclick="rptTrimReportLogo()" title="Crop the empty margin baked into the image file">✂ Trim whitespace</button>
           <button class="btn btn-outline" id="cfg-report-logo-clear" style="font-size:11px;padding:7px 14px;display:none" onclick="rptClearReportLogo()">Remove</button>
           <span id="cfg-report-logo-status" style="font-family:var(--mono);font-size:11px;color:var(--green);opacity:0;transition:opacity .4s"></span>
         </div>
