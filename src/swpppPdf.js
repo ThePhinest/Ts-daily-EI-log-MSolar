@@ -479,6 +479,20 @@ export async function dailyBuildPdf(logData,polished,photoRefs,opts){
   const compIssues=polished.complianceIssues||[{level:'No issues identified',description:'All areas inspected — no compliance concerns observed.',corrective:'N/A',status:'Compliant',dateResolved:''}];
   const compBody=[[dhcell('Level'),dhcell('Location / Description'),dhcell('Corrective Action'),dhcell('Status')],
     ...compIssues.map(i=>[cell(i.level),cell(i.description),cell(i.corrective),cell(i.status)])];
+  // 9/5: photos attached to compliance entries print under the table (2-up), captioned
+  // with the row they document. Refs come from the snapshot (reviewer-safe), falling back
+  // to the author's library.
+  const cpRefs=opts.compPhotoRefs||[];
+  const cpFind=id=>cpRefs.find(r=>r.id===id)||(photoRefs||[]).find(r=>r.id===id)||(window._phPhotos||[]).find(p=>p.id===id)||(window._phShared||[]).find(p=>p.id===id)||null;
+  const cpItems=[];
+  for(const row of compIssues){
+    for(const pid of (row.photoIds||[])){
+      const ref=cpFind(pid); if(!ref) continue;
+      const im=await _dailyImg(ref,331,300);
+      if(im) cpItems.push({im,cap:`${row.level||'Compliance'} — ${String(row.description||'').slice(0,90)}${ref.caption?' · '+ref.caption:''}`});
+    }
+  }
+  const cpBlock=cpItems.length?[dh2('Compliance Photos'),{table:{dontBreakRows:true,widths:['*','*'],body:_imgPairRows(cpItems)},layout:imgGridLayout,margin:[0,2,0,6]}]:[];
   const sec3=[
     dh1('3.  Compliance Issues'),
     dh2('Agency Inspections'),
@@ -486,6 +500,7 @@ export async function dailyBuildPdf(logData,polished,photoRefs,opts){
     dh2('Non-Compliance Observations'),
     {text:'Compliance Level Reference: Level 1 — Observation | Level 2 — Corrective Action | Level 3 — Non-Compliance | Level 4 — Stop Work Order',fontSize:8.5,italics:true,color:'#555555',margin:[0,2,0,4]},
     {table:{headerRows:1,dontBreakRows:true,widths:cols(14,32,30),body:compBody},layout:hairLayout,margin:[0,2,0,4]},
+    ...cpBlock,
     dh2('Landowner / Public Interactions'),
     body(polished.landownerContact||'No landowner or public interactions occurred today.'),
     dh2('T&E Species / Unanticipated Discoveries'),

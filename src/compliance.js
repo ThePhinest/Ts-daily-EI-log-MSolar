@@ -65,6 +65,7 @@ const _clMirrorSig = new Map();
 function _clMirrorDoc(e){
   return { id:e.id, date:e.date||'', level:e.level||'', location:e.location||'', corrective:e.corrective||'',
     status:e.status||'Open', dateResolved:e.dateResolved||'', sourceReport:e.sourceReport||'', addedBy:e.addedBy||'',
+    photoIds:Array.isArray(e.photoIds)?e.photoIds.slice():[],
     projectId:e.projectId||'', ownerUid:_currentUser.uid, ownerName:(typeof window._glMyName==='function')?window._glMyName():(_currentUser.displayName||_currentUser.email||''),
     published:true, publishedAt:e.publishedAt||Date.now(), _ts:Date.now() };
 }
@@ -389,6 +390,7 @@ function clRender(){
           <div class="cl-field-lbl">Corrective Action</div>
           <div class="cl-field-val">${_hEsc(e.corrective)||'—'}</div>
         </div>
+        ${(()=>{ const ph=(e.photoIds||[]).map(_clPhotoById).filter(Boolean); return ph.length?`<div class="cl-field-val full" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:2px">${ph.map(p=>`<img src="${p.thumb}" onclick="phOpenLightbox('${p.id}',[${ph.map(x=>`'${x.id}'`).join(',')}])" style="width:64px;height:48px;object-fit:cover;border-radius:4px;cursor:pointer;border:1px solid var(--border2)">`).join('')}</div>`:''; })()}
         ${resolvedRow}
       </div>
       ${viewRole?'':`<div class="cl-entry-footer">
@@ -400,8 +402,89 @@ function clRender(){
 }
 
 // ── Form: show / hide ──
+// ── Photos on compliance entries (9/5, Tim 9/2 "ASAP") ──
+// entry.photoIds[] links library photos — the same shape tracker entries and agency
+// visits use, so every export helper that already reads photoIds works unchanged. The
+// form holds a draft list until Save; the camera attaches through photos.js →
+// clAttachPhoto (attach type 'cl'); a NEW entry reserves its id at form-open so a shot
+// taken before Save still lands on it.
+var _clFormPhotoIds=[];
+var _clDraftId=null;
+// ids are interpolated into onclick attributes — only well-formed ids resolve (teammate data).
+function _clPhotoById(id){ if(!/^[A-Za-z0-9_-]{4,64}$/.test(String(id||''))) return null; return (window._phPhotos||[]).find(p=>p.id===id)||(window._phShared||[]).find(p=>p.id===id)||null; }
+function _clFormPhotosRender(){
+  const host=document.getElementById('cl-f-photos'); if(!host) return;
+  const ph=_clFormPhotoIds.map(_clPhotoById).filter(Boolean);
+  host.innerHTML=ph.length?ph.map(p=>`<div style="position:relative;flex-shrink:0">
+      <img src="${p.thumb}" onclick="phOpenLightbox('${p.id}',[${ph.map(x=>`'${x.id}'`).join(',')}])" style="width:64px;height:48px;object-fit:cover;border-radius:4px;cursor:pointer;display:block;border:1px solid var(--border2)">
+      <button type="button" onclick="clFormRemovePhoto('${p.id}')" title="Unlink from this entry" style="position:absolute;top:-5px;right:-5px;background:#c0392b;border:none;border-radius:50%;width:16px;height:16px;font-size:9px;color:#fff;cursor:pointer;padding:0;line-height:16px;display:flex;align-items:center;justify-content:center">✕</button>
+    </div>`).join(''):`<span style="font-family:var(--mono);font-size:11px;color:var(--muted)">No photos attached</span>`;
+}
+function clFormRemovePhoto(photoId){ _clFormPhotoIds=_clFormPhotoIds.filter(id=>id!==photoId); _clFormPhotosRender(); }
+function clFormPickPhotos(){
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const projectPhotos=(window._phPhotos||[]).filter(p=>!p.deletedAt&&(!p.projectId||p.projectId===pid))
+    .sort((a,b)=>b.date>a.date?1:b.date<a.date?-1:(b.uploadedAt||0)-(a.uploadedAt||0));
+  const ov=document.createElement('div'); ov.className='modal-overlay'; ov.style.cssText='z-index:7000';
+  if(!projectPhotos.length){
+    ov.innerHTML=`<div class="modal-box" style="max-width:300px;width:88%"><div class="modal-title" style="margin-bottom:10px">No Photos</div><div style="font-family:var(--mono);font-size:12px;color:var(--muted);margin-bottom:16px;line-height:1.5">Take one with 📸 Camera, or upload on the Photos page first.</div><div class="modal-btns"><button class="modal-cancel" onclick="this.closest('.modal-overlay').remove()">OK</button></div></div>`;
+    document.body.appendChild(ov); return;
+  }
+  const sel=new Set(_clFormPhotoIds);
+  const thumbs=projectPhotos.map(p=>{ const on=sel.has(p.id); return `<div id="clfph-${p.id}" onclick="clFormTogglePhoto('${p.id}',this)" style="position:relative;cursor:pointer;border-radius:6px;border:2px solid ${on?'var(--amber)':'transparent'};overflow:hidden;flex-shrink:0;width:80px;height:60px">
+      <img src="${p.thumb}" style="width:80px;height:60px;object-fit:cover;display:block">
+      <div id="clfph-chk-${p.id}" style="position:absolute;top:2px;right:2px;width:16px;height:16px;border-radius:50%;background:${on?'var(--amber)':'rgba(0,0,0,.45)'};display:flex;align-items:center;justify-content:center;font-size:9px;color:#fff">${on?'✓':''}</div>
+      <div style="position:absolute;left:0;right:0;bottom:0;background:rgba(0,0,0,.55);color:#fff;font-family:var(--mono);font-size:8px;padding:1px 3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${(p.date||'').slice(5)}${p.caption?' · '+_hEsc(p.caption):''}</div>
+    </div>`; }).join('');
+  ov.innerHTML=`<div class="modal-box" style="max-width:360px;width:92%;max-height:80vh;display:flex;flex-direction:column">
+    <div class="modal-title" style="margin-bottom:12px">Attach Photos</div>
+    <div style="display:flex;flex-wrap:wrap;gap:6px;overflow-y:auto;flex:1;margin-bottom:12px">${thumbs}</div>
+    <div class="modal-btns"><button class="modal-confirm" onclick="this.closest('.modal-overlay').remove()">Done</button></div>
+  </div>`;
+  document.body.appendChild(ov);
+}
+function clFormTogglePhoto(photoId, el){
+  const on=_clFormPhotoIds.includes(photoId);
+  if(on) _clFormPhotoIds=_clFormPhotoIds.filter(id=>id!==photoId); else _clFormPhotoIds.push(photoId);
+  el.style.borderColor=on?'transparent':'var(--amber)';
+  const chk=document.getElementById('clfph-chk-'+photoId); if(chk){ chk.style.background=on?'rgba(0,0,0,.45)':'var(--amber)'; chk.textContent=on?'':'✓'; }
+  _clFormPhotosRender();
+}
+function clFormCamera(){
+  const id=_clEditId||_clDraftId; if(!id) return;
+  if(typeof phOpenCamera==='function') phOpenCamera({attach:{type:'cl',id}});
+}
+// photos.js hands every camera shot launched from a compliance entry here (attach type 'cl').
+function clAttachPhoto(entryId, photoId){
+  if(!entryId||!photoId) return;
+  const formOpen=document.getElementById('cl-form-panel')?.classList.contains('open');
+  if(formOpen&&(entryId===_clEditId||entryId===_clDraftId)){
+    if(!_clFormPhotoIds.includes(photoId)) _clFormPhotoIds.push(photoId);
+    _clFormPhotosRender();
+    return;
+  }
+  if(!_clEntries.length) clLoadLocal();
+  const e=_clEntries.find(x=>x.id===entryId); if(!e) return;
+  e.photoIds=Array.isArray(e.photoIds)?e.photoIds:[];
+  if(!e.photoIds.includes(photoId)){
+    e.photoIds.push(photoId);
+    clSave();
+    if(document.getElementById('page-compliance')?.classList.contains('active')) clRender();
+  }
+}
+if(typeof window!=='undefined'){
+  window.clFormPickPhotos=clFormPickPhotos;
+  window.clFormTogglePhoto=clFormTogglePhoto;
+  window.clFormRemovePhoto=clFormRemovePhoto;
+  window.clFormCamera=clFormCamera;
+  window.clAttachPhoto=clAttachPhoto;
+}
+
 function clShowForm(prefill){
   _clEditId = null;
+  _clDraftId = clGenId();
+  _clFormPhotoIds = (prefill&&Array.isArray(prefill.photoIds))?prefill.photoIds.slice():[];
+  _clFormPhotosRender();
   // Set defaults
   document.getElementById('cl-f-date').value = new Date().toLocaleDateString('en-CA');
   document.getElementById('cl-f-level').value = '1';
@@ -438,6 +521,9 @@ function clEditEntry(id){
   document.getElementById('cl-f-source').value = e.sourceReport||'';
   document.getElementById('cl-f-resolved-wrap').style.display = e.status==='Resolved'?'block':'none';
   document.getElementById('cl-form-title').textContent = 'Edit Compliance Entry';
+  _clDraftId = null;
+  _clFormPhotoIds = Array.isArray(e.photoIds)?e.photoIds.slice():[];
+  _clFormPhotosRender();
   document.getElementById('cl-form-overlay').classList.add('open');
   document.getElementById('cl-form-panel').classList.add('open');
 }
@@ -460,8 +546,11 @@ function clSubmitForm(){
   const location = document.getElementById('cl-f-location').value.trim();
   if(!location){ document.getElementById('cl-f-location').focus(); return; }
 
+  const prev = _clEditId ? _clEntries.find(x=>x.id===_clEditId) : null;
   const entry = {
-    id: _clEditId || clGenId(),
+    id: _clEditId || _clDraftId || clGenId(),
+    photoIds: _clFormPhotoIds.slice(),
+    ...(prev&&prev.photoCaptions?{photoCaptions:prev.photoCaptions}:{}),
     date: document.getElementById('cl-f-date').value,
     level: parseInt(document.getElementById('cl-f-level').value),
     location: location,

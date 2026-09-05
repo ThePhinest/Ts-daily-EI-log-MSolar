@@ -1778,6 +1778,11 @@ async function phSaveCameraPhoto(blob, meta){
     try{ trAddPhotoLink(m.attach.id, id, pid, 'general'); }
     catch(e){ console.warn('camera auto-attach failed:',e); }
   }
+  // 9/5: 📸 from a Compliance Log entry (form or card) → the entry's photoIds.
+  if(m.attach&&m.attach.type==='cl'&&m.attach.id&&typeof window.clAttachPhoto==='function'){
+    try{ window.clAttachPhoto(m.attach.id, id); }
+    catch(e){ console.warn('camera compliance-attach failed:',e); }
+  }
   try{
     phRender();
     if(typeof mapRenderPhotoPins==='function') mapRenderPhotoPins();

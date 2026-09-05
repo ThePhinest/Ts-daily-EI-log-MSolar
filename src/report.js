@@ -392,6 +392,34 @@ async function rptBuildDocx(logData,polished,photos){
     new TableCell({borders,margins:{top:60,bottom:60,left:80,right:80},children:[new Paragraph({children:[new TextRun({text:issue.status||'',font:'Arial',size:18})]})]})
   ]}));
   const compTable=new Table({rows:[compHdr,...compRows]});
+  // 9/5: photos attached to the day's compliance entries, 2-up under the table.
+  const cpRows=[];
+  {
+    const cpList=[];
+    compIssues.forEach(row=>(row.photoIds||[]).forEach(id=>{
+      const p=(window._phPhotos||[]).find(x=>x.id===id)||(window._phShared||[]).find(x=>x.id===id);
+      if(p) cpList.push({p,cap:`${row.level||'Compliance'} \u2014 ${String(row.description||'').slice(0,90)}${p.caption?' \u00b7 '+p.caption:''}`});
+    }));
+    for(let i=0;i<cpList.length;i+=2){
+      const cells=[];
+      for(let j=i;j<Math.min(i+2,cpList.length);j++){
+        const {p,cap}=cpList[j];
+        try{
+          let imgData;
+          let blob=(typeof window.phExportBlobForRef==='function')?await window.phExportBlobForRef(p):null;
+          if(!blob&&p.storageUrl) blob=await (await fetch(p.storageUrl)).blob();
+          if(blob){blob=await stampIfCamera(p,blob);const ep=exportImageParams(p);blob=await exportImageBlob(blob,ep.maxPx,ep.quality);imgData=await blob.arrayBuffer();}
+          else{const raw=p.thumb||'';const b64=raw.includes(',')?raw.split(',')[1]:raw;imgData=_b64ToArrayBuffer(b64);}
+          cells.push(new TableCell({borders:noBorders,width:{size:50,type:WidthType.PERCENTAGE},margins:{top:40,bottom:40,left:40,right:40},children:[
+            new Paragraph({alignment:AlignmentType.CENTER,children:[new ImageRun({data:imgData,transformation:{width:331,height:248}})]}),
+            new Paragraph({alignment:AlignmentType.CENTER,children:[new TextRun({text:cap,font:'Arial',size:18,italics:true})],spacing:{before:40,after:60}})
+          ]}));
+        }catch(e){cells.push(new TableCell({borders:noBorders,width:{size:50,type:WidthType.PERCENTAGE},children:[new Paragraph({children:[new TextRun({text:cap,font:'Arial',size:18})]})]}));}
+      }
+      if(cells.length===1) cells.push(new TableCell({borders:noBorders,width:{size:50,type:WidthType.PERCENTAGE},children:[new Paragraph({children:[]})]}));
+      cpRows.push(new TableRow({children:cells}));
+    }
+  }
   const sec3=[
     h1('3.  Compliance Issues'),spacer(60),
     h2('Agency Inspections'),
@@ -399,6 +427,7 @@ async function rptBuildDocx(logData,polished,photos){
     h2('Non-Compliance Observations'),spacer(40),
     body('Compliance Level Reference: Level 1 \u2014 Observation | Level 2 \u2014 Corrective Action | Level 3 \u2014 Non-Compliance | Level 4 \u2014 Stop Work Order'),
     spacer(40),compTable,spacer(60),
+    ...(cpRows.length?[h2('Compliance Photos'),spacer(40),new Table({borders:noBorders,width:{size:100,type:WidthType.PERCENTAGE},rows:cpRows}),spacer(60)]:[]),
     h2('Landowner / Public Interactions'),
     body(polished.landownerContact||'No landowner or public interactions occurred today.'),spacer(60),
     h2('T&E Species / Unanticipated Discoveries'),
@@ -643,7 +672,7 @@ function _rptWithCurrentCompliance(polished, snapshot){
         prows.forEach((row,j)=>{ if(used.has(j)) return; if(lvl(row)!==lvl(e)) return; const rw=norm(row.description); const s=words.filter(w=>rw.includes(w)).length; if(s>score){ score=s; best=j; } });
         if(best>=0&&score>0){ p=prows[best]; used.add(best); }
       }
-      return {level:lvl(e)||(p&&p.level)||'', description:(p&&p.description)||e.location||'', corrective:(p&&p.corrective)||e.corrective||'', status:e.status||(p&&p.status)||'', dateResolved:e.dateResolved||''};
+      return {level:lvl(e)||(p&&p.level)||'', description:(p&&p.description)||e.location||'', corrective:(p&&p.corrective)||e.corrective||'', status:e.status||(p&&p.status)||'', dateResolved:e.dateResolved||'', photoIds:Array.isArray(e.photoIds)?e.photoIds.slice():[]};
     });
     if(!rows.length) return polished;   // no entries → the polished "no issues" row stands
     return Object.assign({}, polished, {complianceIssues:rows});
@@ -651,7 +680,7 @@ function _rptWithCurrentCompliance(polished, snapshot){
 }
 
 function _buildSnapshot(logData, compEntries, skipPolish, photos, effectivePromptHash){
-  const photoRefs = (photos||[]).map(p => {
+  const toRef = p => {
     const ref = {...p};
     delete ref._localUrl; delete ref._thumbUrl; delete ref._blobUrl;
     // 8/26: the 280px camera thumb (~30 KB base64 per photo, in the doc since 8/24)
@@ -663,8 +692,19 @@ function _buildSnapshot(logData, compEntries, skipPolish, photos, effectivePromp
     // review PDF prints a low-res copy instead of a caption-only cell.
     if(!ref.storageUrl && p.thumb && String(p.thumb).startsWith('data:')) ref.thumb = p.thumb;
     return ref;
-  }).sort((a,b) => String(a.id||'').localeCompare(String(b.id||'')));
+  };
+  const photoRefs = (photos||[]).map(toRef).sort((a,b) => String(a.id||'').localeCompare(String(b.id||'')));
   const compRefs = (compEntries||[]).slice().sort((a,b) => String(a.id||'').localeCompare(String(b.id||'')));
+  // 9/5: photos attached to the day's compliance entries ride the snapshot as refs too, so a
+  // REVIEWER's device (which can't read the author's photo library) prints them in §3.
+  const seen = new Set(photoRefs.map(r => r.id));
+  const compPhotoRefs = [];
+  compRefs.forEach(e => (e.photoIds||[]).forEach(id => {
+    if(seen.has(id)) return;
+    const p = (window._phPhotos||[]).find(x => x.id===id) || (window._phShared||[]).find(x => x.id===id);
+    if(p){ seen.add(id); compPhotoRefs.push(toRef(p)); }
+  }));
+  compPhotoRefs.sort((a,b) => String(a.id||'').localeCompare(String(b.id||'')));
   // Opted-in resolved Open Items render in the DOCX (openItems.js), so they must
   // be part of the cache key — resolving one after generating must be a cache miss.
   const oiRefs = ((typeof window.oiResolvedForReport==='function')?window.oiResolvedForReport(logData.reportDate):[])
@@ -672,7 +712,7 @@ function _buildSnapshot(logData, compEntries, skipPolish, photos, effectivePromp
     .sort((a,b) => String(a.id||'').localeCompare(String(b.id||'')));
   // effectivePromptHash (added 2026-05-08, C10) folds the user's assembled prompt
   // into the cache key. Identical inputs but different prompt config = cache miss.
-  return {logData, compEntries: compRefs, skipPolish: !!skipPolish, photoRefs, oiRefs, effectivePromptHash: effectivePromptHash || ''};
+  return {logData, compEntries: compRefs, skipPolish: !!skipPolish, photoRefs, compPhotoRefs, oiRefs, effectivePromptHash: effectivePromptHash || ''};
 }
 
 function _categorizeChanges(prevSnap, currSnap){
@@ -998,6 +1038,7 @@ async function _doGenerate(){
       setStatus('Opening save sheet\u2026');
       await pdfMod.dailyExportPdfNow(snapshotToUse.logData,polishedToUse,snapshotToUse.photoRefs||[],{
         oiRes,
+        compPhotoRefs:snapshotToUse.compPhotoRefs||[],
         authorSig:(authorSig&&authorSig.b64)?authorSig:null,
         logo,
         review:(review&&!review.stale)?review:null

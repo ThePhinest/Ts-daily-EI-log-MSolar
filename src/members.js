@@ -1662,7 +1662,7 @@ async function glReviewViewPdf(id) {
       dateMs: s.review.reviewedAt || 0, signature: s.review.signature || null
     } : null;
     await pdfMod.dailyExportPdfNow(snap.logData, snap.polished, snap.photoRefs, {
-      oiRes: snap.oiRefs || [], authorSig: snap.authorSig || null, logo: snap.logo || null,
+      oiRes: snap.oiRefs || [], compPhotoRefs: snap.compPhotoRefs || [], authorSig: snap.authorSig || null, logo: snap.logo || null,
       review: rv, watermark: (s.review && s.review.status !== 'approved') ? 'UNDER REVIEW' : ''
     });
   } catch (e) {
