@@ -7,7 +7,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "test:rules": "firebase emulators:exec --only firestore \"vitest run tests/rules\"",
-    "postinstall": "patch-package"
+    "postinstall": "patch-package",
+    "lint:brand": "node scripts/lint-brand.mjs"
   },
   "devDependencies": {
     "@capacitor/assets": "^3.0.5",

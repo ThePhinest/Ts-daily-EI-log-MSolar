@@ -37,12 +37,12 @@ async function _getPdfMake(){
 }
 
 // ── palette + metrics (DOCX constants; sizes are half-points there → pt here) ──
-const BLUE='#1F3864', LT_BLUE='#D9E2F3', MID_BLUE='#2E5496', AMBER='#FFF2CC', HAIR='#AAAAAA';
+const BLUE='#1F3864', LT_BLUE='#D9E2F3', MID_BLUE='#2E5496', AMBER='#FFF2CC', HAIR='#AAAAAA';   // brand-fallback
 // Palette switch for the shared builders (9/2 brand pass): the QI report keeps the Office
 // blue its recipients have seen all project (Tim 8/31: QI stays blue until the mid-project
 // freeze lifts); every other PDF built here runs GroundLog teal/amber. Each builder sets it.
-const PAL_OFFICE={h:BLUE,lt:LT_BLUE,mid:MID_BLUE,hot:AMBER};
-const PAL_GL={h:'#006B75',lt:'#E4EFEE',mid:'#006B75',hot:'#F7EFD9'};
+const PAL_OFFICE={h:BLUE,lt:LT_BLUE,mid:MID_BLUE,hot:AMBER};   // brand-fallback
+const PAL_GL={h:'#006B75',lt:'#E4EFEE',mid:'#006B75',hot:'#F7EFD9'};   // brand-fallback
 let _pal=PAL_OFFICE;
 // 9/5: palettes come from the project's branding (brand.js). forQi → the QI report
 // follows branding only when the project's applyToQi toggle is on (else Office blue).
@@ -410,7 +410,7 @@ export async function swpppExportPdfNow(insp,cfg,sig){
 // opts: { logo:{b64,w,h}, authorSig:{b64,w,h}, review:{name,title,dateMs,
 //         signature:{b64,w,h}}, oiRes:[…] (snapshot oiRefs), watermark }
 // Daily-report palette — set per build from the snapshot's brand (reviewer parity) or the project's branding.
-let _d={h:'#006B75',lt:'#E4EFEE',rule:'#C9A84C',ink:'#1A1A1A',hText:'#FFFFFF'};
+let _d={h:'#006B75',lt:'#E4EFEE',rule:'#C9A84C',ink:'#1A1A1A',hText:'#FFFFFF'};   // brand-fallback
 async function _dFor(brandCfg){
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
   let pal=null;
@@ -821,7 +821,7 @@ export async function avBuildPdf(visits, cfg, opts){
     {table:{widths:['*'],body:[[{
       stack:[
         {text:opts.single?'AGENCY VISIT REPORT':'AGENCY VISIT LOG',bold:true,fontSize:16,color:'#FFFFFF'},
-        {text:cfg.projectName||'',fontSize:10,color:'#E4EFEE',margin:[0,2,0,0]}
+        {text:cfg.projectName||'',fontSize:10,color:_pal.lt,margin:[0,2,0,0]}
       ],fillColor:_pal.h,border:[false,false,false,false],margin:[0,4,0,4]
     }]]},layout:{hLineWidth:()=>0,vLineWidth:()=>0,paddingLeft:()=>8,paddingRight:()=>8,paddingTop:()=>4,paddingBottom:()=>4},margin:[0,0,0,6]},
     infoTable([

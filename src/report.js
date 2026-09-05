@@ -296,7 +296,7 @@ async function rptBuildDocx(logData,polished,photos){
   // amber rules under sub-heads. Per-tenant branding still overrides via config where wired.
   // 9/5: palette from the project's branding (brand.js); GroundLog colors when none is set.
   const _bd=(typeof window.glBrandDocx==='function')?window.glBrandDocx(_activeProjectId(),{key:'daily'}):null;
-  const BLUE=_bd?_bd.BLUE:'006B75',LT_BLUE=_bd?_bd.LT_BLUE:'E4EFEE',MID_BLUE=_bd?_bd.MID_BLUE:'006B75',WHITE=_bd?_bd.HTEXT:'FFFFFF',RULE=_bd?_bd.RULE:'C9A84C';
+  const BLUE=_bd?_bd.BLUE:'006B75',LT_BLUE=_bd?_bd.LT_BLUE:'E4EFEE',MID_BLUE=_bd?_bd.MID_BLUE:'006B75',WHITE=_bd?_bd.HTEXT:'FFFFFF',RULE=_bd?_bd.RULE:'C9A84C';   // brand-fallback
   const bdr={style:BorderStyle.SINGLE,size:1,color:'AAAAAA'};
   const borders={top:bdr,bottom:bdr,left:bdr,right:bdr};
   const noBdr={style:BorderStyle.NONE,size:0,color:'FFFFFF'};

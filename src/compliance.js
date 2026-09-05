@@ -17,7 +17,7 @@ function _xb(){
   if(!_xbCur){
     _xbCur=(typeof window.glBrandXl==='function')
       ? window.glBrandXl((typeof _activeProjectId==='function')?_activeProjectId():'default', _xbKey)
-      : {teal:'006B75',am:'C9A84C',amLt:'FDF5DC',tl:'E4EFEE',htx:'FFFFFF',ftl:'FF006B75',fam:'FFC9A84C'};
+      : {teal:'006B75',am:'C9A84C',amLt:'FDF5DC',tl:'E4EFEE',htx:'FFFFFF',ftl:'FF006B75',fam:'FFC9A84C'};   // brand-fallback
   }
   return _xbCur;
 }

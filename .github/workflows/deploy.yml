@@ -24,6 +24,8 @@ jobs:
           node-version: '20'
           cache: npm
       - run: npm ci
+      - name: Branding guard (output colors flow only through src/brand.js)
+        run: npm run lint:brand
       - name: Build web bundle
         env:
           # Baked into the JS bundle for runtime error capture
