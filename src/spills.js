@@ -530,8 +530,8 @@ function _spRenderPhotos(){
   const cnt=document.getElementById('sp-f-phcount'); if(cnt) cnt.textContent=String(_spFormSel.size);
   const ps=[..._spFormSel].map(id=>(window._phPhotos||[]).find(p=>p.id===id)).filter(Boolean);
   box.innerHTML=ps.length?ps.map(p=>`<div style="position:relative;width:64px;height:64px;border-radius:6px;overflow:hidden;border:2px solid var(--amber)">
-      <img src="${p.thumb}" style="width:100%;height:100%;object-fit:cover">
-      <button type="button" onclick="spFormRemovePhoto('${p.id}')" style="position:absolute;top:0;right:0;background:rgba(0,0,0,.6);color:#fff;border:none;width:20px;height:20px;font-size:11px;cursor:pointer;border-radius:0 0 0 6px">✕</button>
+      <img src="${_spEsc(p.thumb)}" style="width:100%;height:100%;object-fit:cover">
+      <button type="button" onclick="spFormRemovePhoto('${_spEsc(p.id)}')" style="position:absolute;top:0;right:0;background:rgba(0,0,0,.6);color:#fff;border:none;width:20px;height:20px;font-size:11px;cursor:pointer;border-radius:0 0 0 6px">✕</button>
     </div>`).join('')
     :'<span style="font-family:var(--mono);font-size:10px;color:var(--muted)">No photos attached yet.</span>';
 }
@@ -565,8 +565,8 @@ function spFormPickPhotos(){
         <button type="button" id="sp-pk-all" class="btn ${dayOnly?'btn-outline':'btn-amber'}" style="flex:1;font-size:11px">All project photos</button>
       </div>
       <div style="display:flex;flex-wrap:wrap;gap:6px;overflow-y:auto;flex:1;margin-bottom:12px">
-        ${list.length?list.map(p=>{ const on=_spFormSel.has(p.id); return `<div data-pid="${p.id}" style="position:relative;cursor:pointer;border-radius:6px;border:2px solid ${on?'var(--amber)':'transparent'};overflow:hidden">
-            <img src="${p.thumb}" style="width:80px;height:60px;object-fit:cover;display:block">
+        ${list.length?list.map(p=>{ const on=_spFormSel.has(p.id); return `<div data-pid="${_spEsc(p.id)}" style="position:relative;cursor:pointer;border-radius:6px;border:2px solid ${on?'var(--amber)':'transparent'};overflow:hidden">
+            <img src="${_spEsc(p.thumb)}" style="width:80px;height:60px;object-fit:cover;display:block">
             <div style="position:absolute;top:2px;right:2px;width:16px;height:16px;border-radius:50%;background:${on?'var(--amber)':'rgba(0,0,0,.45)'};display:flex;align-items:center;justify-content:center;font-size:9px;color:#111">${on?'✓':''}</div>
             <div style="position:absolute;left:0;right:0;bottom:0;background:rgba(0,0,0,.55);color:#fff;font-family:var(--mono);font-size:8px;padding:1px 3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${_spEsc((p.date||'').slice(5))}${p.caption?' · '+_spEsc(p.caption):''}</div>
           </div>`; }).join(''):'<span style="font-family:var(--mono);font-size:11px;color:var(--muted)">No photos here yet.</span>'}
@@ -614,13 +614,13 @@ function spShowDetail(id){
     <div style="font-size:12px;line-height:1.45;margin:4px 0 8px;padding:6px 8px;border-radius:6px;background:var(--s1);color:${ex.ok?'var(--text)':'var(--amber)'}">${_spEsc(ex.text)}</div>
     ${(r.notifications||[]).length?`<div style="font-family:var(--mono);font-size:9px;color:var(--muted);letter-spacing:.04em;margin-bottom:3px">NOTIFICATIONS</div>${(r.notifications||[]).map(n=>`<div style="font-size:12px;line-height:1.4;margin-bottom:2px">${_spEsc(n.time||'')} · <b>${_spEsc(n.who||'')}</b>${n.by?' by '+_spEsc(n.by):''}${n.method?' ('+_spEsc(n.method)+')':''}${n.note?' — '+_spEsc(n.note):''}</div>`).join('')}<div style="height:8px"></div>`:''}
     ${row('Notes',r.notes)}
-    ${(r.photoIds||[]).length?`<div style="display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 12px">${(r.photoIds||[]).map(pid2=>{ const p=(window._phPhotos||[]).find(x=>x.id===pid2); return p&&p.thumb?`<img src="${p.thumb}" onclick="phOpenLightbox&&phOpenLightbox('${p.id}')" style="width:64px;height:64px;object-fit:cover;border-radius:6px;cursor:pointer">`:''; }).join('')}</div>`:''}
+    ${(r.photoIds||[]).length?`<div style="display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 12px">${(r.photoIds||[]).map(pid2=>{ const p=(window._phPhotos||[]).find(x=>x.id===pid2); return p&&p.thumb?`<img src="${_spEsc(p.thumb)}" onclick="phOpenLightbox&&phOpenLightbox('${_spEsc(p.id)}')" style="width:64px;height:64px;object-fit:cover;border-radius:6px;cursor:pointer">`:''; }).join('')}</div>`:''}
     <div style="display:flex;gap:8px;flex-wrap:wrap">
-      <button class="btn btn-outline" style="flex:1;min-width:120px" onclick="this.closest('.modal-overlay').remove();spShowForm('${r.id}')">✏️ Edit</button>
-      <button class="btn btn-outline" style="flex:1;min-width:120px" onclick="spExportPdf('${r.id}')">${window.glPdfIcon?window.glPdfIcon(12):'PDF'} Report</button>
+      <button class="btn btn-outline" style="flex:1;min-width:120px" onclick="this.closest('.modal-overlay').remove();spShowForm('${_spEsc(r.id)}')">✏️ Edit</button>
+      <button class="btn btn-outline" style="flex:1;min-width:120px" onclick="spExportPdf('${_spEsc(r.id)}')">${window.glPdfIcon?window.glPdfIcon(12):'PDF'} Report</button>
       ${r.cmpId?`<button class="btn btn-outline" style="flex:1;min-width:120px" onclick="this.closest('.modal-overlay').remove();showPage('compliance')">📋 ${_spEsc(cmpTxt||'CMP')}</button>`
-               :`<button class="btn btn-outline" style="flex:1;min-width:120px" onclick="spLogAsCmp('${r.id}',this)">📋 Log as CMP</button>`}
-      ${hasLoc?`<button class="btn btn-outline" style="flex:1;min-width:120px" onclick="this.closest('.modal-overlay').remove();spShowOnMap('${r.id}')">🗺 Show on map</button>`:''}
+               :`<button class="btn btn-outline" style="flex:1;min-width:120px" onclick="spLogAsCmp('${_spEsc(r.id)}',this)">📋 Log as CMP</button>`}
+      ${hasLoc?`<button class="btn btn-outline" style="flex:1;min-width:120px" onclick="this.closest('.modal-overlay').remove();spShowOnMap('${_spEsc(r.id)}')">🗺 Show on map</button>`:''}
       <button class="btn btn-amber" style="flex:1;min-width:120px" onclick="this.closest('.modal-overlay').remove()">Close</button>
     </div>
   </div>`;
@@ -673,7 +673,7 @@ function spRenderComplianceCard(){
   const all=spAll(pid);
   const open=all.filter(r=>r.status!=='closed').length;
   const rows=all.slice(0,5).map(r=>`
-    <div onclick="spShowDetail('${r.id}')" style="display:flex;align-items:center;gap:10px;padding:9px 6px;border-bottom:1px solid var(--border);cursor:pointer">
+    <div onclick="spShowDetail('${_spEsc(r.id)}')" style="display:flex;align-items:center;gap:10px;padding:9px 6px;border-bottom:1px solid var(--border);cursor:pointer">
       <span style="font-family:var(--mono);font-size:11px;color:var(--amber);flex-shrink:0;font-weight:700">${spLabel(r)}</span>
       <span style="font-family:var(--mono);font-size:11px;color:var(--muted);flex-shrink:0">${_spEsc((r.discoveryDate||r.releaseDate||'').slice(5))}</span>
       <span style="font-family:var(--mono);font-size:12px;color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_spEsc(r.substance||'Spill')}${r.quantity?' · '+_spEsc(r.quantity):''}${r.locationDesc?' · '+_spEsc(r.locationDesc):''}</span>
@@ -706,14 +706,14 @@ function spRenderReportsSec(){
   const all=spAll(pid);
   const rows=all.map(r=>`
     <div class="sw-list-row">
-      <div class="sw-list-main" onclick="spShowDetail('${r.id}')">
+      <div class="sw-list-main" onclick="spShowDetail('${_spEsc(r.id)}')">
         <span class="sw-list-date">${_spEsc(r.discoveryDate||r.releaseDate||'')}</span>
         <span class="sw-list-type">${spLabel(r)} · ${_spEsc(r.substance||'Spill')}${r.quantity?' · '+_spEsc(r.quantity):''}</span>
         <span class="sw-chip ${r.status==='closed'?'sw-chip-done':'sw-chip-draft'}">${r.status==='closed'?'✓ Closed':'● Open'}</span>
       </div>
-      <button class="sw-list-btn" title="Edit" onclick="spShowForm('${r.id}')">✏️</button>
-      <button class="sw-list-btn" title="Export incident report PDF" onclick="spExportPdf('${r.id}')">${window.glPdfIcon?window.glPdfIcon(12):'PDF'}</button>
-      <button class="sw-list-btn" title="Delete" onclick="spDelete('${r.id}')">🗑</button>
+      <button class="sw-list-btn" title="Edit" onclick="spShowForm('${_spEsc(r.id)}')">✏️</button>
+      <button class="sw-list-btn" title="Export incident report PDF" onclick="spExportPdf('${_spEsc(r.id)}')">${window.glPdfIcon?window.glPdfIcon(12):'PDF'}</button>
+      <button class="sw-list-btn" title="Delete" onclick="spDelete('${_spEsc(r.id)}')">🗑</button>
     </div>`).join('');
   const head=(typeof window._swSecHead==='function')
     ? window._swSecHead('sp','Spills / Incidents','Owner incident-report form per spill (PDF) + the running spill log — records stay on the map and in the compliance log','<button class="btn" onclick="spShowForm()">＋ New Spill</button>')
