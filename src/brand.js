@@ -295,6 +295,81 @@ async function glBrandPresetDelete(id){
   const u=_brUdb(); if(!u || !_brCloudOk()) return;
   try{ await u.collection('brandPresets').doc(id).delete(); }catch(e){ console.warn('[brand] preset delete failed:', e.message); }
 }
+async function glBrandPresetUpdate(id, patch){
+  const u=_brUdb(); if(!u || !_brCloudOk()) throw new Error('Sign in to edit presets');
+  await u.collection('brandPresets').doc(id).set(Object.assign({updatedAt:Date.now()}, patch), {merge:true});
+}
+// Tiny name prompt (house modal — iOS PWA has no native prompt()).
+function _brNameModal(title, current, onOk){
+  const ov=document.createElement('div'); ov.className='modal-overlay'; ov.style.cssText='z-index:9700';
+  ov.innerHTML=`<div class="modal-box" style="max-width:340px;width:92%">
+    <div class="modal-title" style="margin-bottom:8px">${title}</div>
+    <input type="text" id="_brNameInp" value="${String(current||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;')}" style="width:100%;margin-bottom:12px">
+    <div class="modal-btns"><button class="modal-cancel" onclick="this.closest('.modal-overlay').remove()">Cancel</button><button class="modal-confirm" id="_brNameOk">Save</button></div>
+  </div>`;
+  document.body.appendChild(ov);
+  const inp=ov.querySelector('#_brNameInp'); setTimeout(()=>inp&&inp.focus(),50);
+  ov.querySelector('#_brNameOk').onclick=()=>{ const v=(inp.value||'').trim(); if(!v){ inp.focus(); return; } ov.remove(); onOk(v); };
+}
+// ── Manage presets (Tim 9/8): apply / rename / overwrite with the current project / delete ──
+// "Edit" a preset = apply it to a project, tweak the project's branding, then
+// "Update from project" writes the result back over the preset.
+async function glBrandManagePresets(){
+  const list=await glBrandPresetsList();
+  const esc=(s)=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+  document.getElementById('_brManage')?.remove();
+  const ov=document.createElement('div'); ov.className='modal-overlay'; ov.id='_brManage'; ov.style.cssText='z-index:9600';
+  const rows=list.map(p=>`<div style="border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin-bottom:6px">
+      <div style="display:flex;align-items:center;gap:8px">
+        ${p.logoB64?`<img src="${String(p.logoB64).startsWith('data:')?p.logoB64:'data:image/png;base64,'+p.logoB64}" style="height:22px;max-width:70px;object-fit:contain;background:#fff;border-radius:3px;padding:1px">`:'<span style="font-size:16px">🎨</span>'}
+        <span style="width:12px;height:12px;border-radius:3px;background:${esc(p.primary)};flex-shrink:0"></span><span style="width:12px;height:12px;border-radius:3px;background:${esc(p.accent)};flex-shrink:0"></span>
+        <span style="font-family:var(--mono);font-size:12px;color:var(--text);font-weight:700;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(p.name||'Branding')}</span>
+      </div>
+      <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
+        <button class="btn btn-outline" style="font-size:10px;padding:5px 8px" data-act="apply" data-id="${esc(p.id)}">Apply to project</button>
+        <button class="btn btn-outline" style="font-size:10px;padding:5px 8px" data-act="rename" data-id="${esc(p.id)}">✏️ Rename</button>
+        <button class="btn btn-outline" style="font-size:10px;padding:5px 8px" data-act="overwrite" data-id="${esc(p.id)}" title="Replace this preset's colors + logo with what this project has right now">⟳ Update from project</button>
+        <button class="btn btn-outline" style="font-size:10px;padding:5px 8px;color:#e25555;border-color:#e25555" data-act="delete" data-id="${esc(p.id)}">🗑 Delete</button>
+      </div>
+    </div>`).join('');
+  ov.innerHTML=`<div class="modal-box" style="max-width:420px;width:92%;max-height:82dvh;display:flex;flex-direction:column">
+    <div class="modal-title" style="margin-bottom:2px">🎨 Saved brandings</div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-bottom:10px;line-height:1.5">Your account's presets. To edit one: apply it, adjust this project's colors / logo, then "Update from project". Deleting a preset never touches projects already using it.</div>
+    <div style="flex:1;overflow-y:auto;min-height:0">${rows||'<p style="font-family:var(--mono);font-size:11px;color:var(--muted)">No presets yet — "＋ Save as preset" makes one from this project.</p>'}</div>
+    <div class="modal-btns" style="margin-top:10px"><button class="modal-confirm" onclick="this.closest('.modal-overlay').remove()">Done</button></div>
+  </div>`;
+  document.body.appendChild(ov);
+  ov.querySelectorAll('[data-act]').forEach(b=>{
+    b.onclick=async()=>{
+      const id=b.dataset.id, p=list.find(x=>x.id===id); if(!p) return;
+      try{
+        if(b.dataset.act==='apply'){
+          const res=await glBrandPresetApply(p,_brPid()); await glBrandInitUI();
+          if(typeof rptLoadReportLogoUI==='function') rptLoadReportLogoUI();
+          _brStatus(res.ok?`✓ "${p.name}" applied to this project`:'Applied locally — a project lead has to save branding',!res.ok);
+          ov.remove();
+        } else if(b.dataset.act==='rename'){
+          _brNameModal('Rename preset', p.name||'', async(name)=>{
+            try{ await glBrandPresetUpdate(id,{name}); _brStatus(`✓ Renamed to "${name}"`); ov.remove(); glBrandManagePresets(); }
+            catch(e){ _brStatus('Rename failed: '+(e.message||'error'), true); }
+          });
+        } else if(b.dataset.act==='overwrite'){
+          if(!confirm(`Replace "${p.name}" with this project's current colors + logo?`)) return;
+          const pid=_brPid(); const cfg=(await glBrandEnsure(pid))||{}; const r=glBrandResolveCfg(cfg); const logo=await glBrandLogo(pid);
+          await glBrandPresetUpdate(id,{primary:r.primary,accent:r.accent,applyToQi:!!r.applyToQi,logoB64:logo?logo.b64:null,logoW:logo?logo.w:null,logoH:logo?logo.h:null});
+          _brStatus(`✓ Preset "${p.name}" updated from this project`);
+          ov.remove(); glBrandManagePresets();
+        } else if(b.dataset.act==='delete'){
+          if(!confirm(`Delete preset "${p.name}"? Projects already using it keep their copy.`)) return;
+          await glBrandPresetDelete(id);
+          _brStatus(`✓ Preset "${p.name}" deleted`);
+          ov.remove(); glBrandManagePresets();
+        }
+      }catch(e){ _brStatus('Preset change failed: '+(e.message||'error'), true); }
+    };
+  });
+}
+window.glBrandManagePresets=glBrandManagePresets;
 
 // ── Settings UI (Settings → Report Generation → Report Branding) ──
 function _brStatus(msg, isErr){

@@ -77,6 +77,8 @@ async function _rptClaude(systemPrompt,userPrompt,maxTokens){
     throw new Error((e&&e.message)||'AI service unavailable.');
   }
 }
+// 9/8: the one door to Claude, for other modules (spill ✦ Formalize).
+window.glClaude=_rptClaude;
 async function saveApiKey(){
   const val=document.getElementById('cfg-api-key').value.trim();
   if(!val){alert('Please enter an API key.');return;}

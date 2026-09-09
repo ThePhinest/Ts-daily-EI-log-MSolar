@@ -80,8 +80,13 @@ export async function saveFileNative(blob, filename, mimeType) {
     return;
   }
 
-  // Web path
-  if (navigator.canShare && navigator.share) {
+  // Web path. The Web Share API exists on Windows/macOS desktop browsers too, where
+  // it opens an OS share sheet that can't put a file anywhere useful (Tim 9/8:
+  // "crappy computer share sheet — can't get the export to open anywhere"). Share
+  // only on phones/tablets; desktop goes straight to a download.
+  const ua = navigator.userAgent || '';
+  const isMobile = /iPhone|iPad|iPod|Android/i.test(ua) || (/Macintosh/.test(ua) && (navigator.maxTouchPoints || 0) > 1);
+  if (isMobile && navigator.canShare && navigator.share) {
     try {
       const file = new File([blob], filename, { type: mimeType });
       if (navigator.canShare({ files: [file] })) {

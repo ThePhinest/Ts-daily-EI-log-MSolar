@@ -96,20 +96,43 @@ function _spPersist(rec){
   }
 }
 
-// ── Weather line for a date (from the daily log — what the inspector logged) ──
-function _spWeatherLine(date){
-  try{
-    const r = (typeof dlGet==='function') ? dlGet(date) : null;
-    const f = (r&&r.fields)||{};
+// ── Weather line for a date ──
+// Sources, in order: the live daily-log form when it sits on that date (today's log
+// is rarely archived yet — Tim 9/8: "just staying blank"), the autosave draft, then
+// the archived log. Sky chips + temps + precip + wind + soil. Shared with agency visits.
+function spWeatherLine(date){
+  const line=(f,sky)=>{
+    f=f||{};
     const parts=[];
-    if(f.sky||f.conditions) parts.push(f.sky||f.conditions);
+    const s=Array.isArray(sky)?sky.join(', '):(sky||'');
+    if(s) parts.push(s);
     if(f.tempAM||f.tempPM) parts.push([f.tempAM,f.tempPM].filter(Boolean).join('–')+'°F');
     if(f.precip) parts.push(f.precip);
     if(f.wind) parts.push('wind '+f.wind);
-    if(f.soilCond) parts.push(f.soilCond);
+    if(f.soilCond) parts.push('soil: '+f.soilCond);
     return parts.join(', ');
-  }catch(e){ return ''; }
+  };
+  try{
+    const rd=document.getElementById('reportDate');
+    if(rd&&rd.value===date){
+      const g=(id)=>{ const el=document.getElementById(id); return el?String(el.value||'').trim():''; };
+      const sky=[...document.querySelectorAll('input[name="sky"]:checked')].map(el=>el.value);
+      const l=line({tempAM:g('tempAM'),tempPM:g('tempPM'),precip:g('precip'),wind:g('wind'),soilCond:g('soilCond')},sky);
+      if(l) return l;
+    }
+  }catch(e){}
+  try{
+    const d=JSON.parse(localStorage.getItem('msf_autosave')||'null');
+    if(d&&d.fields&&d.fields.reportDate===date){ const l=line(d.fields,d.sky); if(l) return l; }
+  }catch(e){}
+  try{
+    const r=(typeof dlGet==='function')?dlGet(date):null;
+    if(r){ const l=line(r.fields||{}, r.sky); if(l) return l; }
+  }catch(e){}
+  return '';
 }
+const _spWeatherLine=spWeatherLine;
+window.spWeatherLine=spWeatherLine;
 
 // ── Reportability (NY): a petroleum spill is exempt ONLY if all four hold ──
 const _SP_EXEMPT = [
@@ -258,6 +281,7 @@ function spShowForm(id, draft){
         </div>
       </div>
       <div style="display:flex;gap:8px;padding:10px 16px;border-top:1px solid var(--border);flex-shrink:0">
+        <button id="sp-f-formalize" class="btn btn-outline" style="min-height:44px;flex:0 0 auto" onclick="spFormalize()" title="Rewrite the narrative fields into formal report language — you review before it applies">✦ Formalize</button>
         <button id="sp-f-save" class="btn btn-amber" style="flex:1;min-height:44px">💾 Save spill record</button>
       </div>
     </div>`;
@@ -308,8 +332,107 @@ function _spCollect(){
    'caContain','caCleanup','caRemove','caDisposal','caPrevent','caComplete',
    'reportable','agencies','agencyPhone','agencyPersonnel','reportDateTime','spillNo','followUp','pmFollowUp','notes'].forEach(k=>{ rec[k]=_spVal(k); });
   ['hazFire','hazExplosion','exUnder5','exContained','exNoContact','exWithin2h'].forEach(k=>{ rec[k]=!!_spVal(k); });
+  // ✦ Formalize bookkeeping: the hash of the narrative fields at the moment a polish was
+  // applied in this form — export compares it to know whether to offer formalizing.
+  if(ov.dataset.formalized) rec.formalizedHash=_spPolishHash(rec);
   return rec;
 }
+
+// ═══ ✦ Formalize (9/8, Tim: "like we do with daily log") ═══
+// Same door as the daily-log polish (report.js → window.glClaude): narrative fields
+// go out as JSON, come back rewritten, and the AUTHOR reviews field by field before
+// anything is applied. Export offers it once per edit state (hash of the fields).
+const _SP_POLISH_KEYS=['locationDesc','cause','weather','waterBody','dischargePoint','damage','hazOther','injuries','caContain','caCleanup','caRemove','caDisposal','caPrevent','caComplete','agencies','agencyPersonnel','followUp','pmFollowUp','notes'];
+const _SP_POLISH_SYS='You are a professional environmental inspector writing assistant. Rewrite the provided spill / incident report field notes into clean, formal language suitable for an owner-filed environmental incident report. Rules: third person, past tense, definitive language; use "conducting" not "performing"; preserve every fact, name, time, quantity, material, location and spill number exactly as entered; do not add information not present in the original; do not remove relevant observations; keep each field a short paragraph with no headings and no bullet lists; do not use em dashes. Return a JSON object with the same keys as provided, containing the rewritten text for each field. Return ONLY the JSON object, no preamble, no markdown, no code fences.';
+function _spPolishHash(rec){
+  const s=_SP_POLISH_KEYS.map(k=>String(rec[k]||'').trim()).join('');
+  let h=5381; for(let i=0;i<s.length;i++) h=((h<<5)+h+s.charCodeAt(i))|0;
+  return 'h'+(h>>>0).toString(36)+s.length.toString(36);
+}
+function _spFieldLabel(k){ return ({locationDesc:'Release location',cause:'Cause',weather:'Weather',waterBody:'Water body',dischargePoint:'Discharge point',damage:'Environmental damage',hazOther:'Other hazards',injuries:'Injuries',caContain:'Contain',caCleanup:'Clean up',caRemove:'Remove cleanup material',caDisposal:'Document disposal',caPrevent:'Prevent reoccurrence',caComplete:'Completion',agencies:'Agencies contacted',agencyPersonnel:'Agency personnel',followUp:'Follow-up',pmFollowUp:'PM follow-up',notes:'Notes'})[k]||k; }
+async function _spPolish(rec){
+  if(typeof window.glClaude!=='function') throw new Error('AI polish not available — reload the app online once.');
+  const payload={}; _SP_POLISH_KEYS.forEach(k=>{ const v=String(rec[k]||'').trim(); if(v) payload[k]=v; });
+  if(!Object.keys(payload).length) throw new Error('Nothing to formalize yet — fill in the narrative fields first.');
+  const text=await window.glClaude(_SP_POLISH_SYS,'Rewrite these incident report fields:\n'+JSON.stringify(payload),6000);
+  const j0=text.indexOf('{'),j1=text.lastIndexOf('}');
+  if(j0===-1||j1===-1){ console.error('spill formalize: no JSON in response:',text); throw new Error('Polish response malformed — see console'); }
+  const out=JSON.parse(text.slice(j0,j1+1));
+  const patch={}; Object.keys(payload).forEach(k=>{ if(typeof out[k]==='string'&&out[k].trim()) patch[k]=out[k].trim(); });
+  return patch;
+}
+// Form button: preview before/after per field; untick anything to keep as typed.
+async function spFormalize(){
+  const btn=document.getElementById('sp-f-formalize');
+  const rec=_spCollect(); if(!rec) return;
+  if(btn){ btn.disabled=true; btn.textContent='✦ Formalizing…'; }
+  try{
+    const patch=await _spPolish(rec);
+    const keys=Object.keys(patch).filter(k=>patch[k]!==String(rec[k]||'').trim());
+    if(!keys.length) throw new Error('Nothing changed — the wording already reads formal.');
+    const ov=document.createElement('div'); ov.className='modal-overlay'; ov.style.cssText='z-index:9700';
+    ov.innerHTML=`<div class="modal-box" style="max-width:460px;width:94%;max-height:84dvh;display:flex;flex-direction:column">
+      <div class="modal-title" style="margin-bottom:2px">✦ Formalized — review before applying</div>
+      <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-bottom:8px">Untick any field to keep your wording. Facts are preserved by rule; read it anyway.</div>
+      <div style="flex:1;overflow-y:auto;min-height:0">${keys.map(k=>`<label style="display:block;border:1px solid var(--border);border-radius:8px;padding:8px;margin-bottom:6px;cursor:pointer">
+          <div style="display:flex;gap:8px;align-items:center"><input type="checkbox" data-k="${k}" checked style="width:18px;height:18px"><span style="font-family:var(--mono);font-size:10px;color:var(--amber);letter-spacing:.04em">${_spEsc(_spFieldLabel(k))}</span></div>
+          <div style="font-size:11px;color:var(--muted);margin:4px 0 2px;text-decoration:line-through;line-height:1.4">${_spEsc(rec[k])}</div>
+          <div style="font-size:13px;line-height:1.45">${_spEsc(patch[k])}</div>
+        </label>`).join('')}</div>
+      <div class="modal-btns" style="margin-top:10px"><button class="modal-cancel" id="sp-pol-cancel">Keep mine</button><button class="modal-confirm" id="sp-pol-ok">Apply</button></div>
+    </div>`;
+    document.body.appendChild(ov);
+    ov.querySelector('#sp-pol-cancel').onclick=()=>ov.remove();
+    ov.querySelector('#sp-pol-ok').onclick=()=>{
+      let n=0;
+      ov.querySelectorAll('input[data-k]').forEach(cb=>{ if(!cb.checked) return; const el=document.getElementById('sp-f-'+cb.dataset.k); if(el){ el.value=patch[cb.dataset.k]; if(typeof autoResize==='function') autoResize(el); n++; } });
+      const fo=document.getElementById('sp-form-ov'); if(fo) fo.dataset.formalized='1';
+      ov.remove();
+      if(typeof showCloudBanner==='function') showCloudBanner('✦ '+n+' field'+(n===1?'':'s')+' formalized — save the record.');
+    };
+  }catch(e){ console.error('spill formalize:',e); if(typeof showCloudBanner==='function') showCloudBanner('✗ '+String(e.message||e).slice(0,110)); }
+  finally{ if(btn){ btn.disabled=false; btn.textContent='✦ Formalize'; } }
+}
+// Export-time offer ("make it formalize itself"): asked once per edit state — a record
+// already formalized (or exported as typed) at this wording is not asked again.
+function _spChoice(msg, labelA, labelB){
+  return new Promise(res=>{
+    const ov=document.createElement('div'); ov.className='modal-overlay'; ov.style.cssText='z-index:9700';
+    ov.innerHTML=`<div class="modal-box" style="max-width:340px;width:92%">
+      <div class="modal-title" style="margin-bottom:8px">✦ Formalize first?</div>
+      <div style="font-size:13px;line-height:1.5;margin-bottom:14px">${msg}</div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <button class="btn btn-amber" id="sp-ch-a" style="min-height:44px">${labelA}</button>
+        <button class="btn btn-outline" id="sp-ch-b" style="min-height:44px">${labelB}</button>
+        <button class="btn btn-outline" id="sp-ch-x" style="min-height:36px;color:var(--muted);border-color:transparent">Cancel</button>
+      </div>
+    </div>`;
+    document.body.appendChild(ov);
+    ov.querySelector('#sp-ch-a').onclick=()=>{ ov.remove(); res('a'); };
+    ov.querySelector('#sp-ch-b').onclick=()=>{ ov.remove(); res('b'); };
+    ov.querySelector('#sp-ch-x').onclick=()=>{ ov.remove(); res(null); };
+  });
+}
+async function _spMaybeFormalizeForExport(r){
+  const hash=_spPolishHash(r);
+  if(hash===r.formalizedHash||hash===r.polishSkipHash) return true;
+  const choice=await _spChoice('Rewrite the narrative fields into formal report language before exporting? You can still edit afterwards.','✦ Formalize & export','Export as typed');
+  if(choice===null) return false;
+  if(choice==='a'){
+    try{
+      if(typeof showCloudBanner==='function') showCloudBanner('✦ Formalizing…');
+      const patch=await _spPolish(r);
+      Object.assign(r,patch);
+      r.formalizedHash=_spPolishHash(r); r.updatedAt=Date.now();
+      _spPersist(r); _spRepaint();
+      if(typeof showCloudBanner==='function') showCloudBanner('✦ Formalized '+Object.keys(patch).length+' field'+(Object.keys(patch).length===1?'':'s')+' — exporting.');
+    }catch(e){ console.error('spill formalize (export):',e); if(typeof showCloudBanner==='function') showCloudBanner('✗ Formalize failed: '+String(e.message||e).slice(0,80)+' — exporting as typed.'); }
+  } else {
+    r.polishSkipHash=hash; r.updatedAt=Date.now(); _spPersist(r);
+  }
+  return true;
+}
+window.spFormalize=spFormalize;
 function _spPaintExempt(){
   const el=document.getElementById('sp-f-exline'); if(!el) return;
   const tmp={}; _SP_EXEMPT.forEach(([k])=>{ tmp[k]=!!_spVal(k); });
@@ -612,6 +735,7 @@ async function _spBrandLogo(pid){
 async function spExportPdf(id){
   const pid=_spPid();
   const r=spGet(id,pid); if(!r) return;
+  if(!(await _spMaybeFormalizeForExport(r))) return;
   const btns=document.querySelectorAll(`[onclick="spExportPdf('${id}')"]`);
   btns.forEach(b=>{ b.dataset.oldTxt=b.innerHTML; b.textContent='…'; b.disabled=true; });
   try{

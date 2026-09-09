@@ -103,6 +103,8 @@ function _avPersist(rec){
 // ── Weather line for a visit date (from the archived daily log — site
 // conditions the inspector saw; records don't duplicate weather data). ──
 function _avWeatherLine(date){
+  // 9/8: spills.js carries the fuller resolver (live form → draft → archive).
+  if(typeof window.spWeatherLine==='function'){ try{ return window.spWeatherLine(date); }catch(e){} }
   try{
     const r = (typeof dlGet==='function') ? dlGet(date) : null;
     const f = (r&&r.fields)||{};

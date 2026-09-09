@@ -6206,15 +6206,20 @@ async function _capRender(fn){
   const cont=_mapInstance.getContainer();
   const dpr=window.devicePixelRatio||1;
   const cssW=Math.round(3840/dpr), cssH=Math.round(2160/dpr);
+  const oldH=cont.clientHeight||cssH;
   const prevCss=cont.style.cssText;
   const view={center:_mapInstance.getCenter(),zoom:_mapInstance.getZoom(),bearing:_mapInstance.getBearing(),pitch:_mapInstance.getPitch()};
+  // Keep the FRAMED vertical extent (Tim 9/8: the first cut was "super far out" on a
+  // desktop): the wide frame zooms in by the height ratio, so a 16:9 monitor gets the
+  // same view at 2–3× the pixels and a portrait phone gets the same height, ~3× wider.
+  const wideView=Object.assign({},view,{zoom:view.zoom+Math.log2(cssH/oldH)});
   _showCaptureToast('🖥 Rendering wide overview — loading tiles…');
   try{
     // Listen BEFORE the resize so an early idle can't be missed; 9 s ceiling.
     const idle=new Promise(res=>{ let d=false; const fin=()=>{ if(!d){ d=true; res(); } }; _mapInstance.once('idle',fin); setTimeout(fin,9000); });
     cont.style.cssText=prevCss+`;position:fixed;left:0;top:0;width:${cssW}px;height:${cssH}px;max-width:none;max-height:none;z-index:9400;`;
     _mapInstance.resize();
-    _mapInstance.jumpTo(view);
+    _mapInstance.jumpTo(wideView);
     await idle;
     await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
     return await fn();
@@ -7419,6 +7424,10 @@ function mapRenderSpillMarkers(){
         <div style="margin-bottom:3px">${esc(r.discoveryDate||r.releaseDate||'')}${r.status==='closed'?' · <span style="color:#9fb0b2">closed</span>':' · <span style="color:#C9A84C">open</span>'}</div>
         ${r.substance?`<div>${esc(r.substance)}${r.quantity?' — '+esc(r.quantity):''}</div>`:''}
         ${r.locationDesc?`<div style="color:#9fb0b2;margin-top:3px">${esc(String(r.locationDesc).slice(0,90))}</div>`:''}
+        ${(()=>{ // attached photos (Tim 9/8) — first four thumbs, tap → lightbox
+          const ps=(Array.isArray(r.photoIds)?r.photoIds:[]).map(id=>(window._phPhotos||[]).find(p=>p.id===id)).filter(p=>p&&p.thumb).slice(0,4);
+          return ps.length?`<div style="display:flex;gap:4px;margin-top:6px;flex-wrap:wrap">${ps.map(p=>`<img src="${p.thumb}" onclick="phOpenLightbox('${esc(p.id)}')" style="width:46px;height:46px;object-fit:cover;border-radius:4px;cursor:pointer;border:1px solid #334">`).join('')}${(r.photoIds||[]).length>4?`<span style="align-self:center;color:#9fb0b2">+${(r.photoIds||[]).length-4}</span>`:''}</div>`:'';
+        })()}
         <button onclick="spShowDetail('${esc(r.id)}')" style="margin-top:8px;background:#C9A84C;color:#111;border:none;padding:4px 10px;border-radius:4px;font-size:11px;font-weight:700;cursor:pointer">Open record</button>
       </div>`);
     const m=new mapboxgl.Marker({element:el,anchor:'bottom'}).setLngLat([r.lng,r.lat]).setPopup(popup).addTo(_mapInstance);
