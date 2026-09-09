@@ -517,3 +517,53 @@ describe('invites — top-level token capability', () => {
     await assertFails(deleteDoc(doc(as('boots'), 'invites/tok-glasses')));
   });
 });
+
+describe('spills mirror — explicit publish to the project (9/9)', () => {
+  beforeEach(async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      const db = ctx.firestore();
+      await setDoc(doc(db, `projects/${PID}/spills/sp-pub`),
+        { ownerUid: 'tim', published: true, substance: 'Hydraulic oil', seq: 1 });
+      await setDoc(doc(db, `projects/${PID}/spills/sp-draft`),
+        { ownerUid: 'tim', published: false, substance: 'Diesel', seq: 2 });
+      await setDoc(doc(db, `projects/${PID}/spills/sp-boots`),
+        { ownerUid: 'boots', published: true, substance: 'Coolant', seq: 1 });
+    });
+  });
+  it('reviewer reads a published spill and lists via the constrained query', async () => {
+    await assertSucceeds(getDoc(doc(as('forest'), `projects/${PID}/spills/sp-pub`)));
+    await assertSucceeds(getDocs(query(
+      collection(as('forest'), `projects/${PID}/spills`), where('published', '==', true))));
+  });
+  it('reviewer cannot read an unpublished spill mirror', () =>
+    assertFails(getDoc(doc(as('forest'), `projects/${PID}/spills/sp-draft`))));
+  it('reviewer cannot create, edit, or delete spill mirrors', async () => {
+    await assertFails(setDoc(doc(as('forest'), `projects/${PID}/spills/sp-evil`),
+      { ownerUid: 'forest', published: true }));
+    await assertFails(updateDoc(doc(as('forest'), `projects/${PID}/spills/sp-pub`), { substance: 'x' }));
+    await assertFails(deleteDoc(doc(as('forest'), `projects/${PID}/spills/sp-pub`)));
+  });
+  it('field member publishes own (self-attributed), edits and unpublishes own', async () => {
+    await assertSucceeds(setDoc(doc(as('boots'), `projects/${PID}/spills/sp-boots-2`),
+      { ownerUid: 'boots', published: true, substance: 'Oil' }));
+    await assertSucceeds(updateDoc(doc(as('boots'), `projects/${PID}/spills/sp-boots`), { status: 'closed' }));
+    await assertSucceeds(deleteDoc(doc(as('boots'), `projects/${PID}/spills/sp-boots`)));
+  });
+  it('field member cannot edit or delete another member\'s published spill', async () => {
+    await assertFails(updateDoc(doc(as('boots'), `projects/${PID}/spills/sp-pub`), { substance: 'x' }));
+    await assertFails(deleteDoc(doc(as('boots'), `projects/${PID}/spills/sp-pub`)));
+  });
+  it('field member sees another member\'s published spill, not the author\'s private one', async () => {
+    await assertSucceeds(getDoc(doc(as('boots'), `projects/${PID}/spills/sp-pub`)));
+    await assertFails(getDoc(doc(as('boots'), `projects/${PID}/spills/sp-draft`)));
+  });
+  it('owner cannot forge a spill mirror attributed to someone else', () =>
+    assertFails(setDoc(doc(as('tim'), `projects/${PID}/spills/sp-forged`),
+      { ownerUid: 'boots', published: true })));
+  it('lead unpublishes own (mirror delete) and may edit a member\'s published record', async () => {
+    await assertSucceeds(deleteDoc(doc(as('tim'), `projects/${PID}/spills/sp-pub`)));
+    await assertSucceeds(updateDoc(doc(as('tim'), `projects/${PID}/spills/sp-boots`), { status: 'closed' }));
+  });
+  it('non-member reads no spill mirror, even published', () =>
+    assertFails(getDoc(doc(as('stranger'), `projects/${PID}/spills/sp-pub`))));
+});

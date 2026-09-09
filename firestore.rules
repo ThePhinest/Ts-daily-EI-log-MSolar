@@ -207,6 +207,11 @@ service cloud.firestore {
         allow create: if workCreateOk();
         allow update, delete: if workEditOk();
       }
+      match /spills/{id} {             // spill records the author PUBLISHED to the project (9/9)
+        allow read: if canSeeWorkDoc();
+        allow create: if workCreateOk();
+        allow update, delete: if workEditOk();
+      }
       match /swpppInspections/{id} {   // QI inspection records (Reports page)
         allow read: if canSeeWorkDoc();
         allow create: if workCreateOk();

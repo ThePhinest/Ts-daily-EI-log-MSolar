@@ -101,7 +101,7 @@ const infoTable=(rows)=>({table:{dontBreakRows:true,widths:[160,'*'],body:rows},
 // Photo/sketch → {dataUrl,w,h} sized like the DOCX (px→pt ×0.75), thumb fallback
 async function _imgFor(pId,maxWpx,maxHpx){
   maxHpx=maxHpx||700;
-  const p=(window._phPhotos||[]).find(x=>x.id===pId);
+  const p=(window._phPhotos||[]).find(x=>x.id===pId)||(window._phShared||[]).find(x=>x.id===pId);   // 9/9: a member's export resolves the author's published photo
   if(!p) return null;
   try{
     // 9/1: photos.js resolves the bytes (Storage → author's live library copy →
@@ -958,7 +958,7 @@ export async function spBuildPdf(rec, cfg, opts){
     const items=[]; let n=0;
     for(const pId of rec.photoIds){
       const im=await _imgFor(pId,320);
-      const p=(window._phPhotos||[]).find(x=>x.id===pId);
+      const p=(window._phPhotos||[]).find(x=>x.id===pId)||(window._phShared||[]).find(x=>x.id===pId);
       n++;
       items.push({im,cap:`Photo ${n}${(p&&p.caption)?' — '+p.caption:''}`});
     }

@@ -7410,6 +7410,7 @@ function mapRenderSpillMarkers(){
   if(!_spillsVisible()) return;
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
   const esc=(s)=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+  if(typeof window.spLoad==='function'){ try{ window.spLoad(pid); }catch{} }   // 9/9: own + members' published records (repaints when the get lands)
   let list=[];
   try{ list=window.spAll(pid).filter(r=>typeof r.lat==='number'&&typeof r.lng==='number'); }catch{ list=[]; }
   list.forEach(r=>{
@@ -7424,8 +7425,9 @@ function mapRenderSpillMarkers(){
         <div style="margin-bottom:3px">${esc(r.discoveryDate||r.releaseDate||'')}${r.status==='closed'?' · <span style="color:#9fb0b2">closed</span>':' · <span style="color:#C9A84C">open</span>'}</div>
         ${r.substance?`<div>${esc(r.substance)}${r.quantity?' — '+esc(r.quantity):''}</div>`:''}
         ${r.locationDesc?`<div style="color:#9fb0b2;margin-top:3px">${esc(String(r.locationDesc).slice(0,90))}</div>`:''}
+        ${(typeof window.spIsMine==='function'&&!window.spIsMine(r))?`<div style="color:#9fb0b2;margin-top:3px">👥 ${esc(r.ownerName||'project member')}</div>`:''}
         ${(()=>{ // attached photos (Tim 9/8) — first four thumbs, tap → lightbox
-          const ps=(Array.isArray(r.photoIds)?r.photoIds:[]).map(id=>(window._phPhotos||[]).find(p=>p.id===id)).filter(p=>p&&p.thumb).slice(0,4);
+          const ps=(Array.isArray(r.photoIds)?r.photoIds:[]).map(id=>(typeof window._phById==='function')?window._phById(id):(window._phPhotos||[]).find(p=>p.id===id)).filter(p=>p&&p.thumb).slice(0,4);
           return ps.length?`<div style="display:flex;gap:4px;margin-top:6px;flex-wrap:wrap">${ps.map(p=>`<img src="${esc(p.thumb)}" onclick="phOpenLightbox('${esc(p.id)}')" style="width:46px;height:46px;object-fit:cover;border-radius:4px;cursor:pointer;border:1px solid #334">`).join('')}${(r.photoIds||[]).length>4?`<span style="align-self:center;color:#9fb0b2">+${(r.photoIds||[]).length-4}</span>`:''}</div>`:'';
         })()}
         <button onclick="spShowDetail('${esc(r.id)}')" style="margin-top:8px;background:#C9A84C;color:#111;border:none;padding:4px 10px;border-radius:4px;font-size:11px;font-weight:700;cursor:pointer">Open record</button>

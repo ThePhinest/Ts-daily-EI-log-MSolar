@@ -20,6 +20,12 @@
 // a per-project IDB array for instant offline paint. Soft delete (deletedAt).
 // Offline-first by construction: the form works with no network; cloud writes
 // are fire-and-forget behind the local save.
+//
+// 9/9 (Tim): PROJECT MIRROR with EXPLICIT PUBLISH — a record stays author-private
+// until the author publishes it (button on the record, or the PDF export offers
+// once); the published copy lives at projects/{pid}/spills/{id}; members load it
+// with a get on project open (no listener) and hold it read-only. See "Project
+// mirror" below.
 
 let _spRecs = {};     // pid -> records (live + deleted)
 let _spLoaded = {};   // pid -> cloud load completed
@@ -27,6 +33,7 @@ let _spDraft = null;  // form values parked while picking a location on the map
 let _spFormId = null; // record id of the open form (camera auto-attach target)
 let _spFormSel = null;// Set of photo ids selected in the open form
 let _spNotifs = [];   // notification rows in the open form
+let _spShared = {};   // pid -> other members' PUBLISHED records (project mirror; loaded with a get, no listener — Tim 9/9)
 
 const _SP_ROLES = ['Environmental Monitor', 'Compliance Manager', 'EPC / Contractor', 'Owner', 'State spill hotline', 'Siting / utility agency', 'Other'];
 const _SP_LBL = 'font-family:var(--mono);font-size:10px;color:var(--muted);display:block;margin-bottom:3px;letter-spacing:.04em;text-transform:uppercase';
@@ -64,6 +71,7 @@ async function spLoad(pid){
     _spRecs[pid] = Object.values(byId);
     _spSaveLocal(pid);
     _spLoaded[pid] = true;
+    spLoadShared(pid);
     _spRepaint();
   }catch(e){ console.warn('spills load:', e && e.message); }
 }
@@ -72,20 +80,30 @@ function _spRepaint(){
   if(typeof window.mapRenderSpillMarkers==='function'){ try{ window.mapRenderSpillMarkers(); }catch(e){} }
 }
 
-// Live records, newest first (discovery date, then creation).
+// Live records, newest first (discovery date, then creation): own records plus the
+// project's PUBLISHED records from other members (read-only; the own copy wins).
 function spAll(pid){
   pid = pid || _spPid();
   if(!_spRecs[pid]) _spRecs[pid] = _spLoadLocal(pid);
-  return (_spRecs[pid]||[]).filter(r=>!r.deletedAt)
-    .slice().sort((a,b)=>String(b.discoveryDate||b.releaseDate||'').localeCompare(String(a.discoveryDate||a.releaseDate||'')) || (b.createdAt||0)-(a.createdAt||0));
+  if(!_spShared[pid]) _spShared[pid] = _spLoadSharedLocal(pid);
+  const me=_spUid();
+  const own=(_spRecs[pid]||[]).filter(r=>!r.deletedAt);
+  const ownIds=new Set(own.map(r=>r.id));
+  const shared=(_spShared[pid]||[]).filter(r=>r&&!r.deletedAt&&!ownIds.has(r.id)&&(!me||r.ownerUid!==me));
+  return own.concat(shared)
+    .sort((a,b)=>String(b.discoveryDate||b.releaseDate||'').localeCompare(String(a.discoveryDate||a.releaseDate||'')) || (b.createdAt||0)-(a.createdAt||0));
 }
-function spGet(id, pid){ return ((_spRecs[pid||_spPid()])||[]).find(r=>r.id===id)||null; }
+function spGet(id, pid){
+  pid=pid||_spPid();
+  return ((_spRecs[pid])||[]).find(r=>r.id===id) || ((_spShared[pid])||[]).find(r=>r.id===id) || null;
+}
 function spLabel(r){ return 'SPL-'+String(r&&r.seq?r.seq:0).padStart(2,'0'); }
 function _spNextSeq(pid){
   const all=_spRecs[pid]||[];
   return all.reduce((m,r)=>Math.max(m, parseInt(r.seq,10)||0), 0)+1;
 }
-function _spPersist(rec){
+function _spPersist(rec, o){
+  o=o||{};
   const pid = rec.projectId;
   if(!_spRecs[pid]) _spRecs[pid] = _spLoadLocal(pid);
   const idx = _spRecs[pid].findIndex(r=>r.id===rec.id);
@@ -94,6 +112,119 @@ function _spPersist(rec){
   if(_spReady()){
     try{ _udb().collection('spills').doc(rec.id).set(rec).catch(e=>console.warn('spill save:', e.message)); }catch(e){}
   }
+  // A published record keeps its project copy in step: edit → re-mirror, delete → unmirror.
+  if(rec.published && !o.noMirror){ if(rec.deletedAt) _spUnmirror(rec); else _spMirror(rec); }
+}
+
+// ═══ Project mirror (9/9 — Tim: "publish to the project", no live listener) ═══
+// A record is author-private until the author PUBLISHES it. The published copy
+// lives at projects/{pid}/spills/{id} (the fieldMarkers / complianceLog rules
+// block: member read, work-role create, owner-or-lead edit). Members load the
+// mirror with one get on project open (cached in IDB for offline pins) and hold
+// it read-only — no edit, no delete, no Log-as-CMP. Unpublish deletes the mirror;
+// delete-from-everywhere covers both copies. Photos referenced by a published
+// record are published with it so a member's PDF gets the bytes, not caption-only.
+function _spSharedKey(pid){ return 'gl_spills_shared::'+pid; }
+function _spLoadSharedLocal(pid){
+  try{ const raw=window.idbGet && window.idbGet(_spSharedKey(pid)); return raw?(JSON.parse(raw)||[]):[]; }catch{ return []; }
+}
+function _spIsMine(r){ const me=_spUid(); return !!r && (!r.ownerUid || r.ownerUid===me); }   // a stamped record is never 'mine' by default
+function _spOwnerName(r){ return (r&&r.ownerName)||'a project member'; }
+function _spFirstName(r){ return String(_spOwnerName(r)).split(' ')[0]; }
+function _spPhoto(id){ return (typeof window._phById==='function')?window._phById(id):((window._phPhotos||[]).find(p=>p.id===id)||null); }
+// View roles (Glasses / Reviewer ✍) read; they don't start spill records.
+function _spCanCreate(){
+  try{ const pid=_spPid(); if(!pid||pid==='default') return true;
+    const role=(typeof window.glMyRoleFor==='function')?window.glMyRoleFor(pid):null;
+    return !(role && typeof window.glIsViewRole==='function' && window.glIsViewRole(role)); }catch{ return true; }
+}
+function _spWhoChip(r){
+  if(_spIsMine(r)) return r.published?'<span title="Shared with the project" style="font-size:11px;flex-shrink:0">📤</span>':'';
+  return '<span title="Shared by '+_spEsc(_spOwnerName(r))+'" style="font-family:var(--mono);font-size:10px;color:var(--muted);flex-shrink:0">👥 '+_spEsc(_spFirstName(r))+'</span>';
+}
+function _spMirrorDoc(rec){
+  const d=Object.assign({}, rec);
+  delete d.deletedAt; delete d.polishSkipHash; delete d.publishAsked;
+  d.published=true; d.publishedAt=rec.publishedAt||Date.now();
+  d.ownerUid=rec.ownerUid||_spUid();
+  d.ownerName=(typeof window._glMyName==='function')?window._glMyName():((window._currentUser&&(_currentUser.displayName||_currentUser.email))||'');
+  d._ts=Date.now();
+  return d;
+}
+const _spMirrorSig=new Map();
+function _spMirror(rec){
+  if(!_spReady()||!rec||!rec.published||rec.deletedAt||!rec.projectId||rec.projectId==='default') return Promise.resolve(false);
+  const d=_spMirrorDoc(rec);
+  const sig=JSON.stringify(Object.assign({},d,{_ts:0,ownerName:'',updatedAt:0}));
+  if(_spMirrorSig.get(rec.id)===sig) return Promise.resolve(true);
+  return db.collection('projects').doc(rec.projectId).collection('spills').doc(rec.id).set(d)
+    .then(()=>{ _spMirrorSig.set(rec.id,sig); return true; })
+    .catch(e=>{ console.warn('spill mirror:', e.message); return false; });
+}
+function _spUnmirror(rec){
+  _spMirrorSig.delete(rec&&rec.id);
+  if(!_spReady()||!rec||!rec.projectId||rec.projectId==='default') return Promise.resolve(false);
+  return db.collection('projects').doc(rec.projectId).collection('spills').doc(rec.id).delete().then(()=>true).catch(()=>false);
+}
+async function spLoadShared(pid){
+  pid=pid||_spPid();
+  if(!_spShared[pid]) _spShared[pid]=_spLoadSharedLocal(pid);
+  if(!_spReady()||!pid||pid==='default') return;
+  try{
+    const snap=await db.collection('projects').doc(pid).collection('spills').where('published','==',true).get();
+    const me=_spUid();
+    _spShared[pid]=snap.docs.map(d=>d.data()).filter(r=>r&&r.ownerUid!==me&&!r.deletedAt);
+    try{ if(window.idbSet) window.idbSet(_spSharedKey(pid), JSON.stringify(_spShared[pid])); }catch{}
+    _spRepaint();
+  }catch(e){ /* not a member of a shared project — own records only */ }
+}
+// Publish: stamp, persist (no auto-mirror), then write the mirror and wait for the
+// server's answer — a permission failure reverts the stamp instead of lying.
+// Offline the write queues; after 8 s we say so and leave it queued.
+// Photos referenced by a published record ride along (publish, later edits, camera attach).
+async function _spPublishPhotos(r){
+  const ids=(r.photoIds||[]).filter(id=>{ const p=(window._phPhotos||[]).find(x=>x.id===id); return p&&!p.published; });
+  if(ids.length&&typeof window.phSetPublished==='function'){ try{ await window.phSetPublished(ids,true,r.projectId); }catch(e){} }
+  return ids.length;
+}
+async function _spPublish(r){
+  if(!_spReady()){ if(typeof showCloudBanner==='function') showCloudBanner('✗ Sharing needs a signed-in, online session — try again in a moment.'); return false; }
+  r.published=true; r.publishedAt=r.publishedAt||Date.now(); r.updatedAt=Date.now();
+  _spPersist(r,{noMirror:true});
+  const ok=await Promise.race([_spMirror(r), new Promise(res=>setTimeout(()=>res('queued'),8000))]);
+  if(ok===false){
+    r.published=false; r.publishedAt=null; r.updatedAt=Date.now(); _spPersist(r,{noMirror:true});
+    if(typeof showCloudBanner==='function') showCloudBanner('✗ Could not share '+spLabel(r)+' — sharing needs a field or lead role on a shared project.');
+    return false;
+  }
+  const n=await _spPublishPhotos(r);
+  if(typeof showCloudBanner==='function') showCloudBanner((ok==='queued'?'📤 '+spLabel(r)+' queued — shares when back online':'📤 '+spLabel(r)+' shared with the project')+(n?' · '+n+' photo'+(n===1?'':'s')+' published':'')+'.');
+  return true;
+}
+async function spTogglePublish(id){
+  const r=spGet(id); if(!r||!_spIsMine(r)) return;
+  if(!r.projectId||r.projectId==='default'){ if(typeof showCloudBanner==='function') showCloudBanner('Sharing needs a shared project — this record is on the default project.'); return; }
+  if(r.published){
+    const c=await _spChoice('Unpublish '+spLabel(r)+'? Project members lose the map pin, the record and the PDF. Your copy stays.','🔒 Unpublish','Keep it shared',{title:'Unpublish from project?'});
+    if(c!=='a') return;
+    r.published=false; r.publishedAt=null; r.updatedAt=Date.now();
+    _spPersist(r,{noMirror:true}); _spUnmirror(r);
+    if(typeof showCloudBanner==='function') showCloudBanner('🔒 '+spLabel(r)+' is private again.');
+  } else {
+    r.publishAsked=true;
+    if(!(await _spPublish(r))) return;
+  }
+  _spRepaint();
+  const open=document.querySelector('.modal-overlay'); if(open&&open.id!=='sp-form-ov'){ open.remove(); spShowDetail(r.id); }
+}
+// Export-time offer (Tim 9/9: "export and/or publish"): asked once per record.
+async function _spMaybeOfferPublish(r){
+  if(r.published||r.publishAsked||!r.projectId||r.projectId==='default') return true;
+  const c=await _spChoice('Share '+spLabel(r)+' with the project team as well? Members get the map pin, the record and this PDF. You can unpublish any time.','📤 Publish & export','Export only',{title:'Publish to project?'});
+  if(c===null) return false;
+  r.publishAsked=true; r.updatedAt=Date.now();
+  if(c==='a'){ await _spPublish(r); } else { _spPersist(r,{noMirror:true}); }
+  return true;
 }
 
 // ── Weather line for a date ──
@@ -170,6 +301,7 @@ function _spBlank(pid){
 function spShowForm(id, draft){
   const pid=_spPid();
   const existing = id ? spGet(id,pid) : null;
+  if(existing && !_spIsMine(existing)){ spShowDetail(id); return; }   // members read, never edit
   const v = draft || existing || _spBlank(pid);
   _spFormId = v.id;
   _spFormSel = new Set(v.photoIds||[]);
@@ -301,6 +433,7 @@ function spShowForm(id, draft){
     if(!rec) return;
     rec.updatedAt=Date.now(); rec.deletedAt=null;
     _spPersist(rec);
+    if(rec.published) _spPublishPhotos(rec);   // new photos on a shared record share too
     if(window.glHaptic&&window.glHaptic.success) window.glHaptic.success();
     ov.remove(); _spFormId=null; _spFormSel=null; _spDraft=null;
     _spRepaint();
@@ -395,14 +528,15 @@ async function spFormalize(){
 }
 // Export-time offer ("make it formalize itself"): asked once per edit state — a record
 // already formalized (or exported as typed) at this wording is not asked again.
-function _spChoice(msg, labelA, labelB){
+function _spChoice(msg, labelA, labelB, o){
+  o=o||{};
   return new Promise(res=>{
     const ov=document.createElement('div'); ov.className='modal-overlay'; ov.style.cssText='z-index:9700';
     ov.innerHTML=`<div class="modal-box" style="max-width:340px;width:92%">
-      <div class="modal-title" style="margin-bottom:8px">✦ Formalize first?</div>
+      <div class="modal-title" style="margin-bottom:8px">${_spEsc(o.title||'✦ Formalize first?')}</div>
       <div style="font-size:13px;line-height:1.5;margin-bottom:14px">${msg}</div>
       <div style="display:flex;flex-direction:column;gap:8px">
-        <button class="btn btn-amber" id="sp-ch-a" style="min-height:44px">${labelA}</button>
+        <button class="btn${o.danger?'':' btn-amber'}" id="sp-ch-a" style="min-height:44px${o.danger?';background:#3d1414;border:1px solid #6b2020;color:#ff8080':''}">${labelA}</button>
         <button class="btn btn-outline" id="sp-ch-b" style="min-height:44px">${labelB}</button>
         <button class="btn btn-outline" id="sp-ch-x" style="min-height:36px;color:var(--muted);border-color:transparent">Cancel</button>
       </div>
@@ -546,7 +680,7 @@ function spAttachPhoto(recId, photoId){
   if(_spFormId===recId&&_spFormSel){ _spFormSel.add(photoId); _spRenderPhotos(); return; }
   const rec=spGet(recId); if(!rec) return;
   rec.photoIds=Array.isArray(rec.photoIds)?rec.photoIds:[];
-  if(!rec.photoIds.includes(photoId)){ rec.photoIds.push(photoId); rec.updatedAt=Date.now(); _spPersist(rec); _spRepaint(); }
+  if(!rec.photoIds.includes(photoId)){ rec.photoIds.push(photoId); rec.updatedAt=Date.now(); _spPersist(rec); if(rec.published) _spPublishPhotos(rec); _spRepaint(); }
 }
 function spFormPickPhotos(){
   if(!_spFormSel) return;
@@ -582,14 +716,20 @@ function spFormPickPhotos(){
   document.body.appendChild(ov);
 }
 
-// ═══ Delete (soft) ═══
-function spDelete(id){
-  const rec=spGet(id); if(!rec) return;
-  if(rec.ownerUid && _spUid() && rec.ownerUid!==_spUid()) return;
-  if(!confirm('Delete '+spLabel(rec)+' ('+(rec.discoveryDate||'')+')? Recoverable by support — nothing is destroyed.')) return;
+// ═══ Delete (soft) — from everywhere (Tim 9/8 rider): the house modal replaces the
+// native confirm (dead on iOS); a published record's project copy goes with it.
+async function spDelete(id){
+  const rec=spGet(id); if(!rec||!_spIsMine(rec)) return;
+  const where=rec.published
+    ?'It disappears for every project member too: the Compliance card, the Reports section, the map pin and the shared record.'
+    :'It disappears from your Compliance card, the Reports section and the map.';
+  const c=await _spChoice('Delete '+spLabel(rec)+' ('+_spPretty(rec.discoveryDate||rec.releaseDate||'')+') from everywhere? '+where+' Recoverable by support — nothing is destroyed.',
+    '🗑 Delete from everywhere','Keep it',{title:'Delete spill record?',danger:true});
+  if(c!=='a') return;
   rec.deletedAt=Date.now(); rec.updatedAt=Date.now();
-  _spPersist(rec);
+  _spPersist(rec);   // published → _spUnmirror
   _spRepaint();
+  if(typeof showCloudBanner==='function') showCloudBanner('🗑 '+spLabel(rec)+' deleted'+(rec.published?' everywhere':'')+'.');
 }
 
 // ═══ Read-only detail ═══
@@ -598,13 +738,14 @@ function spShowDetail(id){
   const r=spGet(id,pid); if(!r) return;
   const ex=_spExemptLine(r);
   const hasLoc=typeof r.lat==='number'&&typeof r.lng==='number';
+  const mine=_spIsMine(r);
   const row=(l,val)=>val?`<div style="margin-bottom:6px"><div style="font-family:var(--mono);font-size:9px;color:var(--muted);letter-spacing:.04em">${l}</div><div style="font-size:13px;line-height:1.45;white-space:pre-wrap">${_spEsc(val)}</div></div>`:'';
   const cmpTxt=r.cmpId?(()=>{ try{ const e=(typeof clGetEntries==='function'?clGetEntries():[]).find(x=>x.id===r.cmpId); return e&&e.cmpNum?('CMP-'+String(e.cmpNum).padStart(2,'0')+' ✓'):'CMP linked ✓'; }catch{ return 'CMP linked ✓'; } })():'';
   const ov=document.createElement('div');
   ov.className='modal-overlay'; ov.style.cssText='z-index:5000';
   ov.innerHTML=`<div class="modal-box" style="max-width:440px;width:92%;max-height:84dvh;overflow-y:auto">
     <div class="modal-title" style="margin-bottom:2px">🛢 ${spLabel(r)} — ${_spEsc(r.substance||'Spill')}${r.quantity?' · '+_spEsc(r.quantity):''}</div>
-    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-bottom:10px">${_spEsc(_spPretty(r.discoveryDate||r.releaseDate))}${r.discoveryTime?' '+_spEsc(r.discoveryTime):''} · ${r.status==='closed'?'✓ closed':'<span style="color:var(--amber)">● open</span>'} · ${r.reportable==='y'?'<span style="color:var(--amber)">reportable</span>':(r.reportable==='n'?'not reportable':'reportability not set')}${r.spillNo?' · #'+_spEsc(r.spillNo):''}${cmpTxt?' · '+cmpTxt:''}</div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-bottom:10px">${_spEsc(_spPretty(r.discoveryDate||r.releaseDate))}${r.discoveryTime?' '+_spEsc(r.discoveryTime):''} · ${r.status==='closed'?'✓ closed':'<span style="color:var(--amber)">● open</span>'} · ${r.reportable==='y'?'<span style="color:var(--amber)">reportable</span>':(r.reportable==='n'?'not reportable':'reportability not set')}${r.spillNo?' · #'+_spEsc(r.spillNo):''}${cmpTxt?' · '+cmpTxt:''}${r.published?(mine?' · <span style="color:var(--amber)">📤 shared with the project</span>':' · 👥 shared by '+_spEsc(_spOwnerName(r))):''}</div>
     ${row('Location',r.locationDesc+(hasLoc?'\n📍 '+(+r.lat).toFixed(5)+', '+(+r.lng).toFixed(5):''))}
     ${row('Cause',r.cause)}
     ${row('Responsible person',[r.respName,r.respPhone].filter(Boolean).join(' · '))}
@@ -614,13 +755,14 @@ function spShowDetail(id){
     <div style="font-size:12px;line-height:1.45;margin:4px 0 8px;padding:6px 8px;border-radius:6px;background:var(--s1);color:${ex.ok?'var(--text)':'var(--amber)'}">${_spEsc(ex.text)}</div>
     ${(r.notifications||[]).length?`<div style="font-family:var(--mono);font-size:9px;color:var(--muted);letter-spacing:.04em;margin-bottom:3px">NOTIFICATIONS</div>${(r.notifications||[]).map(n=>`<div style="font-size:12px;line-height:1.4;margin-bottom:2px">${_spEsc(n.time||'')} · <b>${_spEsc(n.who||'')}</b>${n.by?' by '+_spEsc(n.by):''}${n.method?' ('+_spEsc(n.method)+')':''}${n.note?' — '+_spEsc(n.note):''}</div>`).join('')}<div style="height:8px"></div>`:''}
     ${row('Notes',r.notes)}
-    ${(r.photoIds||[]).length?`<div style="display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 12px">${(r.photoIds||[]).map(pid2=>{ const p=(window._phPhotos||[]).find(x=>x.id===pid2); return p&&p.thumb?`<img src="${_spEsc(p.thumb)}" onclick="phOpenLightbox&&phOpenLightbox('${_spEsc(p.id)}')" style="width:64px;height:64px;object-fit:cover;border-radius:6px;cursor:pointer">`:''; }).join('')}</div>`:''}
+    ${(r.photoIds||[]).length?`<div style="display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 12px">${(r.photoIds||[]).map(pid2=>{ const p=_spPhoto(pid2); return p&&p.thumb?`<img src="${_spEsc(p.thumb)}" onclick="phOpenLightbox&&phOpenLightbox('${_spEsc(p.id)}')" style="width:64px;height:64px;object-fit:cover;border-radius:6px;cursor:pointer">`:''; }).join('')}</div>`:''}
     <div style="display:flex;gap:8px;flex-wrap:wrap">
-      <button class="btn btn-outline" style="flex:1;min-width:120px" onclick="this.closest('.modal-overlay').remove();spShowForm('${_spEsc(r.id)}')">✏️ Edit</button>
+      ${mine?`<button class="btn btn-outline" style="flex:1;min-width:120px" onclick="this.closest('.modal-overlay').remove();spShowForm('${_spEsc(r.id)}')">✏️ Edit</button>`:''}
       <button class="btn btn-outline" style="flex:1;min-width:120px" onclick="spExportPdf('${_spEsc(r.id)}')">${window.glPdfIcon?window.glPdfIcon(12):'PDF'} Report</button>
-      ${r.cmpId?`<button class="btn btn-outline" style="flex:1;min-width:120px" onclick="this.closest('.modal-overlay').remove();showPage('compliance')">📋 ${_spEsc(cmpTxt||'CMP')}</button>`
-               :`<button class="btn btn-outline" style="flex:1;min-width:120px" onclick="spLogAsCmp('${_spEsc(r.id)}',this)">📋 Log as CMP</button>`}
+      ${!mine?'':(r.cmpId?`<button class="btn btn-outline" style="flex:1;min-width:120px" onclick="this.closest('.modal-overlay').remove();showPage('compliance')">📋 ${_spEsc(cmpTxt||'CMP')}</button>`
+               :`<button class="btn btn-outline" style="flex:1;min-width:120px" onclick="spLogAsCmp('${_spEsc(r.id)}',this)">📋 Log as CMP</button>`)}
       ${hasLoc?`<button class="btn btn-outline" style="flex:1;min-width:120px" onclick="this.closest('.modal-overlay').remove();spShowOnMap('${_spEsc(r.id)}')">🗺 Show on map</button>`:''}
+      ${mine?`<button class="btn btn-outline" style="flex:1;min-width:120px" onclick="spTogglePublish('${_spEsc(r.id)}')">${r.published?'🔒 Unpublish':'📤 Publish to project'}</button>`:''}
       <button class="btn btn-amber" style="flex:1;min-width:120px" onclick="this.closest('.modal-overlay').remove()">Close</button>
     </div>
   </div>`;
@@ -679,6 +821,7 @@ function spRenderComplianceCard(){
       <span style="font-family:var(--mono);font-size:12px;color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_spEsc(r.substance||'Spill')}${r.quantity?' · '+_spEsc(r.quantity):''}${r.locationDesc?' · '+_spEsc(r.locationDesc):''}</span>
       ${r.reportable==='y'?'<span title="Reportable" style="font-size:11px;flex-shrink:0">☎</span>':''}
       ${r.cmpId?'<span title="In the compliance log" style="font-size:11px;flex-shrink:0">📋</span>':''}
+      ${_spWhoChip(r)}
       <span style="font-family:var(--mono);font-size:10px;flex-shrink:0;color:${r.status==='closed'?'var(--muted)':'var(--amber)'}">${r.status==='closed'?'closed':'open'}</span>
     </div>`).join('');
   const collapsed=(typeof window._clCardCollapsed==='function')&&window._clCardCollapsed('spill');
@@ -687,7 +830,7 @@ function spRenderComplianceCard(){
       <span class="card-num">🛢</span>
       <span class="card-title">Spills</span>
       <span class="head-fade"></span>
-      <button class="btn btn-amber" style="font-size:11px;padding:5px 10px;margin-right:6px" onclick="event.stopPropagation();spShowForm()">＋ New</button>
+      ${_spCanCreate()?`<button class="btn btn-amber" style="font-size:11px;padding:5px 10px;margin-right:6px" onclick="event.stopPropagation();spShowForm()">＋ New</button>`:''}
       <span class="card-badge"${open?' style="color:var(--amber)"':''}>${open?open+' open':(all.length||'0')}</span>
       <span class="card-chevron">▾</span>
     </div>
@@ -709,15 +852,16 @@ function spRenderReportsSec(){
       <div class="sw-list-main" onclick="spShowDetail('${_spEsc(r.id)}')">
         <span class="sw-list-date">${_spEsc(r.discoveryDate||r.releaseDate||'')}</span>
         <span class="sw-list-type">${spLabel(r)} · ${_spEsc(r.substance||'Spill')}${r.quantity?' · '+_spEsc(r.quantity):''}</span>
-        <span class="sw-chip ${r.status==='closed'?'sw-chip-done':'sw-chip-draft'}">${r.status==='closed'?'✓ Closed':'● Open'}</span>
+        <span class="sw-chip ${r.status==='closed'?'sw-chip-done':'sw-chip-draft'}">${r.status==='closed'?'✓ Closed':'● Open'}</span>${_spIsMine(r)?'':`<span class="sw-chip" title="Shared by ${_spEsc(_spOwnerName(r))}">👥 ${_spEsc(_spFirstName(r))}</span>`}
       </div>
-      <button class="sw-list-btn" title="Edit" onclick="spShowForm('${_spEsc(r.id)}')">✏️</button>
+      ${_spIsMine(r)?`<button class="sw-list-btn" title="Edit" onclick="spShowForm('${_spEsc(r.id)}')">✏️</button>
+      <button class="sw-list-btn" title="${r.published?'Shared with the project — tap to unpublish':'Publish to project'}" onclick="spTogglePublish('${_spEsc(r.id)}')">${r.published?'👥':'📤'}</button>`:''}
       <button class="sw-list-btn" title="Export incident report PDF" onclick="spExportPdf('${_spEsc(r.id)}')">${window.glPdfIcon?window.glPdfIcon(12):'PDF'}</button>
-      <button class="sw-list-btn" title="Delete" onclick="spDelete('${_spEsc(r.id)}')">🗑</button>
+      ${_spIsMine(r)?`<button class="sw-list-btn" title="Delete" onclick="spDelete('${_spEsc(r.id)}')">🗑</button>`:''}
     </div>`).join('');
   const head=(typeof window._swSecHead==='function')
-    ? window._swSecHead('sp','Spills / Incidents','Owner incident-report form per spill (PDF) + the running spill log — records stay on the map and in the compliance log','<button class="btn" onclick="spShowForm()">＋ New Spill</button>')
-    : `<div class="sw-sec-label sw-sec-next">Spills / Incidents<span class="sw-sec-line"></span><button class="btn" onclick="spShowForm()">＋ New Spill</button></div>`;
+    ? window._swSecHead('sp','Spills / Incidents','Owner incident-report form per spill (PDF) + the running spill log — records stay on the map and in the compliance log',(_spCanCreate()?'<button class="btn" onclick="spShowForm()">＋ New Spill</button>':''))
+    : `<div class="sw-sec-label sw-sec-next">Spills / Incidents<span class="sw-sec-line"></span>${_spCanCreate()?'<button class="btn" onclick="spShowForm()">＋ New Spill</button>':''}</div>`;
   const collapsed=(typeof window.swSecCollapsed==='function')&&window.swSecCollapsed('sp');
   host.innerHTML=`
     ${head}
@@ -735,7 +879,10 @@ async function _spBrandLogo(pid){
 async function spExportPdf(id){
   const pid=_spPid();
   const r=spGet(id,pid); if(!r) return;
-  if(!(await _spMaybeFormalizeForExport(r))) return;
+  if(_spIsMine(r)){
+    if(!(await _spMaybeFormalizeForExport(r))) return;
+    if(!(await _spMaybeOfferPublish(r))) return;
+  }
   const btns=document.querySelectorAll(`[onclick="spExportPdf('${id}')"]`);
   btns.forEach(b=>{ b.dataset.oldTxt=b.innerHTML; b.textContent='…'; b.disabled=true; });
   try{
@@ -792,3 +939,6 @@ window.spNotifAdd=spNotifAdd;
 window.spNotifRemove=spNotifRemove;
 window.spLogAsCmp=spLogAsCmp;
 window.spShowOnMap=spShowOnMap;
+window.spTogglePublish=spTogglePublish;
+window.spLoadShared=spLoadShared;
+window.spIsMine=_spIsMine;
