@@ -125,7 +125,8 @@ async function syncProjectConfigFromCloud() {
         location:    raw.location    || '',
         reviewedBy:  raw.reviewedBy  || '',
         siteLat:     raw.siteLat     || '',
-        siteLon:     raw.siteLon     || ''
+        siteLon:     raw.siteLon     || '',
+        siteAddress: raw.siteAddress || ''   // 9/8: was missing here → every boot wiped the address (Tim: "isn't saving")
       };
       localStorage.setItem('msf_projectconfig', JSON.stringify(data));
         applyProjectConfig();
@@ -202,7 +203,7 @@ function saveProjectConfig() {
     // Keep the shared projects/{pid} meta in step so members see current
     // project info. Rules let only the lead land this write (silent otherwise).
     if (_pid !== 'active' && _currentUser) db.collection('projects').doc(_pid).set(
-      {name:cfg.projectName,contractor:cfg.contractor,location:cfg.location,phase:cfg.activePhase,siteLat:cfg.siteLat||'',siteLon:cfg.siteLon||'',_ts:Date.now()},
+      {name:cfg.projectName,contractor:cfg.contractor,location:cfg.location,phase:cfg.activePhase,siteLat:cfg.siteLat||'',siteLon:cfg.siteLon||'',siteAddress:cfg.siteAddress||'',_ts:Date.now()},
       {merge:true}).catch(()=>{});
   }}catch(e){}
   knownProjectsUpsert(cfg, _pid);
@@ -554,7 +555,7 @@ async function loadProject(projectId, projDataOverride) {
     const cfg = { projectName:projData.projectName||'', preparedBy:projData.preparedBy||'',
       org:projData.org||'', activePhase:projData.activePhase||'',
       contractor:projData.contractor||'', location:projData.location||'', reviewedBy:projData.reviewedBy||'',
-      siteLat:projData.siteLat||'', siteLon:projData.siteLon||'' };
+      siteLat:projData.siteLat||'', siteLon:projData.siteLon||'', siteAddress:projData.siteAddress||'' };
     localStorage.setItem('msf_projectconfig', JSON.stringify(cfg));
     applyProjectConfig();
     window.activePhaseLabel = cfg.activePhase || activePhaseLabel;
