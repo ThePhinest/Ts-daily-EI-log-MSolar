@@ -208,7 +208,7 @@ export async function swpppBuildPdf(insp,cfg,sig){
 
   // §2 Drainage areas
   const daBody=[[hcell('Drainage Area ID'),hcell('General Location / Description'),hcell('Condition'),hcell('Action Required')]];
-  (cfg.drainageAreas||[]).forEach(da=>{
+  (cfg.drainageAreas||[]).filter(r=>r&&!r.hidden).forEach(da=>{   // #78 hidden rows skip the export
     const st=(insp.drainageAreas||{})[da.id]||{};
     daBody.push([cell(da.id,{bold:true,size:8}),cell(da.desc,{size:8}),
       {text:[cb(st.condition==='acceptable'),{text:'Acceptable   '},cb(st.condition==='deficient'),{text:'Deficient'}],fontSize:8},
@@ -218,7 +218,7 @@ export async function swpppBuildPdf(insp,cfg,sig){
 
   // §3 Discharge points
   const dpBody=[[hcell('Discharge Point ID'),hcell('Location Description'),hcell('Receiving Water'),hcell('Condition / Notes')]];
-  (cfg.dischargePoints||[]).forEach(dp=>{
+  (cfg.dischargePoints||[]).filter(r=>r&&!r.hidden).forEach(dp=>{
     const st=(insp.dischargePoints||{})[dp.id]||{};
     dpBody.push([cell(dp.id,{bold:true,size:8}),cell(dp.location,{size:8,i:true}),cell(dp.receiving,{size:8,i:true}),
       {text:[cb(st.condition==='acceptable'),{text:'Acceptable   '},cb(st.condition==='deficient'),{text:'Deficient'+(st.notes?` — ${st.notes}`:'')}],fontSize:8}]);
@@ -867,6 +867,155 @@ export async function avBuildPdf(visits, cfg, opts){
   };
   const doc=pdfMake.createPdf(dd);
   return doc.getBlob();
+}
+
+// ═══ Spill / incident report (9/8, #29) ═══
+// Mirrors the owner's Environmental Incident Report Form layout — six numbered
+// sections, same field labels in the same order — so the PDF IS the document the
+// owner already files. Branding via the 'spill' report key (the project can hand
+// it the owner's logo through a per-report profile). Photos 2-up at the end.
+const _SP_INSTR='Instructions: Notify Owner Representative immediately of any environmental incident. Complete this form for any type of petroleum product or hazardous materials/waste release or incident. Submit this completed report to Owner Representative, Compliance Manager & Safety Manager within 24 hours of incident and retain a copy within SPCC Plan.';
+export async function spBuildPdf(rec, cfg, opts){
+  opts=opts||{}; cfg=cfg||{};
+  _pal=await _palFor('spill');
+  const pdfMake=await _getPdfMake();
+  const pretty=(d)=>{ const p=String(d||'').split('-'); return p.length===3?`${parseInt(p[1])}/${parseInt(p[2])}/${p[0]}`:String(d||''); };
+  const v=(s)=>String(s==null?'':s).trim();
+  const label='SPL-'+String(rec.seq||0).padStart(2,'0');
+  const fld=(lbl,val)=>({stack:[{text:lbl,bold:true,fontSize:9,margin:[0,3,0,0]},{text:v(val)||'—',fontSize:9.5,color:v(val)?'#000000':'#888888',margin:[0,1,0,2]}]});
+  const yn=(lbl,val)=>({text:[{text:lbl+'  ',bold:true,fontSize:9},cb(val==='y'),{text:'Yes    ',fontSize:9},cb(val==='n'),{text:'No',fontSize:9}],margin:[0,3,0,2]});
+  const hz=({text:[{text:'Are there any existing or potential hazards?  ',bold:true,fontSize:9},cb(!!rec.hazFire),{text:'Fire    ',fontSize:9},cb(!!rec.hazExplosion),{text:'Explosion    ',fontSize:9},{text:'Other: '+(v(rec.hazOther)||'None'),fontSize:9}],margin:[0,3,0,2]});
+  const reached=rec.waterReached==='y'?'Yes':(rec.waterReached==='potential'?'Potential pathway':'No');
+  const content=[];
+  if(opts.logo&&opts.logo.b64){
+    const lb=opts.logo.b64.startsWith('data:')?opts.logo.b64:('data:image/png;base64,'+opts.logo.b64);
+    content.push({image:lb,width:Math.round((opts.logo.w||200)*0.75),height:Math.round((opts.logo.h||50)*0.75),alignment:opts.logo.align||'right',margin:[0,0,0,6]});
+  }
+  content.push({text:'Environmental Incident Report Form',bold:true,fontSize:15,color:_pal.mid||'#000000',margin:[0,0,0,2]});
+  content.push({text:`${cfg.projectName||''} · ${label} · ${rec.status==='closed'?'Closed':'Open'}${cfg.preparedBy?' · Prepared by '+cfg.preparedBy+(cfg.org?', '+cfg.org:''):''} · Generated ${pretty(new Date().toLocaleDateString('en-CA'))}`,fontSize:8,color:'#666666',margin:[0,0,0,4]});
+  content.push({text:opts.instructions||_SP_INSTR,fontSize:8,italics:true,color:'#444444',margin:[0,0,0,8]});
+
+  content.push(h1('1.  Project Information'));
+  content.push(infoTable([
+    infoRow('Project', cfg.projectName||''),
+    infoRow('Address', cfg.siteAddress||''),
+    infoRow('Date of Release', pretty(rec.releaseDate)),
+    infoRow('Date of Discovery', pretty(rec.discoveryDate)+(rec.discoveryTime?'   Time: '+rec.discoveryTime:''))
+  ]));
+
+  content.push(h1('2.  Responsible Person Information'));
+  content.push(fld('Name and Title of Person Responsible for Release Response:', rec.respName));
+  content.push(fld('Phone Number:', rec.respPhone));
+
+  content.push(h1('3.  General Incident Information'));
+  content.push(fld('Type of Substance(s) Released:', rec.substance));
+  content.push(fld('Quantity Released:', rec.quantity));
+  content.push(fld('Describe Release Location:', v(rec.locationDesc)+((typeof rec.lat==='number'&&typeof rec.lng==='number')?`  (${(+rec.lat).toFixed(5)}, ${(+rec.lng).toFixed(5)})`:'')));
+  content.push(fld('What Caused the Release:', rec.cause));
+  content.push(fld('Weather Conditions:', rec.weather));
+  content.push({text:'If Release discharged into Water, Wetland, or Sensitive Area',bold:true,italics:true,fontSize:9,margin:[0,6,0,1]});
+  content.push(fld('Reached water, wetland, or a sensitive area?', reached));
+  content.push(fld('Name of Water Body (if ditch or culvert, identify the water body that the structure discharges to):', rec.waterReached==='n'?'N/A':rec.waterBody));
+  content.push(fld('Identify the Discharge Point:', rec.waterReached==='n'?'N/A':rec.dischargePoint));
+  content.push(yn('Did the Release leave the Property?', rec.leftProperty||(rec.waterReached==='n'?'n':'')));
+  content.push(fld('Describe Environmental Damage (i.e., fish kill) if applicable:', rec.damage||(rec.waterReached==='n'?'None observed.':'')));
+  content.push(hz);
+  content.push(fld('Are there any injuries related to release?', rec.injuries||'No.'));
+
+  content.push(h1('4.  Corrective actions taken'));
+  content.push(fld('To Contain Release or Impact of Incident:', rec.caContain));
+  content.push(fld('To Cleanup Release or Recover from Incident:', rec.caCleanup));
+  content.push(fld('To Remove Cleanup Material:', rec.caRemove));
+  content.push(fld('To Document Disposal:', rec.caDisposal));
+  content.push(fld('To Prevent Reoccurrence:', rec.caPrevent));
+  content.push(fld('When will the Corrective action be Completed:', rec.caComplete));
+
+  content.push(h1('5.  Reporting'));
+  content.push(yn('Does the incident meet or exceed reportable quantities?', rec.reportable));
+  const exRows=[['exUnder5','Known to be less than 5 gallons'],['exContained','Contained and under the control of the spiller'],['exNoContact','Has not and will not reach the State\'s waters or any land'],['exWithin2h','Cleaned up within 2 hours of discovery']];
+  content.push({text:[{text:'(Refer to the project SPCC / SWPPP for reportable quantities.)  Petroleum exemption test — all four required to be exempt:  ',fontSize:7.5,italics:true,color:'#555555'},
+    ...exRows.flatMap(([k,l])=>[cb(!!rec[k]),{text:l+'   ',fontSize:7.5,color:'#555555'}])],margin:[0,0,0,4]});
+  if(rec.reportable==='y'){
+    content.push({text:'If Yes above complete the following:',bold:true,italics:true,fontSize:9,margin:[0,4,0,1]});
+    content.push(fld('What agency(ies) were Contacted:', rec.agencies));
+    content.push(fld('Agency Phone Number:', rec.agencyPhone));
+    content.push(fld('Names of Agency personnel Spoken to:', rec.agencyPersonnel));
+    content.push(fld('Date/Time of Report:', v(rec.reportDateTime)+(rec.spillNo?'   Spill Number assigned: '+rec.spillNo:'')));
+    content.push(fld('Is a follow-up report required by agency? If so, when:', rec.followUp));
+    content.push(fld('What follow-up or corrective action by PM is required:', rec.pmFollowUp));
+  }
+  const notifs=Array.isArray(rec.notifications)?rec.notifications.filter(n=>n&&(n.who||n.by||n.note)):[];
+  if(notifs.length){
+    const nb=[[hcell('Time'),hcell('Notified'),hcell('By'),hcell('Method'),hcell('Note')]];
+    notifs.forEach(n=>nb.push([cell(n.time||'',{size:8}),cell(n.who||'',{size:8,bold:true}),cell(n.by||'',{size:8}),cell(n.method||'',{size:8}),cell(n.note||'',{size:8})]));
+    content.push({text:'Notification log',bold:true,fontSize:9,margin:[0,5,0,2]});
+    content.push({table:{headerRows:1,dontBreakRows:true,widths:cols(11,26,20,12),body:nb},layout:hairLayout,margin:[0,0,0,4]});
+  }
+
+  content.push(h1('6.  Additional Notes/Information/Photos'));
+  content.push(body(v(rec.notes)||'—'));
+  if(Array.isArray(rec.photoIds)&&rec.photoIds.length){
+    const items=[]; let n=0;
+    for(const pId of rec.photoIds){
+      const im=await _imgFor(pId,320);
+      const p=(window._phPhotos||[]).find(x=>x.id===pId);
+      n++;
+      items.push({im,cap:`Photo ${n}${(p&&p.caption)?' — '+p.caption:''}`});
+    }
+    content.push({text:'Photographs:',bold:true,fontSize:9,margin:[0,6,0,2]});
+    content.push({table:{widths:['*','*'],body:_imgPairRows(items)},layout:imgGridLayout,margin:[0,2,0,6]});
+  }
+  const dd={
+    pageSize:'LETTER', pageMargins:[MARG,MARG,MARG,MARG],
+    defaultStyle:{font:'Roboto',fontSize:10},
+    footer:(page,total)=>({columns:[
+      {text:`${cfg.projectName||''} · ${label}`,fontSize:7,color:'#888888',margin:[MARG,0,0,0]},
+      ...(_attribLine(opts).length?[{text:GL_ATTRIB_TEXT,fontSize:7,color:'#9A9A9A',alignment:'center'}]:[]),
+      {text:`${page} / ${total}`,alignment:'right',fontSize:7,color:'#888888',margin:[0,0,MARG,0]}
+    ],margin:[0,10,0,0]}),
+    content
+  };
+  return pdfMake.createPdf(dd).getBlob();
+}
+// Running spill log — one lean table, oldest first, for forwarding / the SPCC binder.
+export async function spBuildLogPdf(list, cfg, opts){
+  opts=opts||{}; cfg=cfg||{};
+  _pal=await _palFor('spill');
+  const pdfMake=await _getPdfMake();
+  const pretty=(d)=>{ const p=String(d||'').split('-'); return p.length===3?`${parseInt(p[1])}/${parseInt(p[2])}/${p[0]}`:String(d||''); };
+  const content=[];
+  if(opts.logo&&opts.logo.b64){
+    const lb=opts.logo.b64.startsWith('data:')?opts.logo.b64:('data:image/png;base64,'+opts.logo.b64);
+    content.push({image:lb,width:Math.round((opts.logo.w||200)*0.75),height:Math.round((opts.logo.h||50)*0.75),alignment:opts.logo.align||'right',margin:[0,0,0,6]});
+  }
+  content.push({table:{widths:['*'],body:[[{stack:[
+      {text:'SPILL / INCIDENT LOG',bold:true,fontSize:16,color:_pal.hText||'#FFFFFF'},
+      {text:cfg.projectName||'',fontSize:10,color:_pal.lt,margin:[0,2,0,0]}
+    ],fillColor:_pal.h,border:[false,false,false,false],margin:[0,4,0,4]}]]},
+    layout:{hLineWidth:()=>0,vLineWidth:()=>0,paddingLeft:()=>8,paddingRight:()=>8,paddingTop:()=>4,paddingBottom:()=>4},margin:[0,0,0,6]});
+  content.push(infoTable([infoRow('Generated', pretty(new Date().toLocaleDateString('en-CA'))), infoRow('Prepared by', cfg.preparedBy||''), infoRow('Incidents on record', String(list.length))]));
+  const b=[[hcell('#'),hcell('Discovered'),hcell('Substance / quantity'),hcell('Location'),hcell('Reportable'),hcell('Spill #'),hcell('Status')]];
+  list.forEach(r=>b.push([
+    cell('SPL-'+String(r.seq||0).padStart(2,'0'),{size:8,bold:true}),
+    cell(pretty(r.discoveryDate||r.releaseDate)+(r.discoveryTime?' '+r.discoveryTime:''),{size:8}),
+    cell([r.substance,r.quantity].filter(Boolean).join(' — '),{size:8}),
+    cell(r.locationDesc||'',{size:8}),
+    cell(r.reportable==='y'?'Yes':(r.reportable==='n'?'No':'—'),{size:8}),
+    cell(r.spillNo||'',{size:8}),
+    cell(r.status==='closed'?'Closed':'Open',{size:8})
+  ]));
+  content.push({table:{headerRows:1,dontBreakRows:true,widths:cols(9,16,24,27,10,8),body:b},layout:hairLayout,margin:[0,2,0,4]});
+  const dd={
+    pageSize:'LETTER', pageOrientation:'landscape', pageMargins:[MARG,MARG,MARG,MARG],
+    defaultStyle:{font:'Roboto',fontSize:10},
+    footer:(page,total)=>({columns:[
+      {text:cfg.projectName||'',fontSize:7,color:'#888888',margin:[MARG,0,0,0]},
+      ...(_attribLine(opts).length?[{text:GL_ATTRIB_TEXT,fontSize:7,color:'#9A9A9A',alignment:'center'}]:[]),
+      {text:`${page} / ${total}`,alignment:'right',fontSize:7,color:'#888888',margin:[0,0,MARG,0]}
+    ],margin:[0,10,0,0]}),
+    content
+  };
+  return pdfMake.createPdf(dd).getBlob();
 }
 
 export async function punchlistExportPdfNow(opts){

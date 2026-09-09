@@ -1027,6 +1027,13 @@ async function _phLbShow(index){
     share.textContent = p.published ? '🌐 Shared ✓' : '📤 Share';
     share.title = p.published ? 'Shared with project members — tap to unshare' : 'Share to project members';
   }
+  // 📲 device save (9/8, #30) — any own photo, captures included.
+  const devBtn = document.getElementById('ph-lb-device');
+  if(devBtn){
+    devBtn.style.display = own ? '' : 'none';
+    devBtn.textContent = _phIsNative() ? '📲 Camera roll' : '⬇ Download';
+    devBtn.title = _phIsNative() ? 'Save a copy to the camera roll (GroundLog album)' : 'Download a copy';
+  }
   // SWPPP / Seed-Tag toggles — own photos only. SWPPP-tagged photos sort
   // first in the QI report's photo picker (swppp.js §11).
   const swBtn = document.getElementById('ph-lb-swppp');
@@ -1510,6 +1517,39 @@ function phSyncSeedTagsFromEntry(prevTypes, entry, pid){
 window.phSyncSeedTagsFromEntry=phSyncSeedTagsFromEntry;
 
 // ── Lightbox Share / Unshare toggle (own photos in the active project) ──
+// ── 📲 Save the open photo to the device (9/8, #30) ──
+// Native: straight into the camera roll (GroundLog album) — no share sheet to
+// navigate. Web: a download. Camera photos export their STAMPED rendering (the
+// two-layer rule); captures are already baked. Any own photo, capture included.
+async function phSaveCurrentToDevice(){
+  if(!_phLbId) return;
+  const p=_phById(_phLbId); if(!p) return;
+  const btn=document.getElementById('ph-lb-device');
+  const old=btn?btn.textContent:'';
+  if(btn){ btn.disabled=true; btn.textContent='…'; }
+  try{
+    let blob=await _phFullBlob(p);
+    if(!blob) throw new Error('no full-res copy on this device yet');
+    try{ if(typeof window.stampIfCamera==='function') blob=await window.stampIfCamera(p,blob); }catch(e){}
+    if(_phIsNative()){
+      if(!_camMod) _camMod=await import('./camera.js');
+      await _camMod.camRollSaveBlob(p, blob, 'lightbox');
+      if(typeof showCloudBanner==='function') showCloudBanner('✓ Saved to the camera roll (GroundLog album).');
+    } else {
+      const a=document.createElement('a');
+      a.href=URL.createObjectURL(blob);
+      const safeCap=(p.caption||'photo').replace(/[^\w\- ]+/g,'').trim().replace(/\s+/g,'-').slice(0,40)||'photo';
+      a.download=`${p.date||'photo'}_${safeCap}.jpg`;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+    }
+  }catch(e){
+    console.warn('phSaveCurrentToDevice:',e);
+    if(typeof showCloudBanner==='function') showCloudBanner('✗ Could not save — '+((e&&e.message)||'try again'));
+  }finally{ if(btn){ btn.disabled=false; btn.textContent=old; } }
+}
+window.phSaveCurrentToDevice=phSaveCurrentToDevice;
+
 async function phShareCurrent(){
   if(!_phLbId) return;
   const p = window._phPhotos.find(x=>x.id===_phLbId);
@@ -1783,6 +1823,11 @@ async function phSaveCameraPhoto(blob, meta){
     try{ window.clAttachPhoto(m.attach.id, id); }
     catch(e){ console.warn('camera compliance-attach failed:',e); }
   }
+  // 9/8: 📸 from a spill record (spills.js) → the record's photoIds.
+  if(m.attach&&m.attach.type==='sp'&&m.attach.id&&typeof window.spAttachPhoto==='function'){
+    try{ window.spAttachPhoto(m.attach.id, id); }
+    catch(e){ console.warn('camera spill-attach failed:',e); }
+  }
   try{
     phRender();
     if(typeof mapRenderPhotoPins==='function') mapRenderPhotoPins();
@@ -1919,7 +1964,20 @@ async function phSaveCapturedImage(blob, photoDate, captionOverride, opts){
   // batch, which overflows Firestore's write-stream queue once the library is large
   // (resource-exhausted). Single-doc set is all a fresh capture needs.
   phSaveCloudOne(entry);
+  // 9/8 (#30): captures honour the camera's auto-save-to-camera-roll setting (native only;
+  // the legend/wordmark are already baked in, so one copy regardless of original/stamped).
+  _phRollCapture(entry, blob);
   return entry;
+}
+function _phIsNative(){ return !!(window.Capacitor&&window.Capacitor.isNativePlatform&&window.Capacitor.isNativePlatform()); }
+async function _phRollCapture(entry, blob){
+  if(!_phIsNative()) return;
+  let mode='off'; try{ mode=localStorage.getItem('gl_cam_autosave')||'off'; }catch{}
+  if(mode==='off') return;
+  try{
+    if(!_camMod) _camMod=await import('./camera.js');
+    await _camMod.camRollSaveBlob(entry, blob, 'capture');
+  }catch(e){ console.warn('capture camera-roll save failed:', e); }
 }
 
 // Persist a single photo doc (used by add/capture paths) so we never re-batch the whole

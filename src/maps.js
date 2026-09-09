@@ -295,6 +295,7 @@ function mapSetup(token){
     mapUpdateStyleButtons();
     mapRenderPhotoPins();
     mapRenderFieldMarkers();
+    mapRenderSpillMarkers();
     kmlLoadLayers();
     if(typeof window.poLoadSheets === 'function') window.poLoadSheets();
     mapRenderTrackerLayers();
@@ -381,6 +382,7 @@ function mapSetStyle(style){
     if(_mapGpsMarker){_mapGpsMarker.remove();_mapGpsMarker=null;}
     mapAddGPSDot();
     mapRenderFieldMarkers();
+    mapRenderSpillMarkers();
     // Plan-sheet rasters first so they mount BELOW the KML vectors re-added next.
     if(typeof window.poReaddVisible === 'function') window.poReaddVisible();
     _mapKmlLayers.filter(l=>l.visible).forEach(layer => mapToggleKmlLayerById(layer.id, true));
@@ -2871,6 +2873,7 @@ function mapToggleViewFab(){
   if(_viewFabOpen){
     if(typeof _syncLabelModeBtns==='function') _syncLabelModeBtns();
     if(typeof _syncFlagFabBtn==='function') _syncFlagFabBtn();
+    if(typeof _syncSpillFabBtn==='function') _syncSpillFabBtn();
   }
 }
 function mapCloseViewFab(){
@@ -5696,7 +5699,7 @@ async function _compositeBrandWordmark(blob, legendCat, pid, scopeEntryId, opts)
         const cont=_mapInstance.getContainer();
         const sx=cont&&cont.clientWidth?c.width/cont.clientWidth:1;
         const sy=cont&&cont.clientHeight?c.height/cont.clientHeight:1;
-        const markers=[].concat(_mapPhotoMarkers||[],_mapFieldMarkers||[]);
+        const markers=[].concat(_mapPhotoMarkers||[],_mapFieldMarkers||[],_mapSpillMarkers||[]);
         markers.forEach(m=>{
           if(!m||typeof m.getLngLat!=='function') return;
           const el=typeof m.getElement==='function'?m.getElement():null;
@@ -6039,6 +6042,7 @@ function _showCaptureBar(onGo){
   bar.innerHTML=`
     <div style="font-family:var(--mono);font-size:11px;color:#dce8f4;text-align:center;line-height:1.4">📸 Frame your shot — pan &amp; zoom the map, then Capture</div>
     <button id="_gl-cap-flags" style="align-self:center;background:var(--s2,#1a2a38);border:1px solid var(--border,#334);color:var(--muted,#aaa);padding:5px 12px;border-radius:12px;font-family:var(--mono);font-size:11px;cursor:pointer"></button>
+    <button id="_gl-cap-wide" style="align-self:center;background:var(--s2,#1a2a38);border:1px solid var(--border,#334);color:var(--muted,#aaa);padding:5px 12px;border-radius:12px;font-family:var(--mono);font-size:11px;cursor:pointer"></button>
     <div style="display:flex;gap:8px">
       <button id="_gl-cap-cancel" style="flex:1;background:var(--s2,#1a2a38);border:1px solid var(--border,#334);color:var(--muted,#aaa);padding:9px;border-radius:8px;font-family:var(--mono);font-size:12px;cursor:pointer">Cancel</button>
       <button id="_gl-cap-go" style="flex:2;background:var(--amber,#C9A84C);border:none;color:#111;padding:9px;border-radius:8px;font-family:var(--mono);font-size:12px;font-weight:700;cursor:pointer">📷 Capture</button>
@@ -6047,6 +6051,9 @@ function _showCaptureBar(onGo){
   _capFlagsArm();
   _capFlagsPaintBtn();
   document.getElementById('_gl-cap-flags').onclick=_capFlagsToggle;
+  _capWideArm();
+  _capWidePaintBtn();
+  document.getElementById('_gl-cap-wide').onclick=_capWideToggle;
   document.getElementById('_gl-cap-cancel').onclick=()=>{ _hideCaptureBar(); _capFlagsDisarm(); };
   // Capture fns disarm the flags override themselves AFTER the canvas + legend are
   // composited, so the shot reflects exactly what was framed.
@@ -6062,13 +6069,10 @@ async function _doCaptureForEntry(entryId, scope){
   const entry=(typeof trGetEntry==='function')?trGetEntry(entryId,pid):null;
   if(!entry){ _capFlagsDisarm(); console.warn('_doCaptureForEntry: entry not found',entryId); return; }
   _showCaptureToast('📷 Capturing…');
-  // Let the toast paint and the popup/bar fully clear before grabbing the canvas.
-  await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
-  const canvas=_mapInstance.getCanvas();
   const today=new Date().toLocaleDateString('en-CA');
-  const rawBlob=await new Promise(res=>canvas.toBlob(res,'image/png'));
-  if(!rawBlob){ _hideCaptureToast(); _capFlagsDisarm(); console.warn('_doCaptureForEntry: canvas returned null'); return; }
-  const branded=await _compositeBrandWordmark(rawBlob, entry.categoryId, pid, scope==='drawing'?entryId:null);
+  // _capRender lets the toast paint and the popup/bar clear (or renders the wide frame) before the grab.
+  const branded=await _capRender(()=>_capGrab(raw=>_compositeBrandWordmark(raw, entry.categoryId, pid, scope==='drawing'?entryId:null)));
+  if(!branded){ _hideCaptureToast(); _capFlagsDisarm(); console.warn('_doCaptureForEntry: canvas returned null'); return; }
   _capFlagsDisarm();
   if(typeof phSaveCapturedImage!=='function'){ _hideCaptureToast(); return; }
   _showCaptureToast('☁️ Saving…');
@@ -6093,12 +6097,9 @@ async function _doCaptureForEntry(entryId, scope){
 async function _doCaptureMapView(){
   if(!_mapInstance) return;
   _showCaptureToast('📷 Capturing…');
-  await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
-  const canvas=_mapInstance.getCanvas();
   const today=new Date().toLocaleDateString('en-CA');
-  const rawBlob=await new Promise(res=>canvas.toBlob(res,'image/png'));
-  if(!rawBlob){ _hideCaptureToast(); _capFlagsDisarm(); console.warn('_doCaptureMapView: canvas returned null'); return; }
-  const branded=await _compositeBrandWordmark(rawBlob);
+  const branded=await _capRender(()=>_capGrab(raw=>_compositeBrandWordmark(raw)));
+  if(!branded){ _hideCaptureToast(); _capFlagsDisarm(); console.warn('_doCaptureMapView: canvas returned null'); return; }
   _capFlagsDisarm();
   if(typeof phSaveCapturedImage!=='function'){ _hideCaptureToast(); return; }
   _showCaptureToast('☁️ Saving…');
@@ -6157,6 +6158,73 @@ function _capFlagsPaintBtn(){
   b.style.background=_capFlagsShow?'rgba(201,168,76,0.25)':'var(--s2,#1a2a38)';
   b.style.borderColor=_capFlagsShow?'var(--amber,#C9A84C)':'var(--border,#334)';
   b.style.color=_capFlagsShow?'var(--amber,#C9A84C)':'var(--muted,#aaa)';
+}
+
+// ── 🖥 Wide overview capture (9/8, #80) ──
+// Forest wants the "computer-screen" overview, and Tim wants it from the phone.
+// When armed, a capture temporarily resizes the map container to a landscape
+// frame whose GL canvas is 4K-class (CSS size = 3840×2160 ÷ devicePixelRatio, so
+// the pixel budget is identical on a DPR-3 iPhone and a DPR-1 desktop), keeps the
+// framed centre + zoom (the shot is "what you framed, ~3× wider"), waits for the
+// newly exposed tiles to finish, grabs + composites, then restores the layout.
+// Per-project pref; default off. Failure falls back to nothing saved + a log line.
+let _capWide=false;
+function _capWideArm(){
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  try{ _capWide=localStorage.getItem('gl_cap_wide::'+pid)==='1'; }catch{ _capWide=false; }
+}
+function _capWideToggle(){
+  _capWide=!_capWide;
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  try{ localStorage.setItem('gl_cap_wide::'+pid,_capWide?'1':'0'); }catch{}
+  _capWidePaintBtn();
+}
+function _capWidePaintBtn(){
+  const b=document.getElementById('_gl-cap-wide');
+  if(!b) return;
+  b.textContent=_capWide?'🖥 Wide 4K overview: on':'🖥 Wide 4K overview: off';
+  b.title='Render the shot as a landscape 4K overview (wider than the phone screen) — tiles load first, then the capture';
+  b.style.background=_capWide?'rgba(201,168,76,0.25)':'var(--s2,#1a2a38)';
+  b.style.borderColor=_capWide?'var(--amber,#C9A84C)':'var(--border,#334)';
+  b.style.color=_capWide?'var(--amber,#C9A84C)':'var(--muted,#aaa)';
+}
+// Grab the GL canvas → compose(rawBlob) → branded blob (null when the canvas is empty).
+async function _capGrab(compose){
+  const canvas=_mapInstance.getCanvas();
+  const raw=await new Promise(res=>canvas.toBlob(res,'image/png'));
+  if(!raw) return null;
+  return compose(raw);
+}
+// Runs fn() with the map in the right state for a capture: normal = two frames
+// for the toast/bar to clear; wide = the resized 4K frame, restored afterwards.
+async function _capRender(fn){
+  if(!_mapInstance) return null;
+  if(!_capWide){
+    await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
+    return fn();
+  }
+  const cont=_mapInstance.getContainer();
+  const dpr=window.devicePixelRatio||1;
+  const cssW=Math.round(3840/dpr), cssH=Math.round(2160/dpr);
+  const prevCss=cont.style.cssText;
+  const view={center:_mapInstance.getCenter(),zoom:_mapInstance.getZoom(),bearing:_mapInstance.getBearing(),pitch:_mapInstance.getPitch()};
+  _showCaptureToast('🖥 Rendering wide overview — loading tiles…');
+  try{
+    // Listen BEFORE the resize so an early idle can't be missed; 9 s ceiling.
+    const idle=new Promise(res=>{ let d=false; const fin=()=>{ if(!d){ d=true; res(); } }; _mapInstance.once('idle',fin); setTimeout(fin,9000); });
+    cont.style.cssText=prevCss+`;position:fixed;left:0;top:0;width:${cssW}px;height:${cssH}px;max-width:none;max-height:none;z-index:9400;`;
+    _mapInstance.resize();
+    _mapInstance.jumpTo(view);
+    await idle;
+    await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
+    return await fn();
+  }catch(e){
+    console.warn('wide capture failed:',e);
+    return null;
+  }finally{
+    cont.style.cssText=prevCss;
+    try{ _mapInstance.resize(); _mapInstance.jumpTo(view); }catch{}
+  }
 }
 
 function _escCapEntries(list,cat,pid){
@@ -6251,12 +6319,9 @@ async function _doCaptureEsc(cids){
   if(!_mapInstance){ _escCapClear(); return; }
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
   _showCaptureToast('📷 Capturing…');
-  await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
-  const canvas=_mapInstance.getCanvas();
   const today=new Date().toLocaleDateString('en-CA');
-  const rawBlob=await new Promise(res=>canvas.toBlob(res,'image/png'));
-  if(!rawBlob){ _hideCaptureToast(); _capFlagsShow=null; _escCapClear(); console.warn('_doCaptureEsc: canvas returned null'); return; }
-  const branded=await _compositeBrandWordmark(rawBlob,null,pid,null,{escCids:cids});
+  const branded=await _capRender(()=>_capGrab(raw=>_compositeBrandWordmark(raw,null,pid,null,{escCids:cids})));
+  if(!branded){ _hideCaptureToast(); _capFlagsShow=null; _escCapClear(); console.warn('_doCaptureEsc: canvas returned null'); return; }
   _capFlagsShow=null; // _escCapClear's re-render restores the normal view
   if(typeof phSaveCapturedImage!=='function'){ _hideCaptureToast(); _escCapClear(); return; }
   _showCaptureToast('☁️ Saving…');
@@ -6379,12 +6444,9 @@ async function _doCaptureSeed(selSrcs){
   if(!_mapInstance){ _seedCapClear(); return; }
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
   _showCaptureToast('📷 Capturing…');
-  await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
-  const canvas=_mapInstance.getCanvas();
   const today=new Date().toLocaleDateString('en-CA');
-  const rawBlob=await new Promise(res=>canvas.toBlob(res,'image/png'));
-  if(!rawBlob){ _hideCaptureToast(); _capFlagsShow=null; _seedCapClear(); console.warn('_doCaptureSeed: canvas returned null'); return; }
-  const branded=await _compositeBrandWordmark(rawBlob,null,pid,null,{seedSrcs:selSrcs});
+  const branded=await _capRender(()=>_capGrab(raw=>_compositeBrandWordmark(raw,null,pid,null,{seedSrcs:selSrcs})));
+  if(!branded){ _hideCaptureToast(); _capFlagsShow=null; _seedCapClear(); console.warn('_doCaptureSeed: canvas returned null'); return; }
   _capFlagsShow=null; // _seedCapClear's re-render restores the normal view
   if(typeof phSaveCapturedImage!=='function'){ _hideCaptureToast(); _seedCapClear(); return; }
   _showCaptureToast('☁️ Saving…');
@@ -6504,13 +6566,10 @@ async function _doCaptureDist(cid){
   if(!_mapInstance){ _distCapClear(); return; }
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
   _showCaptureToast('📷 Capturing…');
-  await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
-  const canvas=_mapInstance.getCanvas();
   const today=new Date().toLocaleDateString('en-CA');
-  const rawBlob=await new Promise(res=>canvas.toBlob(res,'image/png'));
-  if(!rawBlob){ _hideCaptureToast(); _capFlagsShow=null; _distCapClear(); console.warn('_doCaptureDist: canvas returned null'); return; }
   // Whole-category legend — the exact legendCat path the popup capture flow used.
-  const branded=await _compositeBrandWordmark(rawBlob,cid,pid,null);
+  const branded=await _capRender(()=>_capGrab(raw=>_compositeBrandWordmark(raw,cid,pid,null)));
+  if(!branded){ _hideCaptureToast(); _capFlagsShow=null; _distCapClear(); console.warn('_doCaptureDist: canvas returned null'); return; }
   _capFlagsShow=null; // _distCapClear's re-render restores the normal view
   if(typeof phSaveCapturedImage!=='function'){ _hideCaptureToast(); _distCapClear(); return; }
   _showCaptureToast('☁️ Saving…');
@@ -6556,12 +6615,9 @@ async function _doCapturePunchlist(){
   if(!_mapInstance) return;
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
   _showCaptureToast('📷 Capturing…');
-  await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
-  const canvas=_mapInstance.getCanvas();
   const today=new Date().toLocaleDateString('en-CA');
-  const rawBlob=await new Promise(res=>canvas.toBlob(res,'image/png'));
-  if(!rawBlob){ _hideCaptureToast(); _capFlagsDisarm(); console.warn('_doCapturePunchlist: canvas returned null'); return; }
-  const branded=await _compositeBrandWordmark(rawBlob,null,pid,null,{plCap:true});
+  const branded=await _capRender(()=>_capGrab(raw=>_compositeBrandWordmark(raw,null,pid,null,{plCap:true})));
+  if(!branded){ _hideCaptureToast(); _capFlagsDisarm(); console.warn('_doCapturePunchlist: canvas returned null'); return; }
   _capFlagsDisarm();
   if(typeof phSaveCapturedImage!=='function'){ _hideCaptureToast(); return; }
   _showCaptureToast('☁️ Saving…');
@@ -6884,6 +6940,8 @@ function mapRenderTrackerLayers(){
       if(_placingFlagParentId) return;
       // Placing a label (📍 tap-to-place) — same rule.
       if(_lblPlaceId) return;
+      // Placing a 🛢 spill pin (spills.js → mapPickSpillLocation) — same rule.
+      if(_placingSpillCb) return;
       const clickTarget=e.originalEvent&&e.originalEvent.target;
       // Don't open tracker popup when user clicked a photo pin or field marker
       if(clickTarget&&clickTarget.closest&&(
@@ -7314,8 +7372,85 @@ function _cancelFlagPlacement(){
 }
 // Page-switch guard (called from showPage): only tears down the PLACEMENT step —
 // an open flag sheet is a modal overlay and manages itself.
-function mapCancelFlagPlacement(){ if(!document.getElementById('_rf-ov')) _cancelFlagPlacement(); }
+function mapCancelFlagPlacement(){ if(!document.getElementById('_rf-ov')) _cancelFlagPlacement(); _cancelSpillPlacement(); }
 window.mapCancelFlagPlacement=mapCancelFlagPlacement;
+
+// ── 🛢 Spill pins (9/8, #29) ──
+// Spill records (spills.js) that carry a location render as DOM markers, like
+// field markers. Open spills full-strength, closed ones dimmed — they stay on the
+// map as history (Tim: not "removed when it's cleaned up") behind a view-palette
+// SPILLS Show/Hide toggle that works exactly like the repair-flags one.
+let _mapSpillMarkers=[];
+let _placingSpillCb=null;
+function _spillsVisible(){
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  try{ return localStorage.getItem('gl_spills_vis::'+pid)!=='0'; }catch{ return true; }
+}
+function mapToggleSpills(){
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const next=!_spillsVisible();
+  try{ localStorage.setItem('gl_spills_vis::'+pid,next?'1':'0'); }catch{}
+  _syncSpillFabBtn();
+  mapRenderSpillMarkers();
+}
+window.mapToggleSpills=mapToggleSpills;
+function _syncSpillFabBtn(){
+  const btn=document.getElementById('map-vf-spills-toggle');
+  if(btn) btn.textContent=_spillsVisible()?'Hide':'Show';
+}
+function mapRenderSpillMarkers(){
+  _mapSpillMarkers.forEach(m=>{ try{ m.remove(); }catch{} });
+  _mapSpillMarkers=[];
+  if(!_mapInstance||typeof window.spAll!=='function') return;
+  if(!_spillsVisible()) return;
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const esc=(s)=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+  let list=[];
+  try{ list=window.spAll(pid).filter(r=>typeof r.lat==='number'&&typeof r.lng==='number'); }catch{ list=[]; }
+  list.forEach(r=>{
+    const el=document.createElement('div');
+    el.className='_spill-marker';
+    el.textContent='🛢';
+    el.style.cssText='font-size:26px;cursor:pointer;filter:drop-shadow(0 2px 4px rgba(0,0,0,.6));line-height:1;width:30px;height:30px;text-align:center;transform-origin:bottom center;opacity:'+(r.status==='closed'?'.5':'1');
+    el.title=(window.spLabel?window.spLabel(r):'Spill')+(r.substance?' · '+r.substance:'');
+    const popup=new mapboxgl.Popup({offset:20,maxWidth:'230px',closeButton:true,className:'gl-field-popup'})
+      .setHTML(`<div style="font-family:monospace;font-size:11px;color:#e8e8e8">
+        <div style="font-size:20px;margin-bottom:3px">🛢 <b>${esc(window.spLabel?window.spLabel(r):'Spill')}</b></div>
+        <div style="margin-bottom:3px">${esc(r.discoveryDate||r.releaseDate||'')}${r.status==='closed'?' · <span style="color:#9fb0b2">closed</span>':' · <span style="color:#C9A84C">open</span>'}</div>
+        ${r.substance?`<div>${esc(r.substance)}${r.quantity?' — '+esc(r.quantity):''}</div>`:''}
+        ${r.locationDesc?`<div style="color:#9fb0b2;margin-top:3px">${esc(String(r.locationDesc).slice(0,90))}</div>`:''}
+        <button onclick="spShowDetail('${esc(r.id)}')" style="margin-top:8px;background:#C9A84C;color:#111;border:none;padding:4px 10px;border-radius:4px;font-size:11px;font-weight:700;cursor:pointer">Open record</button>
+      </div>`);
+    const m=new mapboxgl.Marker({element:el,anchor:'bottom'}).setLngLat([r.lng,r.lat]).setPopup(popup).addTo(_mapInstance);
+    _mapSpillMarkers.push(m);
+  });
+}
+window.mapRenderSpillMarkers=mapRenderSpillMarkers;
+// Tap-to-place for the spill form's "🗺 Pick on map" — one follow-up tap, then cb({lat,lng}).
+function mapPickSpillLocation(cb){
+  if(!_mapInstance||typeof cb!=='function') return;
+  _cancelSpillPlacement();
+  _placingSpillCb=cb;
+  const chip=document.createElement('div');
+  chip.id='_sp-place-chip';
+  chip.style.cssText='position:fixed;top:calc(var(--app-bar-h,60px) + 10px);left:50%;transform:translateX(-50%);z-index:5100;background:var(--bg);border:1px solid var(--amber,#C9A84C);color:var(--amber,#C9A84C);font-family:var(--mono);font-size:12px;padding:8px 14px;border-radius:20px;cursor:pointer;white-space:nowrap;box-shadow:0 2px 10px rgba(0,0,0,.4)';
+  chip.textContent='🛢 Tap the spill location — or tap here to cancel';
+  chip.onclick=()=>{ const c=_placingSpillCb; _cancelSpillPlacement(); if(c) c(null); };
+  document.body.appendChild(chip);
+  _mapInstance.once('click',_onSpillPlaceClick);
+}
+window.mapPickSpillLocation=mapPickSpillLocation;
+function _onSpillPlaceClick(e){
+  const cb=_placingSpillCb;
+  document.getElementById('_sp-place-chip')?.remove();
+  _placingSpillCb=null;
+  if(cb) cb({lat:e.lngLat.lat,lng:e.lngLat.lng});
+}
+function _cancelSpillPlacement(){
+  _placingSpillCb=null;
+  document.getElementById('_sp-place-chip')?.remove();
+  try{ _mapInstance&&_mapInstance.off('click',_onSpillPlaceClick); }catch{}
+}
 function _onFlagPlaceClick(e){
   const parentId=_placingFlagParentId;
   if(!parentId){ return; }

@@ -2486,6 +2486,8 @@ Anticipated rain — AM weather monitoring expected"></textarea>
       </div>
       <div class="map-vf-label">REPAIR FLAGS</div>
       <button id="map-vf-flags-toggle" class="map-style-btn" onclick="mapToggleRepairFlags()" style="margin-bottom:2px">Hide</button>
+      <div class="map-vf-label">🛢 SPILLS</div>
+      <button id="map-vf-spills-toggle" class="map-style-btn" onclick="mapToggleSpills()" style="margin-bottom:2px">Hide</button>
       <div style="cursor:pointer" onclick="mapToggleFmList()">
         <div class="map-vf-label" style="display:flex;align-items:center;gap:5px">
           <span id="map-vf-fm-arrow" style="font-size:9px;color:var(--muted)">▾</span>FIELD MARKERS
@@ -2964,6 +2966,7 @@ Anticipated rain — AM weather monitoring expected"></textarea>
       <textarea class="ph-lb-caption" id="ph-lb-caption" placeholder="Add a caption… (saves as you type)" rows="2"></textarea>
       <div class="ph-lb-row ph-lb-actions">
         <button class="btn btn-outline ph-lb-btn" id="ph-lb-share" style="display:none" onclick="phShareCurrent()">📤 Share</button>
+        <button class="btn btn-outline ph-lb-btn" id="ph-lb-device" style="display:none" onclick="phSaveCurrentToDevice()">📲 Camera roll</button>
         <button class="btn btn-outline ph-lb-btn" id="ph-lb-swppp" style="display:none" onclick="phToggleSwpppCurrent()">🌊 SWPPP</button>
         <button class="btn btn-outline ph-lb-btn" id="ph-lb-seed" style="display:none" onclick="phToggleSeedCurrent()">🌱 Seed</button>
         <button class="btn btn-outline ph-lb-btn" id="ph-lb-del" style="display:none;border-color:#e25555;color:#e25555" onclick="phDeleteCurrent()">🗑 Delete</button>
@@ -3004,6 +3007,8 @@ Anticipated rain — AM weather monitoring expected"></textarea>
   <div id="cl-tracker-card" style="display:none;margin-bottom:12px"></div>
   <!-- Agency Visits card (#54 — populated by avRenderComplianceCard) -->
   <div id="cl-agency-card" style="display:none;margin-bottom:12px"></div>
+  <!-- Spills card (#29, 9/8 — populated by spRenderComplianceCard; sits between Agency Visits and the Compliance Log) -->
+  <div id="cl-spill-card" style="margin-bottom:12px"></div>
 
   <!-- Auto-detect banner (shown when daily log has unlogged issues) -->
   <div class="cl-auto-banner" id="cl-auto-banner" style="display:none">
@@ -3207,6 +3212,7 @@ Anticipated rain — AM weather monitoring expected"></textarea>
         <div class="field"><label>Active Contractor</label><textarea rows="1" class="auto-expand auto-line" id="cfg-contractor" placeholder="Set by the Contractors list below (on-site names)" title="Managed by the Contractors list below — toggle who's on site there"></textarea></div>
         <div class="field"><label>Town / County</label><input type="text" id="cfg-location" placeholder="Town, county, state"></div>
         <div class="field"><label>Reviewed By</label><input type="text" id="cfg-reviewedBy" placeholder="Reviewer / supervisor name"></div>
+        <div class="field span2"><label>Site address <span style="text-transform:none;letter-spacing:0">(printed on incident / spill reports)</span></label><textarea rows="1" class="auto-expand auto-line" id="cfg-siteAddress" placeholder="Street, town, state ZIP"></textarea></div>
         <div class="field span2"><label>Site location <span style="text-transform:none;letter-spacing:0">(weather) — lets Get My Weather fetch the jobsite from home</span></label>
           <div style="display:flex;gap:6px;align-items:center">
             <input type="number" step="any" id="cfg-siteLat" placeholder="Latitude" style="flex:1;min-width:0">

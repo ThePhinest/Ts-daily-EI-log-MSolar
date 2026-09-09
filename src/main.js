@@ -53,6 +53,7 @@ import './report.js'
 import './signature.js'   // shared drawn-signature capture (must precede swppp.js + members.js use)
 import './swppp.js'
 import './agencyVisits.js'
+import './spills.js'   // 🛢 spill / incident records (9/8, #29) — same record-first pattern as agencyVisits
 import './seedingSpecs.js'
 import './picker.js'
 import './applications.js'

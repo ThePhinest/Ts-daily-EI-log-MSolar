@@ -8,6 +8,7 @@ const PROJECT_CONFIG_DEFAULTS = {
   activePhase: '',
   siteLat:     '',
   siteLon:     '',
+  siteAddress: '',   // printed on incident / spill reports (9/8)
   contractor:  '',
   location:    '',
   reviewedBy:  ''
@@ -128,7 +129,7 @@ async function syncProjectConfigFromCloud() {
       };
       localStorage.setItem('msf_projectconfig', JSON.stringify(data));
         applyProjectConfig();
-        ['projectName','preparedBy','org','activePhase','contractor','location','reviewedBy','siteLat','siteLon'].forEach(k=>{
+        ['projectName','preparedBy','org','activePhase','contractor','location','reviewedBy','siteLat','siteLon','siteAddress'].forEach(k=>{
           const el=document.getElementById('cfg-'+k);
           if(el) el.value=data[k]||'';
         });
@@ -158,7 +159,7 @@ function applyProjectConfig() {
   const sub = document.getElementById('app-bar-sub');
   if (sub && cfg.projectName) sub.textContent = cfg.projectName;
   // Populate config fields
-  ['projectName','preparedBy','org','activePhase','contractor','location','reviewedBy','siteLat','siteLon'].forEach(k => {
+  ['projectName','preparedBy','org','activePhase','contractor','location','reviewedBy','siteLat','siteLon','siteAddress'].forEach(k => {
     const el = document.getElementById('cfg-' + k);
     if (el) { el.value = cfg[k]; if(el.tagName==='TEXTAREA' && typeof autoResize==='function') autoResize(el); }
  });
@@ -177,7 +178,8 @@ function saveProjectConfig() {
     reviewedBy:  document.getElementById('cfg-reviewedBy').value.trim()  || PROJECT_CONFIG_DEFAULTS.reviewedBy,
     // Site location (weather): lets Get My Weather fetch the JOBSITE from home (8/21)
     siteLat:     (document.getElementById('cfg-siteLat')?.value||'').trim(),
-    siteLon:     (document.getElementById('cfg-siteLon')?.value||'').trim()
+    siteLon:     (document.getElementById('cfg-siteLon')?.value||'').trim(),
+    siteAddress: (document.getElementById('cfg-siteAddress')?.value||'').trim()
   };
   if(cfg.projectName !== oldCfg.projectName){
     // Tag all untagged timesheet entries with the old project name before switching

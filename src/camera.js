@@ -992,6 +992,13 @@ function _flushPendingRoll(){
     }
   })();
 }
+// 9/8 (#30): map captures + the lightbox "save to camera roll" button reuse the
+// same GroundLog-album path as camera shots. `entry.id` names the temp file.
+export async function camRollSaveBlob(entry, blob, tag){
+  if(!_isNative()||!entry||!blob) return;
+  await _rollSaveOuts(entry,[{b:blob,tag:tag||'copy'}]);
+}
+export function camAutoSaveMode(){ return camAutoSave(); }
 
 // ── post-shot strip (non-blocking) ──
 // Thumbnail + the two per-shot editables. Ignore it and keep shooting; tap to

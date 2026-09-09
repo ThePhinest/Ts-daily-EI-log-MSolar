@@ -103,6 +103,14 @@ async function swpppSaveSetup(){
   catch(e){ ta.style.borderColor='#e74c3c'; return; }
   if(cfg.formType !== 'swppp-qi-inspection'){ ta.style.borderColor='#e74c3c'; return; }
   const pid = _swPid();
+  // Re-pasting the JSON must not resurrect hidden rows (#78) — carry the flags by id.
+  try{
+    const prev=_swCfg[pid];
+    ['drainageAreas','dischargePoints'].forEach(k=>{
+      const hid=new Set(((prev&&prev[k])||[]).filter(r=>r&&r.hidden).map(r=>r.id));
+      (cfg[k]||[]).forEach(r=>{ if(r&&hid.has(r.id)) r.hidden=true; });
+    });
+  }catch(e){}
   _swCfg[pid] = cfg;
   idbSet('sw_cfg::'+pid, cfg);
   try{ if(db && _fbReady) await _swProj(pid).collection('config').doc('swpppQiForm').set(cfg); }
@@ -387,11 +395,56 @@ function swpppSetAllSections(collapse){
   }
 }
 
+// ── Row visibility (9/8, #78) ──
+// Config rows (§2 drainage areas, §3 discharge points) can be HIDDEN without being
+// deleted — a DA that dropped out of the LOD keeps its ID + acreage in the config,
+// but the form, the bulk buttons and both exports skip it. Stored as `hidden:true`
+// on the row inside the shared config doc (lead write). Re-pasting the config JSON
+// carries the flags over by row id (swpppSaveSetup).
+function _swRows(cfg, which){ return ((cfg&&cfg[which])||[]).filter(r=>r&&!r.hidden); }
+async function _swSaveCfg(pid, cfg){
+  _swCfg[pid]=cfg;
+  idbSet('sw_cfg::'+pid, cfg);
+  try{ if(db && _fbReady) await _swProj(pid).collection('config').doc('swpppQiForm').set(cfg); }
+  catch(e){ console.warn('swppp config cloud save failed (kept locally):', e.message); }
+}
+function swpppRowsManage(which){
+  const pid=_swPid(); const cfg=_swCfg[pid]; if(!cfg) return;
+  const list=cfg[which]||[];
+  const title=which==='dischargePoints'?'Points of Discharge':'Drainage Areas';
+  const esc=(s)=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+  const ov=document.createElement('div'); ov.className='modal-overlay'; ov.style.cssText='z-index:9500';
+  ov.innerHTML=`<div class="modal-box" style="max-width:420px;width:92%;max-height:82dvh;display:flex;flex-direction:column">
+    <div class="modal-title" style="margin-bottom:2px">⚙ ${title} — rows on this form</div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-bottom:10px;line-height:1.5">Untick a row to hide it from the form and every export (e.g. a DA that is no longer inside the LOD). Nothing is deleted — tick it again to bring it back.</div>
+    <div style="flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:2px;min-height:0">
+      ${list.map((r,i)=>`<label style="display:flex;align-items:flex-start;gap:10px;padding:8px 6px;border-bottom:1px solid var(--border);cursor:pointer;opacity:${r.hidden?'.55':'1'}">
+        <input type="checkbox" data-i="${i}" ${r.hidden?'':'checked'} style="margin-top:3px;width:18px;height:18px;flex-shrink:0">
+        <span style="min-width:0"><span style="font-family:var(--mono);font-size:12px;color:var(--text);font-weight:700">${esc(r.id)}</span><br><span style="font-size:11px;color:var(--muted)">${esc(r.desc||r.location||'')}</span></span>
+      </label>`).join('')}
+    </div>
+    <div class="modal-btns" style="margin-top:10px">
+      <button class="modal-cancel" onclick="this.closest('.modal-overlay').remove()">Cancel</button>
+      <button class="modal-confirm" id="sw-rows-save">Save</button>
+    </div>
+  </div>`;
+  document.body.appendChild(ov);
+  ov.querySelector('#sw-rows-save').onclick=async()=>{
+    ov.querySelectorAll('input[type=checkbox]').forEach(cb=>{ const r=list[+cb.dataset.i]; if(!r) return; if(cb.checked) delete r.hidden; else r.hidden=true; });
+    await _swSaveCfg(pid, cfg);
+    ov.remove();
+    _swRenderSection(which==='dischargePoints'?'sw-sec-dp':'sw-sec-da2');
+    if(typeof showCloudBanner==='function') showCloudBanner(`✓ ${title}: ${list.filter(r=>!r.hidden).length} of ${list.length} rows shown.`);
+  };
+}
+window.swpppRowsManage=swpppRowsManage;
+window._swRows=_swRows;
+
 // ── Bulk condition set for row sections (§2 drainage areas, §3 discharge points) ──
 function swpppRowsAll(which, cond){
   const insp = _swGet(_swOpenId); if(!insp || insp.status==='completed') return;
   const cfg = _swCfg[_swPid()]; if(!cfg) return;
-  const list = which==='dischargePoints' ? (cfg.dischargePoints||[]) : (cfg.drainageAreas||[]);
+  const list = _swRows(cfg, which==='dischargePoints' ? 'dischargePoints' : 'drainageAreas');
   list.forEach(r=>{
     if(!insp[which][r.id]) insp[which][r.id]={condition:''};
     insp[which][r.id].condition = cond;
@@ -621,8 +674,9 @@ function _swRenderReportsInner(host, pid){
           <button class="gl-es-btn gl-es-btn-primary" onclick="swpppShowSetup()">⚙ Set up QI report</button>
         </div>
       </div>
-      <div id="av-reports-sec"></div>`;
+      <div id="av-reports-sec"></div><div id="sp-reports-sec"></div>`;
     if(typeof window.avRenderReportsSec==='function') window.avRenderReportsSec();
+  if(typeof window.spRenderReportsSec==='function') window.spRenderReportsSec();
     return;
   }
   const uid = _swUid();
@@ -683,8 +737,9 @@ function _swRenderReportsInner(host, pid){
         ? '<p style="color:var(--muted);font-size:12px;padding:6px 2px">Loading archive…</p>'
         : (dailyRows ? dailyRows+moreDaily : '<p style="color:var(--muted);font-size:12px;padding:6px 2px">No generated reports yet — they archive here automatically when you Generate Report on the Daily Log.</p>')}
     </div>
-    <div id="av-reports-sec"></div>`;
+    <div id="av-reports-sec"></div><div id="sp-reports-sec"></div>`;
   if(typeof window.avRenderReportsSec==='function') window.avRenderReportsSec();
+  if(typeof window.spRenderReportsSec==='function') window.spRenderReportsSec();
 }
 
 // Section re-render (keeps text-input focus intact elsewhere). The section
@@ -714,7 +769,9 @@ function _swRenderForm(){
   const esc = (s)=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
   const dis = ro ? 'disabled' : '';
   const field = (label, inputHtml)=>`<div class="field"><label>${label}</label>${inputHtml}</div>`;
-  const txt = (val, keys, ph)=>`<input type="text" value="${esc(val)}" placeholder="${ph||''}" ${dis} oninput="swInp(event,${keys.map(k=>`'${String(k).replace(/'/g,"\\'")}'`).join(',')})">`;
+  // 9/8 (#31): every free-text field on this form is a one-row auto-grow textarea —
+  // never a clipping <input> (feedback_resizable_text_fields). Enter still commits.
+  const txt = (val, keys, ph)=>`<textarea rows="1" class="auto-expand auto-line" placeholder="${ph||''}" ${dis} oninput="swInp(event,${keys.map(k=>`'${String(k).replace(/'/g,"\\'")}'`).join(',')})">${esc(val)}</textarea>`;
   const ta = (val, keys, ph)=>`<textarea class="auto-expand" rows="2" placeholder="${ph||''}" ${dis} oninput="swInp(event,${keys.map(k=>`'${String(k).replace(/'/g,"\\'")}'`).join(',')})">${esc(val)}</textarea>`;
   let segSeq = 0;
   const seg = (opts, current, keys)=>{ const gid='sw-g'+(segSeq++); return _swSegHtml(gid, current, opts, keys); };
@@ -787,7 +844,7 @@ function _swRenderForm(){
   _swSectionHtml['sw-sec-da2'] = ()=>{
     const i=_swGet(_swOpenId);
     let s2=0;
-    const rows=(cfg.drainageAreas||[]).map(da=>{
+    const rows=_swRows(cfg,'drainageAreas').map(da=>{
       const st=i.drainageAreas[da.id]||{condition:'',action:''};
       const gid='sw-da'+(s2++);
       const showAction = st.condition==='deficient';
@@ -803,6 +860,7 @@ function _swRenderForm(){
       ${ro?'':`<div style="display:flex;gap:8px;margin-bottom:8px">
         <button class="btn btn-outline" style="font-size:11px" onclick="swpppRowsAll('drainageAreas','acceptable')">✓ Mark all Acceptable</button>
         <button class="btn btn-outline" style="font-size:11px" onclick="swpppRowsAll('drainageAreas','')">Clear all</button>
+        <button class="btn btn-outline" style="font-size:11px;margin-left:auto" title="Show / hide drainage-area rows" onclick="swpppRowsManage('drainageAreas')">⚙ Rows</button>
       </div>`}
       ${field('Grouped note (inactive / undisturbed DAs)', ta(i.daBulkNote,['daBulkNote'],'e.g. All DAs without active grading — no ESC controls installed, no disturbance; inspected representative areas.'))}
       ${rows}
@@ -813,7 +871,7 @@ function _swRenderForm(){
   _swSectionHtml['sw-sec-dp'] = ()=>{
     const i=_swGet(_swOpenId);
     let s3=0;
-    const rows=(cfg.dischargePoints||[]).map(dp=>{
+    const rows=_swRows(cfg,'dischargePoints').map(dp=>{
       const st=i.dischargePoints[dp.id]||{condition:'',notes:''};
       const gid='sw-dp'+(s3++);
       const showNotes = st.condition==='deficient';
@@ -829,6 +887,7 @@ function _swRenderForm(){
       ${ro?'':`<div style="display:flex;gap:8px;margin-bottom:8px">
         <button class="btn btn-outline" style="font-size:11px" onclick="swpppRowsAll('dischargePoints','acceptable')">✓ Mark all Acceptable</button>
         <button class="btn btn-outline" style="font-size:11px" onclick="swpppRowsAll('dischargePoints','')">Clear all</button>
+        <button class="btn btn-outline" style="font-size:11px;margin-left:auto" title="Show / hide discharge-point rows" onclick="swpppRowsManage('dischargePoints')">⚙ Rows</button>
       </div>`}
       ${rows}
     </div></div>`;
@@ -860,7 +919,7 @@ function _swRenderForm(){
           <span class="sw-bmp-lbl">Maint. needed</span>${_swSegHtml(g3, st.maintenance||'', YN, ['bmps',b.name,'maintenance'])}
           <span class="sw-bmp-lbl">Corrective</span>${_swSegHtml(g4, st.corrective||'', [{v:'compliant',l:'Compliant'},{v:'action',l:'Action Req',cls:'sw-warn'}], ['bmps',b.name,'corrective'])}
         </div>
-        <input type="text" placeholder="Status / notes…" value="${esc(st.status||'')}" ${dis} oninput="swInp(event,'bmps','${esc(b.name)}','status')">
+        <textarea rows="1" class="auto-expand auto-line" placeholder="Status / notes…" ${dis} oninput="swInp(event,'bmps','${esc(b.name)}','status')">${esc(st.status||'')}</textarea>
       </div>`;
     }).join('');
     // Phase-start ESC certification: promoted to an amber banner (Tim 7/31 —
@@ -926,7 +985,7 @@ function _swRenderForm(){
       ${c.fromComplianceId?'<div class="sw-ca-src">↩ carried from the Compliance log (still open)</div>':''}
       <div class="g g2">
         <div class="field"><label>Date identified</label><input type="date" value="${esc(c.dateId)}" ${dis} oninput="swCaInp(event,${idx},'dateId')"></div>
-        <div class="field"><label>Location / BMP</label><input type="text" value="${esc(c.location)}" ${dis} oninput="swCaInp(event,${idx},'location')"></div>
+        <div class="field"><label>Location / BMP</label><textarea rows="1" class="auto-expand auto-line" ${dis} oninput="swCaInp(event,${idx},'location')">${esc(c.location)}</textarea></div>
       </div>
       <div class="field"><label>Description of deficiency</label><textarea class="auto-expand" rows="2" ${dis} oninput="swCaInp(event,${idx},'desc')">${esc(c.desc)}</textarea></div>
       <div class="field"><label>Required action / deadline / status</label><textarea class="auto-expand" rows="2" ${dis} oninput="swCaInp(event,${idx},'action')">${esc(c.action)}</textarea></div>
@@ -956,7 +1015,7 @@ function _swRenderForm(){
       return `<div class="sw-att-row">
         <img src="${p.thumb||''}" class="sw-att-thumb">
         <div class="sw-att-fields">
-          <input type="text" placeholder="Area / DA" value="${esc(m.area||'')}" ${dis} oninput="swMetaInp(event,'sketchMeta','${id}','area')">
+          <textarea rows="1" class="auto-expand auto-line" placeholder="Area / DA" ${dis} oninput="swMetaInp(event,'sketchMeta','${id}','area')">${esc(m.area||'')}</textarea>
           <textarea rows="1" class="auto-expand auto-line" placeholder="Status / description" ${dis} oninput="swMetaInp(event,'sketchMeta','${id}','desc')">${esc(m.desc||'')}</textarea>
         </div>
       </div>`;
@@ -977,7 +1036,7 @@ function _swRenderForm(){
       return `<div class="sw-att-row">
         <img src="${p.thumb||''}" class="sw-att-thumb">
         <div class="sw-att-fields">
-          <input type="text" placeholder="Location / DA" value="${esc(m.loc||'')}" ${dis} oninput="swMetaInp(event,'photoMeta','${id}','loc')">
+          <textarea rows="1" class="auto-expand auto-line" placeholder="Location / DA" ${dis} oninput="swMetaInp(event,'photoMeta','${id}','loc')">${esc(m.loc||'')}</textarea>
           <textarea rows="1" class="auto-expand auto-line" placeholder="Subject / description" ${dis} oninput="swMetaInp(event,'photoMeta','${id}','subject')">${esc(m.subject||'')}</textarea>
         </div>
       </div>`;
@@ -1245,7 +1304,7 @@ async function swpppBuildDocx(insp,cfg){
 
   // §2 Drainage areas
   const daRows=[new TableRow({children:[hcell('Drainage Area ID',18),hcell('General Location / Description',42),hcell('Condition',22),hcell('Action Required',18)]})];
-  (cfg.drainageAreas||[]).forEach(da=>{
+  _swRows(cfg,'drainageAreas').forEach(da=>{
     const st=(insp.drainageAreas||{})[da.id]||{};
     const cond=CB(st.condition==='acceptable')+'Acceptable   '+CB(st.condition==='deficient')+'Deficient';
     daRows.push(new TableRow({children:[cell(da.id,{bold:true,size:16}),cell(da.desc,{size:16}),cell(cond,{size:16}),cell(st.action||'',{size:16})]}));
@@ -1253,7 +1312,7 @@ async function swpppBuildDocx(insp,cfg){
 
   // §3 Discharge points
   const dpRows=[new TableRow({children:[hcell('Discharge Point ID',14),hcell('Location Description',36),hcell('Receiving Water',26),hcell('Condition / Notes',24)]})];
-  (cfg.dischargePoints||[]).forEach(dp=>{
+  _swRows(cfg,'dischargePoints').forEach(dp=>{
     const st=(insp.dischargePoints||{})[dp.id]||{};
     const cond=CB(st.condition==='acceptable')+'Acceptable   '+CB(st.condition==='deficient')+'Deficient'+(st.notes?` — ${st.notes}`:'');
     dpRows.push(new TableRow({children:[cell(dp.id,{bold:true,size:16}),cell(dp.location,{size:16,i:true}),cell(dp.receiving,{size:16,i:true}),cell(cond,{size:16})]}));

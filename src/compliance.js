@@ -383,6 +383,7 @@ function clRender(){
 
   clRenderTrackerCard();
   if(typeof window.avRenderComplianceCard==='function') window.avRenderComplianceCard();
+  if(typeof window.spRenderComplianceCard==='function') window.spRenderComplianceCard();
   const list = document.getElementById('cl-list');
   if(!list) return;
 
@@ -627,29 +628,44 @@ function clGetOpenEntries(){
   const pid = _activeProjectId();
   return _clEntries.filter(e => e.status!=='Resolved' && (!e.projectId || e.projectId===pid)).slice();
 }
-function clAddEntries(items){
+// One programmatic entry (QI deficiencies, spill "Log as CMP" …) — returns the new id.
+function _clPushEntry(it, addedBy){
+  const pid=_activeProjectId();
+  const _n = clNextCmpNum(pid); _clCmpBump(pid, _n);
+  const id = clGenId();
+  _clEntries.push({
+    id,
+    cmpNum: _n,
+    date: it.date || new Date().toLocaleDateString('en-CA'),
+    level: it.level || 2,
+    location: it.location || '',
+    corrective: it.corrective || '',
+    status: 'Open', dateResolved: '',
+    sourceReport: it.sourceReport || '',
+    sourceInspection: it.sourceInspection || '',
+    photoIds: Array.isArray(it.photoIds) ? it.photoIds.slice() : [],
+    addedBy: addedBy || 'swppp-qi',
+    projectId: pid
+  });
+  return id;
+}
+function clAddEntry(it, addedBy){
+  if(!it) return null;
+  if(!_clEntries.length) clLoadLocal();
+  const id=_clPushEntry(it, addedBy);
+  clSave();
+  if(document.getElementById('page-compliance')?.classList.contains('active')) clRender();
+  return id;
+}
+function clAddEntries(items, addedBy){
   if(!Array.isArray(items) || !items.length) return 0;
   if(!_clEntries.length) clLoadLocal();
-  items.forEach(it => {
-    const _n = clNextCmpNum(_activeProjectId()); _clCmpBump(_activeProjectId(), _n);
-    _clEntries.push({
-      id: clGenId(),
-      cmpNum: _n,
-      date: it.date || new Date().toLocaleDateString('en-CA'),
-      level: it.level || 2,
-      location: it.location || '',
-      corrective: it.corrective || '',
-      status: 'Open', dateResolved: '',
-      sourceReport: it.sourceReport || '',
-      sourceInspection: it.sourceInspection || '',
-      addedBy: 'swppp-qi',
-      projectId: _activeProjectId()
-    });
-  });
+  items.forEach(it => _clPushEntry(it, addedBy));
   clSave();
   if(document.getElementById('page-compliance')?.classList.contains('active')) clRender();
   return items.length;
 }
+if(typeof window!=='undefined'){ window.clAddEntry=clAddEntry; }
 
 // ── Delete with confirm modal ──
 function clConfirmDelete(id){
@@ -755,6 +771,7 @@ function clToggleCard(key){
   const el=key==='log'?document.getElementById('cl-log-card')
     :key==='punch'?document.getElementById('cl-punchlist-card')?.firstElementChild
     :key==='agency'?document.getElementById('cl-agency-card')?.firstElementChild
+    :key==='spill'?document.getElementById('cl-spill-card')?.firstElementChild
     :document.getElementById('cl-tracker-card')?.firstElementChild;
   if(el) el.classList.toggle('collapsed',!!s[key]);
 }
