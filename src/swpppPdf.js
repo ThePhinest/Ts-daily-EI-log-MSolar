@@ -275,7 +275,7 @@ export async function swpppBuildPdf(insp,cfg,sig){
   // §8 Corrective actions
   const caBody=[[hcell('Date Identified'),hcell('Location / BMP'),hcell('Description of Deficiency'),hcell('Required Action / Deadline / Status')]];
   const caList=(insp.corrective&&insp.corrective.length)?insp.corrective:[];
-  caList.forEach(c=>{ caBody.push([cell(c.dateId||'',{size:8}),cell(c.location||'',{size:8}),cell(c.desc||'',{size:8}),cell(c.action||'',{size:8})]); });
+  caList.forEach(c=>{ caBody.push([cell(c.dateId||'',{size:8}),cell(c.location||'',{size:8}),cell(c.desc||'',{size:8}),cell([c.action||'',c.actions?('Actions taken: '+c.actions):''].filter(Boolean).join('\n'),{size:8})]); });
   if(!caList.length) caBody.push([cell('—',{size:8}),cell('None identified this inspection',{size:8}),cell('',{size:8}),cell('',{size:8})]);
   const caTbl={table:{headerRows:1,dontBreakRows:true,widths:cols(14,22,34),body:caBody},layout:hairLayout,margin:[0,2,0,4]};
 
@@ -508,12 +508,12 @@ export async function dailyBuildPdf(logData,polished,photoRefs,opts){
   const cpFind=id=>cpRefs.find(r=>r.id===id)||(photoRefs||[]).find(r=>r.id===id)||(window._phPhotos||[]).find(p=>p.id===id)||(window._phShared||[]).find(p=>p.id===id)||null;
   const compBody=[[dhcell('Level'),dhcell('Location / Description'),dhcell('Corrective Action'),dhcell('Status')]];
   for(const i of compIssues){
-    compBody.push([cell(i.level),cell(i.description),cell(i.corrective),cell(i.status)]);
+    compBody.push([cell(i.level),cell(i.description),cell([i.corrective||'',i.actions?('Actions taken: '+i.actions):''].filter(Boolean).join('\n')),cell(i.status)]);
     const ims=[];
     for(const pid of (i.photoIds||[])){
       const ref=cpFind(pid); if(!ref) continue;
       const im=await _dailyImg(ref,300,260);
-      if(im) ims.push({im,cap:ref.caption?String(ref.caption):(ref.date?`Photo · ${ref.date}`:'Photo')});
+      if(im) ims.push({im,cap:((i.fixIds||[]).includes(pid)?'Correction — ':'')+(ref.caption?String(ref.caption):(ref.date?`Photo · ${ref.date}`:'Photo'))});
     }
     if(ims.length) compBody.push([{colSpan:4,fillColor:'#FAFAFA',table:{dontBreakRows:true,widths:['*','*'],body:_imgPairRows(ims)},layout:imgGridLayout,margin:[0,2,0,2]},{},{},{}]);
   }
@@ -704,10 +704,18 @@ export async function punchlistBuildPdf(opts){
     const hot=over?{fill:_pal.hot,bold:true}:{};
     const dOpen=daysOpen(e);
     const ims=[];
-    for(const pId of (e.photoIds||[])){
+    // 9/10: correction photos (on the entry's Actions-taken steps) print interleaved, tagged.
+    const fixIds=(typeof window.clStepPhotoIds==='function')?window.clStepPhotoIds(e):[];
+    const allIds=(e.photoIds||[]).concat(fixIds.filter(x=>!(e.photoIds||[]).includes(x)));
+    for(const pId of allIds){
       const im=await _imgFor(pId,250,300);
-      if(im){ const c=String((e.photoCaptions||{})[pId]||(im.p&&im.p.caption)||'').trim(); ims.push({im,cap:`${id} — ${c||'compliance photo'}`}); }
+      if(im){
+        const c=String((e.photoCaptions||{})[pId]||(im.p&&im.p.caption)||'').trim();
+        const st=(fixIds.includes(pId)&&typeof window.clStepFor==='function')?window.clStepFor(e,pId):null;
+        ims.push({im,cap:`${id} — ${st?('Correction'+(st.date?' '+fmtD(st.date):'')+' — '):''}${c||(st?'correction photo':'compliance photo')}`});
+      }
     }
+    const actionsTxt=(typeof window.clStepsText==='function')?window.clStepsText(e):'';
     const rc=(t)=>({text:t,bold:true,color:'#FFFFFF',fillColor:RED,fontSize:9});
     return [
       {table:{headerRows:1,dontBreakRows:true,widths:cols(12,22,16,16),body:[
@@ -716,6 +724,7 @@ export async function punchlistBuildPdf(opts){
       ]},layout:hairLayout,margin:[0,8,0,2]},
       body([{text:'Location / description:  ',bold:true},{text:esc(e.location||'—')}]),
       body([{text:'Corrective action:  ',bold:true},{text:esc(e.corrective||'—')}]),
+      ...(actionsTxt?[body([{text:'Actions taken:  ',bold:true},{text:esc(actionsTxt)}])]:[]),
       body([{text:'Source:  ',bold:true},{text:'Compliance Log'+(e.sourceReport?`  ·  report ${fmtD(e.sourceReport)}`:'')}],{fontSize:8,color:'#555555',margin:[0,0,0,2]}),
       ...(ims.length?[{table:{dontBreakRows:true,widths:['*','*'],body:_imgPairRows(ims)},layout:imgGridLayout,margin:[0,3,0,2]}]:[])
     ];
@@ -749,7 +758,7 @@ export async function punchlistBuildPdf(opts){
   const fxBody=[[hcell('Item'),hcell('Deficiency'),hcell('BMP / Level'),hcell('Flagged'),hcell('Fixed'),hcell('Resolution')]];
   fxSorted.forEach(e=>fxBody.push([cell(e.plNum?('PL-'+String(e.plNum).padStart(2,'0')):'—',{bold:true}),cell(esc(e.tempLabel||'Repair')),cell(catName(e)),cell(fmtD(e.date)),cell(fmtTs(e.resolvedAt)),cell(esc(e.resolveNote||'—'))]));
   [...cmpFixed].sort((a,b)=>(b.dateResolved||'')<(a.dateResolved||'')?-1:1)
-    .forEach(e=>fxBody.push([cell(cmpId(e),{bold:true,color:RED}),cell(esc(e.location||'—')),cell(lvlLabel(e.level)),cell(fmtD(e.date)),cell(fmtD(e.dateResolved)),cell(esc(e.corrective||'—'))]));
+    .forEach(e=>fxBody.push([cell(cmpId(e),{bold:true,color:RED}),cell(esc(e.location||'—')),cell(lvlLabel(e.level)),cell(fmtD(e.date)),cell(fmtD(e.dateResolved)),cell(esc(((typeof window.clStepsText==='function')?window.clStepsText(e):'')||e.corrective||'—'))]));
 
   // 🚩 Overview captures (FAB punchlist capture flow) — every shot from the
   // NEWEST capture day fronts the report, so "where is PL-NN" is answered

@@ -461,6 +461,7 @@ function oiResolve(id){
         e.status='Resolved'; e.dateResolved=_oiToday();
         if(typeof window.clSave==='function') window.clSave();
         if(typeof window.clRender==='function'){ try{ window.clRender(); }catch{} }
+        if(typeof window.clOfferCorrectionPhoto==='function'){ try{ window.clOfferCorrectionPhoto(e.id); }catch{} }
       }
     }
     oiRender();

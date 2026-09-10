@@ -955,6 +955,7 @@ button:disabled,button[disabled]{opacity:.45;cursor:not-allowed}
 #dl-carry-toast.on{opacity:1;transform:translate(-50%,0)}
 .cal-legend>span{display:flex;align-items:center;gap:6px}
 .cal-legend i{font-style:normal;width:18px;flex:none;text-align:center}
+.cl-entry img[data-fix],.cl-step img[data-fix]{outline:2px solid var(--green,#27AE60);outline-offset:-2px}
 .cl-fpill{font-family:var(--mono);font-size:11px;padding:5px 12px;border-radius:11px;border:1px solid;cursor:pointer;transition:all .12s;line-height:1.2}
 .cl-fpill:not(.on){border-color:var(--border) !important;color:var(--muted) !important;background:var(--s1) !important}
 .cl-fpill.on{font-weight:700}
@@ -3094,6 +3095,11 @@ Anticipated rain — AM weather monitoring expected"></textarea>
         <button type="button" class="btn btn-outline" style="font-size:11px;padding:6px 12px" onclick="clFormCamera()">📸 Camera</button>
         <button type="button" class="btn btn-outline" style="font-size:11px;padding:6px 12px" onclick="clFormPickPhotos()">📎 Attach from library</button>
       </div>
+    </div>
+    <div class="field">
+      <label>Actions Taken</label>
+      <div id="cl-f-steps"></div>
+      <button type="button" class="btn btn-outline" style="font-size:11px;padding:6px 12px" onclick="clFormStepAdd()">＋ Add step</button>
     </div>
     <div class="cl-form-row">
       <div class="field">

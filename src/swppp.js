@@ -215,6 +215,7 @@ function swpppNewInspection(){
       // compliance entry's Location / Description, the action its corrective text.
       desc: [(e.cmpNum&&typeof clCmpFmt==='function')?clCmpFmt(e.cmpNum):'', e.level?`Level ${e.level}`:''].filter(Boolean).join(' · '),
       action: e.corrective || '',
+      actions: (typeof clStepsText==='function')?clStepsText(e):'',   // 9/10: Actions taken, printed as its own line
       fromComplianceId: e.id
     }));
   }catch(err){ console.warn('swppp §8 prefill failed:', err.message); }
@@ -989,6 +990,7 @@ function _swRenderForm(){
       </div>
       <div class="field"><label>Description of deficiency</label><textarea class="auto-expand" rows="2" ${dis} oninput="swCaInp(event,${idx},'desc')">${esc(c.desc)}</textarea></div>
       <div class="field"><label>Required action / deadline / status</label><textarea class="auto-expand" rows="2" ${dis} oninput="swCaInp(event,${idx},'action')">${esc(c.action)}</textarea></div>
+      ${c.actions?`<div class="sw-ca-src" style="white-space:normal">🔧 Actions taken: ${esc(c.actions)} <span style="opacity:.7">(from the Compliance log entry — prints as its own line)</span></div>`:''}
       ${ro?'':`<button class="btn btn-outline sw-ca-del" onclick="swpppRemoveCorrective(${idx})">🗑 Remove</button>`}
     </div>`).join('');
     return `<div class="card collapsed" id="sw-sec-ca"><div class="card-head" onclick="toggleSection('sw-sec-ca')"><span class="card-num">8</span><span class="card-title">Corrective Actions</span><span class="card-chevron">▾</span></div><div class="card-body">
@@ -1225,7 +1227,7 @@ async function swpppBuildDocx(insp,cfg){
   const cell=(text,o)=>{
     o=o||{};
     return new TableCell({borders,shading:o.fill?{fill:o.fill,type:ShadingType.CLEAR}:undefined,width:o.w?{size:o.w,type:WidthType.PERCENTAGE}:undefined,margins:{top:50,bottom:50,left:80,right:80},
-      children:[new Paragraph({children:[new TextRun({text:String(text==null?'':text),bold:!!o.bold,italics:!!o.i,font:'Arial',size:o.size||18,color:o.color||'000000'})]})]});
+      children:(Array.isArray(text)?text:[text]).map(t=>new Paragraph({children:[new TextRun({text:String(t==null?'':t),bold:!!o.bold,italics:!!o.i,font:'Arial',size:o.size||18,color:o.color||'000000'})]}))});
   };
   const hcell=(text,w)=>cell(text,{fill:BLUE,color:WHITE,bold:true,w,size:18});
   const infoRow=(label,value)=>new TableRow({children:[
@@ -1355,7 +1357,7 @@ async function swpppBuildDocx(insp,cfg){
   // §8 Corrective actions
   const caRows=[new TableRow({children:[hcell('Date Identified',14),hcell('Location / BMP',22),hcell('Description of Deficiency',34),hcell('Required Action / Deadline / Status',30)]})];
   const caList=(insp.corrective&&insp.corrective.length)?insp.corrective:[];
-  caList.forEach(c=>{ caRows.push(new TableRow({children:[cell(c.dateId||'',{size:16}),cell(c.location||'',{size:16}),cell(c.desc||'',{size:16}),cell(c.action||'',{size:16})]})); });
+  caList.forEach(c=>{ caRows.push(new TableRow({children:[cell(c.dateId||'',{size:16}),cell(c.location||'',{size:16}),cell(c.desc||'',{size:16}),cell(c.actions?[c.action||'','Actions taken: '+c.actions]:(c.action||''),{size:16})]})); });
   if(!caList.length) caRows.push(new TableRow({children:[cell('—',{size:16}),cell('None identified this inspection',{size:16}),cell('',{size:16}),cell('',{size:16})]}));
 
   // §10 / §11 — images with preserved aspect (createImageBitmap), thumb fallback.

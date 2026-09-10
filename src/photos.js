@@ -1820,7 +1820,7 @@ async function phSaveCameraPhoto(blob, meta){
   }
   // 9/5: 📸 from a Compliance Log entry (form or card) → the entry's photoIds.
   if(m.attach&&m.attach.type==='cl'&&m.attach.id&&typeof window.clAttachPhoto==='function'){
-    try{ window.clAttachPhoto(m.attach.id, id); }
+    try{ window.clAttachPhoto(m.attach.id, id, m.attach.step||null); }
     catch(e){ console.warn('camera compliance-attach failed:',e); }
   }
   // 9/8: 📸 from a spill record (spills.js) → the record's photoIds.

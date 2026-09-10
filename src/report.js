@@ -278,7 +278,7 @@ async function rptCallClaude(logData, compEntries, systemPromptIn){
   }
   const crewSummary=(logData.crewBlocks||[]).map(b=>`Crew: ${b.name} | Time: ${b.time} | Location: ${b.location}\nActivities: ${b.activities}\nEnv Compliance: ${b.envCompliance}\nIssues: ${b.issues}\nNotes: ${b.notes}`).join('\n\n');
   const compSummary=compEntries.length>0
-    ?compEntries.map(e=>`Level ${e.level} — ${e.location}|Corrective: ${e.corrective}|Status: ${e.status}${e.dateResolved?'|Resolved: '+e.dateResolved:''}`).join('\n')
+    ?compEntries.map(e=>`Level ${e.level} — ${e.location}|Corrective: ${e.corrective}|Status: ${e.status}${e.dateResolved?'|Resolved: '+e.dateResolved:''}${(Array.isArray(e.steps)&&e.steps.length)?'|Actions taken: '+e.steps.map(s=>(s.date?s.date+' ':'')+(s.text||'')).filter(Boolean).join('; '):''}`).join('\n')
     :'No compliance issues';
   const timeIn=_rptFmtTime(logData['p-timeIn'])||'6:30 AM';
   const userPrompt=`REPORT DATE: ${logData.reportDate}\nACTIVE PHASE: ${logData.activePhase}\nCONTRACTOR: ${logData.contractor}\nTIME IN: ${timeIn}\n\nCREW BLOCKS:\n${crewSummary}\n\nINSPECTION SUMMARY:\n${logData.inspectionSummary||''}\n\nAGENCY INSPECTION:\n${logData.agencyInspection||''}\n\nCOMPLIANCE ISSUES:\n${compSummary}\n\nLANDOWNER/PUBLIC:\n${logData.landownerContact||''}\n\nT&E/RTE:\n${logData.rteObservation||''}\n\nGENERAL COMMS:\n${logData.generalComms||''}\n\n24-HOUR LOOK AHEAD:\n${logData.lookahead||''}\n\nReturn ONLY valid JSON — no markdown, no preamble:\n{"contractorActivities":"...","fieldObservationsOpening":"...","fieldObservationsBullets":["..."],"fieldObservationsClosing":"...","agencyInspection":"...","complianceIssues":[{"level":"...","description":"...","corrective":"...","status":"...","dateResolved":""}],"landownerContact":"...","rteObservation":"...","generalComms":"...","lookaheadBullets":["..."]}`;
@@ -385,13 +385,13 @@ async function rptBuildDocx(logData,polished,photos){
     compRows.push(new TableRow({children:[
       new TableCell({borders,margins:{top:60,bottom:60,left:80,right:80},children:[new Paragraph({children:[new TextRun({text:issue.level||'',font:'Arial',size:18})]})]}),
       new TableCell({borders,margins:{top:60,bottom:60,left:80,right:80},children:[new Paragraph({children:[new TextRun({text:issue.description||'',font:'Arial',size:18})]})]}),
-      new TableCell({borders,margins:{top:60,bottom:60,left:80,right:80},children:[new Paragraph({children:[new TextRun({text:issue.corrective||'',font:'Arial',size:18})]})]}),
+      new TableCell({borders,margins:{top:60,bottom:60,left:80,right:80},children:[new Paragraph({children:[new TextRun({text:issue.corrective||'',font:'Arial',size:18})]}),...(issue.actions?[new Paragraph({children:[new TextRun({text:'Actions taken: '+issue.actions,italics:true,font:'Arial',size:18})]})]:[])]}),
       new TableCell({borders,margins:{top:60,bottom:60,left:80,right:80},children:[new Paragraph({children:[new TextRun({text:issue.status||'',font:'Arial',size:18})]})]})
     ]}));
     const cpList=[];
     (issue.photoIds||[]).forEach(id=>{
       const p=(window._phPhotos||[]).find(x=>x.id===id)||(window._phShared||[]).find(x=>x.id===id);
-      if(p) cpList.push({p,cap:p.caption?String(p.caption):(p.date?`Photo \u00b7 ${p.date}`:'Photo')});
+      if(p) cpList.push({p,cap:((issue.fixIds||[]).includes(id)?'Correction — ':'')+(p.caption?String(p.caption):(p.date?`Photo \u00b7 ${p.date}`:'Photo'))});
     });
     if(!cpList.length) continue;
     const photoRowsHere=[];
@@ -678,7 +678,7 @@ function _rptWithCurrentCompliance(polished, snapshot){
         prows.forEach((row,j)=>{ if(used.has(j)) return; if(lvl(row)!==lvl(e)) return; const rw=norm(row.description); const s=words.filter(w=>rw.includes(w)).length; if(s>score){ score=s; best=j; } });
         if(best>=0&&score>0){ p=prows[best]; used.add(best); }
       }
-      return {level:lvl(e)||(p&&p.level)||'', description:(e.cmpNum?('CMP-'+String(e.cmpNum).padStart(2,'0')+' — '):'')+((p&&p.description)||e.location||''), corrective:(p&&p.corrective)||e.corrective||'', status:e.status||(p&&p.status)||'', dateResolved:e.dateResolved||'', photoIds:Array.isArray(e.photoIds)?e.photoIds.slice():[]};
+      return {level:lvl(e)||(p&&p.level)||'', description:(e.cmpNum?('CMP-'+String(e.cmpNum).padStart(2,'0')+' — '):'')+((p&&p.description)||e.location||''), corrective:(p&&p.corrective)||e.corrective||'', status:e.status||(p&&p.status)||'', dateResolved:e.dateResolved||'', actions:(typeof window.clStepsText==='function')?window.clStepsText(e):'', fixIds:(typeof window.clStepPhotoIds==='function')?window.clStepPhotoIds(e):[], photoIds:(Array.isArray(e.photoIds)?e.photoIds.slice():[]).concat(((typeof window.clStepPhotoIds==='function')?window.clStepPhotoIds(e):[]).filter(x=>!(e.photoIds||[]).includes(x)))};
     });
     if(!rows.length) return polished;   // no entries → the polished "no issues" row stands
     return Object.assign({}, polished, {complianceIssues:rows});
@@ -705,7 +705,7 @@ function _buildSnapshot(logData, compEntries, skipPolish, photos, effectivePromp
   // REVIEWER's device (which can't read the author's photo library) prints them in §3.
   const seen = new Set(photoRefs.map(r => r.id));
   const compPhotoRefs = [];
-  compRefs.forEach(e => (e.photoIds||[]).forEach(id => {
+  compRefs.forEach(e => (e.photoIds||[]).concat(...(Array.isArray(e.steps)?e.steps.map(st=>st.photoIds||[]):[])).forEach(id => {
     if(seen.has(id)) return;
     const p = (window._phPhotos||[]).find(x => x.id===id) || (window._phShared||[]).find(x => x.id===id);
     if(p){ seen.add(id); compPhotoRefs.push(toRef(p)); }

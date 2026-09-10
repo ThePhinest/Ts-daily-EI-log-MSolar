@@ -105,6 +105,7 @@ function _clMirrorDoc(e){
   return { id:e.id, date:e.date||'', level:e.level||'', location:e.location||'', corrective:e.corrective||'',
     status:e.status||'Open', dateResolved:e.dateResolved||'', sourceReport:e.sourceReport||'', addedBy:e.addedBy||'',
     photoIds:Array.isArray(e.photoIds)?e.photoIds.slice():[],
+    steps:_clSteps(e).map(x=>({id:x.id||'', date:x.date||'', text:x.text||'', photoIds:(x.photoIds||[]).slice()})),
     projectId:e.projectId||'', ownerUid:_currentUser.uid, ownerName:(typeof window._glMyName==='function')?window._glMyName():(_currentUser.displayName||_currentUser.email||''),
     published:true, publishedAt:e.publishedAt||Date.now(), _ts:Date.now() };
 }
@@ -357,7 +358,8 @@ function clRender(){
   const _lAll=document.getElementById('cl-fp-l-all'); if(_lAll) _lAll.classList.toggle('on',!_clFilterLevel.size);
   if(search) entries = entries.filter(e=>
     (e.location||'').toLowerCase().includes(search) ||
-    (e.corrective||'').toLowerCase().includes(search)
+    (e.corrective||'').toLowerCase().includes(search) ||
+    clStepsText(e).toLowerCase().includes(search)
   );
 
   // Update stats (based on ALL entries, not filtered)
@@ -432,7 +434,8 @@ function clRender(){
           <div class="cl-field-lbl">Corrective Action</div>
           <div class="cl-field-val">${_hEsc(e.corrective)||'—'}</div>
         </div>
-        ${(()=>{ const ph=(e.photoIds||[]).map(_clPhotoById).filter(Boolean); return ph.length?`<div class="cl-field-val full" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:2px">${ph.map(p=>`<img src="${p.thumb}" onclick="phOpenLightbox('${p.id}',[${ph.map(x=>`'${x.id}'`).join(',')}])" style="width:64px;height:48px;object-fit:cover;border-radius:4px;cursor:pointer;border:1px solid var(--border2)">`).join('')}</div>`:''; })()}
+        ${(()=>{ const st=_clSteps(e); if(!st.length) return ''; return `<div class="cl-field-val full" style="margin-top:2px"><div class="cl-field-lbl">Actions taken</div>${st.map(x=>`<div style="font-size:12.5px;line-height:1.45;margin:2px 0"><span style="font-family:var(--mono);font-size:10px;color:var(--amber)">${_hEsc(x.date?clFmtDate(x.date):'')}</span> ${_hEsc(x.text||'')}${(x.photoIds||[]).length?` <span style="font-family:var(--mono);font-size:9px;color:var(--muted)">🔧 ${x.photoIds.length} photo${x.photoIds.length>1?'s':''}</span>`:''}</div>`).join('')}</div>`; })()}
+        ${(()=>{ const fix=new Set(clStepPhotoIds(e)); const ph=(e.photoIds||[]).concat(clStepPhotoIds(e).filter(id=>!(e.photoIds||[]).includes(id))).map(_clPhotoById).filter(Boolean); return ph.length?`<div class="cl-field-val full" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:2px">${ph.map(p=>`<img src="${p.thumb}"${fix.has(p.id)?' data-fix="1" title="🔧 Correction photo"':''} onclick="phOpenLightbox('${p.id}',[${ph.map(x=>`'${x.id}'`).join(',')}])" style="width:64px;height:48px;object-fit:cover;border-radius:4px;cursor:pointer;border:1px solid var(--border2)">`).join('')}</div>`:''; })()}
         ${resolvedRow}
       </div>
       ${viewRole?'':`<div class="cl-entry-footer">
@@ -452,7 +455,17 @@ function clRender(){
 // taken before Save still lands on it.
 var _clFormPhotoIds=[];
 var _clDraftId=null;
+var _clFormSteps=[];   // draft Actions-taken list: [{id,date,text,photoIds}]
 // ids are interpolated into onclick attributes — only well-formed ids resolve (teammate data).
+// ── Actions taken (9/10, Tim): a DATED LIST of steps on the entry, each with its own correction
+// photos. entry.steps = [{id, date:'YYYY-MM-DD', text, photoIds:[]}]; the entry's own photoIds stay
+// the OBSERVATION photos. Exports print the steps as their own line and the step photos
+// interleaved with the rest, tagged as corrections.
+function _clSteps(e){ return (e&&Array.isArray(e.steps))?e.steps.filter(s=>s&&(String(s.text||'').trim()||(Array.isArray(s.photoIds)&&s.photoIds.length))):[]; }
+function clStepsText(e){ return _clSteps(e).map(s=>(s.date?clFmtDate(s.date)+': ':'')+String(s.text||'').trim()).filter(Boolean).join('  ·  '); }
+function clStepPhotoIds(e){ const out=[]; _clSteps(e).forEach(s=>(s.photoIds||[]).forEach(id=>{ if(!out.includes(id)) out.push(id); })); return out; }
+function clStepFor(e, photoId){ return _clSteps(e).find(s=>(s.photoIds||[]).includes(photoId))||null; }
+function _clStepId(){ return 'st'+Date.now().toString(36)+Math.random().toString(36).slice(2,5); }
 function _clPhotoById(id){ if(!/^[A-Za-z0-9_-]{4,64}$/.test(String(id||''))) return null; return (window._phPhotos||[]).find(p=>p.id===id)||(window._phShared||[]).find(p=>p.id===id)||null; }
 function _clFormPhotosRender(){
   const host=document.getElementById('cl-f-photos'); if(!host) return;
@@ -477,21 +490,81 @@ function clFormPickPhotos(){
     }
   });
 }
+// ── Actions taken — form section ──
+function _clFormStepsRender(){
+  const host=document.getElementById('cl-f-steps'); if(!host) return;
+  host.innerHTML=_clFormSteps.map((s,i)=>{
+    const ph=(s.photoIds||[]).map(_clPhotoById).filter(Boolean);
+    return `<div class="cl-step" data-step="${s.id}" style="border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin-bottom:8px;background:var(--s2)">
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px">
+        <span style="font-family:var(--mono);font-size:10px;color:var(--amber);letter-spacing:.06em">STEP ${i+1}</span>
+        <input type="date" value="${_hEsc(s.date||'')}" onchange="clFormStepField('${s.id}','date',this.value)" style="flex:0 0 auto;background:var(--s1);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--mono);font-size:12px;padding:4px 6px">
+        <button type="button" onclick="clFormStepRemove('${s.id}')" title="Remove this step" style="margin-left:auto;background:none;border:none;color:var(--muted);font-size:14px;cursor:pointer;padding:2px 6px">✕</button>
+      </div>
+      <textarea class="short auto-expand" rows="2" placeholder="What was done — e.g. silt fence re-trenched and re-staked, sediment removed…" oninput="clFormStepField('${s.id}','text',this.value)">${_hEsc(s.text||'')}</textarea>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:6px">
+        ${ph.map(p=>`<div style="position:relative;flex-shrink:0"><img src="${p.thumb}" data-fix="1" onclick="phOpenLightbox('${p.id}',[${ph.map(x=>`'${x.id}'`).join(',')}])" style="width:56px;height:42px;object-fit:cover;border-radius:4px;cursor:pointer;display:block;border:1px solid var(--border2)"><button type="button" onclick="clFormStepPhotoRemove('${s.id}','${p.id}')" title="Unlink from this step" style="position:absolute;top:-5px;right:-5px;background:#c0392b;border:none;border-radius:50%;width:16px;height:16px;font-size:9px;color:#fff;cursor:pointer;padding:0;line-height:16px">✕</button></div>`).join('')}
+        <button type="button" class="btn btn-outline" style="font-size:10px;padding:4px 9px" onclick="clFormStepCamera('${s.id}')" title="Photo of the correction">📸</button>
+        <button type="button" class="btn btn-outline" style="font-size:10px;padding:4px 9px" onclick="clFormStepPick('${s.id}')" title="Correction photo from the library">📎</button>
+      </div>
+    </div>`;
+  }).join('');
+  requestAnimationFrame(()=>host.querySelectorAll('textarea.auto-expand').forEach(t=>{ if(typeof autoResize==='function') autoResize(t); }));
+}
+function clFormStepAdd(){
+  _clFormSteps.push({id:_clStepId(), date:new Date().toLocaleDateString('en-CA'), text:'', photoIds:[]});
+  _clFormStepsRender();
+  setTimeout(()=>{ const h=document.getElementById('cl-f-steps'); const t=h&&h.querySelector('.cl-step:last-child textarea'); if(t) t.focus(); },60);
+}
+function clFormStepField(id,f,v){ const s=_clFormSteps.find(x=>x.id===id); if(s) s[f]=v; }
+function clFormStepRemove(id){ _clFormSteps=_clFormSteps.filter(x=>x.id!==id); _clFormStepsRender(); }
+function clFormStepPhotoRemove(id,photoId){ const s=_clFormSteps.find(x=>x.id===id); if(s){ s.photoIds=(s.photoIds||[]).filter(x=>x!==photoId); _clFormStepsRender(); } }
+function clFormStepCamera(stepId){
+  const id=_clEditId||_clDraftId; if(!id) return;
+  if(typeof phOpenCamera==='function') phOpenCamera({attach:{type:'cl',id,step:stepId}});
+}
+function clFormStepPick(stepId){
+  const s=_clFormSteps.find(x=>x.id===stepId); if(!s) return;
+  phPickerOpen({
+    title:'Correction photos', z:7000, day:s.date||'', dayLabel:s.date?clFmtDate(s.date):'', dayDefault:false,
+    isSelected:id=>(s.photoIds||[]).includes(id),
+    onToggle:(id,on)=>{ s.photoIds=s.photoIds||[]; if(on){ if(!s.photoIds.includes(id)) s.photoIds.push(id); } else s.photoIds=s.photoIds.filter(x=>x!==id); },
+    onDone:()=>_clFormStepsRender()
+  });
+}
+function _clFormStepsClean(){
+  return _clFormSteps.map(s=>({id:s.id, date:s.date||'', text:String(s.text||'').trim(), photoIds:(s.photoIds||[]).slice()})).filter(s=>s.text||s.photoIds.length);
+}
 function clFormCamera(){
   const id=_clEditId||_clDraftId; if(!id) return;
   if(typeof phOpenCamera==='function') phOpenCamera({attach:{type:'cl',id}});
 }
 // photos.js hands every camera shot launched from a compliance entry here (attach type 'cl').
-function clAttachPhoto(entryId, photoId){
+function clAttachPhoto(entryId, photoId, stepId){
   if(!entryId||!photoId) return;
   const formOpen=document.getElementById('cl-form-panel')?.classList.contains('open');
   if(formOpen&&(entryId===_clEditId||entryId===_clDraftId)){
+    // 9/10: a shot from a step's 📸 lands on that step (correction photo), not the observation strip.
+    if(stepId){ const s=_clFormSteps.find(x=>x.id===stepId); if(s){ s.photoIds=s.photoIds||[]; if(!s.photoIds.includes(photoId)) s.photoIds.push(photoId); _clFormStepsRender(); return; } }
     if(!_clFormPhotoIds.includes(photoId)) _clFormPhotoIds.push(photoId);
     _clFormPhotosRender();
     return;
   }
   if(!_clEntries.length) clLoadLocal();
   const e=_clEntries.find(x=>x.id===entryId); if(!e) return;
+  if(stepId){
+    e.steps=Array.isArray(e.steps)?e.steps:[];
+    let s=e.steps.find(x=>x.id===stepId);
+    if(!s){ s={id:stepId, date:new Date().toLocaleDateString('en-CA'), text:'', photoIds:[]}; e.steps.push(s); }
+    s.photoIds=Array.isArray(s.photoIds)?s.photoIds:[];
+    if(!s.photoIds.includes(photoId)){
+      s.photoIds.push(photoId);
+      clSave();
+      if(document.getElementById('page-compliance')?.classList.contains('active')) clRender();
+      if(typeof clRenderPunchlist==='function'){ try{ clRenderPunchlist(); }catch{} }
+    }
+    return;
+  }
   e.photoIds=Array.isArray(e.photoIds)?e.photoIds:[];
   if(!e.photoIds.includes(photoId)){
     e.photoIds.push(photoId);
@@ -501,6 +574,9 @@ function clAttachPhoto(entryId, photoId){
 }
 if(typeof window!=='undefined'){
   window.clFormPickPhotos=clFormPickPhotos;
+  window.clFormStepAdd=clFormStepAdd; window.clFormStepField=clFormStepField; window.clFormStepRemove=clFormStepRemove;
+  window.clFormStepPhotoRemove=clFormStepPhotoRemove; window.clFormStepCamera=clFormStepCamera; window.clFormStepPick=clFormStepPick;
+  window.clStepsText=clStepsText; window.clStepPhotoIds=clStepPhotoIds; window.clStepFor=clStepFor;
   window.clFormRemovePhoto=clFormRemovePhoto;
   window.clFormCamera=clFormCamera;
   window.clAttachPhoto=clAttachPhoto;
@@ -514,6 +590,8 @@ function clShowForm(prefill){
   _clDraftId = clGenId();
   _clFormPhotoIds = (prefill&&Array.isArray(prefill.photoIds))?prefill.photoIds.slice():[];
   _clFormPhotosRender();
+  _clFormSteps = [];
+  _clFormStepsRender();
   // Set defaults
   document.getElementById('cl-f-date').value = new Date().toLocaleDateString('en-CA');
   document.getElementById('cl-f-level').value = '1';
@@ -554,6 +632,8 @@ function clEditEntry(id){
   _clDraftId = null;
   _clFormPhotoIds = Array.isArray(e.photoIds)?e.photoIds.slice():[];
   _clFormPhotosRender();
+  _clFormSteps = _clSteps(e).map(x=>({id:x.id||_clStepId(), date:x.date||'', text:x.text||'', photoIds:(x.photoIds||[]).slice()}));
+  _clFormStepsRender();
   document.getElementById('cl-form-overlay').classList.add('open');
   document.getElementById('cl-form-panel').classList.add('open');
   _clFormGrow();
@@ -581,6 +661,7 @@ function clSubmitForm(){
   const entry = {
     id: _clEditId || _clDraftId || clGenId(),
     photoIds: _clFormPhotoIds.slice(),
+    steps: _clFormStepsClean(),
     ...(prev&&prev.photoCaptions?{photoCaptions:prev.photoCaptions}:{}),
     date: document.getElementById('cl-f-date').value,
     level: parseInt(document.getElementById('cl-f-level').value),
@@ -607,6 +688,7 @@ function clSubmitForm(){
   clHideForm();
   clRender();
   if(typeof clRenderPunchlist==='function'){ try{ clRenderPunchlist(); }catch{} }
+  if(entry.status==='Resolved'&&!(prev&&prev.status==='Resolved')) clOfferCorrectionPhoto(entry.id);
 }
 
 // ── Programmatic API — SWPPP QI report tie-in (swppp.js) ──
@@ -633,6 +715,7 @@ function _clPushEntry(it, addedBy){
     sourceReport: it.sourceReport || '',
     sourceInspection: it.sourceInspection || '',
     photoIds: Array.isArray(it.photoIds) ? it.photoIds.slice() : [],
+    steps: Array.isArray(it.steps) ? it.steps.slice() : [],
     addedBy: addedBy || 'swppp-qi',
     projectId: pid
   });
@@ -835,6 +918,7 @@ function clRenderPunchlist(){
         <div style="font-family:var(--mono);font-size:12px;color:${isOpen?'var(--red)':'var(--muted)'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${isOpen?'⚠':'✓'} ${e.cmpNum?`<b>${clCmpFmt(e.cmpNum)}</b> · `:''}${_hEsc(e.location||'Compliance item')}</div>
         <div style="font-family:var(--mono);font-size:10px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_hEsc(clLevelLabel(e.level))} · logged ${_hEsc(e.date||'')}${isOpen?(age?` · ${age.days<1?'<1':age.days}d open${age.over?' ⚠':''}`:''):(e.dateResolved?` · resolved ${clFmtDate(e.dateResolved)}`:'')}${e.status==='In Progress'?' · in progress':''}</div>
         ${e.corrective?`<div style="font-family:var(--mono);font-size:10px;color:${isOpen?'var(--text)':'var(--muted)'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">→ ${_hEsc(e.corrective)}</div>`:''}
+        ${(()=>{ const st=_clSteps(e); if(!st.length) return ''; const x=st[st.length-1]; return `<div style="font-family:var(--mono);font-size:10px;color:var(--green,#27AE60);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">🔧 ${_hEsc(x.date?clFmtDate(x.date)+': ':'')}${_hEsc(x.text||'')}</div>`; })()}
       </div>
       ${btns}
     </div>`;
@@ -878,6 +962,43 @@ function clPunchlistReopen(entryId){
 }
 // 9/5: compliance items on the punchlist — resolve / reopen from the card. Open Items'
 // §8 mirror follows through oiSyncSources (called at the end of clRenderPunchlist).
+// Marking an entry Resolved offers a correction photo once (Tim 8/18 + 9/10): camera, library or
+// skip. The photo lands on the entry's latest step (a "Resolved" step dated today is created if
+// the entry has none), so the record shows the fix, not just the finding.
+function clOfferCorrectionPhoto(entryId){
+  const e=_clEntries.find(x=>x.id===entryId); if(!e) return;
+  if(clStepPhotoIds(e).length) return;
+  const tag=e.cmpNum?clCmpFmt(e.cmpNum):'This item';
+  const ov=document.createElement('div'); ov.className='modal-overlay'; ov.style.cssText='z-index:'+(window.GL_CONFIRM_Z||10500);
+  ov.innerHTML=`<div class="modal-box" style="max-width:340px;width:92%">
+    <div class="modal-title" style="margin-bottom:8px">📷 Document the fix?</div>
+    <div class="modal-msg">${_hEsc(tag)} is resolved. Add a photo of the correction so the record shows the fix, not just the finding.</div>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <button type="button" class="btn btn-amber" id="cl-cp-cam" style="min-height:44px">📸 Take a photo</button>
+      <button type="button" class="btn btn-outline" id="cl-cp-lib" style="min-height:44px">📎 Pick from library</button>
+      <button type="button" class="btn btn-outline" id="cl-cp-skip" style="min-height:36px;color:var(--muted);border-color:transparent">Skip</button>
+    </div></div>`;
+  document.body.appendChild(ov);
+  const stepFor=()=>{
+    e.steps=Array.isArray(e.steps)?e.steps:[];
+    let x=e.steps[e.steps.length-1];
+    if(!x){ x={id:_clStepId(), date:e.dateResolved||new Date().toLocaleDateString('en-CA'), text:'Resolved', photoIds:[]}; e.steps.push(x); clSave(); }
+    x.photoIds=Array.isArray(x.photoIds)?x.photoIds:[];
+    return x;
+  };
+  const repaint=()=>{ clSave(); if(document.getElementById('page-compliance')?.classList.contains('active')) clRender(); if(typeof clRenderPunchlist==='function'){ try{ clRenderPunchlist(); }catch{} } };
+  ov.querySelector('#cl-cp-skip').onclick=()=>ov.remove();
+  ov.querySelector('#cl-cp-cam').onclick=()=>{ ov.remove(); const x=stepFor(); if(typeof phOpenCamera==='function') phOpenCamera({attach:{type:'cl',id:e.id,step:x.id}}); };
+  ov.querySelector('#cl-cp-lib').onclick=()=>{
+    ov.remove(); const x=stepFor();
+    phPickerOpen({
+      title:'Correction photos', z:(window.GL_CONFIRM_Z||10500),
+      isSelected:id=>x.photoIds.includes(id),
+      onToggle:(id,on)=>{ if(on){ if(!x.photoIds.includes(id)) x.photoIds.push(id); } else x.photoIds=x.photoIds.filter(y=>y!==id); },
+      onDone:repaint
+    });
+  };
+}
 function clPunchlistResolveCmp(id){
   const e=_clEntries.find(x=>x.id===id); if(!e) return;
   const tag=e.cmpNum?clCmpFmt(e.cmpNum):'this compliance item';
@@ -888,6 +1009,7 @@ function clPunchlistResolveCmp(id){
     if(document.getElementById('page-compliance')?.classList.contains('active')) clRender();
     clRenderPunchlist();
     if(typeof showCloudBanner==='function') showCloudBanner('✓ '+tag+' resolved — filed in the punchlist history.');
+    clOfferCorrectionPhoto(id);
   };
   if(typeof _confirmModal==='function') _confirmModal(`Mark ${tag} resolved today? It stays in the Compliance Log and the punchlist's fixed history.`, go, 'Resolve', 'Resolve');
   else go();
@@ -901,6 +1023,7 @@ function clPunchlistReopenCmp(id){
 }
 if(typeof window!=='undefined'){
   window.clRenderPunchlist=clRenderPunchlist;
+  window.clOfferCorrectionPhoto=clOfferCorrectionPhoto;
   window.clPunchlistGoto=clPunchlistGoto;
   window.clPunchlistReopen=clPunchlistReopen;
   window.clPunchlistResolveCmp=clPunchlistResolveCmp;
