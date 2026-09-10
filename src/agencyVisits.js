@@ -147,9 +147,9 @@ function avShowForm(id){
         <label style="font-family:var(--mono);font-size:10px;color:var(--muted);display:block;margin-bottom:3px">INSPECTOR(S)</label>
         <input type="text" id="av-f-insp" value="${_avEsc(v.inspector)}" placeholder="e.g. Chris Walker" style="width:100%;box-sizing:border-box;background:var(--s1);border:1px solid var(--border);border-radius:5px;color:var(--text);font-size:16px;padding:8px;margin-bottom:10px">
         <label style="font-family:var(--mono);font-size:10px;color:var(--muted);display:block;margin-bottom:3px">VISIT NOTES</label>
-        <textarea id="av-f-notes" rows="6" placeholder="Everything from the visit — what was walked, what was said, observations, concerns…" style="width:100%;box-sizing:border-box;background:var(--s1);border:1px solid var(--border);border-radius:5px;color:var(--text);font-size:16px;padding:8px;margin-bottom:10px;resize:vertical">${_avEsc(v.notes)}</textarea>
+        <textarea id="av-f-notes" class="auto-expand" rows="6" placeholder="Everything from the visit — what was walked, what was said, observations, concerns…" style="width:100%;box-sizing:border-box;background:var(--s1);border:1px solid var(--border);border-radius:5px;color:var(--text);font-size:16px;padding:8px;margin-bottom:10px;resize:vertical">${_avEsc(v.notes)}</textarea>
         <label style="font-family:var(--mono);font-size:10px;color:var(--muted);display:block;margin-bottom:3px">FOLLOW-UP ITEMS</label>
-        <textarea id="av-f-fu" rows="3" placeholder="What the inspector asked for / action items (optional)" style="width:100%;box-sizing:border-box;background:var(--s1);border:1px solid var(--border);border-radius:5px;color:var(--text);font-size:16px;padding:8px;margin-bottom:10px;resize:vertical">${_avEsc(v.followUps)}</textarea>
+        <textarea id="av-f-fu" class="auto-expand" rows="3" placeholder="What the inspector asked for / action items (optional)" style="width:100%;box-sizing:border-box;background:var(--s1);border:1px solid var(--border);border-radius:5px;color:var(--text);font-size:16px;padding:8px;margin-bottom:10px;resize:vertical">${_avEsc(v.followUps)}</textarea>
         <label style="font-family:var(--mono);font-size:10px;color:var(--muted);display:block;margin-bottom:5px">PHOTOS FROM <span id="av-f-photodate">${_avEsc(v.date)}</span> — tap to include in the visit report</label>
         <div id="av-f-photos" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px"></div>
       </div>
@@ -158,6 +158,7 @@ function avShowForm(id){
       </div>
     </div>`;
   document.body.appendChild(ov);
+  requestAnimationFrame(()=>ov.querySelectorAll('textarea.auto-expand').forEach(t=>{ if(typeof autoResize==='function') autoResize(t); }));
   const renderPhotos=()=>{
     const date=document.getElementById('av-f-date').value;
     document.getElementById('av-f-photodate').textContent=date;

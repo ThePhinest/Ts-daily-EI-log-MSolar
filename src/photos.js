@@ -1992,7 +1992,94 @@ async function phSaveCloudOne(p){
 }
 
 // ── Expose to window for HTML onclick handlers and cross-module calls ──
+// ═══════════════════════════════════════════
+// 📎 SHARED "ATTACH FROM LIBRARY" PICKER (9/10)
+// ═══════════════════════════════════════════
+// Tim 9/10: compliance log → edit → add existing photos restarted the app. That picker (and its
+// three copies in the tracker detail, spills and map entry flows) rendered EVERY project thumb in
+// one innerHTML — hundreds of decoded bitmaps on iOS → the WebView is killed. One primitive now:
+// newest first, paged with Load more, lazy thumbs, caption/date search, optional chips.
+//   phPickerOpen({ title, z, pid, photos?, emptyText, day?, dayLabel?, dayDefault?, chips?:[{k,label,f}],
+//                  isSelected(id), onToggle(id, wantOn) → false|Promise<false> vetoes, tileExtra?(p), onDone? })
+const _PH_PICK_PAGE=48;
+let _phPick=null;
+function phPickerOpen(o){
+  o=o||{};
+  const pid=o.pid||((typeof _activeProjectId==='function')?_activeProjectId():'default');
+  const pool=(o.photos||(window._phPhotos||[]).filter(p=>p&&!p.deletedAt&&p.thumb&&(!p.projectId||p.projectId===pid)))
+    .slice().sort((a,b)=>String(b.date||'').localeCompare(String(a.date||''))||(b.uploadedAt||0)-(a.uploadedAt||0));
+  const ov=document.createElement('div'); ov.className='modal-overlay'; ov.style.cssText='z-index:'+(o.z||7000);
+  if(!pool.length){
+    ov.innerHTML=`<div class="modal-box" style="max-width:300px;width:88%"><div class="modal-title" style="margin-bottom:10px">No Photos</div><div style="font-family:var(--mono);font-size:12px;color:var(--muted);margin-bottom:16px;line-height:1.5">${_hEsc(o.emptyText||'Take one with the camera button, or add photos on the Photos page first.')}</div><div class="modal-btns"><button class="modal-cancel" onclick="this.closest('.modal-overlay').remove()">OK</button></div></div>`;
+    document.body.appendChild(ov); return;
+  }
+  const chips=[{k:'all',label:'All',f:null}];
+  if(o.day) chips.push({k:'day',label:o.dayLabel||o.day,f:p=>p.date===o.day});
+  (o.chips||[]).forEach(c=>chips.push(c));
+  chips.push({k:'sel',label:'✓ Selected',f:p=>!!(o.isSelected&&o.isSelected(p.id))});
+  const startChip=(o.day&&o.dayDefault&&pool.some(p=>p.date===o.day))?'day':'all';
+  _phPick={ov,o,pool,chips,filter:startChip,q:'',shown:_PH_PICK_PAGE};
+  ov.innerHTML=`<div class="modal-box" style="max-width:380px;width:92%;max-height:80vh;display:flex;flex-direction:column">
+    <div class="modal-title" style="margin-bottom:8px">${_hEsc(o.title||'Attach Photos')}</div>
+    <div id="phpk-chips" style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap"></div>
+    <input id="phpk-q" type="search" placeholder="Filter by caption or date…" autocomplete="off" style="-webkit-appearance:none;appearance:none;width:100%;box-sizing:border-box;background:var(--s1);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--mono);font-size:12px;padding:8px 10px;margin-bottom:8px">
+    <div id="phpk-grid" style="display:flex;flex-wrap:wrap;gap:6px;overflow-y:auto;flex:1;margin-bottom:12px;align-content:flex-start"></div>
+    <div class="modal-btns"><button class="modal-confirm" id="phpk-done">Done</button></div>
+  </div>`;
+  document.body.appendChild(ov);
+  ov.querySelector('#phpk-q').oninput=e=>{ if(!_phPick) return; _phPick.q=e.target.value.trim().toLowerCase(); _phPick.shown=_PH_PICK_PAGE; _phPickRender(); };
+  ov.querySelector('#phpk-done').onclick=()=>{ ov.remove(); _phPick=null; if(typeof o.onDone==='function') o.onDone(); };
+  _phPickRender();
+}
+function _phPickFiltered(){
+  const s=_phPick; if(!s) return [];
+  const c=s.chips.find(x=>x.k===s.filter);
+  return s.pool.filter(p=>{
+    if(c&&c.f&&!c.f(p)) return false;
+    if(s.q&&!(String(p.caption||'').toLowerCase().includes(s.q)||String(p.date||'').includes(s.q))) return false;
+    return true;
+  });
+}
+function _phPickRender(){
+  const s=_phPick; if(!s) return;
+  const grid=s.ov.querySelector('#phpk-grid'); if(!grid) return;
+  const chipsEl=s.ov.querySelector('#phpk-chips');
+  if(chipsEl){
+    chipsEl.innerHTML=s.chips.map(c=>{ const n=c.f?s.pool.filter(c.f).length:s.pool.length;
+      return `<button type="button" class="cl-fpill${s.filter===c.k?' on':''}" data-f="${_hEsc(c.k)}" style="border-color:var(--amber);color:var(--amber);background:rgba(201,168,76,.15)">${_hEsc(c.label)} <span style="opacity:.7">${n}</span></button>`; }).join('');
+    chipsEl.querySelectorAll('button').forEach(b=>{ b.onclick=()=>{ s.filter=b.dataset.f; s.shown=_PH_PICK_PAGE; _phPickRender(); }; });
+  }
+  const list=_phPickFiltered(), page=list.slice(0,s.shown);
+  grid.innerHTML=page.map(p=>{
+    const on=!!(s.o.isSelected&&s.o.isSelected(p.id));
+    const extra=(typeof s.o.tileExtra==='function')?(s.o.tileExtra(p)||''):'';
+    const cap=(p.date||'').slice(5)+(p.caption?' · '+p.caption:'');
+    return `<div data-pk="${_hEsc(p.id)}" style="position:relative;cursor:pointer;border-radius:6px;border:2px solid ${on?'var(--amber)':'transparent'};overflow:hidden;flex-shrink:0;width:80px;height:60px">
+      <img src="${_hEsc(p.thumb)}" loading="lazy" decoding="async" style="width:80px;height:60px;object-fit:cover;display:block">
+      <div class="phpk-chk" style="position:absolute;top:2px;right:2px;width:16px;height:16px;border-radius:50%;background:${on?'var(--amber)':'rgba(0,0,0,.45)'};display:flex;align-items:center;justify-content:center;font-size:9px;color:#fff">${on?'✓':''}</div>
+      ${extra||`<div style="position:absolute;left:0;right:0;bottom:0;background:rgba(0,0,0,.55);color:#fff;font-family:var(--mono);font-size:8px;padding:1px 3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${_hEsc(cap)}</div>`}
+    </div>`;
+  }).join('')
+  +(list.length>page.length
+    ?`<button type="button" id="phpk-more" style="width:100%;margin-top:4px;padding:9px;border-radius:6px;border:1px dashed var(--border);background:var(--s1);color:var(--muted);font-family:var(--mono);font-size:11px;cursor:pointer">Load more (${list.length-page.length} more)</button>`
+    :(list.length?'':`<div style="font-family:var(--mono);font-size:11px;color:var(--muted);padding:12px 4px">No photos match.</div>`));
+  grid.querySelectorAll('[data-pk]').forEach(el=>{ el.onclick=()=>_phPickToggle(el.dataset.pk,el); });
+  const more=grid.querySelector('#phpk-more'); if(more) more.onclick=()=>{ s.shown+=_PH_PICK_PAGE; _phPickRender(); };
+}
+async function _phPickToggle(id,el){
+  const s=_phPick; if(!s) return;
+  const was=!!(s.o.isSelected&&s.o.isSelected(id));
+  let ok=true;
+  try{ ok=await s.o.onToggle(id,!was); }catch(e){ console.warn('picker toggle:',e&&e.message); ok=false; }
+  if(ok===false||!_phPick) return;
+  const on=!!(s.o.isSelected&&s.o.isSelected(id));
+  el.style.borderColor=on?'var(--amber)':'transparent';
+  const chk=el.querySelector('.phpk-chk'); if(chk){ chk.style.background=on?'var(--amber)':'rgba(0,0,0,.45)'; chk.textContent=on?'✓':''; }
+  const sc=s.ov.querySelector('#phpk-chips button[data-f="sel"] span'); if(sc) sc.textContent=s.pool.filter(p=>s.o.isSelected&&s.o.isSelected(p.id)).length;
+}
+
 window.phInit = phInit;
+window.phPickerOpen = phPickerOpen;
 window.phMarkDirty = phMarkDirty;
 window.phResetAndRender = phResetAndRender;
 window.phHandleFiles = phHandleFiles;

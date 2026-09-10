@@ -839,6 +839,12 @@ function _oiSpawn(opts,force){
 function oiSpawnAlert(opts,force){
   if(_oiLoadedPid!==_oiPid()) return null;
   const before=oiFindBySource('alert',opts.sourceRef);
+  // refresh: a STANDING alert (inspection overdue) re-reads its wording each evaluation — only
+  // while the text is still the spawned wording (opts.refresh = its prefix), never over Tim's edits.
+  if(before&&opts.refresh&&!before.deleted&&before.status==='open'&&String(before.text||'').startsWith(opts.refresh)){
+    if(opts.text&&before.text!==opts.text){ before.text=opts.text; _oiTouch(before); oiRender(); }
+    return before;
+  }
   const it=_oiSpawn({...opts, source:'alert'}, force);
   if(it&&(!before||(force&&before.deleted&&!it.deleted))) _oiNotifSync();
   return it;
@@ -853,6 +859,36 @@ function oiRetireAlertRule(ruleId){
     it.deleted=true; _oiTouch(it); changed=true;
   });
   if(changed){ if(_oiExpanded) _oiExpanded=null; oiRender(); _oiNotifSync(); }
+}
+
+// 9/10 (alertRules reconcile — two identical "SWPPP due today" alerts): which rule ids still
+// hold OPEN alerts, retire by sourceRef predicate (the per-day inspection twins), and resolve a
+// standing alert by ref (inspection recorded → the overdue alert closes itself).
+function oiOpenAlertRuleIds(){
+  const ids=new Set();
+  _oiItems.forEach(it=>{
+    if(it.deleted||it.source!=='alert'||it.status!=='open'||typeof it.sourceRef!=='string') return;
+    const m=/^rule:([^:]+)/.exec(it.sourceRef); if(m) ids.add(m[1]);
+  });
+  return [...ids];
+}
+function oiRetireAlertRefs(pred){
+  let changed=false;
+  _oiItems.forEach(it=>{
+    if(it.deleted||it.source!=='alert'||it.status!=='open'||typeof it.sourceRef!=='string') return;
+    if(!pred(it.sourceRef)) return;
+    it.deleted=true; _oiTouch(it); changed=true;
+  });
+  if(changed){ if(_oiExpanded) _oiExpanded=null; oiRender(); _oiNotifSync(); }
+}
+function oiResolveAlert(sourceRef,note){
+  const it=oiFindBySource('alert',sourceRef);
+  if(!it||it.deleted||it.status!=='open') return false;
+  it.status='resolved'; it.resolvedDate=_oiToday(); it.resolvedTs=Date.now();
+  it.resolutionNote=note||''; it.includeInReport=false;
+  if(_oiExpanded===it.id) _oiExpanded=null;
+  _oiTouch(it); oiRender(); _oiNotifSync();
+  return true;
 }
 
 // 🚩 Flags are OPT-IN (Tim's call 7/22): 📌 button on punchlist rows.
@@ -1131,6 +1167,10 @@ window.oiSyncSources = oiSyncSources;
 window.oiRainSync = oiRainSync;
 window.oiSpawnAlert = oiSpawnAlert;
 window.oiRetireAlertRule = oiRetireAlertRule;
+window.oiOpenAlertRuleIds = oiOpenAlertRuleIds;
+window.oiRetireAlertRefs = oiRetireAlertRefs;
+window.oiResolveAlert = oiResolveAlert;
+window.oiFindBySource = oiFindBySource;
 window.oiSetFilter = oiSetFilter;
 window.oiToggleSortDue = oiToggleSortDue;
 window.oiRemDayToggle = oiRemDayToggle;

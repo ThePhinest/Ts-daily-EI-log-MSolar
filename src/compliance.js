@@ -464,33 +464,18 @@ function _clFormPhotosRender(){
 }
 function clFormRemovePhoto(photoId){ _clFormPhotoIds=_clFormPhotoIds.filter(id=>id!==photoId); _clFormPhotosRender(); }
 function clFormPickPhotos(){
-  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
-  const projectPhotos=(window._phPhotos||[]).filter(p=>!p.deletedAt&&(!p.projectId||p.projectId===pid))
-    .sort((a,b)=>b.date>a.date?1:b.date<a.date?-1:(b.uploadedAt||0)-(a.uploadedAt||0));
-  const ov=document.createElement('div'); ov.className='modal-overlay'; ov.style.cssText='z-index:7000';
-  if(!projectPhotos.length){
-    ov.innerHTML=`<div class="modal-box" style="max-width:300px;width:88%"><div class="modal-title" style="margin-bottom:10px">No Photos</div><div style="font-family:var(--mono);font-size:12px;color:var(--muted);margin-bottom:16px;line-height:1.5">Take one with 📸 Camera, or upload on the Photos page first.</div><div class="modal-btns"><button class="modal-cancel" onclick="this.closest('.modal-overlay').remove()">OK</button></div></div>`;
-    document.body.appendChild(ov); return;
-  }
-  const sel=new Set(_clFormPhotoIds);
-  const thumbs=projectPhotos.map(p=>{ const on=sel.has(p.id); return `<div id="clfph-${p.id}" onclick="clFormTogglePhoto('${p.id}',this)" style="position:relative;cursor:pointer;border-radius:6px;border:2px solid ${on?'var(--amber)':'transparent'};overflow:hidden;flex-shrink:0;width:80px;height:60px">
-      <img src="${p.thumb}" style="width:80px;height:60px;object-fit:cover;display:block">
-      <div id="clfph-chk-${p.id}" style="position:absolute;top:2px;right:2px;width:16px;height:16px;border-radius:50%;background:${on?'var(--amber)':'rgba(0,0,0,.45)'};display:flex;align-items:center;justify-content:center;font-size:9px;color:#fff">${on?'✓':''}</div>
-      <div style="position:absolute;left:0;right:0;bottom:0;background:rgba(0,0,0,.55);color:#fff;font-family:var(--mono);font-size:8px;padding:1px 3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${(p.date||'').slice(5)}${p.caption?' · '+_hEsc(p.caption):''}</div>
-    </div>`; }).join('');
-  ov.innerHTML=`<div class="modal-box" style="max-width:360px;width:92%;max-height:80vh;display:flex;flex-direction:column">
-    <div class="modal-title" style="margin-bottom:12px">Attach Photos</div>
-    <div style="display:flex;flex-wrap:wrap;gap:6px;overflow-y:auto;flex:1;margin-bottom:12px">${thumbs}</div>
-    <div class="modal-btns"><button class="modal-confirm" onclick="this.closest('.modal-overlay').remove()">Done</button></div>
-  </div>`;
-  document.body.appendChild(ov);
-}
-function clFormTogglePhoto(photoId, el){
-  const on=_clFormPhotoIds.includes(photoId);
-  if(on) _clFormPhotoIds=_clFormPhotoIds.filter(id=>id!==photoId); else _clFormPhotoIds.push(photoId);
-  el.style.borderColor=on?'transparent':'var(--amber)';
-  const chk=document.getElementById('clfph-chk-'+photoId); if(chk){ chk.style.background=on?'rgba(0,0,0,.45)':'var(--amber)'; chk.textContent=on?'':'✓'; }
-  _clFormPhotosRender();
+  // Shared library picker (photos.js) — the old all-thumbs-at-once modal restarted the app on iOS (9/10).
+  const day=document.getElementById('cl-f-date')?.value||'';
+  phPickerOpen({
+    title:'Attach Photos', z:7000, day, dayLabel:day?clFmtDate(day):'', dayDefault:false,
+    emptyText:'Take one with the camera button, or add photos on the Photos page first.',
+    isSelected:id=>_clFormPhotoIds.includes(id),
+    onToggle:(id,on)=>{
+      if(on){ if(!_clFormPhotoIds.includes(id)) _clFormPhotoIds.push(id); }
+      else _clFormPhotoIds=_clFormPhotoIds.filter(x=>x!==id);
+      _clFormPhotosRender();
+    }
+  });
 }
 function clFormCamera(){
   const id=_clEditId||_clDraftId; if(!id) return;
@@ -516,12 +501,14 @@ function clAttachPhoto(entryId, photoId){
 }
 if(typeof window!=='undefined'){
   window.clFormPickPhotos=clFormPickPhotos;
-  window.clFormTogglePhoto=clFormTogglePhoto;
   window.clFormRemovePhoto=clFormRemovePhoto;
   window.clFormCamera=clFormCamera;
   window.clAttachPhoto=clAttachPhoto;
 }
 
+// Programmatic values never fire 'input' — size the auto-grow fields once the form is filled (Tim 9/10:
+// "corrective action required doesn't grow with text").
+function _clFormGrow(){ requestAnimationFrame(()=>document.querySelectorAll('#cl-form-panel textarea.auto-expand').forEach(t=>{ if(typeof autoResize==='function') autoResize(t); })); }
 function clShowForm(prefill){
   _clEditId = null;
   _clDraftId = clGenId();
@@ -548,6 +535,7 @@ function clShowForm(prefill){
 
   document.getElementById('cl-form-overlay').classList.add('open');
   document.getElementById('cl-form-panel').classList.add('open');
+  _clFormGrow();
 }
 
 function clEditEntry(id){
@@ -568,6 +556,7 @@ function clEditEntry(id){
   _clFormPhotosRender();
   document.getElementById('cl-form-overlay').classList.add('open');
   document.getElementById('cl-form-panel').classList.add('open');
+  _clFormGrow();
 }
 
 function clHideForm(){
@@ -1188,55 +1177,16 @@ function clShowPhotoAttachPicker(entryId){
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
   const entry=(typeof trGetEntry==='function')?trGetEntry(entryId,pid):null;
   if(!entry) return;
-  const projectPhotos=(window._phPhotos||[]).filter(p=>!p.projectId||p.projectId===pid)
-    .sort((a,b)=>b.date>a.date?1:b.date<a.date?-1:b.uploadedAt-a.uploadedAt);
-  const ov=document.createElement('div');
-  ov.className='modal-overlay';
-  ov.style.cssText='z-index:6000';
-  if(!projectPhotos.length){
-    ov.innerHTML=`<div class="modal-box" style="max-width:300px;width:88%">
-      <div class="modal-title" style="margin-bottom:10px">No Photos</div>
-      <div style="font-family:var(--mono);font-size:12px;color:var(--muted);margin-bottom:16px;line-height:1.5">Upload photos on the Photos page first, then attach them here.</div>
-      <div class="modal-btns"><button class="modal-cancel" onclick="this.closest('.modal-overlay').remove()">OK</button></div>
-    </div>`;
-    document.body.appendChild(ov);
-    return;
-  }
-  const linkedIds=new Set(entry.photoIds||[]);
-  const thumbs=projectPhotos.map(p=>{
-    const linked=linkedIds.has(p.id);
-    return `<div id="clatph-${p.id}" onclick="clTogglePhotoLink('${entryId}','${p.id}',this)"
-      style="position:relative;cursor:pointer;border-radius:6px;border:2px solid ${linked?'var(--amber)':'transparent'};overflow:hidden;flex-shrink:0;width:80px;height:60px">
-      <img src="${p.thumb}" style="width:80px;height:60px;object-fit:cover;display:block">
-      <div id="clatph-chk-${p.id}" style="position:absolute;top:2px;right:2px;width:16px;height:16px;border-radius:50%;background:${linked?'var(--amber)':'rgba(0,0,0,.45)'};display:flex;align-items:center;justify-content:center;font-size:9px;color:#fff">${linked?'✓':''}</div>
-    </div>`;
-  }).join('');
-  ov.innerHTML=`<div class="modal-box" style="max-width:360px;width:92%;max-height:80vh;display:flex;flex-direction:column">
-    <div class="modal-title" style="margin-bottom:12px">Attach Photos</div>
-    <div style="display:flex;flex-wrap:wrap;gap:6px;overflow-y:auto;flex:1;margin-bottom:12px">${thumbs}</div>
-    <div class="modal-btns">
-      <button class="modal-confirm" onclick="this.closest('.modal-overlay').remove()">Done</button>
-    </div>
-  </div>`;
-  document.body.appendChild(ov);
-}
-
-function clTogglePhotoLink(entryId, photoId, el){
-  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
-  const entry=(typeof trGetEntry==='function')?trGetEntry(entryId,pid):null;
-  const linked=entry&&Array.isArray(entry.photoIds)&&entry.photoIds.includes(photoId);
-  if(linked){
-    if(typeof trRemovePhotoLink==='function') trRemovePhotoLink(entryId,photoId,pid);
-    el.style.borderColor='transparent';
-    const chk=document.getElementById('clatph-chk-'+photoId);
-    if(chk){chk.style.background='rgba(0,0,0,.45)';chk.textContent='';}
-  } else {
-    if(typeof trAddPhotoLink==='function') trAddPhotoLink(entryId,photoId,pid);
-    el.style.borderColor='var(--amber)';
-    const chk=document.getElementById('clatph-chk-'+photoId);
-    if(chk){chk.style.background='var(--amber)';chk.textContent='✓';}
-  }
-  clRefreshDetailPhotoStrip(entryId);
+  phPickerOpen({
+    title:'Attach Photos', z:6000, pid,
+    emptyText:'Upload photos on the Photos page first, then attach them here.',
+    isSelected:id=>{ const e=trGetEntry(entryId,pid); return !!(e&&Array.isArray(e.photoIds)&&e.photoIds.includes(id)); },
+    onToggle:(id,on)=>{
+      if(on){ if(typeof trAddPhotoLink==='function') trAddPhotoLink(entryId,id,pid); }
+      else if(typeof trRemovePhotoLink==='function') trRemovePhotoLink(entryId,id,pid);
+      clRefreshDetailPhotoStrip(entryId);
+    }
+  });
 }
 
 function clUnlinkPhoto(entryId, photoId){
@@ -3660,6 +3610,5 @@ window.clRenderTrackerCard = clRenderTrackerCard;
 window.clShowTrackerDetail = clShowTrackerDetail;
 window.clShowTrackerLog = clShowTrackerLog;
 window.clShowPhotoAttachPicker = clShowPhotoAttachPicker;
-window.clTogglePhotoLink = clTogglePhotoLink;
 window.clUnlinkPhoto = clUnlinkPhoto;
 window.clRefreshDetailPhotoStrip = clRefreshDetailPhotoStrip;

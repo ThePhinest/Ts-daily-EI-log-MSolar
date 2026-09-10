@@ -120,17 +120,45 @@ function arEvaluate(pid){
   clearTimeout(_arEvalTimer);
   _arEvalTimer=setTimeout(()=>_arEvaluateNow(pid),400);   // coalesce boot + weather + settings bursts
 }
+// ── reconcile the spine with the rule docs (9/10: two identical "SWPPP due today" alerts) ──
+// Alerts are keyed per rule id, so a reminder that exists twice (project + personal copies) or a
+// rule id that no longer exists (rule re-created, doc overwritten) leaves a twin on the spine.
+// Runs only once BOTH cloud docs were checked this session — never off a cold cache.
+function _arReconcile(pid,active){
+  const skip=new Set();
+  if(!(_arProjChecked[pid]&&_arPersChecked[pid])) return skip;
+  if(typeof window.oiRetireAlertRule!=='function') return skip;
+  const all=[..._arRules('proj',pid),..._arRules('pers',pid)].filter(Boolean);
+  const live=new Set(all.filter(r=>r.on!==false).map(r=>r.id));
+  if(typeof window.oiOpenAlertRuleIds==='function')
+    window.oiOpenAlertRuleIds().forEach(id=>{ if(!live.has(id)) window.oiRetireAlertRule(id); });
+  // identical weekday reminders across scopes → one spawn; the copy Tim already edited wins, else the project copy
+  const sig=r=>r.type==='weekday'?['wd',(r.label||'').trim().toLowerCase(),(Array.isArray(r.days)&&r.days.length?r.days.map(Number).sort():[1]).join(','),r.time||'06:30'].join('|'):null;
+  const edited=id=>{ const it=(typeof window.oiFindBySource==='function')?window.oiFindBySource('alert','rule:'+id):null; return !!(it&&!it.deleted&&it.status==='open'&&(it.title||'').trim()); };
+  const seen=new Map();
+  active.forEach(r=>{
+    const s=sig(r); if(!s) return;
+    const k=seen.get(s); if(!k){ seen.set(s,r); return; }
+    let keep=k, drop=r;
+    if(!edited(k.id)&&(edited(r.id)||(r.scope==='proj'&&k.scope!=='proj'))){ keep=r; drop=k; }
+    seen.set(s,keep); skip.add(drop.id); window.oiRetireAlertRule(drop.id);
+  });
+  return skip;
+}
 async function _arEvaluateNow(pid){
   try{
     await arEnsure(pid);
     if(typeof window.oiSpawnAlert!=='function') return;
-    const rules=_arActive(pid); if(!rules.length) return;
+    const rules=_arActive(pid);
+    const skip=_arReconcile(pid,rules);
+    if(!rules.length) return;
     const today=_arToday(), yday=_arAddDays(today,-1);
     const wx=_arWx[pid]||{};
     const soon=()=>{ const d=new Date(Date.now()+90000); return d.toLocaleDateString('en-CA')+'T'+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); };
     const dayLbl=ds=>{ const d=new Date(ds+'T12:00:00'); return d.toLocaleDateString('en-US',{weekday:'short'})+' '+(d.getMonth()+1)+'/'+d.getDate(); };
     let inspDates=null;
     for(const r of rules){
+      if(skip.has(r.id)) continue;
       const thr=(r.threshold>0)?+r.threshold:0.5;
       const name=r.label?(' · '+r.label):'';
       if(r.type==='rain-observed'&&wx.past&&Array.isArray(wx.past.days)){
@@ -147,14 +175,19 @@ async function _arEvaluateNow(pid){
         });
       } else if(r.type==='inspection-overdue'){
         const maxDays=(r.maxDays>0)?+r.maxDays:7;
+        // one standing alert per rule — it was keyed per day, so every overdue day added a copy (Tim 9/10)
+        if(typeof window.oiRetireAlertRefs==='function') window.oiRetireAlertRefs(ref=>ref.startsWith('rule:'+r.id+':')&&!ref.endsWith(':overdue'));
         if(inspDates===null){ try{ inspDates=(typeof window.swInspectionDates==='function')?await window.swInspectionDates(pid):[]; }catch{ inspDates=[]; } }
         if(!Array.isArray(inspDates)||!inspDates.length){
-          window.oiSpawnAlert({sourceRef:'rule:'+r.id+':'+today, kind:'task', priority:true, text:'⚡ No SWPPP inspection on record for this project'+name+' — limit '+maxDays+' days.', dueDate:today, remindAt:soon()});
+          window.oiSpawnAlert({sourceRef:'rule:'+r.id+':overdue', refresh:'⚡ No SWPPP inspection', kind:'task', priority:true, text:'⚡ No SWPPP inspection on record for this project'+name+' — limit '+maxDays+' days.', dueDate:today, remindAt:soon()});
         } else {
           const last=inspDates[inspDates.length-1];
           const gap=Math.round((new Date(today+'T12:00:00')-new Date(last+'T12:00:00'))/86400000);
           if(gap>maxDays){
-            window.oiSpawnAlert({sourceRef:'rule:'+r.id+':'+today, kind:'task', priority:true, text:'⚡ SWPPP inspection overdue — last one '+dayLbl(last)+' ('+gap+' days ago, limit '+maxDays+')'+name+'.', dueDate:today, remindAt:soon()});
+            window.oiSpawnAlert({sourceRef:'rule:'+r.id+':overdue', refresh:'⚡ SWPPP inspection overdue', kind:'task', priority:true, text:'⚡ SWPPP inspection overdue — last one '+dayLbl(last)+' ('+gap+' days ago, limit '+maxDays+')'+name+'.', dueDate:today, remindAt:soon()});
+          } else if(typeof window.oiResolveAlert==='function'){
+            // back inside the limit (an inspection was recorded) → the standing alert closes itself
+            window.oiResolveAlert('rule:'+r.id+':overdue','SWPPP inspection recorded '+dayLbl(last)+'.');
           }
         }
       } else if(r.type==='weekday'){

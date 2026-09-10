@@ -7881,101 +7881,37 @@ function mapDeleteTrackerEntryFromPanel(entryId){
 // kill, not the SW). Now newest-first pages of 48 with All / 🏷 Tag photos /
 // ✓ Linked chips and a caption-or-date filter; the bag ledger is derived ONCE
 // per open and handed to the badge helper (it used to rebuild per thumb).
-const _MTR_PAGE=48;
-let _mtrPick=null;   // {photos, led, pid, filter, q, shown}
+// 9/10: that pager became the shared phPickerOpen primitive (photos.js) after the compliance
+// picker hit the same kill; this flow keeps its tag chip, ledger badges and bag soft-lock.
 function mapShowEntryPhotoPicker(){
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
-  const projectPhotos=(window._phPhotos||[]).filter(p=>!p.projectId||p.projectId===pid)
-    .sort((a,b)=>b.date>a.date?1:b.date<a.date?-1:b.uploadedAt-a.uploadedAt);
-  const ov=document.createElement('div');
-  ov.className='modal-overlay';
-  ov.style.cssText='z-index:9500';
-  if(!projectPhotos.length){
-    ov.innerHTML=`<div class="modal-box" style="max-width:300px;width:88%">
-      <div class="modal-title" style="margin-bottom:10px">No Photos</div>
-      <div style="font-family:var(--mono);font-size:12px;color:var(--muted);margin-bottom:16px;line-height:1.5">Upload photos on the Photos page first, then attach them here.</div>
-      <div class="modal-btns"><button class="modal-cancel" onclick="this.closest('.modal-overlay').remove()">OK</button></div>
-    </div>`;
-    document.body.appendChild(ov);
-    return;
-  }
-  const _led=(typeof sbPhotoLedger==='function')?sbPhotoLedger(pid):new Map();
-  _mtrPick={photos:projectPhotos,led:_led,pid,filter:'all',q:'',shown:_MTR_PAGE};
-  ov.innerHTML=`<div class="modal-box" style="max-width:360px;width:92%;max-height:80vh;display:flex;flex-direction:column">
-    <div class="modal-title" style="margin-bottom:8px">Attach Photos</div>
-    <div id="mtrph-chips" style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap"></div>
-    <input id="mtrph-q" type="search" placeholder="Filter by caption or date…" autocomplete="off" style="-webkit-appearance:none;appearance:none;width:100%;box-sizing:border-box;background:var(--s1);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--body);font-size:16px;padding:7px 10px;outline:none;margin-bottom:8px">
-    <div id="mtrph-grid" style="display:flex;flex-wrap:wrap;gap:6px;overflow-y:auto;flex:1;margin-bottom:12px;align-content:flex-start"></div>
-    <div class="modal-btns"><button class="modal-confirm" onclick="this.closest('.modal-overlay').remove();_mtrPick=null;mapRefreshEntryPhotoStrip()">Done</button></div>
-  </div>`;
-  document.body.appendChild(ov);
-  ov.querySelector('#mtrph-q').oninput=(e)=>{ _mtrPick.q=e.target.value.trim().toLowerCase(); _mtrPick.shown=_MTR_PAGE; _mtrRender(); };
-  _mtrRender();
-}
-function _mtrIsTag(p){
-  const s=_mtrPick;
-  return !!(p.seedTag||(s&&s.led.has(p.id))||_pendingPhotoTypes[p.id]==='material_tag');
-}
-function _mtrFiltered(){
-  const s=_mtrPick; if(!s) return [];
-  return s.photos.filter(p=>{
-    if(s.filter==='linked'&&!_pendingPhotoIds.includes(p.id)) return false;
-    if(s.filter==='tags'&&!_mtrIsTag(p)) return false;
-    if(s.q&&!(String(p.caption||'').toLowerCase().includes(s.q)||String(p.date||'').includes(s.q))) return false;
-    return true;
+  // 🌱 tag-photo bag ledger — one pass for the whole picker (derived from saved entries).
+  const led=(typeof sbPhotoLedger==='function')?sbPhotoLedger(pid):new Map();
+  const isTag=p=>!!(p.seedTag||led.has(p.id)||_pendingPhotoTypes[p.id]==='material_tag');
+  phPickerOpen({
+    title:'Attach Photos', z:9500, pid,
+    emptyText:'Upload photos on the Photos page first, then attach them here.',
+    chips:[{k:'tags',label:'🏷 Tag photos',f:isTag}],
+    isSelected:id=>_pendingPhotoIds.includes(id),
+    tileExtra:p=>{
+      const L=led.get(p.id); if(!(L&&L.capacity!=null)) return '';
+      const bd=sbPhotoBadge(p.id,pid,led);
+      return `<div style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.62);font-family:var(--mono);font-size:8px;color:${bd.amber?'var(--amber)':(bd.closed?'#9fb2c4':'#cfe8cf')};text-align:center;padding:1px 0;white-space:nowrap;overflow:hidden">${bd.txt}</div>`;
+    },
+    onToggle:async(id,on)=>{
+      if(!on){ _pendingPhotoIds=_pendingPhotoIds.filter(x=>x!==id); return true; }
+      // 🌱 soft lock: attaching a tag photo whose bag ledger reads empty asks first —
+      // never blocks (the math can trail the field; the record always wins). House modal, not confirm().
+      const info=(typeof sbPhotoInfo==='function')?sbPhotoInfo(id):null;
+      if(info&&info.remaining!=null&&info.remaining<=0){
+        const go=await new Promise(res=>_confirmModal(`This seed tag's bag reads ${(+info.remaining.toFixed(1)).toLocaleString('en-US')} lbs remaining — attach it anyway?`,()=>res(true),'🌱 Bag reads empty','Attach anyway',()=>res(false)));
+        if(!go) return false;
+      }
+      if(!_pendingPhotoIds.includes(id)) _pendingPhotoIds.push(id);
+      return true;
+    },
+    onDone:()=>mapRefreshEntryPhotoStrip()
   });
-}
-function _mtrRender(){
-  const s=_mtrPick; const grid=document.getElementById('mtrph-grid'); if(!s||!grid) return;
-  const chips=document.getElementById('mtrph-chips');
-  if(chips){
-    const counts={all:s.photos.length, tags:s.photos.filter(_mtrIsTag).length, linked:_pendingPhotoIds.length};
-    chips.innerHTML=[['all','All'],['tags','🏷 Tag photos'],['linked','✓ Linked']].map(([k,l])=>
-      `<button type="button" class="cl-fpill${s.filter===k?' on':''}" data-f="${k}" style="border-color:var(--amber);color:var(--amber);background:rgba(201,168,76,.15)">${l} <span style="opacity:.7">${counts[k]}</span></button>`).join('');
-    chips.querySelectorAll('button').forEach(b=>{ b.onclick=()=>{ s.filter=b.dataset.f; s.shown=_MTR_PAGE; _mtrRender(); }; });
-  }
-  const list=_mtrFiltered();
-  const page=list.slice(0,s.shown);
-  const pid=s.pid;
-  grid.innerHTML=page.map(p=>{
-    const linked=_pendingPhotoIds.includes(p.id);
-    const L=s.led.get(p.id);
-    let ledHtml='';
-    if(L&&L.capacity!=null){
-      const bd=sbPhotoBadge(p.id,pid,s.led);
-      ledHtml=`<div style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.62);font-family:var(--mono);font-size:8px;color:${bd.amber?'var(--amber)':(bd.closed?'#9fb2c4':'#cfe8cf')};text-align:center;padding:1px 0;white-space:nowrap;overflow:hidden">${bd.txt}</div>`;
-    }
-    return `<div id="mtrph-${p.id}" onclick="mapToggleEntryPhoto('${p.id}',this)"
-      style="position:relative;cursor:pointer;border-radius:6px;border:2px solid ${linked?'var(--amber)':'transparent'};overflow:hidden;flex-shrink:0;width:80px;height:60px">
-      <img src="${p.thumb}" loading="lazy" style="width:80px;height:60px;object-fit:cover;display:block">
-      <div id="mtrph-chk-${p.id}" style="position:absolute;top:2px;right:2px;width:16px;height:16px;border-radius:50%;background:${linked?'var(--amber)':'rgba(0,0,0,.45)'};display:flex;align-items:center;justify-content:center;font-size:9px;color:#fff">${linked?'✓':''}</div>
-      ${ledHtml}
-    </div>`;
-  }).join('')
-  +(list.length>page.length
-    ?`<button type="button" id="mtrph-more" style="width:100%;margin-top:4px;padding:9px;border-radius:6px;border:1px dashed var(--border);background:var(--s1);color:var(--muted);font-family:var(--mono);font-size:11px;cursor:pointer">Load more · ${list.length-page.length} older</button>`
-    :(list.length?'':`<div style="font-family:var(--mono);font-size:11px;color:var(--muted);padding:12px 4px">No photos match.</div>`));
-  const more=document.getElementById('mtrph-more'); if(more) more.onclick=()=>{ s.shown+=_MTR_PAGE; _mtrRender(); };
-}
-function mapToggleEntryPhoto(photoId, el){
-  if(_pendingPhotoIds.includes(photoId)){
-    _pendingPhotoIds=_pendingPhotoIds.filter(id=>id!==photoId);
-    el.style.borderColor='transparent';
-    const chk=document.getElementById('mtrph-chk-'+photoId);
-    if(chk){chk.style.background='rgba(0,0,0,.45)';chk.textContent='';}
-  } else {
-    // 🌱 soft lock: attaching a tag photo whose bag ledger reads empty asks first —
-    // never blocks (the math can trail the field; the record always wins).
-    const info=(typeof sbPhotoInfo==='function')?sbPhotoInfo(photoId):null;
-    if(info&&info.remaining!=null&&info.remaining<=0
-      &&!confirm(`This seed tag's bag reads ${(+info.remaining.toFixed(1)).toLocaleString('en-US')} lbs remaining — attach it anyway?`)) return;
-    _pendingPhotoIds.push(photoId);
-    el.style.borderColor='var(--amber)';
-    const chk=document.getElementById('mtrph-chk-'+photoId);
-    if(chk){chk.style.background='var(--amber)';chk.textContent='✓';}
-  }
-  // Keep the ✓ Linked chip count honest without re-rendering the grid.
-  const lc=document.querySelector('#mtrph-chips button[data-f="linked"] span'); if(lc) lc.textContent=_pendingPhotoIds.length;
 }
 function mapRefreshEntryPhotoStrip(){
   // The repair-flag sheet shares _pendingPhotoIds + the attach picker — keep its
@@ -8322,7 +8258,6 @@ window.mapNewMeasure = mapNewMeasure;
 window.mapShowPhotoLinkPicker = mapShowPhotoLinkPicker;
 window.mapLinkPhotoToEntry = mapLinkPhotoToEntry;
 window.mapShowEntryPhotoPicker = mapShowEntryPhotoPicker;
-window.mapToggleEntryPhoto = mapToggleEntryPhoto;
 window.mapRefreshEntryPhotoStrip = mapRefreshEntryPhotoStrip;
 window.mapTogglePhotoType = mapTogglePhotoType;
 window.mapRemoveEntryPhoto = mapRemoveEntryPhoto;

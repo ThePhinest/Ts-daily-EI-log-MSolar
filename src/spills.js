@@ -531,7 +531,7 @@ async function spFormalize(){
 function _spChoice(msg, labelA, labelB, o){
   o=o||{};
   return new Promise(res=>{
-    const ov=document.createElement('div'); ov.className='modal-overlay'; ov.style.cssText='z-index:9700';
+    const ov=document.createElement('div'); ov.className='modal-overlay'; ov.style.cssText='z-index:'+(window.GL_CONFIRM_Z||10500);
     ov.innerHTML=`<div class="modal-box" style="max-width:340px;width:92%">
       <div class="modal-title" style="margin-bottom:8px">${_spEsc(o.title||'✦ Formalize first?')}</div>
       <div style="font-size:13px;line-height:1.5;margin-bottom:14px">${msg}</div>
@@ -684,36 +684,15 @@ function spAttachPhoto(recId, photoId){
 }
 function spFormPickPhotos(){
   if(!_spFormSel) return;
-  const pid=_spPid();
   const date=_spVal('discoveryDate');
-  const all=(window._phPhotos||[]).filter(p=>!p.deletedAt&&p.thumb&&(!p.projectId||p.projectId===pid))
-    .sort((a,b)=>String(b.date||'').localeCompare(String(a.date||''))||(b.uploadedAt||0)-(a.uploadedAt||0));
-  let dayOnly=all.some(p=>p.date===date);
-  const ov=document.createElement('div'); ov.className='modal-overlay'; ov.style.cssText='z-index:7000';
-  const render=()=>{
-    const list=dayOnly?all.filter(p=>p.date===date):all.slice(0,300);
-    ov.innerHTML=`<div class="modal-box" style="max-width:380px;width:92%;max-height:80vh;display:flex;flex-direction:column">
-      <div class="modal-title" style="margin-bottom:6px">Attach photos</div>
-      <div style="display:flex;gap:6px;margin-bottom:10px">
-        <button type="button" id="sp-pk-day" class="btn ${dayOnly?'btn-amber':'btn-outline'}" style="flex:1;font-size:11px">${_spEsc(_spPretty(date))}</button>
-        <button type="button" id="sp-pk-all" class="btn ${dayOnly?'btn-outline':'btn-amber'}" style="flex:1;font-size:11px">All project photos</button>
-      </div>
-      <div style="display:flex;flex-wrap:wrap;gap:6px;overflow-y:auto;flex:1;margin-bottom:12px">
-        ${list.length?list.map(p=>{ const on=_spFormSel.has(p.id); return `<div data-pid="${_spEsc(p.id)}" style="position:relative;cursor:pointer;border-radius:6px;border:2px solid ${on?'var(--amber)':'transparent'};overflow:hidden">
-            <img src="${_spEsc(p.thumb)}" style="width:80px;height:60px;object-fit:cover;display:block">
-            <div style="position:absolute;top:2px;right:2px;width:16px;height:16px;border-radius:50%;background:${on?'var(--amber)':'rgba(0,0,0,.45)'};display:flex;align-items:center;justify-content:center;font-size:9px;color:#111">${on?'✓':''}</div>
-            <div style="position:absolute;left:0;right:0;bottom:0;background:rgba(0,0,0,.55);color:#fff;font-family:var(--mono);font-size:8px;padding:1px 3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${_spEsc((p.date||'').slice(5))}${p.caption?' · '+_spEsc(p.caption):''}</div>
-          </div>`; }).join(''):'<span style="font-family:var(--mono);font-size:11px;color:var(--muted)">No photos here yet.</span>'}
-      </div>
-      <div class="modal-btns"><button class="modal-confirm" id="sp-pk-done">Done</button></div>
-    </div>`;
-    ov.querySelector('#sp-pk-day').onclick=()=>{ dayOnly=true; render(); };
-    ov.querySelector('#sp-pk-all').onclick=()=>{ dayOnly=false; render(); };
-    ov.querySelector('#sp-pk-done').onclick=()=>{ ov.remove(); _spRenderPhotos(); };
-    ov.querySelectorAll('[data-pid]').forEach(el=>{ el.onclick=()=>{ const id=el.dataset.pid; if(_spFormSel.has(id)) _spFormSel.delete(id); else _spFormSel.add(id); render(); }; });
-  };
-  render();
-  document.body.appendChild(ov);
+  phPickerOpen({
+    title:'Attach photos', z:7000, pid:_spPid(),
+    day:date||'', dayLabel:date?_spPretty(date):'', dayDefault:true,   // discovery day first (9/8 design), All one tap away
+    emptyText:'No photos here yet.',
+    isSelected:id=>_spFormSel.has(id),
+    onToggle:(id,on)=>{ if(on) _spFormSel.add(id); else _spFormSel.delete(id); },
+    onDone:()=>_spRenderPhotos()
+  });
 }
 
 // ═══ Delete (soft) — from everywhere (Tim 9/8 rider): the house modal replaces the

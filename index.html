@@ -2793,7 +2793,7 @@ Anticipated rain — AM weather monitoring expected"></textarea>
           <label style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em">Notes</label>
           <button type="button" onclick="if(typeof appEntryNotesRegen==='function')appEntryNotesRegen()" title="Refill from the application rows" style="background:none;border:none;color:var(--muted);font-size:12px;cursor:pointer;padding:0 2px">⟲</button>
         </div>
-        <textarea id="map-tr-notes" rows="2" placeholder="Auto-fills from applications — or type your own" style="width:100%;box-sizing:border-box;background:var(--s1);border:1px solid var(--border);border-radius:6px;padding:7px 9px;color:var(--text);font-family:var(--mono);font-size:12px;resize:vertical"></textarea>
+        <textarea id="map-tr-notes" class="auto-expand" rows="2" placeholder="Auto-fills from applications — or type your own" style="width:100%;box-sizing:border-box;background:var(--s1);border:1px solid var(--border);border-radius:6px;padding:7px 9px;color:var(--text);font-family:var(--mono);font-size:12px;resize:vertical"></textarea>
       </div>
       <!-- 🌱 Seeding on stabilization states — opt-in reveal of the calc section
            below; offered only on subtract/none states of running-mode categories -->
@@ -3081,11 +3081,11 @@ Anticipated rain — AM weather monitoring expected"></textarea>
     </div>
     <div class="field">
       <label>Location / Description</label>
-      <textarea class="short" id="cl-f-location" placeholder="Describe the location and nature of the observation…"></textarea>
+      <textarea class="short auto-expand" id="cl-f-location" placeholder="Describe the location and nature of the observation…"></textarea>
     </div>
     <div class="field">
       <label>Corrective Action Required</label>
-      <textarea class="short" id="cl-f-corrective" placeholder="Describe the corrective action directed or required…"></textarea>
+      <textarea class="short auto-expand" id="cl-f-corrective" placeholder="Describe the corrective action directed or required…"></textarea>
     </div>
     <div class="field">
       <label>Photos</label>

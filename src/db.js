@@ -265,11 +265,21 @@ function showCloudBanner(msg) {
 }
 
 // ── Custom confirm modal (replaces confirm() which is unreliable in iOS PWA) ──
-function _confirmModal(msg, onConfirm, title, confirmLabel) {
+// Stacking: sheets and detail modals sit anywhere from 9000 to 10000 (submission detail 9050,
+// member sheets 9100, spills 9600/9700, sign-in 9999), so a confirm raised from inside one must
+// clear them all — 9/10 the Withdraw confirm opened UNDER the submission sheet and read as a hang.
+// Only the camera (11000+) sits higher, and it never confirms.
+var GL_CONFIRM_Z = 10500;
+function _confirmModal(msg, onConfirm, title, confirmLabel, onCancel) {
   title = title || '⚠ Confirm Reset';
   confirmLabel = confirmLabel || 'Reset';
+  // One confirm at a time: a double-tap (or a confirm raised while one is up) replaces the
+  // first — two stacked overlays shared the _mc/_mok ids and the visible one had no handlers.
+  document.querySelectorAll('.modal-overlay[data-confirm]').forEach(function(o){ o.remove(); });
   var ov = document.createElement('div');
   ov.className = 'modal-overlay';
+  ov.setAttribute('data-confirm', '1');
+  ov.style.zIndex = String(GL_CONFIRM_Z);
   ov.innerHTML = '<div class="modal-box">' +
     '<div class="modal-title">' + title + '</div>' +
     '<div class="modal-msg">' + msg + '</div>' +
@@ -278,8 +288,9 @@ function _confirmModal(msg, onConfirm, title, confirmLabel) {
       '<button class="modal-confirm" id="_mok">' + confirmLabel + '</button>' +
     '</div></div>';
   document.body.appendChild(ov);
-  document.getElementById('_mc').onclick = function() { ov.remove(); };
-  document.getElementById('_mok').onclick = function() { ov.remove(); if (typeof onConfirm === 'function') onConfirm(); };
+  // Bound on THIS overlay, never through document.getElementById (a stale twin wins that lookup).
+  ov.querySelector('.modal-cancel').onclick = function() { ov.remove(); if (typeof onCancel === 'function') onCancel(); };
+  ov.querySelector('.modal-confirm').onclick = function() { ov.remove(); if (typeof onConfirm === 'function') onConfirm(); };
 }
 
 // ── resetForm: clears cloud + form — only permitted on today's log ──
@@ -654,6 +665,10 @@ window.cloudSave = cloudSave;
 window.debouncedAutoSave = debouncedAutoSave;
 window.showCloudBanner = showCloudBanner;
 window._confirmModal = _confirmModal;
+window.GL_CONFIRM_Z = GL_CONFIRM_Z;
+// Canonical https origin for links that leave the app (invites, QR) — inside the iOS app
+// location.origin is capacitor://app.groundlog.io, which Messages / Mail render as dead text.
+window.GL_PUBLIC_ORIGIN = 'https://app.groundlog.io';
 window.resetForm = resetForm;
 window.initFirebaseLoad = initFirebaseLoad;
 window._udb = _udb;

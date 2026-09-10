@@ -95,7 +95,11 @@ function _glNormToken(raw) {
 }
 function _glFmtToken(t) { return t.slice(0, 5) + '-' + t.slice(5); }
 function _glJoinUrl(token) {
-  return location.origin + location.pathname + '?join=' + token;
+  // Always the public https origin: inside the iOS app location.origin is capacitor://app.groundlog.io,
+  // which Messages / Mail render as dead text (Tim 9/10). Local dev keeps its own origin.
+  const web = /^https?:$/.test(location.protocol);
+  const origin = web ? location.origin : (window.GL_PUBLIC_ORIGIN || 'https://app.groundlog.io');
+  return origin + (web ? location.pathname : '/') + '?join=' + token;
 }
 // Member/project strings are cross-user input — always escape before innerHTML.
 function _glEsc(s) {
@@ -1622,22 +1626,24 @@ function glWithdrawSubmission(id) {
   const d = _sdb();
   const s = (window._glPSpaceCache || {})[id];
   if (!d || !s) return;
-  _confirmModal('Withdraw this submission? Project members lose access to it now. Your own log is untouched, and the version trail keeps the record that it existed.', async function() {
+  _confirmModal('Withdraw this submission? Project members lose access to it now. Your own log is untouched, and the version trail keeps the record that it existed.', function() {
+    const pid = _activeProjectId();
+    // Firestore applies the write locally at once; its promise only settles on the server ack
+    // (never while offline) — so the sheet closes now and a refusal is reported if one comes back.
+    const write = d.collection('projects').doc(pid).collection('submissions').doc(id)
+      .update({ status: 'withdrawn', statusChangedAt: Date.now() });
+    // A withdrawn day has no active snapshot — it counts as unsubmitted again.
     try {
-      const pid = _activeProjectId();
-      await d.collection('projects').doc(pid).collection('submissions').doc(id)
-        .update({ status: 'withdrawn', statusChangedAt: Date.now() });
-      // A withdrawn day has no active snapshot — it counts as unsubmitted again.
-      try {
-        const m = glMySubmittedDates(pid);
-        if (s.date && m[s.date]) { delete m[s.date]; localStorage.setItem(_glMySubsKey(pid), JSON.stringify(m)); }
-      } catch (e2) {}
-      glUpdateSubmitBadge();
-      document.getElementById('_gl-sub-detail')?.remove();
-      glShowProjectSpace();
-    } catch (e) {
+      const m = glMySubmittedDates(pid);
+      if (s.date && m[s.date]) { delete m[s.date]; localStorage.setItem(_glMySubsKey(pid), JSON.stringify(m)); }
+    } catch (e2) {}
+    glUpdateSubmitBadge();
+    document.getElementById('_gl-sub-detail')?.remove();
+    glShowProjectSpace();
+    write.catch(function(e) {
       _confirmModal('Could not withdraw: ' + e.message, function(){}, 'Submissions', 'OK');
-    }
+      try { glShowProjectSpace(); } catch (e3) {}
+    });
   }, 'Withdraw submission', 'Withdraw');
 }
 
