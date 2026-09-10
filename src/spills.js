@@ -723,9 +723,12 @@ async function spDelete(id){
   const where=rec.published
     ?'It disappears for every project member too: the Compliance card, the Reports section, the map pin and the shared record.'
     :'It disappears from your Compliance card, the Reports section and the map.';
-  const c=await _spChoice('Delete '+spLabel(rec)+' ('+_spPretty(rec.discoveryDate||rec.releaseDate||'')+') from everywhere? '+where+' Recoverable by support — nothing is destroyed.',
+  const cmpNote=rec.cmpId?' Its compliance-log entry (CMP) goes with it and is not recoverable.':'';
+  const c=await _spChoice('Delete '+spLabel(rec)+' ('+_spPretty(rec.discoveryDate||rec.releaseDate||'')+') from everywhere? '+where+cmpNote+' The spill record itself is recoverable by support.',
     '🗑 Delete from everywhere','Keep it',{title:'Delete spill record?',danger:true});
   if(c!=='a') return;
+  // Tim 9/9: "everywhere" includes the CMP entry Log-as-CMP filed (daily report + punchlist).
+  if(rec.cmpId&&typeof window.clDeleteEntryById==='function'){ try{ window.clDeleteEntryById(rec.cmpId); }catch(e){ console.warn('spill delete: cmp cascade', e&&e.message); } }
   rec.deletedAt=Date.now(); rec.updatedAt=Date.now();
   _spPersist(rec);   // published → _spUnmirror
   _spRepaint();
@@ -762,7 +765,7 @@ function spShowDetail(id){
       ${!mine?'':(r.cmpId?`<button class="btn btn-outline" style="flex:1;min-width:120px" onclick="this.closest('.modal-overlay').remove();showPage('compliance')">📋 ${_spEsc(cmpTxt||'CMP')}</button>`
                :`<button class="btn btn-outline" style="flex:1;min-width:120px" onclick="spLogAsCmp('${_spEsc(r.id)}',this)">📋 Log as CMP</button>`)}
       ${hasLoc?`<button class="btn btn-outline" style="flex:1;min-width:120px" onclick="this.closest('.modal-overlay').remove();spShowOnMap('${_spEsc(r.id)}')">🗺 Show on map</button>`:''}
-      ${mine?`<button class="btn btn-outline" style="flex:1;min-width:120px" onclick="spTogglePublish('${_spEsc(r.id)}')">${r.published?'🔒 Unpublish':'📤 Publish to project'}</button>`:''}
+      ${mine?`<button class="btn btn-outline" style="flex:1;min-width:120px" title="${r.published?'Remove from the project — your copy stays':'Share with the project team'}" onclick="spTogglePublish('${_spEsc(r.id)}')">${r.published?'🔒 Unpublish':'📤 Publish'}</button>`:''}
       <button class="btn btn-amber" style="flex:1;min-width:120px" onclick="this.closest('.modal-overlay').remove()">Close</button>
     </div>
   </div>`;

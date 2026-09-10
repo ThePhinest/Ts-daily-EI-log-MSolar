@@ -691,6 +691,18 @@ function clConfirmDelete(id){
   };
 }
 
+// Programmatic delete — same steps as the modal path (9/9: a spill's "delete from
+// everywhere" takes the CMP entry it filed along with it).
+function clDeleteEntryById(id){
+  const e = _clEntries.find(x=>x.id===id);
+  if(!e) return false;
+  _clUnmirror(e);
+  _clEntries = _clEntries.filter(x=>x.id!==id);
+  clSave();
+  clRender();
+  return true;
+}
+
 // ── Auto-detect issues from daily log ──
 function clAutoDetect(){
   const reportDate = document.getElementById('reportDate')?.value || '';
@@ -3643,6 +3655,7 @@ window.clToggleResolvedDate = clToggleResolvedDate;
 window.clSubmitForm = clSubmitForm;
 window.clEditEntry = clEditEntry;
 window.clConfirmDelete = clConfirmDelete;
+window.clDeleteEntryById = clDeleteEntryById;
 window.clRenderTrackerCard = clRenderTrackerCard;
 window.clShowTrackerDetail = clShowTrackerDetail;
 window.clShowTrackerLog = clShowTrackerLog;
