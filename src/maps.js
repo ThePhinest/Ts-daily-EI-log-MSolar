@@ -296,6 +296,7 @@ function mapSetup(token){
     mapRenderPhotoPins();
     mapRenderFieldMarkers();
     mapRenderSpillMarkers();
+    mapRenderCmpMarkers();
     kmlLoadLayers();
     if(typeof window.poLoadSheets === 'function') window.poLoadSheets();
     mapRenderTrackerLayers();
@@ -383,6 +384,7 @@ function mapSetStyle(style){
     mapAddGPSDot();
     mapRenderFieldMarkers();
     mapRenderSpillMarkers();
+    mapRenderCmpMarkers();
     // Plan-sheet rasters first so they mount BELOW the KML vectors re-added next.
     if(typeof window.poReaddVisible === 'function') window.poReaddVisible();
     _mapKmlLayers.filter(l=>l.visible).forEach(layer => mapToggleKmlLayerById(layer.id, true));
@@ -4632,7 +4634,10 @@ function _showUndoToast(entry, pid){
   toast.style.cssText='position:fixed;bottom:calc(160px + env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);background:#1a2a3a;border:1px solid rgba(255,255,255,.15);border-radius:8px;padding:10px 14px;display:flex;align-items:center;gap:12px;z-index:4800;font-family:var(--mono);font-size:12px;color:#e8e8e8;white-space:nowrap;box-shadow:0 4px 16px rgba(0,0,0,.4)';
   const label=entry.entryType==='planned'?'Planned area saved':'Entry saved';
   const catName=entry.categoryName||(typeof tcGetName==='function'?tcGetName(entry.categoryId,pid):'');
-  toast.innerHTML=`<span>${label}${catName?' · '+catName:''}</span><button onclick="(function(){if(typeof trDeleteEntry==='function')trDeleteEntry('${entry.id}','${pid}');if(typeof mapRenderTrackerLayers==='function')mapRenderTrackerLayers();if(typeof clRenderTrackerCard==='function')clRenderTrackerCard();document.getElementById('_gl-undo-toast')?.remove();})()" style="background:var(--amber);border:none;color:#111;padding:4px 10px;border-radius:4px;font-family:var(--mono);font-size:11px;cursor:pointer;font-weight:700">Undo</button>`;
+  // 9/11 (Tim 9/10 #39): a one-tap 📤 Share next to Undo — the entry (and its photos) go to
+  // the project now instead of waiting for the day's submission. Shared projects, work roles.
+  const canShare=!entry.published&&!entry.temporary&&_mapCanShare(pid);
+  toast.innerHTML=`<span>${label}${catName?' · '+catName:''}</span>${canShare?`<button onclick="mapShareEntryNow('${entry.id}')" style="background:transparent;border:1px solid var(--amber);color:var(--amber);padding:4px 10px;border-radius:4px;font-family:var(--mono);font-size:11px;cursor:pointer;font-weight:700">📤 Share</button>`:''}<button onclick="(function(){if(typeof trDeleteEntry==='function')trDeleteEntry('${entry.id}','${pid}');if(typeof mapRenderTrackerLayers==='function')mapRenderTrackerLayers();if(typeof clRenderTrackerCard==='function')clRenderTrackerCard();document.getElementById('_gl-undo-toast')?.remove();})()" style="background:var(--amber);border:none;color:#111;padding:4px 10px;border-radius:4px;font-family:var(--mono);font-size:11px;cursor:pointer;font-weight:700">Undo</button>`;
   document.body.appendChild(toast);
   setTimeout(()=>{const t=document.getElementById('_gl-undo-toast');if(t===toast)toast.remove();},6000);
 }
@@ -5262,6 +5267,7 @@ function mapRefreshDateLabels(){
       if(_tcLayerVisible[cid]===false) return false;
       const isOpenTemp=e.temporary&&e.tempStatus!=='resolved';
       if(isOpenTemp&&!_flagsEffVisible()) return false; // FAB toggle (or capture-bar override) hides these
+      if(isOpenTemp&&_plCapHideLabels) return false;    // 9/11: the punchlist capture draws its own collision-free chips
       // ESC-status capture framing: labels follow the same filter as the drawings —
       // selected categories only, flags per the capture toggle, no Removed-state entries.
       if(_escCapFilter){
@@ -5346,6 +5352,7 @@ function mapRefreshDateLabels(){
   if(_mapInstance.getLayer('tracker-date-labels-layer')){
     try{_mapInstance.moveLayer('tracker-date-labels-layer');}catch(e){}
   }
+  _mapRaiseCmpLayers();   // 9/11: ⚠ CMP pins stay above the drawings + labels
 }
 window.mapRefreshDateLabels=mapRefreshDateLabels;
 
@@ -5933,11 +5940,19 @@ async function _compositeBrandWordmark(blob, legendCat, pid, scopeEntryId, opts)
     if(opts&&opts.plCap){
       try{
         const open=(typeof trGetOpenTemporary==='function')?trGetOpenTemporary(pid):[];
+        const cmps=_plCapCmps();
+        // 9/11 (Tim 9/10 #3): every open item gets a hand-placed, collision-free chip
+        // with a leader line back to its point (the map's own labels are hidden for the grab).
+        let drawn=[];
+        try{ drawn=_plCapDrawChips(ctx,c,open,cmps); }catch(e){ console.warn('punchlist chip pass failed:',e.message); }
+        _plCapDrawn=drawn;
         const winHrs=(typeof clAmberHours==='function')?clAmberHours():48;
         const nowTs=Date.now();
         const overdue=open.filter(e=>{ const t=new Date((e.date||'')+'T00:00:00').getTime(); return !isNaN(t)&&nowTs>t+winHrs*3600000; }).length;
-        const rows=[{label:`${open.length} open item${open.length===1?'':'s'} — flags show their PL number`,color:'#C9A84C'}];
+        const rows=[{label:`${open.length} open flag${open.length===1?'':'s'}${cmps.length?` · ${cmps.length} compliance item${cmps.length===1?'':'s'}`:''} — chips carry the PL / CMP number`,color:'#C9A84C'}];
         if(overdue) rows.push({label:`${overdue} past the ${winHrs}-hour correction window`,bold:true});
+        const off=open.length+cmps.length-drawn.length;
+        if(off>0) rows.push({label:`${off} item${off===1?'':'s'} outside this frame`});
         _drawLegendBox(ctx,c,`🚩 ESC PUNCHLIST · ${_fmtLabelDate(new Date().toLocaleDateString('en-CA'))}`,rows);
       }catch(e){ console.warn('punchlist legend composite failed:',e.message); }
     }
@@ -6598,13 +6613,16 @@ async function _doCaptureDist(cid){
 // (layers panel controls the context). The newest capture day embeds at the
 // FRONT of the punchlist PDF.
 let _plCapActive=false;
+let _plCapHideLabels=false;   // 9/11: true only while the punchlist capture grabs the canvas
+let _plCapDrawn=null;         // 9/11: items the last chip pass actually placed (caption source)
+function _plCapCmps(){ return (typeof window.clGetOpenEntries==='function')?window.clGetOpenEntries().filter(e=>typeof e.lat==='number'&&typeof e.lng==='number'):[]; }
 function mapCapturePunchlist(){
   if(!_mapInstance) return;
   if(typeof mapCloseFab==='function') mapCloseFab();
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
   if(typeof trEnsurePlNums==='function'){ try{ trEnsurePlNums(pid); }catch(e){} }
   const open=(typeof trGetOpenTemporary==='function')?trGetOpenTemporary(pid):[];
-  if(!open.length){ _showCaptureToast('Nothing on the punchlist — no open flags to capture.'); setTimeout(_hideCaptureToast,2600); return; }
+  if(!open.length&&!_plCapCmps().length){ _showCaptureToast('Nothing on the punchlist — no open flags or located compliance items to capture.'); setTimeout(_hideCaptureToast,2600); return; }
   if(_trackerPopup){_trackerPopup.remove();_trackerPopup=null;}
   _showCaptureBar(()=>_doCapturePunchlist());
   // Flags ARE the subject — force them on regardless of the capture pref, and
@@ -6621,17 +6639,94 @@ async function _doCapturePunchlist(){
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
   _showCaptureToast('📷 Capturing…');
   const today=new Date().toLocaleDateString('en-CA');
-  const branded=await _capRender(()=>_capGrab(raw=>_compositeBrandWordmark(raw,null,pid,null,{plCap:true})));
+  // 9/11 (Tim 9/10 #3): the map's own flag / CMP labels are hidden for the grab — the
+  // composite draws one collision-free chip per item with a leader line instead.
+  _plCapHideLabels=true; _plCapDrawn=null;
+  try{ mapRefreshDateLabels(); }catch{} _cmpLabelsVisible(false);
+  let branded=null;
+  try{ branded=await _capRender(()=>_capGrab(raw=>_compositeBrandWordmark(raw,null,pid,null,{plCap:true}))); }
+  finally{ _plCapHideLabels=false; _cmpLabelsVisible(true); try{ mapRefreshDateLabels(); }catch{} }
   if(!branded){ _hideCaptureToast(); _capFlagsDisarm(); console.warn('_doCapturePunchlist: canvas returned null'); return; }
   _capFlagsDisarm();
   if(typeof phSaveCapturedImage!=='function'){ _hideCaptureToast(); return; }
   _showCaptureToast('☁️ Saving…');
-  const prefill=`Punchlist · ${_fmtLabelDate(today)}`;
-  const photoEntry=await phSaveCapturedImage(branded,today,prefill,{plCap:true});
+  // Caption = the items this frame covers (PL / CMP number + the flag's location).
+  const drawn=Array.isArray(_plCapDrawn)?_plCapDrawn:[]; _plCapDrawn=null;
+  const parts=drawn.map(i=>i.tag+(i.loc?' '+String(i.loc).replace(/\s+/g,' ').trim().slice(0,24):''));
+  let prefill=`Punchlist · ${_fmtLabelDate(today)}`+(parts.length?' · '+parts.join(', '):'');
+  if(prefill.length>240) prefill=prefill.slice(0,237)+'…';
+  const photoEntry=await phSaveCapturedImage(branded,today,prefill,{plCap:{items:drawn}});
   _hideCaptureToast();
   if(!photoEntry){ console.warn('_doCapturePunchlist: save failed'); return; }
   _showCaptureToast('✓ Saved · rides the front of the next punchlist PDF');
   setTimeout(_hideCaptureToast,2600);
+}
+
+// 9/11 (Tim 9/10 #3): punchlist capture chips. Items are projected onto the grabbed
+// canvas; each chip tries eight directions over widening rings until it finds a slot
+// clear of every other chip and every item dot, then a leader line ties it back to
+// its point. Chips are the compact tag only (PL-03 / CMP-04) — the PDF rows carry the
+// deficiency text. Returns the items that landed in frame (caption + legend source).
+function _plCapDrawChips(ctx,c,flags,cmps){
+  if(!_mapInstance) return [];
+  const cont=_mapInstance.getContainer();
+  const sx=(cont&&cont.clientWidth)?c.width/cont.clientWidth:1;
+  const sy=(cont&&cont.clientHeight)?c.height/cont.clientHeight:1;
+  const items=[];
+  (flags||[]).forEach(e=>{
+    const g=e.geometry; const co=(g&&g.type==='Point')?g.coordinates:_calcCentroid(g); if(!co) return;
+    const pt=_mapInstance.project(co);
+    items.push({id:e.id,kind:'pl',n:e.plNum||0,tag:e.plNum?((typeof trPlFmt==='function')?trPlFmt(e.plNum):'PL-'+e.plNum):'PL',loc:e.location||'',x:pt.x*sx,y:pt.y*sy});
+  });
+  (cmps||[]).forEach(e=>{
+    const pt=_mapInstance.project([e.lng,e.lat]);
+    items.push({id:e.id,kind:'cmp',n:e.cmpNum||0,tag:_cmpTag(e),loc:e.location||'',x:pt.x*sx,y:pt.y*sy});
+  });
+  const inFrame=items.filter(i=>i.x>=-4&&i.y>=-4&&i.x<=c.width+4&&i.y<=c.height+4);
+  inFrame.sort((a,b)=>(a.kind===b.kind?0:(a.kind==='cmp'?-1:1))||(a.n-b.n));
+  if(!inFrame.length) return [];
+  const fs=Math.max(11,Math.round(12*sy)), padX=Math.round(fs*0.55), h=Math.round(fs*1.7), m=Math.round(3*sy), dot=4.5*sy;
+  ctx.save();
+  ctx.font=`700 ${fs}px "IBM Plex Mono", Menlo, Consolas, monospace`;
+  const placed=inFrame.map(i=>({x:i.x-dot,y:i.y-dot,w:dot*2,h:dot*2}));   // the dots are obstacles too
+  const hit=(a,b)=>!(a.x+a.w+m<b.x||b.x+b.w+m<a.x||a.y+a.h+m<b.y||b.y+b.h+m<a.y);
+  const ANG=[-90,90,0,180,-45,45,-135,135];
+  inFrame.forEach(it=>{
+    const w=Math.round(ctx.measureText(it.tag).width)+padX*2;
+    let rect=null;
+    outer: for(const rk of [1.1,2.0,3.1,4.4,6.0,8.0]){
+      for(const a of ANG){
+        const rad=a*Math.PI/180, R=rk*h;
+        const cx=it.x+Math.cos(rad)*(R+(w/2)*Math.abs(Math.cos(rad)));
+        const cy=it.y+Math.sin(rad)*(R+(h/2)*Math.abs(Math.sin(rad)));
+        const r={x:Math.min(Math.max(cx-w/2,2),c.width-w-2),y:Math.min(Math.max(cy-h/2,2),c.height-h-2),w,h};
+        if(!placed.some(p=>hit(r,p))){ rect=r; break outer; }
+      }
+    }
+    if(!rect) rect={x:Math.min(Math.max(it.x-w/2,2),c.width-w-2),y:Math.min(Math.max(it.y-h*1.6,2),c.height-h-2),w,h};
+    placed.push(rect); it.rect=rect;
+  });
+  const colOf=it=>it.kind==='cmp'?'#E74C3C':'#C9A84C';
+  // leaders first (under everything), then dots, then chips
+  inFrame.forEach(it=>{
+    const r=it.rect;
+    const ex=Math.min(Math.max(it.x,r.x),r.x+r.w), ey=Math.min(Math.max(it.y,r.y),r.y+r.h);
+    ctx.lineWidth=Math.max(1.5,1.5*sy); ctx.strokeStyle='rgba(0,0,0,0.85)'; ctx.beginPath(); ctx.moveTo(it.x,it.y); ctx.lineTo(ex,ey); ctx.stroke();
+    ctx.lineWidth=Math.max(1,1*sy); ctx.strokeStyle=colOf(it); ctx.beginPath(); ctx.moveTo(it.x,it.y); ctx.lineTo(ex,ey); ctx.stroke();
+  });
+  inFrame.forEach(it=>{
+    ctx.beginPath(); ctx.arc(it.x,it.y,dot,0,Math.PI*2); ctx.fillStyle=colOf(it); ctx.fill();
+    ctx.lineWidth=1.5*sy; ctx.strokeStyle='rgba(0,0,0,0.85)'; ctx.stroke();
+  });
+  inFrame.forEach(it=>{
+    const r=it.rect, rr=Math.round(h*0.3);
+    ctx.fillStyle=colOf(it); ctx.strokeStyle='rgba(0,0,0,0.85)'; ctx.lineWidth=1*sy;
+    ctx.beginPath(); ctx.moveTo(r.x+rr,r.y); ctx.arcTo(r.x+r.w,r.y,r.x+r.w,r.y+r.h,rr); ctx.arcTo(r.x+r.w,r.y+r.h,r.x,r.y+r.h,rr); ctx.arcTo(r.x,r.y+r.h,r.x,r.y,rr); ctx.arcTo(r.x,r.y,r.x+r.w,r.y,rr); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.fillStyle=it.kind==='cmp'?'#ffffff':'#111111'; ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText(it.tag,r.x+r.w/2,r.y+r.h/2+fs*0.06);
+  });
+  ctx.restore();
+  return inFrame.map(i=>({id:i.id,kind:i.kind,tag:i.tag,loc:i.loc}));
 }
 
 // Standalone caption modal for capture flow — writes directly to entry.photoCaptions
@@ -6947,6 +7042,8 @@ function mapRenderTrackerLayers(){
       if(_lblPlaceId) return;
       // Placing a 🛢 spill pin (spills.js → mapPickSpillLocation) — same rule.
       if(_placingSpillCb) return;
+      // ⚠ CMP pin under the tap — its own layer handler opened the popup (9/11).
+      try{ if(_mapInstance.getLayer('cmp-points-circle')&&_mapInstance.queryRenderedFeatures(e.point,{layers:['cmp-points-circle']}).length) return; }catch{}
       const clickTarget=e.originalEvent&&e.originalEvent.target;
       // Don't open tracker popup when user clicked a photo pin or field marker
       if(clickTarget&&clickTarget.closest&&(
@@ -7306,15 +7403,15 @@ async function mapShareTrackerEntry(id){
   const e=(typeof trGetEntry==='function')?trGetEntry(id,pid):null;
   if(!e||typeof trSetPublished!=='function') return;
   if(e.published){
-    _confirmModal('Stop sharing this drawing? Project members lose access to it on their next refresh. Your record is untouched.',async function(){
+    _confirmModal('Stop sharing this '+(e.temporary?'flag':'drawing')+'? Project members lose access to it on their next refresh. Your record is untouched.',async function(){
       await trSetPublished([id],false,pid);
       if(_trackerPopup){_trackerPopup.remove();_trackerPopup=null;}
-      if(typeof showCloudBanner==='function') showCloudBanner('Drawing unshared — it\'s private again.');
-    },'Unshare drawing','Unshare');
+      if(typeof showCloudBanner==='function') showCloudBanner((e.temporary?'Flag':'Drawing')+' unshared — it\'s private again.');
+      if(typeof clRenderPunchlist==='function'){ try{ clRenderPunchlist(); }catch{} }
+    },'Unshare '+(e.temporary?'flag':'drawing'),'Unshare');
   } else {
-    await trSetPublished([id],true,pid);
+    await mapShareEntryNow(id);   // 9/11: photos publish with the record
     if(_trackerPopup){_trackerPopup.remove();_trackerPopup=null;}
-    if(typeof showCloudBanner==='function') showCloudBanner('✓ Drawing shared — project members can see it now.');
   }
 }
 window.mapShareTrackerEntry=mapShareTrackerEntry;
@@ -7437,19 +7534,118 @@ function mapRenderSpillMarkers(){
   });
 }
 window.mapRenderSpillMarkers=mapRenderSpillMarkers;
-// Tap-to-place for the spill form's "🗺 Pick on map" — one follow-up tap, then cb({lat,lng}).
-function mapPickSpillLocation(cb){
+
+// ── ⚠ Compliance (CMP) pins (9/11, Tim 9/10 #31) ──
+// Compliance-log entries that carry a map point render as a GL layer pair (red circle +
+// "⚠ CMP-NN" label) — NOT DOM markers, so they ride the punchlist capture like the 🚩 flags.
+// Own entries + members' published mirror (window._clShared); view-palette mode
+// open (default) | all (+resolved, dimmed) | hide, per project (gl_cmp_vis::pid).
+let _cmpPopup=null;
+function _cmpPinMode(){
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  try{ const v=localStorage.getItem('gl_cmp_vis::'+pid); return (v==='all'||v==='hide')?v:'open'; }catch{ return 'open'; }
+}
+function _syncCmpFabBtn(){ const b=document.getElementById('map-vf-cmp-toggle'); if(b) b.textContent={open:'Open',all:'All',hide:'Hidden'}[_cmpPinMode()]; }
+function mapCycleCmpPins(){
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const next={open:'all',all:'hide',hide:'open'}[_cmpPinMode()];
+  try{ localStorage.setItem('gl_cmp_vis::'+pid,next); }catch{}
+  _syncCmpFabBtn(); mapRenderCmpMarkers();
+  if(typeof showCloudBanner==='function') showCloudBanner({open:'⚠ Compliance pins: open items',all:'⚠ Compliance pins: open + resolved',hide:'⚠ Compliance pins hidden'}[next]);
+}
+window.mapCycleCmpPins=mapCycleCmpPins;
+function _cmpTag(e){ return e.cmpNum?((typeof window.clCmpFmt==='function')?window.clCmpFmt(e.cmpNum):('CMP-'+String(e.cmpNum).padStart(2,'0'))):'CMP'; }
+function _cmpPinList(mode){
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const own=(typeof window.clGetEntries==='function')?(window.clGetEntries()||[]):[];
+  const shared=Array.isArray(window._clShared)?window._clShared:[];
+  const me=(window._currentUser||{}).uid;
+  const all=own.filter(e=>!e.deletedAt&&(!e.projectId||e.projectId===pid)).map(e=>({e,own:true}))
+    .concat(shared.filter(e=>e.projectId===pid&&e.ownerUid!==me).map(e=>({e,own:false})));
+  return all.filter(x=>typeof x.e.lat==='number'&&typeof x.e.lng==='number'&&(mode==='all'||x.e.status!=='Resolved'));
+}
+function mapRenderCmpMarkers(){
+  if(!_mapInstance||!_mapInstance.isStyleLoaded()) return;
+  const mode=_cmpPinMode(); _syncCmpFabBtn();
+  if(_cmpPopup){ try{ _cmpPopup.remove(); }catch{} _cmpPopup=null; }
+  const list=mode==='hide'?[]:_cmpPinList(mode);
+  const gj={type:'FeatureCollection',features:list.map(({e,own})=>({type:'Feature',geometry:{type:'Point',coordinates:[e.lng,e.lat]},properties:{id:e.id,own:own?1:0,label:'⚠ '+_cmpTag(e),resolved:e.status==='Resolved'?1:0}}))};
+  if(_mapInstance.getSource('cmp-points')) _mapInstance.getSource('cmp-points').setData(gj);
+  else{
+    _mapInstance.addSource('cmp-points',{type:'geojson',data:gj});
+    _mapInstance.addLayer({id:'cmp-points-circle',type:'circle',source:'cmp-points',paint:{
+      'circle-radius':7,'circle-color':['case',['==',['get','resolved'],1],'#7f8c8d','#E74C3C'],
+      'circle-stroke-color':'#ffffff','circle-stroke-width':1.5,'circle-opacity':['case',['==',['get','resolved'],1],0.6,1]}});
+    _mapInstance.addLayer({id:'cmp-points-label',type:'symbol',source:'cmp-points',
+      layout:{'text-field':['get','label'],'text-size':11,'text-anchor':'top','text-offset':[0,0.8],'text-allow-overlap':true,'text-ignore-placement':true},
+      paint:{'text-color':['case',['==',['get','resolved'],1],'#bdc3c7','#ff6b5b'],'text-halo-color':'rgba(0,0,0,0.85)','text-halo-width':1.5}});
+    _mapInstance.on('click','cmp-points-circle',_onCmpPinClick);
+    _mapInstance.on('mouseenter','cmp-points-circle',()=>{ _mapInstance.getCanvas().style.cursor='pointer'; });
+    _mapInstance.on('mouseleave','cmp-points-circle',()=>{ _mapInstance.getCanvas().style.cursor=''; });
+  }
+  _cmpLabelsVisible(!_plCapHideLabels);
+  _mapRaiseCmpLayers();
+}
+window.mapRenderCmpMarkers=mapRenderCmpMarkers;
+function _mapRaiseCmpLayers(){ if(!_mapInstance) return; ['cmp-points-circle','cmp-points-label'].forEach(id=>{ try{ if(_mapInstance.getLayer(id)) _mapInstance.moveLayer(id); }catch{} }); }
+function _cmpLabelsVisible(on){ try{ if(_mapInstance&&_mapInstance.getLayer('cmp-points-label')) _mapInstance.setLayoutProperty('cmp-points-label','visibility',on?'visible':'none'); }catch{} }
+function _onCmpPinClick(ev){
+  const f=ev.features&&ev.features[0]; if(!f) return;
+  const x=_cmpPinList('all').find(x=>x.e.id===f.properties.id); if(!x) return;
+  mapShowCmpPopup(x.e,x.own,[ev.lngLat.lng,ev.lngLat.lat]);
+}
+function mapShowCmpPopup(e,own,lngLat){
+  const esc=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+  if(_cmpPopup){ try{ _cmpPopup.remove(); }catch{} _cmpPopup=null; }
+  const tag=_cmpTag(e);
+  const lvl=(typeof window.clLevelLabel==='function')?window.clLevelLabel(e.level):('Level '+(e.level||''));
+  const steps=Array.isArray(e.steps)?e.steps:[]; const last=steps[steps.length-1];
+  const ps=(Array.isArray(e.photoIds)?e.photoIds:[]).map(id=>(typeof window._phById==='function')?window._phById(id):(window._phPhotos||[]).find(p=>p.id===id)).filter(p=>p&&p.thumb).slice(0,4);
+  const resolved=e.status==='Resolved';
+  const safeId=/^[A-Za-z0-9_-]+$/.test(String(e.id))?String(e.id):'';
+  const html=`<div style="font-family:monospace;font-size:11px;color:#e8e8e8;max-width:230px">
+    <div style="font-size:14px;margin-bottom:3px;color:${resolved?'#bdc3c7':'#ff6b5b'}">⚠ <b>${esc(tag)}</b> <span style="font-size:10px;opacity:.8">· ${esc(lvl)}</span></div>
+    <div style="margin-bottom:3px">${esc(e.date||'')} · ${resolved?'<span style="color:#9fb0b2">resolved '+esc(e.dateResolved||'')+'</span>':'<span style="color:#ff6b5b">'+esc(e.status||'Open')+'</span>'}</div>
+    <div>${esc(String(e.location||'').slice(0,140))}</div>
+    ${e.corrective?`<div style="color:#9fb0b2;margin-top:3px">→ ${esc(String(e.corrective).slice(0,120))}</div>`:''}
+    ${last?`<div style="color:#2ecc71;margin-top:3px">🔧 ${esc(last.date||'')} ${esc(String(last.text||'').slice(0,90))}</div>`:''}
+    ${own?'':`<div style="color:#9fb0b2;margin-top:3px">👥 ${esc(e.ownerName||'project member')}</div>`}
+    ${ps.length?`<div style="display:flex;gap:4px;margin-top:6px;flex-wrap:wrap">${ps.map(p=>`<img src="${esc(p.thumb)}" onclick="phOpenLightbox('${esc(p.id)}')" style="width:46px;height:46px;object-fit:cover;border-radius:4px;cursor:pointer;border:1px solid #334">`).join('')}</div>`:''}
+    ${(own&&safeId)?`<div style="display:flex;gap:6px;margin-top:8px">${resolved?'':`<button onclick="clPunchlistResolveCmp('${safeId}')" style="background:#27AE60;color:#fff;border:none;padding:4px 10px;border-radius:4px;font-size:11px;font-weight:700;cursor:pointer">✓ Resolve</button>`}<button onclick="showPage('compliance');setTimeout(function(){clEditEntry('${safeId}')},300)" style="background:#C9A84C;color:#111;border:none;padding:4px 10px;border-radius:4px;font-size:11px;font-weight:700;cursor:pointer">✎ Edit</button></div>`:''}
+  </div>`;
+  _cmpPopup=new mapboxgl.Popup({offset:12,maxWidth:'250px',closeButton:true,className:'gl-field-popup'}).setLngLat(lngLat).setHTML(html).addTo(_mapInstance);
+}
+// Punchlist row 📍 Map → fly to the pin (switching the palette to "all" if it's hidden) + popup.
+function mapFocusCmp(id){
+  if(!_mapInstance) return;
+  const x=_cmpPinList('all').find(x=>x.e.id===id); if(!x) return;
+  const mode=_cmpPinMode();
+  if(mode==='hide'||(mode==='open'&&x.e.status==='Resolved')){
+    const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+    try{ localStorage.setItem('gl_cmp_vis::'+pid,'all'); }catch{}
+    mapRenderCmpMarkers();
+  }
+  const ll=[x.e.lng,x.e.lat];
+  _mapInstance.flyTo({center:ll,zoom:Math.max(_mapInstance.getZoom(),17),duration:700});
+  setTimeout(()=>mapShowCmpPopup(x.e,x.own,ll),760);
+}
+window.mapFocusCmp=mapFocusCmp;
+// Tap-to-place for any form's "Pick on map" — one follow-up tap, then cb({lat,lng}) (null on
+// cancel). 9/11: generalized from the spill picker so compliance entries (#31) share it.
+function mapPickPoint(cb,opts){
   if(!_mapInstance||typeof cb!=='function') return;
   _cancelSpillPlacement();
   _placingSpillCb=cb;
   const chip=document.createElement('div');
   chip.id='_sp-place-chip';
   chip.style.cssText='position:fixed;top:calc(var(--app-bar-h,60px) + 10px);left:50%;transform:translateX(-50%);z-index:5100;background:var(--bg);border:1px solid var(--amber,#C9A84C);color:var(--amber,#C9A84C);font-family:var(--mono);font-size:12px;padding:8px 14px;border-radius:20px;cursor:pointer;white-space:nowrap;box-shadow:0 2px 10px rgba(0,0,0,.4)';
-  chip.textContent='🛢 Tap the spill location — or tap here to cancel';
+  chip.textContent=(opts&&opts.text)||'📍 Tap the location — or tap here to cancel';
   chip.onclick=()=>{ const c=_placingSpillCb; _cancelSpillPlacement(); if(c) c(null); };
   document.body.appendChild(chip);
   _mapInstance.once('click',_onSpillPlaceClick);
 }
+window.mapPickPoint=mapPickPoint;
+function mapPickSpillLocation(cb){ mapPickPoint(cb,{text:'🛢 Tap the spill location — or tap here to cancel'}); }
 window.mapPickSpillLocation=mapPickSpillLocation;
 function _onSpillPlaceClick(e){
   const cb=_placingSpillCb;
@@ -7489,6 +7685,10 @@ function _showRepairFlagSheet(parentId,lngLat,existing){
     <div>
       <label style="${_LABEL_STYLE}">What's wrong</label>
       <input type="text" id="_rf-label" maxlength="60" value="${existing?String(existing.tempLabel||'').replace(/"/g,'&quot;'):''}" placeholder="e.g. blown-out section, undercut, torn fabric" style="${_INPUT_STYLE}width:100%;box-sizing:border-box">
+    </div>
+    <div>
+      <label style="${_LABEL_STYLE}">Location</label>
+      <input type="text" id="_rf-loc" maxlength="40" value="${String((existing?existing.location:(parent&&parent.location))||'').replace(/"/g,'&quot;')}" placeholder="e.g. LD1, ST13, Sikes Rd driveway 7" style="${_INPUT_STYLE}width:100%;box-sizing:border-box">
     </div>
     <div>
       <label style="${_LABEL_STYLE}">Details (optional)</label>
@@ -7540,8 +7740,9 @@ function _showRepairFlagSheet(parentId,lngLat,existing){
   ov.querySelector('#_rf-save').onclick=()=>{
     const label=ov.querySelector('#_rf-label').value.trim();
     const notes=ov.querySelector('#_rf-notes').value.trim();
+    const loc=(ov.querySelector('#_rf-loc')?.value||'').trim();
     if(!label){ ov.querySelector('#_rf-label').focus(); return; }
-    _saveRepairFlag(parentId,lngLat,existing,label,notes,[..._pendingPhotoIds]);
+    _saveRepairFlag(parentId,lngLat,existing,label,notes,[..._pendingPhotoIds],loc);
     done();
   };
 }
@@ -7561,7 +7762,7 @@ window._rfRefreshStrip=_rfRefreshStrip;
 
 // Step 3 — save: the flag is a real tracker entry (Point geometry, temporary
 // lifecycle) so photos, sharing, cloud sync, and resolve all come for free.
-function _saveRepairFlag(parentId,lngLat,existing,label,notes,photoIds){
+function _saveRepairFlag(parentId,lngLat,existing,label,notes,photoIds,loc){
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
   const parent=(typeof trGetEntry==='function')?trGetEntry(parentId,pid):null;
   const today=document.getElementById('reportDate')?.value||new Date().toLocaleDateString('en-CA');
@@ -7583,12 +7784,39 @@ function _saveRepairFlag(parentId,lngLat,existing,label,notes,photoIds){
   entry.tempLabel=label.slice(0,60);
   entry.notes=notes||null;
   entry.photoIds=photoIds;
+  // 9/11 (Tim 9/10 #3): a flag carries its own short location (LD1, ST13 …) — captions,
+  // the punchlist row and the PDF print it; prefilled from the parent drawing.
+  entry.location=(loc&&String(loc).trim())?String(loc).trim().slice(0,40):null;
   const saved=(typeof trSaveEntry==='function')?trSaveEntry(entry,pid):null;
   mapRenderTrackerLayers();
   if(typeof clRenderTrackerCard==='function') clRenderTrackerCard();
   if(typeof showCloudBanner==='function') showCloudBanner(existing?'🚩 Flag updated.':'🚩 Flag pinned — it\'s on the punchlist until fixed.');
+  // 9/11 (Tim 9/10 #39): one-time share-now offer on a NEW flag (shared projects, work roles).
+  if(!existing&&saved&&pid!=='default'&&!saved.published&&_mapCanShare(pid)&&typeof _confirmModal==='function')
+    setTimeout(()=>_confirmModal('Share this flag with the project now? Members see it on their map and punchlist. You can unshare any time; unshared flags go out with the day\'s submission.',()=>mapShareEntryNow(saved.id),'📤 Share with project?','Share',()=>{}),250);
   return saved;
 }
+function _mapCanShare(pid){
+  try{ return !!(pid&&pid!=='default'&&window._currentUser&&!(typeof window.glIsViewRole==='function'&&typeof window.glMyRoleFor==='function'&&window.glIsViewRole(window.glMyRoleFor(pid)))); }catch{ return false; }
+}
+// 9/11 (#39): publish ONE drawing / flag now — record + its unpublished photos (the day's
+// submission used to be the only path, and neither it nor the popup published photos).
+async function mapShareEntryNow(id){
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const e=(typeof trGetEntry==='function')?trGetEntry(id,pid):null;
+  if(!e||typeof trSetPublished!=='function') return false;
+  await trSetPublished([id],true,pid);
+  let n=0;
+  try{
+    const ids=(e.photoIds||[]).filter(x=>{ const p=(window._phPhotos||[]).find(q=>q.id===x); return p&&!p.published; });
+    if(ids.length&&typeof phSetPublished==='function'){ await phSetPublished(ids,true,pid); n=ids.length; }
+  }catch(err){ console.warn('share-now photos:',err.message); }
+  if(typeof showCloudBanner==='function') showCloudBanner('✓ '+(e.temporary?'Flag':'Drawing')+' shared — project members can see it now'+(n?' · '+n+' photo'+(n===1?'':'s')+' published':'')+'.');
+  document.getElementById('_gl-undo-toast')?.remove();
+  if(typeof clRenderPunchlist==='function'){ try{ clRenderPunchlist(); }catch{} }
+  return true;
+}
+window.mapShareEntryNow=mapShareEntryNow;
 
 // Resolve = "fixed" — timestamp + optional note into the punchlist history;
 // the flag leaves the live map but stays in the record (never deleted).

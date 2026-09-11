@@ -103,6 +103,7 @@ const _hEsc=t=>String(t==null?'':t).replace(/&/g,'&amp;').replace(/</g,'&lt;').r
 const _clMirrorSig = new Map();
 function _clMirrorDoc(e){
   return { id:e.id, date:e.date||'', level:e.level||'', location:e.location||'', corrective:e.corrective||'',
+    ...((typeof e.lat==='number'&&typeof e.lng==='number')?{lat:e.lat,lng:e.lng}:{}),   // 9/11: optional map point (#31)
     status:e.status||'Open', dateResolved:e.dateResolved||'', sourceReport:e.sourceReport||'', addedBy:e.addedBy||'',
     photoIds:Array.isArray(e.photoIds)?e.photoIds.slice():[],
     steps:_clSteps(e).map(x=>({id:x.id||'', date:x.date||'', text:x.text||'', photoIds:(x.photoIds||[]).slice()})),
@@ -164,7 +165,9 @@ async function clLoadShared(pid){
 function _clIsViewRole(){
   try{ const pid=_activeProjectId(); return !!(pid && pid!=='default' && window.glIsViewRole && window.glMyRoleFor && window.glIsViewRole(window.glMyRoleFor(pid))); }catch(_){ return false; }
 }
-if(typeof window!=='undefined'){ window.clEntriesForReport=clEntriesForReport; window.clPublishForDate=clPublishForDate; window.clLoadShared=clLoadShared; }
+if(typeof window!=='undefined'){ window.clEntriesForReport=clEntriesForReport; window.clPublishForDate=clPublishForDate; window.clLoadShared=clLoadShared;
+  window.clPublishEntry=clPublishEntry; window.clUnpublishEntry=clUnpublishEntry; window.clTogglePublish=clTogglePublish; window.clCmpGoto=clCmpGoto;
+  window.clFormPickOnMap=clFormPickOnMap; window.clFormClearLoc=clFormClearLoc; }
 
 async function clLoadCloud(){
   if(!db || !_fbReady) return false;
@@ -186,6 +189,8 @@ function clSave(){
   window.glHaptic && window.glHaptic.success();  // tactile confirm on compliance entry save
   // Open Items spine: compliance entries mirror automatically (openItems.js).
   if(typeof window.oiSyncSources==='function'){ try{ window.oiSyncSources(); }catch{} }
+  // 9/11: ⚠ CMP map pins follow every save (#31).
+  if(typeof window.mapRenderCmpMarkers==='function'){ try{ window.mapRenderCmpMarkers(); }catch{} }
 }
 
 // Read accessor for the Open Items spine (and any future consumer).
@@ -592,6 +597,8 @@ function clShowForm(prefill){
   _clFormPhotosRender();
   _clFormSteps = [];
   _clFormStepsRender();
+  _clFormLoc = (prefill&&typeof prefill.lat==='number'&&typeof prefill.lng==='number')?{lat:prefill.lat,lng:prefill.lng}:null;
+  _clFormLocRender();
   // Set defaults
   document.getElementById('cl-f-date').value = new Date().toLocaleDateString('en-CA');
   document.getElementById('cl-f-level').value = '1';
@@ -634,6 +641,8 @@ function clEditEntry(id){
   _clFormPhotosRender();
   _clFormSteps = _clSteps(e).map(x=>({id:x.id||_clStepId(), date:x.date||'', text:x.text||'', photoIds:(x.photoIds||[]).slice()}));
   _clFormStepsRender();
+  _clFormLoc = (typeof e.lat==='number'&&typeof e.lng==='number')?{lat:e.lat,lng:e.lng}:null;
+  _clFormLocRender();
   document.getElementById('cl-form-overlay').classList.add('open');
   document.getElementById('cl-form-panel').classList.add('open');
   _clFormGrow();
@@ -663,6 +672,11 @@ function clSubmitForm(){
     photoIds: _clFormPhotoIds.slice(),
     steps: _clFormStepsClean(),
     ...(prev&&prev.photoCaptions?{photoCaptions:prev.photoCaptions}:{}),
+    // 9/11: an edit used to rebuild the entry WITHOUT its published flag, so an edited
+    // shared entry silently stopped updating the project mirror. Carry it (and the QI link).
+    ...(prev&&prev.published?{published:true,publishedAt:prev.publishedAt||Date.now()}:{}),
+    ...(prev&&prev.sourceInspection?{sourceInspection:prev.sourceInspection}:{}),
+    ...(_clFormLoc?{lat:_clFormLoc.lat,lng:_clFormLoc.lng}:{}),   // 9/11: optional map point (#31)
     date: document.getElementById('cl-f-date').value,
     level: parseInt(document.getElementById('cl-f-level').value),
     location: location,
@@ -689,6 +703,123 @@ function clSubmitForm(){
   clRender();
   if(typeof clRenderPunchlist==='function'){ try{ clRenderPunchlist(); }catch{} }
   if(entry.status==='Resolved'&&!(prev&&prev.status==='Resolved')) clOfferCorrectionPhoto(entry.id);
+  else if(!prev) _clOfferShare(entry.id);   // 9/11 (#39): one-time share-now offer on a NEW entry
+}
+
+// ── 9/11 (#31): optional map point on a compliance entry — pick on the map, form parks meanwhile ──
+let _clFormLoc=null, _clDraft=null;
+function _clFormLocRender(){
+  const el=document.getElementById('cl-f-loc-chip'); if(!el) return;
+  el.innerHTML=_clFormLoc
+    ?`📍 ${_clFormLoc.lat.toFixed(5)}, ${_clFormLoc.lng.toFixed(5)} <span onclick="clFormClearLoc()" style="cursor:pointer;color:var(--red);margin-left:6px">✕ remove</span>`
+    :'<span style="color:var(--muted)">no map point — optional</span>';
+}
+function clFormClearLoc(){ _clFormLoc=null; _clFormLocRender(); }
+function _clCollectDraft(){
+  const g=id=>{ const el=document.getElementById(id); return el?el.value:''; };
+  return { editId:_clEditId, draftId:_clDraftId, photoIds:_clFormPhotoIds.slice(), steps:_clFormStepsClean(), loc:_clFormLoc,
+    date:g('cl-f-date'), level:g('cl-f-level'), location:g('cl-f-location'), corrective:g('cl-f-corrective'),
+    status:g('cl-f-status'), dateResolved:g('cl-f-resolved'), source:g('cl-f-source') };
+}
+function _clRestoreDraft(d){
+  if(d.editId) clEditEntry(d.editId); else { clShowForm(); if(d.draftId) _clDraftId=d.draftId; }
+  const s=(id,v)=>{ const el=document.getElementById(id); if(el) el.value=v||''; };
+  s('cl-f-date',d.date); s('cl-f-level',d.level); s('cl-f-location',d.location); s('cl-f-corrective',d.corrective);
+  s('cl-f-status',d.status); s('cl-f-resolved',d.dateResolved); s('cl-f-source',d.source);
+  document.getElementById('cl-f-resolved-wrap').style.display=d.status==='Resolved'?'block':'none';
+  _clFormPhotoIds=(d.photoIds||[]).slice(); _clFormPhotosRender();
+  _clFormSteps=(d.steps||[]).map(x=>Object.assign({},x,{photoIds:(x.photoIds||[]).slice()})); _clFormStepsRender();
+  _clFormLoc=d.loc||null; _clFormLocRender(); _clFormGrow();
+}
+function clFormPickOnMap(){
+  const d=_clCollectDraft(); _clDraft=d;
+  clHideForm();
+  if(typeof showPage==='function') showPage('map');
+  if(typeof window.mapPickPoint!=='function'){ _clRestoreDraft(d); return; }
+  setTimeout(()=>{
+    window.mapPickPoint(ll=>{
+      if(ll) d.loc={lat:ll.lat,lng:ll.lng};
+      if(typeof showPage==='function') showPage('compliance');
+      setTimeout(()=>{ _clDraft=null; _clRestoreDraft(d); },50);
+    },{text:'⚠ Tap the compliance item location — or tap here to cancel'});
+  },350);
+}
+// Jump from a punchlist row (or anywhere) to the entry's pin on the map.
+function clCmpGoto(id){
+  if(typeof showPage==='function') showPage('map');
+  setTimeout(()=>{ if(typeof window.mapFocusCmp==='function') window.mapFocusCmp(id); },400);
+}
+
+// ── 9/11 (Tim 9/10 #39): share ONE compliance entry with the project mid-day ──
+// Until now an entry reached the project mirror only through the day's submission
+// (clPublishForDate). These publish a single entry — and its photos — on demand.
+function _clCanShare(e){ return !!(db&&_fbReady&&_currentUser&&e&&e.projectId&&e.projectId!=='default'&&!_clIsViewRole()); }
+async function _clPublishPhotos(e){
+  const seen=new Set();
+  const ids=(Array.isArray(e.photoIds)?e.photoIds:[]).concat(clStepPhotoIds(e)).filter(id=>{
+    if(seen.has(id)) return false; seen.add(id);
+    const p=(window._phPhotos||[]).find(x=>x.id===id); return p&&!p.published;
+  });
+  if(ids.length&&typeof window.phSetPublished==='function'){ try{ await window.phSetPublished(ids,true,e.projectId); }catch(_){} }
+  return ids.length;
+}
+function _clRepaintAll(){
+  if(document.getElementById('page-compliance')?.classList.contains('active')) clRender();
+  if(typeof clRenderPunchlist==='function'){ try{ clRenderPunchlist(); }catch{} }
+  if(typeof window.mapRenderCmpMarkers==='function'){ try{ window.mapRenderCmpMarkers(); }catch{} }
+}
+async function clPublishEntry(id){
+  const e=_clEntries.find(x=>x.id===id); if(!e) return false;
+  if(!e.projectId) e.projectId=_activeProjectId();
+  const tag=e.cmpNum?clCmpFmt(e.cmpNum):'Compliance item';
+  if(!_clCanShare(e)){ if(typeof showCloudBanner==='function') showCloudBanner('Sharing needs a signed-in session on a shared project.'); return false; }
+  e.published=true; e.publishedAt=e.publishedAt||Date.now();
+  clSaveLocal();
+  try{ await _clMirrorPublished(); }
+  catch(err){
+    e.published=false; e.publishedAt=null; clSaveLocal();
+    if(typeof showCloudBanner==='function') showCloudBanner('✗ Could not share '+tag+' — sharing needs a field or lead role on the project.');
+    return false;
+  }
+  clSaveCloud();
+  const n=await _clPublishPhotos(e);
+  if(typeof showCloudBanner==='function') showCloudBanner('📤 '+tag+' shared with the project'+(n?' · '+n+' photo'+(n===1?'':'s')+' published':'')+'.');
+  _clRepaintAll();
+  return true;
+}
+async function clUnpublishEntry(id){
+  const e=_clEntries.find(x=>x.id===id); if(!e) return;
+  const tag=e.cmpNum?clCmpFmt(e.cmpNum):'Compliance item';
+  await _clUnmirror(Object.assign({},e,{published:true}));
+  e.published=false; e.publishedAt=null;
+  clSaveLocal(); clSaveCloud();
+  if(typeof showCloudBanner==='function') showCloudBanner('🔒 '+tag+' is private again.');
+  _clRepaintAll();
+}
+function clTogglePublish(id){
+  const e=_clEntries.find(x=>x.id===id); if(!e) return;
+  if(e.published){
+    const tag=e.cmpNum?clCmpFmt(e.cmpNum):'this item';
+    if(typeof _confirmModal==='function') _confirmModal('Stop sharing '+tag+'? Project members lose it from their compliance log, punchlist and map. Your record is untouched.',()=>clUnpublishEntry(id),'Unshare','Unshare');
+    else clUnpublishEntry(id);
+  } else clPublishEntry(id);
+}
+function _clOfferShare(id){
+  const e=_clEntries.find(x=>x.id===id); if(!e||e.published||!_clCanShare(e)||typeof _confirmModal!=='function') return;
+  const tag=e.cmpNum?clCmpFmt(e.cmpNum):'This item';
+  setTimeout(()=>_confirmModal(tag+' is saved. Share it with the project now? Members get it in their compliance log, on the punchlist and on the map. You can unshare any time; unshared items go out with the day\'s submission.',()=>clPublishEntry(id),'📤 Share with project?','Share',()=>{}),200);
+}
+function _clShareChip(e){
+  if(_clIsViewRole()||!e.projectId||e.projectId==='default') return '';
+  return e.published
+    ?` · <span onclick="event.stopPropagation();clTogglePublish('${e.id}')" title="Shared with the project — tap to unshare" style="cursor:pointer;color:var(--muted)">👥 shared</span>`
+    :` · <span onclick="event.stopPropagation();clTogglePublish('${e.id}')" title="Share with the project now" style="cursor:pointer;color:var(--amber)">📤 share</span>`;
+}
+function _plShareChip(e,pid){
+  if(_clIsViewRole()||!pid||pid==='default'||typeof window.mapShareTrackerEntry!=='function') return '';
+  return e.published
+    ?` · <span onclick="event.stopPropagation();mapShareTrackerEntry('${e.id}')" title="Shared with the project — tap to unshare" style="cursor:pointer;color:var(--muted)">👥 shared</span>`
+    :` · <span onclick="event.stopPropagation();mapShareTrackerEntry('${e.id}')" title="Share with the project now" style="cursor:pointer;color:var(--amber)">📤 share</span>`;
 }
 
 // ── Programmatic API — SWPPP QI report tie-in (swppp.js) ──
@@ -716,6 +847,7 @@ function _clPushEntry(it, addedBy){
     sourceInspection: it.sourceInspection || '',
     photoIds: Array.isArray(it.photoIds) ? it.photoIds.slice() : [],
     steps: Array.isArray(it.steps) ? it.steps.slice() : [],
+    ...((typeof it.lat==='number'&&typeof it.lng==='number')?{lat:it.lat,lng:it.lng}:{}),   // 9/11: e.g. a spill's pin (#31)
     addedBy: addedBy || 'swppp-qi',
     projectId: pid
   });
@@ -894,8 +1026,8 @@ function clRenderPunchlist(){
     return `<div style="display:flex;align-items:center;gap:8px;padding:8px 4px;border-bottom:1px solid var(--border)">
       ${thumb}
       <div style="flex:1;min-width:0">
-        <div style="font-family:var(--mono);font-size:12px;color:${isOpen?'var(--text)':'var(--muted)'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${isOpen?'🚩':'✓'} ${e.plNum?`<b style="color:${isOpen?'var(--amber)':'var(--muted)'}">${typeof trPlFmt==='function'?trPlFmt(e.plNum):'PL-'+e.plNum}</b> · `:''}${(e.tempLabel||'Repair').replace(/</g,'&lt;')}</div>
-        <div style="font-family:var(--mono);font-size:10px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${catName} · flagged ${e.date||''}${isOpen?(e.date?` · ${Math.max(0,Math.floor((Date.now()-new Date(e.date+'T00:00:00').getTime())/86400000))}d open`:''):(e.resolvedAt?` · fixed ${fmtWhen(e.resolvedAt)}`:'')}</div>
+        <div style="font-family:var(--mono);font-size:12px;color:${isOpen?'var(--text)':'var(--muted)'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${isOpen?'🚩':'✓'} ${e.plNum?`<b style="color:${isOpen?'var(--amber)':'var(--muted)'}">${typeof trPlFmt==='function'?trPlFmt(e.plNum):'PL-'+e.plNum}</b> · `:''}${e.location?_hEsc(e.location)+' · ':''}${(e.tempLabel||'Repair').replace(/</g,'&lt;')}</div>
+        <div style="font-family:var(--mono);font-size:10px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${catName} · flagged ${e.date||''}${isOpen?(e.date?` · ${Math.max(0,Math.floor((Date.now()-new Date(e.date+'T00:00:00').getTime())/86400000))}d open`:''):(e.resolvedAt?` · fixed ${fmtWhen(e.resolvedAt)}`:'')}${isOpen?_plShareChip(e,pid):''}</div>
         ${(!isOpen&&e.resolveNote)?`<div style="font-family:var(--mono);font-size:10px;color:var(--green,#27AE60);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">→ ${String(e.resolveNote).replace(/</g,'&lt;')}</div>`:''}
       </div>
       ${btns}
@@ -908,6 +1040,7 @@ function clRenderPunchlist(){
     const btns=isOpen
       ?`<div style="display:flex;gap:6px;flex-shrink:0">
           <button onclick="event.stopPropagation();if(typeof phOpenCamera==='function')phOpenCamera({attach:{type:'cl',id:'${e.id}'}})" title="Take a photo — attached to this compliance item" style="background:var(--s1);border:1px solid var(--border);color:var(--muted);font-family:var(--mono);font-size:10px;padding:5px 8px;border-radius:5px;cursor:pointer">📸</button>
+          ${(typeof e.lat==='number'&&typeof e.lng==='number')?`<button onclick="event.stopPropagation();clCmpGoto('${e.id}')" title="Show this item on the map" style="background:var(--s1);border:1px solid var(--border);color:var(--muted);font-family:var(--mono);font-size:10px;padding:5px 8px;border-radius:5px;cursor:pointer">📍 Map</button>`:''}
           <button onclick="event.stopPropagation();clEditEntry('${e.id}')" style="background:var(--s1);border:1px solid var(--border);color:var(--muted);font-family:var(--mono);font-size:10px;padding:5px 8px;border-radius:5px;cursor:pointer">✎ Edit</button>
           <button onclick="event.stopPropagation();clPunchlistResolveCmp('${e.id}')" style="background:rgba(39,174,96,0.15);border:1px solid var(--green,#27AE60);color:var(--green,#27AE60);font-family:var(--mono);font-size:10px;padding:5px 8px;border-radius:5px;cursor:pointer">✓ Resolved</button>
         </div>`
@@ -916,7 +1049,7 @@ function clRenderPunchlist(){
       ${thumb}
       <div style="flex:1;min-width:0">
         <div style="font-family:var(--mono);font-size:12px;color:${isOpen?'var(--red)':'var(--muted)'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${isOpen?'⚠':'✓'} ${e.cmpNum?`<b>${clCmpFmt(e.cmpNum)}</b> · `:''}${_hEsc(e.location||'Compliance item')}</div>
-        <div style="font-family:var(--mono);font-size:10px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_hEsc(clLevelLabel(e.level))} · logged ${_hEsc(e.date||'')}${isOpen?(age?` · ${age.days<1?'<1':age.days}d open${age.over?' ⚠':''}`:''):(e.dateResolved?` · resolved ${clFmtDate(e.dateResolved)}`:'')}${e.status==='In Progress'?' · in progress':''}</div>
+        <div style="font-family:var(--mono);font-size:10px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_hEsc(clLevelLabel(e.level))} · logged ${_hEsc(e.date||'')}${isOpen?(age?` · ${age.days<1?'<1':age.days}d open${age.over?' ⚠':''}`:''):(e.dateResolved?` · resolved ${clFmtDate(e.dateResolved)}`:'')}${e.status==='In Progress'?' · in progress':''}${isOpen?_clShareChip(e):''}</div>
         ${e.corrective?`<div style="font-family:var(--mono);font-size:10px;color:${isOpen?'var(--text)':'var(--muted)'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">→ ${_hEsc(e.corrective)}</div>`:''}
         ${(()=>{ const st=_clSteps(e); if(!st.length) return ''; const x=st[st.length-1]; return `<div style="font-family:var(--mono);font-size:10px;color:var(--green,#27AE60);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">🔧 ${_hEsc(x.date?clFmtDate(x.date)+': ':'')}${_hEsc(x.text||'')}</div>`; })()}
       </div>

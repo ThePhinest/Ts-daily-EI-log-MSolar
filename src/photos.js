@@ -315,7 +315,7 @@ function _phDocFor(p){
   doc.seedTag = !!p.seedTag;
   if(p.seedCap) doc.seedCap = p.seedCap;
   if(p.distCap) doc.distCap = p.distCap;
-  if(p.plCap) doc.plCap = true;
+  if(p.plCap) doc.plCap = (typeof p.plCap==='object')?p.plCap:true;   // 9/11: framed-items list survives the cloud round-trip
   // 🌱 bag ledger (applications.js): tags-in-photo + material overrides. Explicit
   // null when cleared — merge:true would otherwise resurrect an old override.
   doc.tagCount = (p.tagCount>0) ? p.tagCount : null;
@@ -641,7 +641,7 @@ function _phMirrorDoc(p, pid, now){
   if(p.alt !== undefined) m.alt = p.alt;
   if(p.software) m.software = p.software;
   m.swppp = !!p.swppp; m.seedTag = !!p.seedTag; m.repairTag = !!p.repairTag;
-  if(p.plCap) m.plCap = true;
+  if(p.plCap) m.plCap = (typeof p.plCap==='object')?p.plCap:true;
   return m;
 }
 // One-time backfill (9/1): rewrite every already-published photo's mirror with
@@ -1956,7 +1956,9 @@ async function phSaveCapturedImage(blob, photoDate, captionOverride, opts){
   // disturbance XLSX embeds the newest capture day under its summary band.
   if(opts&&opts.distCap) entry.distCap=opts.distCap;
   // Punchlist captures (FAB 🚩 flow) front the punchlist PDF's newest capture day.
-  if(opts&&opts.plCap) entry.plCap=true;
+  // 9/11: the capture records the items it framed ({items:[{id,kind,tag,loc}]}) so the PDF can
+  // caption each overview with what it covers; older captures stay `true`.
+  if(opts&&opts.plCap) entry.plCap=(typeof opts.plCap==='object')?opts.plCap:true;
   window._phPhotos=(window._phPhotos||[]);
   window._phPhotos.push(entry);
   phSaveLocal();

@@ -777,7 +777,8 @@ function spLogAsCmp(id, btn){
     level:2,
     location:spLabel(r)+' spill'+(r.locationDesc?' — '+r.locationDesc:''),
     corrective:what+': '+corrective+(r.reportable==='y'?' Reported to the agency'+(r.spillNo?' (spill #'+r.spillNo+')':'')+'.':''),
-    photoIds:r.photoIds||[]
+    photoIds:r.photoIds||[],
+    ...((typeof r.lat==='number'&&typeof r.lng==='number')?{lat:r.lat,lng:r.lng}:{})   // 9/11: the spill pin becomes the CMP pin (#31)
   }, 'spill');
   if(!cmpId) return;
   r.cmpId=cmpId; r.updatedAt=Date.now();

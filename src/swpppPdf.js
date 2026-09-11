@@ -741,13 +741,14 @@ export async function punchlistBuildPdf(opts){
       const im=await _imgFor(pId,250,300);
       // 9/2 (#54): the caption saved on the flag (photoCaptions) or the photo's own caption
       // wins; "photographed at flag time" is only the fallback for an uncaptioned shot.
-      if(im){ const c=String((e.photoCaptions||{})[pId]||(im.p&&im.p.caption)||'').trim(); ims.push({im,cap:`${id} — ${c||'photographed at flag time'}`}); }
+      if(im){ const c=String((e.photoCaptions||{})[pId]||(im.p&&im.p.caption)||'').trim(); ims.push({im,cap:`${id} — ${c||((e.location?e.location+' — ':'')+'photographed at flag time')}`}); }
     }
     itemBlocks.push(
       {table:{headerRows:1,dontBreakRows:true,widths:cols(12,22,16,16),body:[
         [hcell('Item'),hcell('BMP / Category'),hcell('Flagged'),hcell('Due'),hcell('Status')],
         [cell(id,{bold:true}),cell(catName(e)),cell(fmtD(e.date)+(dOpen!=null?`  (${dOpen}d)`:'')),cell(du?fmtTs(du):'—',hot),cell(over?'OPEN — OVERDUE':'OPEN',Object.assign({bold:true},hot))]
       ]},layout:hairLayout,margin:[0,8,0,2]},
+      ...(e.location?[body([{text:'Location:  ',bold:true},{text:esc(e.location)}])]:[]),   // 9/11: flag location field (#3)
       body([{text:'Deficiency / corrective action:  ',bold:true},{text:esc(e.tempLabel||'Repair needed')}]),
       body([{text:'GPS:  ',bold:true},{text:coordsOf(e)}],{fontSize:8,color:'#555555',margin:[0,0,0,2]}),
       ...(ims.length?[{table:{dontBreakRows:true,widths:['*','*'],body:_imgPairRows(ims)},layout:imgGridLayout,margin:[0,3,0,2]}]:[])
@@ -777,8 +778,11 @@ export async function punchlistBuildPdf(opts){
     infoTable(infoRows),
     ...(overviewIms.length?[
       h1(`${++sec}.  Site Overview — Flag Locations`),
-      note(`Map capture${overviewIms.length>1?'s':''} from ${fmtD(capDay)}. Each flag label carries the item's permanent PL number, matching the list below.`),
-      ...overviewIms.map(im=>({image:im.dataUrl,width:Math.min(im.w,CONTENT_W),margin:[0,4,0,8]}))
+      note(`Map capture${overviewIms.length>1?'s':''} from ${fmtD(capDay)}. Each chip carries the item's permanent PL or CMP number, matching the list below; the caption under each capture lists the items it covers.`),
+      ...overviewIms.flatMap(im=>[
+        {image:im.dataUrl,width:Math.min(im.w,CONTENT_W),margin:[0,4,0,2]},
+        ...((im.p&&im.p.caption)?[{text:esc(im.p.caption),fontSize:8,color:'#555555',margin:[0,0,0,8]}]:[{text:'',margin:[0,0,0,6]}])
+      ])
     ]:[]),
     h1(`${++sec}.  Open Items — Corrective Action Required`),
     note(`Items are listed oldest first. Photos were taken in the field at the time each item was flagged; GPS coordinates locate the flag on the site map.${cmpSorted.length?' Compliance Log entries (CMP-) show their compliance level in place of a BMP category.':''}`),
