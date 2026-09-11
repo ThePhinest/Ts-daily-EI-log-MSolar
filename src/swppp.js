@@ -563,8 +563,10 @@ async function swpppExportDaily(reportDate,fmt){
     const snap=await _udb().collection('reports').doc(reportDate).collection('versions').orderBy('version','desc').limit(1).get();
     if(snap.empty) throw new Error('No cached version for this date.');
     const v=snap.docs[0].data();
+    // 9/11: compliance rows from the stored entries, not Claude's raw output (older versions)
+    const pol=(typeof window._rptMergeCompliance==='function')?window._rptMergeCompliance(v.polished||{},v.inputSnapshot||{}):(v.polished||{});
     if(fmt==='docx'){
-      const blob=await rptBuildDocx(v.inputSnapshot.logData, v.polished, v.inputSnapshot.photoRefs||[]);
+      const blob=await rptBuildDocx(v.inputSnapshot.logData, pol, v.inputSnapshot.photoRefs||[]);
       const [y,m,d]=reportDate.split('-');
       const projName=(document.getElementById('cfg-projectName')?.value?.trim())||'GroundLog';
       const slug=projName.replace(/[^a-zA-Z0-9]+/g,'_').replace(/^_+|_+$/g,'')||'GroundLog';
@@ -576,7 +578,7 @@ async function swpppExportDaily(reportDate,fmt){
         (typeof window._rptLoadLogo==='function')?window._rptLoadLogo():Promise.resolve(null),
         (typeof window._rptApprovedReview==='function')?window._rptApprovedReview(reportDate,v.inputHash||null):Promise.resolve(null)
       ]);
-      await pdfMod.dailyExportPdfNow(v.inputSnapshot.logData, v.polished, v.inputSnapshot.photoRefs||[],{
+      await pdfMod.dailyExportPdfNow(v.inputSnapshot.logData, pol, v.inputSnapshot.photoRefs||[],{
         oiRes:(v.inputSnapshot.oiRefs)||[],
         authorSig:(authorSig&&authorSig.b64)?authorSig:null,
         logo,

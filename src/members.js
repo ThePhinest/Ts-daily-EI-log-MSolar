@@ -961,7 +961,9 @@ async function _glShowSubmitReview(payload, date, pid) {
         try { logo = (typeof window._rptLoadLogo === 'function') ? await window._rptLoadLogo() : null; } catch (e) {}   // 9/5: branding doc → legacy fallback
         _revSnap = {
           logData: (v.inputSnapshot || {}).logData || null,
-          polished: v.polished || {},
+          // 9/11: compliance rows come from the entries, not Claude's raw output — older
+          // versions stored the raw rows, so a resolved CMP item reached the reviewer as OPEN.
+          polished: (typeof window._rptMergeCompliance === 'function') ? window._rptMergeCompliance(v.polished || {}, v.inputSnapshot || {}) : (v.polished || {}),
           photoRefs: (v.inputSnapshot || {}).photoRefs || [],
           oiRefs: (v.inputSnapshot || {}).oiRefs || [],
           compPhotoRefs: (v.inputSnapshot || {}).compPhotoRefs || [],   // 9/5 compliance photos

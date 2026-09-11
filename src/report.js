@@ -79,6 +79,7 @@ async function _rptClaude(systemPrompt,userPrompt,maxTokens){
 }
 // 9/8: the one door to Claude, for other modules (spill ✦ Formalize).
 window.glClaude=_rptClaude;
+window._rptMergeCompliance=_rptWithCurrentCompliance;   // 9/11: review snapshot + archive re-exports print entry-authoritative compliance rows
 async function saveApiKey(){
   const val=document.getElementById('cfg-api-key').value.trim();
   if(!val){alert('Please enter an API key.');return;}
@@ -194,6 +195,63 @@ async function polishLog(){
 // logs missing keys + raw response on parse failure, and keeps the status visible
 // longer so the user can spot warnings. Doesn't fix the underlying mystery — but
 // next time Tim hits it, the console + status bar will show exactly what's wrong.
+// 9/11 (Tim 9/10: "Ferguson and Array" came back as "Ferguson and AES"): the polish must
+// never touch a proper noun. Belt = the prompt rule + the project's known names handed
+// to Claude; suspenders = _rptNameGuard, which keeps a field AS TYPED whenever a
+// capitalized token (or any known name) from the input is missing from the output.
+function _rptKnownNames(){
+  const out=[]; const add=s=>{ s=String(s||'').trim(); if(s&&s.length>1&&!out.includes(s)) out.push(s); };
+  try{
+    const pid=(typeof window._activeProjectId==='function')?window._activeProjectId():undefined;
+    if(typeof window.ctrGetList==='function') window.ctrGetList(pid).forEach(c=>add(c&&c.name));
+  }catch(e){}
+  ['contractor','projectName','org'].forEach(id=>{ const el=document.getElementById(id); if(el&&el.value) String(el.value).split(/[,;\/]+/).forEach(add); });
+  return out;
+}
+// Stop list = sentence starters + abbreviations Claude may legitimately expand or drop
+// (Rd → Road, Inc, AM/PM). A real name never lives in this list.
+const _RPT_GUARD_STOP=new Set('The A An This That These Those We They It He She I You No All Any Some Our Their Its If When After Before During While At On In For With And But Or So As To Of By From Also Then Today Tomorrow Yesterday Yes Not Per Please Note AM PM N/A Rd St Ave Dr Ln Ct Blvd Hwy Pkwy Rte Mt Ft Jr Sr Inc LLC Co Corp Ltd Mr Mrs Ms'.split(' '));
+function _rptNameGuard(before,after,known){
+  before=String(before||''); after=String(after||'');
+  if(!before.trim()||!after.trim()) return [];
+  const esc=s=>s.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+  const lo=after.toLowerCase(), loB=before.toLowerCase();
+  // prefix-tolerant: "Array" survives as "Arrays", "Sep" as "September" — a SUBSTITUTION does not
+  const has=t=>new RegExp('(^|[^a-z0-9])'+esc(t)).test(lo);
+  const lost=[];
+  (known||[]).forEach(name=>{ if(new RegExp('(^|[^a-z0-9])'+esc(name)+'(?![a-z0-9])').test(loB)&&!has(name)) lost.push(name); });
+  const re=/(^|[^A-Za-z0-9'’])([A-Z][A-Za-z0-9&.'’-]*[A-Za-z0-9])/g; let m;
+  while((m=re.exec(before))){
+    const tok=m[2].replace(/(?:'|’)s$/,'').replace(/[.]+$/,'');
+    if(tok.length<2||_RPT_GUARD_STOP.has(tok)) continue;
+    const pre=before.slice(0,m.index+m[1].length);
+    const sentenceStart=/(^|[.!?:;\n]\s*|[-•*]\s+)$/.test(pre);
+    const acronym=/^[A-Z][A-Z0-9&.-]+$/.test(tok);
+    if(sentenceStart&&!acronym) continue;   // an ordinary capitalized sentence start, not a name
+    const dup=lost.some(n=>n.toLowerCase().split(/\s+/).includes(tok.toLowerCase()));   // already reported inside a lost known name
+    if(!has(tok)&&!dup) lost.push(tok);
+  }
+  return lost;
+}
+// Generate path: the 1:1 narrative fields are checked the same way; a field that lost a
+// name goes into the report AS TYPED (the stored version then matches the export).
+function _rptGuardGenerated(out,logData,known){
+  const kept=[];
+  const chk=(key,raw,fix)=>{
+    if(!raw||out[key]==null) return;
+    const after=Array.isArray(out[key])?out[key].join('\n'):String(out[key]);
+    const lost=_rptNameGuard(raw,after,known);
+    if(lost.length){ out[key]=fix(raw); kept.push(key+' ('+lost.slice(0,3).join(', ')+')'); console.warn('[report] name guard kept',key,'as typed. Missing:',lost,'\nBefore:',raw,'\nAfter:',after); }
+  };
+  const lines=s=>String(s).split(/\n+/).map(x=>x.replace(/^[-•*]\s*/,'').trim()).filter(Boolean);
+  chk('lookaheadBullets',logData.lookahead,lines);
+  chk('agencyInspection',logData.agencyInspection,String);
+  chk('landownerContact',logData.landownerContact,String);
+  chk('rteObservation',logData.rteObservation,String);
+  chk('generalComms',logData.generalComms,String);
+  if(kept.length&&typeof showCloudBanner==='function') showCloudBanner('⚠ Name check: kept '+kept.join(', ')+' as typed — the polish changed a name.');
+}
+
 async function _doPolish(selectedFields){
   const btn=document.getElementById('btn-formalize-log');
   const status=document.getElementById('rpt-status');
@@ -203,8 +261,9 @@ async function _doPolish(selectedFields){
   setStatus('Polishing '+n+' field'+(n===1?'':'s')+'…','var(--amber)');
   try{
     const payload=Object.fromEntries(selectedFields.map(function(f){return[f.id,f.value];}));
-    const systemPrompt='You are a professional field inspector writing assistant. Rewrite the provided field log text into clean, professional language suitable for a regulatory compliance report. Rules: use "conducting" not "performing"; use definitive language ("will" not "anticipated to"); contractor compliance language must be collaborative in tone; do not use first person; preserve all specific facts, measurements, locations, and compliance levels exactly as entered; do not add information not present in the original; do not remove relevant observations. Return a JSON object with the same keys as provided, containing the rewritten text for each field. Return ONLY the JSON object — no preamble, no markdown, no code fences.';
-    const userPrompt='Rewrite these daily log fields:\n'+JSON.stringify(payload);
+    const systemPrompt='You are a professional field inspector writing assistant. Rewrite the provided field log text into clean, professional language suitable for a regulatory compliance report. Rules: use "conducting" not "performing"; use definitive language ("will" not "anticipated to"); contractor compliance language must be collaborative in tone; do not use first person; preserve all specific facts, measurements, locations, and compliance levels exactly as entered; reproduce every company, person, product and place name and every acronym EXACTLY as typed - never substitute, expand, abbreviate or "correct" a proper noun, even if it looks like a typo or you know a similar name; do not add information not present in the original; do not remove relevant observations. Return a JSON object with the same keys as provided, containing the rewritten text for each field. Return ONLY the JSON object — no preamble, no markdown, no code fences.';
+    const known=_rptKnownNames();
+    const userPrompt=(known.length?'KNOWN NAMES ON THIS PROJECT (reproduce exactly as typed): '+known.join('; ')+'\n\n':'')+'Rewrite these daily log fields:\n'+JSON.stringify(payload);
     const text=await _rptClaude(systemPrompt,userPrompt,8000);
     const j0=text.indexOf('{'),j1=text.lastIndexOf('}');
     if(j0===-1||j1===-1){
@@ -220,14 +279,24 @@ async function _doPolish(selectedFields){
     }
     let appliedCount=0;
     const missingIds=[];
+    const kept=[];   // 9/11: fields kept as typed because the polish changed a name
     selectedFields.forEach(function(f){
       if(polished[f.id]!=null){
         const el=document.getElementById(f.id);
-        if(el){ el.value=polished[f.id]; appliedCount++; }
+        if(!el) return;
+        const lost=_rptNameGuard(f.value,String(polished[f.id]),known);
+        if(lost.length){
+          kept.push({label:f.label||f.id,lost});
+          console.warn('Formalize Log: polish changed a name in',f.id,'- kept as typed. Missing:',lost,'\nBefore:',f.value,'\nAfter:',polished[f.id]);
+          return;
+        }
+        el.value=polished[f.id]; appliedCount++;
       } else {
         missingIds.push(f.id);
       }
     });
+    if(kept.length&&typeof showCloudBanner==='function')
+      showCloudBanner('⚠ Kept '+kept.map(function(k){return k.label+' ('+k.lost.slice(0,3).join(', ')+')';}).join(', ')+' as typed — the polish changed a name.');
     if(missingIds.length){
       console.warn('Formalize Log: Claude response missing keys for fields:',missingIds,
         '— requested ids:',selectedFields.map(function(f){return f.id;}),
@@ -237,6 +306,8 @@ async function _doPolish(selectedFields){
     _setFormalized();
     if(appliedCount===n){
       setStatus('✓ Polished '+appliedCount+' field'+(appliedCount===1?'':'s'));
+    } else if(kept.length&&appliedCount+kept.length===n){
+      setStatus('✓ Polished '+appliedCount+', kept '+kept.length+' as typed (name check)','var(--amber)');
     } else if(appliedCount>0){
       setStatus('⚠ Polished '+appliedCount+' of '+n+' — see console','var(--amber)');
     } else {
@@ -281,13 +352,19 @@ async function rptCallClaude(logData, compEntries, systemPromptIn){
     ?compEntries.map(e=>`Level ${e.level} — ${e.location}|Corrective: ${e.corrective}|Status: ${e.status}${e.dateResolved?'|Resolved: '+e.dateResolved:''}${(Array.isArray(e.steps)&&e.steps.length)?'|Actions taken: '+e.steps.map(s=>(s.date?s.date+' ':'')+(s.text||'')).filter(Boolean).join('; '):''}`).join('\n')
     :'No compliance issues';
   const timeIn=_rptFmtTime(logData['p-timeIn'])||'6:30 AM';
-  const userPrompt=`REPORT DATE: ${logData.reportDate}\nACTIVE PHASE: ${logData.activePhase}\nCONTRACTOR: ${logData.contractor}\nTIME IN: ${timeIn}\n\nCREW BLOCKS:\n${crewSummary}\n\nINSPECTION SUMMARY:\n${logData.inspectionSummary||''}\n\nAGENCY INSPECTION:\n${logData.agencyInspection||''}\n\nCOMPLIANCE ISSUES:\n${compSummary}\n\nLANDOWNER/PUBLIC:\n${logData.landownerContact||''}\n\nT&E/RTE:\n${logData.rteObservation||''}\n\nGENERAL COMMS:\n${logData.generalComms||''}\n\n24-HOUR LOOK AHEAD:\n${logData.lookahead||''}\n\nReturn ONLY valid JSON — no markdown, no preamble:\n{"contractorActivities":"...","fieldObservationsOpening":"...","fieldObservationsBullets":["..."],"fieldObservationsClosing":"...","agencyInspection":"...","complianceIssues":[{"level":"...","description":"...","corrective":"...","status":"...","dateResolved":""}],"landownerContact":"...","rteObservation":"...","generalComms":"...","lookaheadBullets":["..."]}`;
+  // 9/11: name rule + the project's known names ride the USER prompt (not the layered
+  // system prompt) so the cache hash is untouched; _rptGuardGenerated backs it up.
+  const known=_rptKnownNames();
+  const nameRule='\n\nNAME RULE: reproduce every company, person, product and place name and every acronym EXACTLY as written above - never substitute, expand or "correct" a proper noun, even if it looks like a typo or you know a similar name.'+(known.length?'\nKNOWN NAMES ON THIS PROJECT: '+known.join('; '):'');
+  const userPrompt=`REPORT DATE: ${logData.reportDate}\nACTIVE PHASE: ${logData.activePhase}\nCONTRACTOR: ${logData.contractor}\nTIME IN: ${timeIn}\n\nCREW BLOCKS:\n${crewSummary}\n\nINSPECTION SUMMARY:\n${logData.inspectionSummary||''}\n\nAGENCY INSPECTION:\n${logData.agencyInspection||''}\n\nCOMPLIANCE ISSUES:\n${compSummary}\n\nLANDOWNER/PUBLIC:\n${logData.landownerContact||''}\n\nT&E/RTE:\n${logData.rteObservation||''}\n\nGENERAL COMMS:\n${logData.generalComms||''}\n\n24-HOUR LOOK AHEAD:\n${logData.lookahead||''}${nameRule}\n\nReturn ONLY valid JSON — no markdown, no preamble:\n{"contractorActivities":"...","fieldObservationsOpening":"...","fieldObservationsBullets":["..."],"fieldObservationsClosing":"...","agencyInspection":"...","complianceIssues":[{"level":"...","description":"...","corrective":"...","status":"...","dateResolved":""}],"landownerContact":"...","rteObservation":"...","generalComms":"...","lookaheadBullets":["..."]}`;
   const finalSystemPrompt=(window._rptSkipPolish===true)
     ? systemPromptIn + '\n\nIMPORTANT: The user has already professionally formalized the narrative text fields. Include ALL narrative content VERBATIM — do NOT rephrase, restructure, or alter any provided text.'
     : systemPromptIn;
   const text=await _rptClaude(finalSystemPrompt,userPrompt,8000);
   const clean=text.replace(/```json\n?/g,'').replace(/```\n?/g,'').trim();
-  return JSON.parse(clean);
+  const out=JSON.parse(clean);
+  try{ _rptGuardGenerated(out,logData,known); }catch(e){ console.warn('[report] name guard skipped:',e); }
+  return out;
 }
 
 // ── DOCX Assembly ──
@@ -839,6 +916,13 @@ async function _loadReportVersions(reportDate){
 
 async function _saveReportVersion(reportDate, snapshot, polished, inputHash, version, effectivePromptHash){
   if(!db || !_currentUser || !_fbReady) return;
+  // 9/11 (Tim 9/10: a CMP item resolved before "Generate new" still printed OPEN in
+  // Project Space): the stored version kept Claude's RAW compliance rows, and
+  // send-for-review copies the stored version verbatim — so Project Space and the
+  // reviewer's PDF showed whatever Claude wrote, not the entry's status. Store the
+  // entry-authoritative rows (the same merge the export runs) so every consumer of
+  // v.polished prints the statuses the author actually exported.
+  polished=_rptWithCurrentCompliance(polished,snapshot);
   try{
     // JSON round-trip strips undefined and ensures Firestore-compatible payload
     const cleanSnap = JSON.parse(JSON.stringify(snapshot));
@@ -1087,7 +1171,7 @@ async function _doGenerate(){
     } else {
       const fieldList=diff.narrativeFields.slice(0,5).map(f=>`<em>${f}</em>`).join(', ')+(diff.narrativeFields.length>5?', \u2026':'');
       const n=diff.narrativeFields.length;
-      modalMsg=`You generated a report for today at <strong>${genTime}</strong>. You've edited ${n} narrative field${n===1?'':'s'} since then (${fieldList}).<br><br>Re-exporting will give you the original report unchanged. Generating a new version will produce a fresh report with new prose.`;
+      modalMsg=`You generated a report for today at <strong>${genTime}</strong>. You've edited ${n} narrative field${n===1?'':'s'} since then (${fieldList}).<br><br>Re-exporting keeps the original narrative; compliance statuses print as they are now. Generating a new version will produce a fresh report with new prose.`;
     }
 
     setStatus('Awaiting your choice\u2026');
@@ -1113,8 +1197,12 @@ async function _doGenerate(){
         clearStatusSoon();
         return;
       }
-      // Narrative changed but the user wants the original \u2014 no API call, no new version
-      await assembleAndSave(latest.polished,latest.inputSnapshot,latest.inputHash);
+      // Narrative changed but the user wants the original \u2014 no API call, no new version.
+      // 9/11: compliance FACTS (status / dates / steps / photos) print as they are NOW \u2014
+      // the stored snapshot froze them at the earlier generation, so a CMP item resolved
+      // since then came out OPEN. Prose and the photo selection stay original.
+      const keepSnap=Object.assign({},latest.inputSnapshot||{},{compEntries:currSnap.compEntries,compPhotoRefs:currSnap.compPhotoRefs});
+      await assembleAndSave(latest.polished,keepSnap,latest.inputHash);
       setStatus('\u2713 Existing report re-exported.');
       clearStatusSoon();
       return;
