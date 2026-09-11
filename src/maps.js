@@ -7268,6 +7268,8 @@ function _showTrackerEntryPopup(lngLat,props){
   // immediately; published records can be unshared (revocation is real).
   const _mineEntry=entry&&(!entry.ownerUid||(window._currentUser&&entry.ownerUid===_currentUser.uid));
   const _isPub=!!entry?.published;
+  // 9/11 (#30): Google Earth-style zoom-to-fit for the drawing under this popup.
+  const fitBtn=(entry&&entry.geometry)?`<button onclick="mapFitEntry('${props.id}')" style="${_TRP_BTN}background:var(--s2,#1a2a38);border:1px solid var(--border,#334);color:var(--muted,#888)" title="Zoom the map to fit this drawing">⤢ Zoom to fit</button>`:'';
   const shareBtn=_mineEntry?`<button onclick="mapShareTrackerEntry('${props.id}')" style="${_TRP_BTN}grid-column:1/-1;background:${_isPub?'rgba(79,209,197,0.15)':'var(--s2,#1a2a38)'};border:1px solid ${_isPub?'#4FD1C5':'var(--border,#334)'};color:${_isPub?'#4FD1C5':'var(--muted,#888)'}" title="${_isPub?'Visible to project members — tap to unshare':'Publish this drawing to project members now'}">${_isPub?'🌐 Shared with project ✓':'📤 Share with project'}</button>`:'';
   const sharedByNote=(!_mineEntry&&entry)?`<div style="font-size:10px;color:#4FD1C5;margin-top:4px;border-top:1px solid rgba(255,255,255,.08);padding-top:4px">🌐 Shared by a project member</div>`:'';
   // Repair flag (open-until-resolved point marker). Owner-only controls.
@@ -7382,6 +7384,7 @@ function _showTrackerEntryPopup(lngLat,props){
           ${_distRunningCat?'':`<button onclick="mapCaptureForEntry('${props.id}')" style="${_TRP_BTN}background:var(--s2,#1a2a38);border:1px solid var(--border,#334);color:var(--muted,#888)" title="Capture map view as photo">📷 Capture</button>`}
           <button onclick="mapCameraForEntry('${props.id}')" style="${_TRP_BTN}background:var(--s2,#1a2a38);border:1px solid var(--border,#334);color:var(--muted,#888)" title="Take a photo — auto-attaches to this drawing">📸 Take photo</button>
           ${_hasShape?`<button onclick="mapCopyEntryShape('${props.id}')" style="${_TRP_BTN}background:var(--s2,#1a2a38);border:1px solid var(--border,#334);color:var(--muted,#888)" title="New state layer with this exact shape — no retracing">📋 Copy shape</button>`:''}
+          ${fitBtn}
           ${tempBtn}
           ${shareBtn}
         </div>`:''}
@@ -7395,7 +7398,30 @@ function _showTrackerEntryPopup(lngLat,props){
   </div>`;
   _trackerPopup=new mapboxgl.Popup({offset:14,maxWidth:'250px',closeButton:true,closeOnClick:false,className:'gl-tracker-popup'})
     .setLngLat(lngLat).setHTML(html).addTo(_mapInstance);
+  // 9/11 (#45 nested scroll, Tim's iOS 164 read: "the scroll bar inside another scroll bar"):
+  // the popup lives INSIDE the map container, so its touches also drove Mapbox's pan/zoom
+  // handlers while the content scrolled. Keep touches inside the popup to the popup.
+  try{
+    const pc=_trackerPopup.getElement()&&_trackerPopup.getElement().querySelector('.mapboxgl-popup-content');
+    if(pc){ pc.style.touchAction='pan-y'; ['touchstart','touchmove','touchend','touchcancel'].forEach(t=>pc.addEventListener(t,ev=>ev.stopPropagation(),{passive:true})); }
+  }catch(e){}
 }
+
+// 9/11 (Tim 9/2 #30, Google Earth's zoom-to-fit): frame one drawing from its popup.
+function mapFitEntry(id){
+  if(!_mapInstance) return;
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const e=(typeof trGetEntry==='function')?trGetEntry(id,pid):null;
+  let g=e&&e.geometry; if(typeof g==='string'){ try{ g=JSON.parse(g); }catch{ g=null; } }
+  if(!g||!g.coordinates) return;
+  let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
+  const walk=c=>{ if(typeof c[0]==='number'){ if(c[0]<minX)minX=c[0]; if(c[0]>maxX)maxX=c[0]; if(c[1]<minY)minY=c[1]; if(c[1]>maxY)maxY=c[1]; } else c.forEach(walk); };
+  try{ walk(g.coordinates); }catch{ return; }
+  if(!isFinite(minX)) return;
+  if(g.type==='Point'||(maxX-minX<1e-7&&maxY-minY<1e-7)){ _mapInstance.flyTo({center:[minX,minY],zoom:Math.max(_mapInstance.getZoom(),18),duration:600}); return; }
+  _mapInstance.fitBounds([[minX,minY],[maxX,maxY]],{padding:{top:90,bottom:170,left:40,right:40},maxZoom:19.5,duration:650});
+}
+window.mapFitEntry=mapFitEntry;
 
 // Share-now / Unshare a single tracker entry from its popup.
 async function mapShareTrackerEntry(id){
@@ -7847,9 +7873,49 @@ function mapResolveTemporary(id){
     if(typeof mapRenderTrackerLayers==='function') mapRenderTrackerLayers();
     if(typeof clRender==='function') clRender();
     if(typeof showCloudBanner==='function') showCloudBanner('✓ Fixed — filed in the punchlist history.');
+    _offerFlagFixPhoto(id);   // 9/11 (Tim 8/18 + 9/10 #24): document the correction
   };
 }
 window.mapResolveTemporary=mapResolveTemporary;
+// After a flag is marked fixed: offer a correction photo (camera / library / skip) — the
+// CMP-entry twin of clOfferCorrectionPhoto. The shot attaches to the flag itself, captioned
+// "Correction <date>" so the punchlist PDF prints it as the fix, not the finding.
+function _offerFlagFixPhoto(id){
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const e=(typeof trGetEntry==='function')?trGetEntry(id,pid):null; if(!e) return;
+  const tag=e.plNum?((typeof trPlFmt==='function')?trPlFmt(e.plNum):'PL-'+e.plNum):'This item';
+  const ov=document.createElement('div'); ov.className='modal-overlay'; ov.style.cssText='z-index:'+(window.GL_CONFIRM_Z||10500);
+  ov.innerHTML=`<div class="modal-box" style="max-width:340px;width:92%">
+    <div class="modal-title" style="margin-bottom:8px">📷 Document the fix?</div>
+    <div class="modal-msg">${String(tag).replace(/</g,'&lt;')} is fixed. Add a photo of the correction so the record shows the fix, not just the finding.</div>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <button type="button" class="btn btn-amber" id="_ff-cam" style="min-height:44px">📸 Take a photo</button>
+      <button type="button" class="btn btn-outline" id="_ff-lib" style="min-height:44px">📎 Pick from library</button>
+      <button type="button" class="btn btn-outline" id="_ff-skip" style="min-height:36px;color:var(--muted);border-color:transparent">Skip</button>
+    </div></div>`;
+  document.body.appendChild(ov);
+  const today=new Date().toLocaleDateString('en-CA');
+  const capOf=()=>'Correction '+_fmtLabelDate(today);
+  ov.querySelector('#_ff-skip').onclick=()=>ov.remove();
+  ov.querySelector('#_ff-cam').onclick=()=>{ ov.remove(); if(typeof window.phOpenCamera==='function') window.phOpenCamera({tags:['repair'],attach:{type:'entry',id:e.id},onSaved:(p)=>{ try{ const cur=trGetEntry(id,pid); if(cur&&p&&p.id){ cur.photoCaptions=Object.assign({},cur.photoCaptions||{}); if(!cur.photoCaptions[p.id]) cur.photoCaptions[p.id]=capOf(); trSaveEntry(cur,pid); } }catch{} }}); };
+  ov.querySelector('#_ff-lib').onclick=()=>{
+    ov.remove();
+    if(typeof phPickerOpen!=='function') return;
+    phPickerOpen({
+      title:'Correction photos', z:(window.GL_CONFIRM_Z||10500),
+      isSelected:pidPhoto=>{ const cur=trGetEntry(id,pid); return !!(cur&&(cur.photoIds||[]).includes(pidPhoto)); },
+      onToggle:(pidPhoto,on)=>{
+        const cur=trGetEntry(id,pid); if(!cur) return;
+        cur.photoIds=Array.isArray(cur.photoIds)?cur.photoIds.slice():[];
+        cur.photoCaptions=Object.assign({},cur.photoCaptions||{});
+        if(on){ if(!cur.photoIds.includes(pidPhoto)) cur.photoIds.push(pidPhoto); if(!cur.photoCaptions[pidPhoto]) cur.photoCaptions[pidPhoto]=capOf(); }
+        else { cur.photoIds=cur.photoIds.filter(x=>x!==pidPhoto); delete cur.photoCaptions[pidPhoto]; }
+        trSaveEntry(cur,pid);
+      },
+      onDone:()=>{ if(typeof clRenderPunchlist==='function'){ try{ clRenderPunchlist(); }catch{} } }
+    });
+  };
+}
 
 // Toggle the collapsible Actions block inside a tracker entry popup.
 // Collapsed by default — the popup was getting tall enough to run offscreen.
