@@ -17,7 +17,23 @@
 //
 // Turf is the industry-standard JS geospatial library (Mapbox's own, GeoJSON-native).
 import length from '@turf/length';
-import { glAreaConvertM2, _safeArea, computeStateNet, computeEntryNet, computeEntryGeoms } from './geoCore.js';
+import { glAreaConvertM2, _safeArea, _geoTakeFallbacks, computeStateNet, computeEntryNet, computeEntryGeoms } from './geoCore.js';
+
+// 9/11 (Tim 9/9 orange temp-stab): engine fallbacks are never silent — console + boot mark
+// + a running total on window._glGeoFallbacks for Diagnostics. Both threads report here.
+function _glNoteFallbacks(fb, where){
+  if(!fb || !fb.total) return;
+  try{
+    if(typeof window !== 'undefined'){
+      const t = (window._glGeoFallbacks = window._glGeoFallbacks || { total: 0 });
+      t.total += fb.total;
+      for(const k in fb){ if(k !== 'total') t[k] = (t[k] || 0) + fb[k]; }
+      t.last = Object.assign({ where, at: Date.now() }, fb);
+    }
+    console.warn('[geo] clip fallbacks (' + where + '):', fb);
+    if(typeof glBootMark === 'function') glBootMark('geo:fallback', Object.assign({ where }, fb));
+  }catch(_){}
+}
 
 // ── Perf (2026-07-23) — suffix unions + version-keyed memo ──
 // Each net fn needed "union of everything drawn AFTER entry i" — computed as a
@@ -52,6 +68,7 @@ function _glMemo(fn, entries, extra, compute){
   if(_glGeoCache.has(key)) return _glGeoCache.get(key);
   const t0 = performance.now();
   const v = compute();
+  _glNoteFallbacks(_geoTakeFallbacks(), 'main:' + fn);
   if(typeof glBootMark === 'function') glBootMark('geo:' + fn, { entries: entries.length, ms: Math.round(performance.now() - t0) });   // boot-timeline attribution; no-op after the log finalizes
   if(_glGeoCache.size > 60) _glGeoCache.clear();   // small bound; recompute is cheap post-fix-1
   _glGeoCache.set(key, v);
@@ -70,6 +87,7 @@ function _glGetWorker(){
       const job = _glJobs.get(id); _glJobs.delete(id);
       if(!job) return;
       if(typeof glBootMark === 'function') glBootMark('geo:warm', { entries: n, ms, err: err || undefined });
+      if(v && v.F) _glNoteFallbacks(v.F, 'worker');
       if(err || !v || job.ver !== _glGeoVer) return;   // stale (a mutation bumped the version) → ignore
       if(job.keys.S && v.S !== undefined) _glGeoCache.set(job.keys.S, v.S);
       _glGeoCache.set(job.keys.E, v.E);
