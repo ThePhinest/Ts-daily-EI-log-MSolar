@@ -1113,10 +1113,12 @@ function _swOfferDisturbanceXlsx(pid){
     if(!dist.length||typeof window._exportCategoriesDeliverable!=='function'||typeof _confirmModal!=='function') return;
     const names=dist.map(c=>c.name).join(', ');
     _confirmModal(`Also export the disturbance tracker (${names}) as XLSX to forward with this report?`, async()=>{
+      const busy=(typeof window.glBusy==='function')?window.glBusy('Building the disturbance workbook…'):null;   // 9/11 #34 (was silent)
       try{
         const entries=(typeof trGetEntriesForProject==='function')?trGetEntriesForProject(pid):[];
         await window._exportCategoriesDeliverable(dist.map(c=>({cid:c.id,seedOnly:false})), entries, pid);
       }catch(e){ console.warn('disturbance xlsx after QI export failed:',e); alert('Disturbance export failed: '+e.message); }
+      finally{ if(busy) busy.close(); }
     },'Disturbance tracker','Export XLSX');
   }catch(e){ console.warn('_swOfferDisturbanceXlsx:',e); }
 }
@@ -1135,12 +1137,15 @@ async function _swpppExportPdfNow(id){
   const btns=document.querySelectorAll(`[onclick="swpppExportPdf('${id}')"]`);
   // innerHTML store/restore (not textContent) — these buttons carry the inline PDF-icon SVG.
   btns.forEach(b=>{ b.dataset.oldHtml=b.innerHTML; b.textContent='Building…'; b.disabled=true; });
+  const busy=(typeof window.glBusy==='function')?window.glBusy('Building the QI report PDF…'):null;   // 9/11 #34
   try{
     const [{swpppExportPdfNow},sig]=await Promise.all([import('./swpppPdf.js'),_swLoadSig()]);
+    if(busy) busy.set('Laying out the QI report… photos embed as it goes');
     await swpppExportPdfNow(insp,cfg,sig);
+    if(busy) busy.close();
     _swOfferDisturbanceXlsx(pid);
   }catch(e){ console.error('swppp pdf export failed:',e); alert('PDF export failed: '+e.message); }
-  finally{ btns.forEach(b=>{ b.innerHTML=b.dataset.oldHtml||((window.glPdfIcon?window.glPdfIcon(13):'⬇')+' PDF'); b.disabled=false; }); }
+  finally{ if(busy) busy.close(); btns.forEach(b=>{ b.innerHTML=b.dataset.oldHtml||((window.glPdfIcon?window.glPdfIcon(13):'⬇')+' PDF'); b.disabled=false; }); }
 }
 
 async function _swpppExportNow(id){
@@ -1151,14 +1156,16 @@ async function _swpppExportNow(id){
   if(!insp||!cfg){ alert('Inspection or configuration not found.'); return; }
   const btns=document.querySelectorAll(`[onclick="swpppExport('${id}')"]`);
   btns.forEach(b=>{ b.dataset.oldTxt=b.textContent; b.textContent='Building…'; b.disabled=true; });
+  const busy=(typeof window.glBusy==='function')?window.glBusy('Building the QI report DOCX…'):null;   // 9/11 #34
   try{
     const blob=await swpppBuildDocx(insp,cfg);
     const [y,m,d]=(insp.date||new Date().toLocaleDateString('en-CA')).split('-');
     const fname=`${(cfg.projectTitle||'Project').replace(/[^\w]+/g,'_')}-QI_Stormwater_Inspection_Report_${parseInt(m)}-${parseInt(d)}-${y.slice(2)}.docx`;
+    if(busy) busy.close();
     await saveFileNative(blob,fname,'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
     _swOfferDisturbanceXlsx(pid);
   }catch(e){ console.error('swppp export failed:',e); alert('Export failed: '+e.message); }
-  finally{ btns.forEach(b=>{ b.textContent=b.dataset.oldTxt||'⬇ Export DOCX'; b.disabled=false; }); }
+  finally{ if(busy) busy.close(); btns.forEach(b=>{ b.textContent=b.dataset.oldTxt||'⬇ Export DOCX'; b.disabled=false; }); }
 }
 
 // ── Photos ZIP — full-res copies of everything attached to the report (§10 sketches
@@ -1175,6 +1182,7 @@ async function _swpppExportPhotosZipNow(id){
   if(!(insp.sketches||[]).length&&!(insp.photos||[]).length){ alert('No sketches or photos attached to this report.'); return; }
   const btns=document.querySelectorAll(`[onclick="swpppExportPhotosZip('${id}')"]`);
   btns.forEach(b=>{ b.dataset.oldTxt=b.textContent; b.textContent='Zipping…'; b.disabled=true; });
+  const busy=(typeof window.glBusy==='function')?window.glBusy('Zipping the report photos at full resolution…'):null;   // 9/11 #34
   try{
     const {default:JSZip}=await import('jszip');
     const zip=new JSZip();
@@ -1205,7 +1213,7 @@ async function _swpppExportPhotosZipNow(id){
     const fname=`${(cfg.projectTitle||'Project').replace(/[^\w]+/g,'_')}-QI_Report_Photos_${parseInt(m)}-${parseInt(d)}-${y.slice(2)}.zip`;
     await saveFileNative(new Blob([buf],{type:'application/zip'}),fname,'application/zip');
   }catch(e){ console.error('swppp photo zip failed:',e); alert('Photo ZIP failed: '+e.message); }
-  finally{ btns.forEach(b=>{ b.textContent=b.dataset.oldTxt||'🖼 Photos ZIP'; b.disabled=false; }); }
+  finally{ if(busy) busy.close(); btns.forEach(b=>{ b.textContent=b.dataset.oldTxt||'🖼 Photos ZIP'; b.disabled=false; }); }
 }
 
 async function swpppBuildDocx(insp,cfg){

@@ -15,7 +15,7 @@
 // Checkbox runs switch to it inline; everything else stays Roboto.
 
 import { glBrandEnsure, glBrandPdfPal, glBrandPalFromCfg, glBrandAttribution, GL_ATTRIB_TEXT } from './brand.js';
-import { saveFileNative } from './saveFile.js';
+import { saveFileNative, openPdfNative } from './saveFile.js';
 import { exportImageBlob, exportImageParams, stampIfCamera } from './exportImg.js';
 
 const GLSYM_B64 = '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A2cRQgVm/gNl/gNk/gNj/gNi/gNhOgNg+gNeDANd/gNb/gNa/gNZWAoFWfoDWAoDVxYZBVcyA1b+A1VUFQVVQgNUFQNTARAFUxgDUhQDUUoTBVH+A1ALA0/+A05NEAVO/gNNEANM/gNLShMFS/4DSkkQBUoTA0kdDQVJEANIDQNH/gNGlgNFlgNE/gNDAi0FQ/oDQrsDQUsDQP4DP/4DPj0SBT4UAz08DwU9EgM8Ow0FPED/DwM7DQM6/gM5/gM4NxQFOPoDNzYQBTcUAzY1CwU2EAM1CwM0HgMzDQMyMQsFMv4DMQsDMC8LBTANAy8LAy4tCQUuEAMtCQMsMgMrKiUFK2QDKikSBSolAykSAygnJQUoQQMnJQMmJQsFJg8DJQsDJP4DI/4DIg8DIQEQBSESAyBkAx/6Ax4dDQUeZAMdDQMcEUIFHP4DG/oDGkIDGRFCBRn+AxhkAxcWGQUX/gMWARAFFhkDFf4DFP4DE/4DEhFCBRL+AxECLQURQgMQfQMPZAMO/gMNDBYFDf4DDAEQBQwWAwv+AwoQAwn+AwgCLQUI/gMHFAMGZAMEARAFBP4DQBUDAi0FA/4DAgEQBQItAwEQAwD+AwG4AWSFjQErKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysAKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKx0BNQC4AMsAywDBAKoAnAGmALgAZgAAAHEAywCgArIAhQB1ALgAwwHLAYkCLQDLAKYA8ADTAKoAhwDLA6oEAAFKADMAywAAANkFAgD0AVQAtACcATkBFAE5BwYEAAROBLQEUgS4BOcEzQA3BHMEzQRgBHMBMwOiBVYFpgVWBTkDxQISAMkAHwC4Ad8AcwC6A+kDMwO8BEQEDgDfA80DqgDlA6oEBAAAAMsAjwCkAHsAuAAUAW8AfwJ7AlIAjwDHBc0AmgCaAG8AywDNAZ4B0wDwALoBgwDVAJgDBAJIAJ4B1QDBAMsA9gCDA1QCfwAAAzMCZgDTAMcApADNAI8AmgBzBAAF1QEKAP4CKwCkALQAnAAAAGIAnAAAAB0DLQXVBdUF1QXwAH8AewBUAKQGuAYUByMB0wC4AMsApgHDAewGkwCgANMDXANxA9sBhQQjBKgESACPATkBFAE5A2AAjwXVAZoGFAcjBmYBeQRgBGAEYAR7AJwAAAJ3BGABqgDpBGAHYgB7AMUAfwJ7AAAAtAJSBc0AZgC8AGYAdwYQAM0BOwGFA4kAjwB7AAAAHQDNB0oELwCcAJwAAAd9AG8AAABvAzUAagBvAHsArgCyAC0DlgCPAnsA9gCDA1QGNwX2AI8AnAThAmYAjwGNAvYAzQNEACkAZgTuAHMAABQAAJYAAAAAAAAABgAAAAMAAAAAAAD/fgBaAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAgAAv//AAMAAQAAAAwAAAAAAAAAAgABAAEABAABAAAAAQAAAAoAHAAeAAFERkxUAAgABAAAAAD//wAAAAAAAAABAAAACgCSAJQAFERGTFQAemFyYWIAhGFybW4AhGJyYWkAhGNhbnMAhGNoZXIAhGN5cmwAhGdlb3IAhGdyZWsAhGhhbmkAhGhlYnIAhGthbmEAhGxhbyAAhGxhdG4AhG1hdGgAhG5rbyAAhG9nYW0AhHJ1bnIAhHRmbmcAhHRoYWkAhAAEAAAAAP//AAAAAAAAAAAAAAAAAAEAAAAKAOAA6ABQADwMAAfdAAAAAAKCAAAEYAAABdUAAAAAAAAEYAAAAAAAAAAAAAAAAAAABGAAAAAAAAABaAAABGAAAABVAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEOAAACdgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWgAAAQ4AAABaAAAAWgAAAQ4AAAAAAAAAAAAAAQ4AAABaAAAAWgAAAQ4AAABaAAAAWgAAAFoAAAFyAAAAWgAAAFoAAAI4AAD7jwAAADwAAAAAAAAAAAAoAAoACgAAAAAAAQAAAAA=';
@@ -99,7 +99,7 @@ const infoRow=(label,value)=>[
 const infoTable=(rows)=>({table:{dontBreakRows:true,widths:[160,'*'],body:rows},layout:hairLayout,margin:[0,2,0,4]});
 
 // Photo/sketch → {dataUrl,w,h} sized like the DOCX (px→pt ×0.75), thumb fallback
-async function _imgFor(pId,maxWpx,maxHpx){
+async function _imgFor(pId,maxWpx,maxHpx,grade){
   maxHpx=maxHpx||700;
   const p=(window._phPhotos||[]).find(x=>x.id===pId)||(window._phShared||[]).find(x=>x.id===pId);   // 9/9: a member's export resolves the author's published photo
   if(!p) return null;
@@ -112,13 +112,40 @@ async function _imgFor(pId,maxWpx,maxHpx){
     if(!blob&&p.thumb){ const raw=p.thumb,b64=raw.includes(',')?raw.split(',')[1]:raw; const bin=atob(b64); const arr=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++)arr[i]=bin.charCodeAt(i); blob=new Blob([arr],{type:'image/jpeg'}); }
     if(!blob){ console.warn('[daily-pdf] no image bytes for photo',p.id,{caption:p.caption,hasUrl:!!p.storageUrl,hasThumb:!!p.thumb,inLibrary:!!((window._phPhotos||[]).find(x=>x.id===p.id))}); return null; }
     blob=await stampIfCamera(p,blob);   // camera photos embed stamped, everywhere
-    const ep=exportImageParams(p); blob=await exportImageBlob(blob,ep.maxPx,ep.quality);
+    // 9/11 (Tim 9/10 #37): re-encode to the RENDER size, not a blanket 1400/1600 px — a photo
+    // printed 250 px wide carried a 1400 px JPEG (+33% base64). 2× the slot keeps ~200 dpi;
+    // map captures keep a 1200 px floor for their baked legend text. grade 'compact' = the
+    // 9/2 seeding-export thumbnail grade (420 px, q0.62) for email-size exports (never captures).
+    const ep=exportImageParams(p);
+    const isCap=p.type==='map_capture'||/^map-view\.(jpe?g|png)$/i.test(p.filename||'');
+    let maxPx=Math.min(ep.maxPx,Math.max(isCap?1200:520,Math.round(maxWpx*2))), q=ep.quality;
+    if(grade==='compact'&&!isCap){ maxPx=Math.min(maxPx,420); q=Math.min(q,0.62); }
+    blob=await exportImageBlob(blob,maxPx,q);
     let w=maxWpx,h=Math.round(maxWpx*0.72);
     try{ const bmp=await createImageBitmap(blob); const sc=maxWpx/bmp.width; w=maxWpx; h=Math.round(bmp.height*sc); if(h>maxHpx){ h=maxHpx; w=Math.round(bmp.width*(maxHpx/bmp.height)); } bmp.close&&bmp.close(); }catch(e){}
     const dataUrl=await new Promise((res,rej)=>{ const r=new FileReader(); r.onloadend=()=>res(r.result); r.onerror=()=>rej(r.error); r.readAsDataURL(blob); });
     return {dataUrl,w:Math.round(w*0.75),h:Math.round(h*0.75),p};
   }catch(e){ return null; }
 }
+
+// 9/11 (#34 / #37): bounded-parallel photo prep (order preserved; a failed item → null),
+// progress relay to the caller's busy overlay, and a size readout after every PDF build.
+async function _pool(items,n,fn){
+  const out=new Array(items.length); let i=0;
+  const worker=async()=>{ while(i<items.length){ const k=i++; try{ out[k]=await fn(items[k],k); }catch(e){ out[k]=null; } } };
+  await Promise.all(Array.from({length:Math.max(1,Math.min(n,items.length))},worker));
+  return out;
+}
+function _prog(opts,kind,i,n){ if(opts&&typeof opts.onProgress==='function'){ try{ opts.onProgress(kind,i,n); }catch(e){} } }
+function glPdfSizeNote(blob,label){
+  try{
+    if(!blob||typeof blob.size!=='number') return;
+    const mb=blob.size/1048576;
+    const sz=mb>=1?mb.toFixed(1)+' MB':Math.round(blob.size/1024)+' KB';
+    if(typeof showCloudBanner==='function') showCloudBanner('📄 '+(label||'PDF')+' ready · '+sz+(mb>20?' — over most mail caps; try Email-size photos':''));
+  }catch(e){}
+}
+if(typeof window!=='undefined') window.glPdfSizeNote=glPdfSizeNote;
 
 // 2-up image grid rows (sketches + photos share the shape)
 function _imgPairRows(items){
@@ -397,6 +424,7 @@ export async function swpppExportPdfNow(insp,cfg,sig){
   const blob=await swpppBuildPdf(insp,cfg,sig);
   const [y,m,d]=(insp.date||new Date().toLocaleDateString('en-CA')).split('-');
   const fname=`${(cfg.projectTitle||'Project').replace(/[^\w]+/g,'_')}-QI_Stormwater_Inspection_Report_${parseInt(m)}-${parseInt(d)}-${y.slice(2)}.pdf`;
+  glPdfSizeNote(blob,'QI report');
   await saveFileNative(blob,fname,'application/pdf');
 }
 
@@ -441,7 +469,9 @@ async function _dailyImg(p,maxWpx,maxHpx){
     if(!blob&&p.thumb){ const raw=p.thumb,b64=raw.includes(',')?raw.split(',')[1]:raw; const bin=atob(b64); const arr=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++)arr[i]=bin.charCodeAt(i); blob=new Blob([arr],{type:'image/jpeg'}); }
     if(!blob) return null;
     blob=await stampIfCamera(p,blob);
-    const ep=exportImageParams(p); blob=await exportImageBlob(blob,ep.maxPx,ep.quality);
+    const ep=exportImageParams(p);   // 9/11 (#37): cap to the render size (see _imgFor)
+    const isCap=p.type==='map_capture'||/^map-view\.(jpe?g|png)$/i.test(p.filename||'');
+    blob=await exportImageBlob(blob,Math.min(ep.maxPx,Math.max(isCap?1200:520,Math.round(maxWpx*2))),ep.quality);
     let w=maxWpx,h=Math.round(maxWpx*0.75);
     try{ const bmp=await createImageBitmap(blob); const sc=maxWpx/bmp.width; w=maxWpx; h=Math.round(bmp.height*sc); if(h>maxHpx){ h=maxHpx; w=Math.round(bmp.width*(maxHpx/bmp.height)); } bmp.close&&bmp.close(); }catch(e){}
     const dataUrl=await new Promise((res,rej)=>{ const r=new FileReader(); r.onloadend=()=>res(r.result); r.onerror=()=>rej(r.error); r.readAsDataURL(blob); });
@@ -552,12 +582,13 @@ export async function dailyBuildPdf(logData,polished,photoRefs,opts){
 
   // 6. Photo Log — from the snapshot refs, 2-up
   const dayPhotos=(photoRefs||[]).filter(p=>p.date===logData.reportDate).sort((a,b)=>(a.uploadedAt||0)-(b.uploadedAt||0));
-  const phItems=[];
-  for(let j=0;j<dayPhotos.length;j++){
-    const p=dayPhotos[j];
+  // 9/11 (#34): 4-parallel photo prep with progress (it was strictly serial)
+  let _phDone=0;
+  const phItems=(await _pool(dayPhotos,4,async(p,j)=>{
     const im=await _dailyImg(p,331);
-    phItems.push({im,cap:`Photo ${j+1} — ${p.caption||''}`});
-  }
+    _phDone++; _prog(opts,'photo',_phDone,dayPhotos.length);
+    return {im,cap:`Photo ${j+1} — ${p.caption||''}`};
+  })).filter(Boolean);
   const sec6=[
     dh1('6.  Photo Log'),
     body(`The following photographs were taken during the inspection on ${shortDate}.`),
@@ -634,11 +665,15 @@ export async function dailyBuildPdf(logData,polished,photoRefs,opts){
 }
 
 export async function dailyExportPdfNow(logData,polished,photoRefs,opts){
+  opts=opts||{};
   const blob=await dailyBuildPdf(logData,polished,photoRefs,opts);
   const [y,m,d]=(logData.reportDate||new Date().toLocaleDateString('en-CA')).split('-');
   const slug=String(logData.project||'GroundLog').replace(/[^a-zA-Z0-9]+/g,'_').replace(/^_+|_+$/g,'')||'GroundLog';
   const fname=`${m}-${d}-${y}_${slug}-Daily_Inspection_Report.pdf`;
-  await saveFileNative(blob,fname,'application/pdf');
+  glPdfSizeNote(blob,'Daily report');
+  // 9/11 (#35): a VIEW action opens the native viewer on iOS (Share is inside it); exports keep the sheet.
+  if(opts.view) await openPdfNative(blob,fname,opts.viewTitle||('Daily report · '+(logData.reportDate||'')));
+  else await saveFileNative(blob,fname,'application/pdf');
   return blob;
 }
 
@@ -697,6 +732,22 @@ export async function punchlistBuildPdf(opts){
   // numbering (the pre-7/30 behavior) is only the fallback for a missing num.
   const plId=(e,i)=>e.plNum?('PL-'+String(e.plNum).padStart(2,'0')):('PL-'+String(i+1).padStart(2,'0'));
   const daysOpen=e=>{ const t=new Date((e.date||'')+'T00:00:00').getTime(); return isNaN(t)?null:Math.max(0,Math.floor((now-t)/86400000)); };
+  // 🚩 overview captures (newest capture day) — resolved up front so their prep joins the pool.
+  const plCaps=(window._phPhotos||[]).filter(p=>p.plCap&&p.projectId===pid&&!p.deletedAt);
+  const capDay=plCaps.length?plCaps.map(p=>p.date).sort().pop():null;
+  const dayCaps=capDay?plCaps.filter(p=>p.date===capDay).sort((a,b)=>(a.uploadedAt||0)-(b.uploadedAt||0)):[];
+  // 9/11 (#34 / #37): photo prep was strictly serial per item — run it 4-parallel up front with
+  // progress, and honor the Email-size grade for item photos (overview captures keep full grade).
+  const grade=opts.compact?'compact':null;
+  const want=[];
+  merged.forEach(({k,e})=>{
+    const fix=(k==='cmp'&&typeof window.clStepPhotoIds==='function')?window.clStepPhotoIds(e):[];
+    (e.photoIds||[]).concat(fix.filter(x=>!(e.photoIds||[]).includes(x))).forEach(id=>want.push({id,w:250,h:300,g:grade}));
+  });
+  dayCaps.forEach(p=>want.push({id:p.id,w:660,h:700,g:null}));
+  const imMap=new Map(); let _imDone=0;
+  await _pool(want,4,async(x)=>{ imMap.set(x.id+'|'+x.w,await _imgFor(x.id,x.w,x.h,x.g)); _imDone++; _prog(opts,'photo',_imDone,want.length); });
+  const imAt=(id,w,h,g)=>imMap.has(id+'|'+w)?imMap.get(id+'|'+w):_imgFor(id,w,h,g);
   const itemBlocks=[];
   const cmpBlock=async(e)=>{
     const id=cmpId(e);
@@ -708,7 +759,7 @@ export async function punchlistBuildPdf(opts){
     const fixIds=(typeof window.clStepPhotoIds==='function')?window.clStepPhotoIds(e):[];
     const allIds=(e.photoIds||[]).concat(fixIds.filter(x=>!(e.photoIds||[]).includes(x)));
     for(const pId of allIds){
-      const im=await _imgFor(pId,250,300);
+      const im=await imAt(pId,250,300,grade);
       if(im){
         const c=String((e.photoCaptions||{})[pId]||(im.p&&im.p.caption)||'').trim();
         const st=(fixIds.includes(pId)&&typeof window.clStepFor==='function')?window.clStepFor(e,pId):null;
@@ -738,7 +789,7 @@ export async function punchlistBuildPdf(opts){
     const dOpen=daysOpen(e);
     const ims=[];
     for(const pId of (e.photoIds||[])){
-      const im=await _imgFor(pId,250,300);
+      const im=await imAt(pId,250,300,grade);
       // 9/2 (#54): the caption saved on the flag (photoCaptions) or the photo's own caption
       // wins; "photographed at flag time" is only the fallback for an uncaptioned shot.
       if(im){ const c=String((e.photoCaptions||{})[pId]||(im.p&&im.p.caption)||'').trim(); ims.push({im,cap:`${id} — ${c||((e.location?e.location+' — ':'')+'photographed at flag time')}`}); }
@@ -765,12 +816,9 @@ export async function punchlistBuildPdf(opts){
   // NEWEST capture day fronts the report, so "where is PL-NN" is answered
   // before the item list starts (the map labels in the capture carry the same
   // permanent PL numbers as the items below).
-  const plCaps=(window._phPhotos||[]).filter(p=>p.plCap&&p.projectId===pid&&!p.deletedAt);
-  const capDay=plCaps.length?plCaps.map(p=>p.date).sort().pop():null;
-  const dayCaps=capDay?plCaps.filter(p=>p.date===capDay).sort((a,b)=>(a.uploadedAt||0)-(b.uploadedAt||0)):[];
   const overviewIms=[];
   for(const p of dayCaps){
-    const im=await _imgFor(p.id,660,700);
+    const im=await imAt(p.id,660,700,null);
     if(im) overviewIms.push(im);
   }
   let sec=0;
@@ -1036,5 +1084,6 @@ export async function punchlistExportPdfNow(opts){
   const cfg=(typeof loadProjectConfig==='function')?loadProjectConfig():{};
   const t=new Date();
   const fname=`${(cfg.projectName||'Project').replace(/[^\w]+/g,'_')}-ESC_Punchlist_${t.getMonth()+1}-${t.getDate()}-${String(t.getFullYear()).slice(2)}.pdf`;
+  glPdfSizeNote(blob,'Punchlist'+(opts&&opts.compact?' (email-size)':''));
   await saveFileNative(blob,fname,'application/pdf');
 }

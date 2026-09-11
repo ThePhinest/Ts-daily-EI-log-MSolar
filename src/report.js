@@ -259,6 +259,7 @@ async function _doPolish(selectedFields){
   const n=selectedFields.length;
   if(btn){btn.disabled=true;btn.textContent='Formalizing…';}
   setStatus('Polishing '+n+' field'+(n===1?'':'s')+'…','var(--amber)');
+  const busy=(typeof window.glBusy==='function')?window.glBusy('✦ Formalizing '+n+' field'+(n===1?'':'s')+' with Claude…'):null;   // 9/11 #34
   try{
     const payload=Object.fromEntries(selectedFields.map(function(f){return[f.id,f.value];}));
     const systemPrompt='You are a professional field inspector writing assistant. Rewrite the provided field log text into clean, professional language suitable for a regulatory compliance report. Rules: use "conducting" not "performing"; use definitive language ("will" not "anticipated to"); contractor compliance language must be collaborative in tone; do not use first person; preserve all specific facts, measurements, locations, and compliance levels exactly as entered; reproduce every company, person, product and place name and every acronym EXACTLY as typed - never substitute, expand, abbreviate or "correct" a proper noun, even if it looks like a typo or you know a similar name; do not add information not present in the original; do not remove relevant observations. Return a JSON object with the same keys as provided, containing the rewritten text for each field. Return ONLY the JSON object — no preamble, no markdown, no code fences.';
@@ -319,6 +320,7 @@ async function _doPolish(selectedFields){
     setStatus('✗ '+e.message.slice(0,80),'var(--red)');
     setTimeout(function(){if(status)status.style.opacity='0';},8000);
   }finally{
+    if(busy) busy.close();
     if(btn){btn.disabled=false;btn.textContent='✦ Formalize Log';}
   }
 }
@@ -360,7 +362,10 @@ async function rptCallClaude(logData, compEntries, systemPromptIn){
   const finalSystemPrompt=(window._rptSkipPolish===true)
     ? systemPromptIn + '\n\nIMPORTANT: The user has already professionally formalized the narrative text fields. Include ALL narrative content VERBATIM — do NOT rephrase, restructure, or alter any provided text.'
     : systemPromptIn;
-  const text=await _rptClaude(finalSystemPrompt,userPrompt,8000);
+  const busy=(typeof window.glBusy==='function')?window.glBusy('✦ Polishing the report narrative with Claude…'):null;   // 9/11 #34
+  let text;
+  try{ text=await _rptClaude(finalSystemPrompt,userPrompt,8000); }
+  finally{ if(busy) busy.close(); }
   const clean=text.replace(/```json\n?/g,'').replace(/```\n?/g,'').trim();
   const out=JSON.parse(clean);
   try{ _rptGuardGenerated(out,logData,known); }catch(e){ console.warn('[report] name guard skipped:',e); }
@@ -1113,6 +1118,9 @@ async function _doGenerate(){
     // sign-off (\u00a7C) stamps in when its snapshot hash matches this content.
     const assembleAndSave=async(polishedToUse,snapshotToUse,hashForUse)=>{
       setStatus('Assembling report\u2026');
+      // 9/11 (#34): blocking branded busy overlay through the PDF build; the save terminal
+      // (saveFileNative) clears it right before the share sheet, _doGenerate's finally is the net.
+      const busy=(typeof window.glBusy==='function')?window.glBusy('Assembling the report\u2026'):null;
       // 9/2 (Tim: "daily report doesn't include the 4 Level 3 observations I added today"):
       // the compliance TABLE used to be whatever Claude returned on the last polish, so a
       // re-export from cache (the mechanical-change path) silently dropped entries added
@@ -1130,6 +1138,7 @@ async function _doGenerate(){
       setStatus('Opening save sheet\u2026');
       await pdfMod.dailyExportPdfNow(snapshotToUse.logData,polishedToUse,snapshotToUse.photoRefs||[],{
         oiRes,
+        onProgress:(kind,i,n)=>{ if(busy) busy.set(kind==='photo'?`Preparing photos… ${i} of ${n}`:'Laying out the report…'); },
         compPhotoRefs:snapshotToUse.compPhotoRefs||[],
         brand:snapshotToUse.brand||null,
         authorSig:(authorSig&&authorSig.b64)?authorSig:null,
@@ -1222,6 +1231,7 @@ async function _doGenerate(){
     setStatus('\u2717 '+e.message,'var(--red)');
     console.error('generateReport:',e);
   }finally{
+    if(typeof window.glBusyCloseAll==='function') window.glBusyCloseAll();   // 9/11: never leave the overlay up on an error
     if(btn){btn.disabled=false;btn.textContent='\u2756 Generate Report';}
   }
 }

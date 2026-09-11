@@ -1661,19 +1661,26 @@ async function glReviewViewPdf(id) {
   const s = (window._glPSpaceCache || {})[id];
   if (!s || !s.reportSnapshot) return;
   const snap = s.reportSnapshot;
-  showCloudBanner('📄 Building the report PDF…');
+  // 9/11 (Tim 9/10 #34): a blocking branded busy overlay for the whole build (the old
+  // 7-second banner died while the job was still running); #35: VIEW opens the native viewer.
+  const busy = (typeof window.glBusy === 'function') ? window.glBusy('Building the report PDF…') : null;
   try {
     const pdfMod = await import('./swpppPdf.js');
+    if (busy) busy.set('Laying out the report…');
     const rv = (s.review && s.review.status === 'approved') ? {
       name: s.review.reviewerName || '', title: s.review.reviewerTitle || '',
       dateMs: s.review.reviewedAt || 0, signature: s.review.signature || null
     } : null;
     await pdfMod.dailyExportPdfNow(snap.logData, snap.polished, snap.photoRefs, {
       oiRes: snap.oiRefs || [], compPhotoRefs: snap.compPhotoRefs || [], brand: snap.brand || null, authorSig: snap.authorSig || null, logo: snap.logo || null,
-      review: rv, watermark: (s.review && s.review.status !== 'approved') ? 'UNDER REVIEW' : ''
+      review: rv, watermark: (s.review && s.review.status !== 'approved') ? 'UNDER REVIEW' : '',
+      view: true, viewTitle: 'Daily report · ' + ((snap.logData && snap.logData.reportDate) || ''),
+      onProgress: (kind, i, n) => { if (busy) busy.set(kind === 'photo' ? `Preparing photos… ${i} of ${n}` : 'Laying out the report…'); }
     });
   } catch (e) {
     showCloudBanner('⚠ Could not build the PDF: ' + (e && e.message || 'error'));
+  } finally {
+    if (busy) busy.close();
   }
 }
 

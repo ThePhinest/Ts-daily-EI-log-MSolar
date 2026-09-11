@@ -868,6 +868,7 @@ async function spExportPdf(id){
   }
   const btns=document.querySelectorAll(`[onclick="spExportPdf('${id}')"]`);
   btns.forEach(b=>{ b.dataset.oldTxt=b.innerHTML; b.textContent='…'; b.disabled=true; });
+  const busy=(typeof window.glBusy==='function')?window.glBusy('Building '+spLabel(r)+' PDF…'):null;   // 9/11 #34
   try{
     const cfg=_spCfg();
     const logo=await _spBrandLogo(pid);
@@ -877,13 +878,15 @@ async function spExportPdf(id){
     const [y,m,d]=String(r.discoveryDate||r.releaseDate||_spToday()).split('-');
     const fname=`${slug}-Spill_Report_${spLabel(r)}_${parseInt(m)}-${parseInt(d)}-${String(y).slice(2)}.pdf`;
     const {saveFileNative}=await import('./saveFile.js');
+    if(typeof window.glPdfSizeNote==='function') window.glPdfSizeNote(blob,'Spill report');
     await saveFileNative(blob,fname,'application/pdf');
   }catch(e){ console.error('spill export failed:',e); alert('Export failed: '+e.message); }
-  finally{ btns.forEach(b=>{ b.innerHTML=b.dataset.oldTxt||'PDF'; b.disabled=false; }); }
+  finally{ if(busy) busy.close(); btns.forEach(b=>{ b.innerHTML=b.dataset.oldTxt||'PDF'; b.disabled=false; }); }
 }
 async function spExportLogPdf(){
   const pid=_spPid();
   const all=spAll(pid); if(!all.length) return;
+  const busy=(typeof window.glBusy==='function')?window.glBusy('Building the spill log PDF…'):null;   // 9/11 #34 (had no feedback at all)
   try{
     const cfg=_spCfg();
     const logo=await _spBrandLogo(pid);
@@ -893,8 +896,10 @@ async function spExportLogPdf(){
     const t=new Date();
     const fname=`${slug}-Spill_Log_${t.getMonth()+1}-${t.getDate()}-${String(t.getFullYear()).slice(2)}.pdf`;
     const {saveFileNative}=await import('./saveFile.js');
+    if(typeof window.glPdfSizeNote==='function') window.glPdfSizeNote(blob,'Spill log');
     await saveFileNative(blob,fname,'application/pdf');
   }catch(e){ console.error('spill log export failed:',e); alert('Export failed: '+e.message); }
+  finally{ if(busy) busy.close(); }
 }
 
 // ── window exports (cross-module + inline handlers) ──

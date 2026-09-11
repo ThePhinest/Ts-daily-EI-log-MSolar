@@ -264,6 +264,56 @@ function showCloudBanner(msg) {
   setTimeout(() => { const b = document.getElementById('cloud-banner'); if(b) b.remove(); }, 7000);
 }
 
+// ── Busy overlay (9/11, Tim 9/10 #34) ──
+// One shared, BLOCKING "working…" layer for every slow path (PDF builds, exports, polish,
+// big loads): the wordmark drawn in grey with the brand colors sweeping in left→right,
+// plus a step line underneath. glBusy(label) → {set(text), close()}; nested calls share
+// the one element (refcounted). Sits at GL_CONFIRM_Z-100: above every sheet and the
+// capture toast, below confirms (a confirm raised mid-job still wins) and the camera.
+// saveFileNative / openPdfNative / _glShareOrDownload call glBusyCloseAll() right before
+// the share sheet or viewer opens, so no path can leave it up behind a native sheet.
+var GL_BUSY_Z = 10400;
+var _glBusyCount = 0;
+function _glBusyCss(){
+  if(document.getElementById('gl-busy-css')) return;
+  var st = document.createElement('style'); st.id = 'gl-busy-css';
+  st.textContent =
+    '#gl-busy{position:fixed;inset:0;z-index:' + GL_BUSY_Z + ';background:rgba(0,0,0,0.66);backdrop-filter:blur(2px);-webkit-backdrop-filter:blur(2px);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;cursor:progress}' +
+    '#gl-busy .gl-busy-wm{position:relative;display:inline-block;line-height:1;padding:8px 6px}' +
+    '#gl-busy .gl-busy-wm .app-wordmark{transform:scale(1.35);transform-origin:center}' +
+    '#gl-busy .gl-busy-base .app-wm-ground,#gl-busy .gl-busy-base .app-wm-log,#gl-busy .gl-busy-base .app-wm-io{color:#3c4344}' +
+    '#gl-busy .gl-busy-base .app-wm-bar{background:#3c4344}' +
+    '#gl-busy .gl-busy-fill{position:absolute;left:6px;top:8px;clip-path:inset(-8px 100% -8px -8px);animation:gl-busy-sweep 1.5s cubic-bezier(.4,.05,.6,.95) infinite}' +
+    '@keyframes gl-busy-sweep{0%{clip-path:inset(-8px 100% -8px -8px)}72%{clip-path:inset(-8px -8px -8px -8px)}100%{clip-path:inset(-8px -8px -8px -8px)}}' +
+    '#gl-busy .gl-busy-txt{font-family:var(--mono,monospace);font-size:12px;color:#c9d4d5;text-align:center;max-width:82vw;line-height:1.5;padding:0 16px;min-height:18px}';
+  document.head.appendChild(st);
+}
+function glBusy(label){
+  try{ _glBusyCss(); }catch(e){}
+  var el = document.getElementById('gl-busy');
+  if(!el){
+    el = document.createElement('div'); el.id = 'gl-busy';
+    var wm = '<span class="app-wm-ground">GROUND</span><span class="app-wm-bar"></span><span class="app-wm-log">LOG</span><span class="app-wm-io">.io</span>';
+    el.innerHTML = '<div class="gl-busy-wm"><div class="app-wordmark gl-busy-base">' + wm + '</div><div class="app-wordmark gl-busy-fill" aria-hidden="true">' + wm + '</div></div><div class="gl-busy-txt" id="gl-busy-txt" role="status" aria-live="polite"></div>';
+    el.addEventListener('touchmove', function(ev){ ev.preventDefault(); }, { passive: false });
+    document.body.appendChild(el);
+    _glBusyCount = 0;
+  }
+  _glBusyCount++;
+  var txt = document.getElementById('gl-busy-txt');
+  if(txt && label != null) txt.textContent = String(label);
+  var done = false;
+  return {
+    set: function(t){ var x = document.getElementById('gl-busy-txt'); if(x && t != null) x.textContent = String(t); },
+    close: function(){
+      if(done) return; done = true;
+      _glBusyCount = Math.max(0, _glBusyCount - 1);
+      if(_glBusyCount === 0){ var e = document.getElementById('gl-busy'); if(e) e.remove(); }
+    }
+  };
+}
+function glBusyCloseAll(){ _glBusyCount = 0; var e = document.getElementById('gl-busy'); if(e) e.remove(); }
+
 // ── Custom confirm modal (replaces confirm() which is unreliable in iOS PWA) ──
 // Stacking: sheets and detail modals sit anywhere from 9000 to 10000 (submission detail 9050,
 // member sheets 9100, spills 9600/9700, sign-in 9999), so a confirm raised from inside one must
@@ -666,6 +716,9 @@ window.debouncedAutoSave = debouncedAutoSave;
 window.showCloudBanner = showCloudBanner;
 window._confirmModal = _confirmModal;
 window.GL_CONFIRM_Z = GL_CONFIRM_Z;
+window.glBusy = glBusy;                 // 9/11: shared branded busy overlay (#34)
+window.glBusyCloseAll = glBusyCloseAll;
+window.GL_BUSY_Z = GL_BUSY_Z;
 // Canonical https origin for links that leave the app (invites, QR) — inside the iOS app
 // location.origin is capacitor://app.groundlog.io, which Messages / Mail render as dead text.
 window.GL_PUBLIC_ORIGIN = 'https://app.groundlog.io';

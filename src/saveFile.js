@@ -22,6 +22,11 @@
 
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { Share } from '@capacitor/share';
+import { registerPlugin } from '@capacitor/core';
+
+// 9/11: any terminal that hands the file to a native sheet or viewer clears the shared
+// busy overlay first — the job is done once the bytes exist (db.js glBusy, #34).
+function _busyDone(){ try{ if(typeof window.glBusyCloseAll === 'function') window.glBusyCloseAll(); }catch(e){} }
 
 // Blob → base64 string (no data: prefix). Filesystem.writeFile expects raw
 // base64 when writing binary data without an encoding hint.
@@ -37,6 +42,34 @@ function _blobToBase64(blob) {
     reader.onerror = () => reject(reader.error);
     reader.readAsDataURL(blob);
   });
+}
+
+// 9/11 (Tim 9/10 #35): VIEW a generated PDF in the native PDFKit viewer (the one the
+// Documents Library uses — Share lives inside it) instead of bouncing straight to the
+// share sheet. Web/PWA, and any native failure, fall back to saveFileNative so nothing
+// regresses. The Cache path is deterministic so repeat opens overwrite, never pile up.
+// Only "View" actions route here; explicit Export buttons keep the share sheet (Tim 9/11).
+let _glPdfPlugin = null;
+export async function openPdfNative(blob, filename, title) {
+  const isNative = !!(window.Capacitor
+    && typeof window.Capacitor.isNativePlatform === 'function'
+    && window.Capacitor.isNativePlatform());
+  if (!isNative) return saveFileNative(blob, filename, 'application/pdf');
+  try {
+    const base64 = await _blobToBase64(blob);
+    const result = await Filesystem.writeFile({
+      path: 'gl_reports/' + String(filename || 'report.pdf').replace(/[\\/:*?"<>|]+/g, '_'),
+      data: base64,
+      directory: Directory.Cache,
+      recursive: true
+    });
+    if (!_glPdfPlugin) _glPdfPlugin = registerPlugin('GroundLogPdf');
+    _busyDone();
+    await _glPdfPlugin.present({ path: result.uri, title: title || filename });
+  } catch (e) {
+    console.warn('openPdfNative → share-sheet fallback:', e && e.message);
+    return saveFileNative(blob, filename, 'application/pdf');
+  }
 }
 
 // Web-only last-resort save. Anchor download trick — works in real browsers,
@@ -58,6 +91,7 @@ export async function saveFileNative(blob, filename, mimeType) {
   const isNative = !!(window.Capacitor
     && typeof window.Capacitor.isNativePlatform === 'function'
     && window.Capacitor.isNativePlatform());
+  _busyDone();
 
   if (isNative) {
     const base64 = await _blobToBase64(blob);

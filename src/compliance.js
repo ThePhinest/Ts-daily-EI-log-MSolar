@@ -256,6 +256,7 @@ if(typeof window!=='undefined'){ window.clEditAmber=clEditAmber; window.clAmberH
 function clExportPunchlist(){
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
   let lastAttn=''; try{ lastAttn=localStorage.getItem('gl_pl_attn::'+pid)||''; }catch{}
+  let lastCompact=false; try{ lastCompact=localStorage.getItem('gl_pl_compact::'+pid)==='1'; }catch{}   // 9/11 #37
   const ov=document.createElement('div');
   ov.className='modal-overlay';
   ov.style.cssText='z-index:5000';
@@ -263,8 +264,11 @@ function clExportPunchlist(){
     <div class="modal-title" style="margin-bottom:6px">📤 Export Punchlist</div>
     <div style="font-family:var(--mono);font-size:11px;color:var(--muted);line-height:1.5;margin-bottom:14px">Branded PDF of every open repair flag — dates, due dates, GPS, and the field photos taken at flag time.</div>
     <div class="field" style="margin-bottom:12px"><label>Attention / recipient (optional)</label><input type="text" id="_pl-attn" placeholder="e.g. ProSeed — ESC crew" value="${lastAttn.replace(/"/g,'&quot;')}"></div>
-    <label style="display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:12px;color:var(--text);margin-bottom:16px;cursor:pointer">
+    <label style="display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:12px;color:var(--text);margin-bottom:10px;cursor:pointer">
       <input type="checkbox" id="_pl-fixed" checked> Include fixed-history verification record
+    </label>
+    <label style="display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:12px;color:var(--text);margin-bottom:16px;cursor:pointer" title="Item photos embed at thumbnail grade (420 px) so the PDF fits an email; map captures keep full detail">
+      <input type="checkbox" id="_pl-compact" ${lastCompact?'checked':''}> 📧 Email-size photos (smaller file)
     </label>
     <div style="display:flex;gap:8px">
       <button class="btn btn-outline" style="flex:1" id="_pl-cancel">Cancel</button>
@@ -277,17 +281,19 @@ function clExportPunchlist(){
     const goBtn=ov.querySelector('#_pl-go');
     const attention=ov.querySelector('#_pl-attn').value.trim();
     const includeFixed=ov.querySelector('#_pl-fixed').checked;
-    try{ localStorage.setItem('gl_pl_attn::'+pid,attention); }catch{}
+    const compact=!!ov.querySelector('#_pl-compact')?.checked;   // 9/11 #37: email-size photos
+    try{ localStorage.setItem('gl_pl_attn::'+pid,attention); localStorage.setItem('gl_pl_compact::'+pid,compact?'1':'0'); }catch{}
     goBtn.disabled=true; goBtn.textContent='⏳ Building…';
+    const busy=(typeof window.glBusy==='function')?window.glBusy('Building the punchlist PDF…'):null;   // 9/11 #34
     try{
       const m=await import('./swpppPdf.js');
-      await m.punchlistExportPdfNow({attention,includeFixed});
+      await m.punchlistExportPdfNow({attention,includeFixed,compact,onProgress:(kind,i,n)=>{ if(busy) busy.set(kind==='photo'?`Preparing photos… ${i} of ${n}`:'Laying out the punchlist…'); }});
       ov.remove();
     }catch(err){
       console.warn('punchlist export failed:',err);
       goBtn.disabled=false; goBtn.innerHTML=(window.glPdfIcon?window.glPdfIcon(13):'📤')+' Generate PDF';
       alert('Export failed — try again in a moment.');
-    }
+    }finally{ if(busy) busy.close(); }
   };
 }
 if(typeof window!=='undefined') window.clExportPunchlist=clExportPunchlist;
@@ -1984,6 +1990,7 @@ function clShowTrackerLog(){
 
 // ── Download or share a blob — native iOS uses Capacitor Share, web uses blob link ──
 async function _glShareOrDownload(blob, filename, mimeType){
+  if(typeof window.glBusyCloseAll==='function') window.glBusyCloseAll();   // 9/11 #34: the file exists — drop the overlay before the sheet
   if(window.Capacitor?.isNativePlatform?.()){
     try{
       const [{Filesystem,Directory},{Share}]=await Promise.all([
@@ -2093,16 +2100,20 @@ function _showTlogExportModal(getEntries, pid){
       goBtn.textContent='Building…'; ov.querySelectorAll('button').forEach(b=>b.style.pointerEvents='none');
       const selKeys=[...selected];
       _xlsxThumbUsed=false;
+      let busy=(typeof window.glBusy==='function')?window.glBusy('Building the workbook… photos embed as it goes'):null;   // 9/11 #34
       try{
         const sels=selKeys.map(k=>{ const c=cats.find(x=>x.key===k); return {cid:c.cid, seedOnly:!!c.seedOnly}; });
         await _exportCategoriesDeliverable(sels, getEntries(), pid);
       }
       catch(err){ console.warn('category export failed',err); }
+      finally{ if(busy) busy.close(); }
       // Older months embedded as thumbnails → the full-res set follows as the Photos ZIP
       // (same category scope), so nothing is lost from the deliverable.
       if(zipAuto&&_xlsxThumbUsed){
         goBtn.textContent='Photos ZIP…';
+        busy=(typeof window.glBusy==='function')?window.glBusy('Building the full-res Photos ZIP…'):null;
         try{ await _tlogExportPhotoZip(getEntries(), pid, selKeys); }catch(err){ console.warn('photo zip failed',err); }
+        finally{ if(busy) busy.close(); }
       }
       ov.remove();
     };

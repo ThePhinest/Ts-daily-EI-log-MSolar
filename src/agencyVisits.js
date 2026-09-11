@@ -300,6 +300,7 @@ async function avExportPdf(id){
   if(!visits.length) return;
   const btns=document.querySelectorAll(id?`[onclick="avExportPdf('${id}')"]`:'[onclick="avExportPdf()"]');
   btns.forEach(b=>{ b.dataset.oldTxt=b.innerHTML; b.textContent='…'; b.disabled=true; });
+  const busy=(typeof window.glBusy==='function')?window.glBusy(single?'Building the agency visit PDF…':'Building the agency visit log PDF…'):null;   // 9/11 #34
   try{
     const cfg=JSON.parse(localStorage.getItem('msf_projectconfig')||'{}');
     const payload=visits.map(v=>({
@@ -318,9 +319,10 @@ async function avExportPdf(id){
       ? `${slug}-Agency_Visit_Report_${parseInt(m)}-${parseInt(d)}-${String(y).slice(2)}.pdf`
       : `${slug}-Agency_Visit_Log_${parseInt(m)}-${parseInt(d)}-${String(y).slice(2)}.pdf`;
     const {saveFileNative}=await import('./saveFile.js');
+    if(typeof window.glPdfSizeNote==='function') window.glPdfSizeNote(blob,single?'Agency visit report':'Agency visit log');
     await saveFileNative(blob,fname,'application/pdf');
   }catch(e){ console.error('agency visit export failed:',e); alert('Export failed: '+e.message); }
-  finally{ btns.forEach(b=>{ b.innerHTML=b.dataset.oldTxt||'⬇'; b.disabled=false; }); }
+  finally{ if(busy) busy.close(); btns.forEach(b=>{ b.innerHTML=b.dataset.oldTxt||'⬇'; b.disabled=false; }); }
 }
 
 // ═══ Daily log ⟲ — summarize the visit record into the Agency Inspection field ═══
