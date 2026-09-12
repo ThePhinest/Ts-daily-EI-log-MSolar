@@ -7418,8 +7418,13 @@ function mapFitEntry(id){
   const walk=c=>{ if(typeof c[0]==='number'){ if(c[0]<minX)minX=c[0]; if(c[0]>maxX)maxX=c[0]; if(c[1]<minY)minY=c[1]; if(c[1]>maxY)maxY=c[1]; } else c.forEach(walk); };
   try{ walk(g.coordinates); }catch{ return; }
   if(!isFinite(minX)) return;
-  if(g.type==='Point'||(maxX-minX<1e-7&&maxY-minY<1e-7)){ _mapInstance.flyTo({center:[minX,minY],zoom:Math.max(_mapInstance.getZoom(),18),duration:600}); return; }
-  _mapInstance.fitBounds([[minX,minY],[maxX,maxY]],{padding:{top:90,bottom:170,left:40,right:40},maxZoom:19.5,duration:650});
+  // 9/11 evening (Tim: "zooms a bit too much, back off a bit"): frame the bbox, then ease to
+  // 0.7 zoom levels wider than the tight fit so the drawing sits in context, never edge-to-edge.
+  if(g.type==='Point'||(maxX-minX<1e-7&&maxY-minY<1e-7)){ _mapInstance.flyTo({center:[minX,minY],zoom:Math.min(Math.max(_mapInstance.getZoom(),17),17.5),duration:600}); return; }
+  let cam=null;
+  try{ cam=_mapInstance.cameraForBounds([[minX,minY],[maxX,maxY]],{padding:{top:90,bottom:170,left:40,right:40},maxZoom:19}); }catch{}
+  if(cam&&typeof cam.zoom==='number'){ _mapInstance.easeTo({center:cam.center,zoom:Math.min(cam.zoom-0.7,18.5),duration:650}); }
+  else _mapInstance.fitBounds([[minX,minY],[maxX,maxY]],{padding:{top:120,bottom:200,left:70,right:70},maxZoom:18.5,duration:650});
 }
 window.mapFitEntry=mapFitEntry;
 
@@ -7901,18 +7906,26 @@ function _offerFlagFixPhoto(id){
   ov.querySelector('#_ff-lib').onclick=()=>{
     ov.remove();
     if(typeof phPickerOpen!=='function') return;
+    // 9/11 evening (Tim: "clicked pick from library and it froze"): trGetEntry re-parses the
+    // WHOLE tracker blob on every call, and the picker asks isSelected once per tile per
+    // render plus once per photo for the ✓ Selected chip — hundreds of full parses. ONE read
+    // up front into a local Set, ONE save on Done.
+    const cur0=(typeof trGetEntry==='function')?trGetEntry(id,pid):null; if(!cur0) return;
+    const sel=new Set(cur0.photoIds||[]);
     phPickerOpen({
       title:'Correction photos', z:(window.GL_CONFIRM_Z||10500),
-      isSelected:pidPhoto=>{ const cur=trGetEntry(id,pid); return !!(cur&&(cur.photoIds||[]).includes(pidPhoto)); },
-      onToggle:(pidPhoto,on)=>{
+      isSelected:pidPhoto=>sel.has(pidPhoto),
+      onToggle:(pidPhoto,on)=>{ if(on) sel.add(pidPhoto); else sel.delete(pidPhoto); },
+      onDone:()=>{
         const cur=trGetEntry(id,pid); if(!cur) return;
-        cur.photoIds=Array.isArray(cur.photoIds)?cur.photoIds.slice():[];
+        const before=new Set(cur.photoIds||[]);
+        cur.photoIds=[...sel];
         cur.photoCaptions=Object.assign({},cur.photoCaptions||{});
-        if(on){ if(!cur.photoIds.includes(pidPhoto)) cur.photoIds.push(pidPhoto); if(!cur.photoCaptions[pidPhoto]) cur.photoCaptions[pidPhoto]=capOf(); }
-        else { cur.photoIds=cur.photoIds.filter(x=>x!==pidPhoto); delete cur.photoCaptions[pidPhoto]; }
+        sel.forEach(p=>{ if(!before.has(p)&&!cur.photoCaptions[p]) cur.photoCaptions[p]=capOf(); });
+        before.forEach(p=>{ if(!sel.has(p)) delete cur.photoCaptions[p]; });
         trSaveEntry(cur,pid);
-      },
-      onDone:()=>{ if(typeof clRenderPunchlist==='function'){ try{ clRenderPunchlist(); }catch{} } }
+        if(typeof clRenderPunchlist==='function'){ try{ clRenderPunchlist(); }catch{} }
+      }
     });
   };
 }
