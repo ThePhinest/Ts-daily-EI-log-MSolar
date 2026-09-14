@@ -13,7 +13,7 @@
   "devDependencies": {
     "@capacitor/assets": "^3.0.5",
     "@capacitor/cli": "^8.3.1",
-    "@firebase/rules-unit-testing": "^5.0.1",
+    "@firebase/rules-unit-testing": "^5.0.2",
     "@playwright/test": "^1.62.1",
     "patch-package": "^8.0.1",
     "vite": "^6.3.4",
@@ -49,7 +49,7 @@
     "firebase": "^12.18.0",
     "groundlog-pdf": "file:local-plugins/groundlog-pdf",
     "idb-keyval": "^6.2.5",
-    "jszip": "^3.10.1",
+    "jszip": "^3.10.2",
     "mapbox-gl": "^3.23.1",
     "mapbox-gl-draw-snap-mode": "^0.5.0",
     "pdfjs-dist": "^6.0.227",
