@@ -519,13 +519,26 @@ function _siAuthError(code) {
     'auth/user-not-found': 'No account found with that email.',
     'auth/wrong-password': 'Incorrect password.',
     'auth/invalid-email': 'Invalid email address.',
+    'auth/missing-email': 'Please enter your email.',
+    'auth/missing-password': 'Please enter your password.',
     'auth/email-already-in-use': 'An account with that email already exists.',
     'auth/weak-password': 'Password must be at least 6 characters.',
     'auth/too-many-requests': 'Too many attempts — try again later.',
     'auth/network-request-failed': 'Network error — check your connection.',
-    'auth/invalid-credential': 'Incorrect email or password.'
+    'auth/invalid-credential': 'Incorrect email or password.',
+    'auth/invalid-login-credentials': 'Incorrect email or password.',
+    'auth/user-disabled': 'This account has been disabled. Contact support@groundlog.io.',
+    'auth/popup-blocked': 'The sign-in window was blocked — allow pop-ups for this site and try again.',
+    'auth/unauthorized-domain': 'Sign-in is not enabled for this address. Open the app at app.groundlog.io.',
+    'auth/operation-not-supported-in-this-environment': 'Sign-in is not available in this browser — use email and password, or open the app at app.groundlog.io.',
+    'auth/internal-error': 'The sign-in service returned an error — try again in a moment.'
   };
-  return map[code] || 'Something went wrong. Please try again.';
+  if (map[code]) return map[code];
+  // 9/14: an unmapped code used to print a bare "Something went wrong" — the
+  // App Review screenshot of exactly that line was undiagnosable. Carry the
+  // code so the next screenshot tells us what happened.
+  try { console.warn('GroundLog: unmapped auth error code —', code); } catch (_) {}
+  return 'Something went wrong' + (code ? ' (' + code + ')' : '') + '. Please try again.';
 }
 
 // ═══════════════════════════════════════════
@@ -533,12 +546,29 @@ function _siAuthError(code) {
 // ═══════════════════════════════════════════
 
 function _initAuth() {
-  window.auth.getRedirectResult().catch(function(e) {
-    if (e.code && e.code !== 'auth/no-current-user') {
-      const errEl = document.getElementById('si-error');
-      if (errEl) errEl.textContent = _siAuthError(e.code);
+  // 9/14 App Review rejection (2.1a, iPad Air / iPadOS 27.0): the reviewer's
+  // very first screen was the sign-in page already showing the red fallback
+  // "Something went wrong" — nothing typed. The only launch-time writer of
+  // that line was this getRedirectResult() catch: the compat SDK asserts
+  // _isPopupRedirectSupported() (http(s) scheme + a localStorage write that
+  // doesn't throw) and rejects with auth/operation-not-supported-in-this-
+  // environment, which _siAuthError mapped to the generic fallback.
+  // Redirect sign-in is never used: native Google/Apple go through the
+  // Capacitor plugin, web goes through popups. So on native the call is
+  // skipped entirely, and on web a failure is logged, never shown — the
+  // sign-in screen must not open with an error the user did nothing to cause.
+  const _native = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+  if (!_native) {
+    try {
+      window.auth.getRedirectResult().catch(function(e) {
+        if (e && e.code && e.code !== 'auth/no-current-user') {
+          console.warn('GroundLog: getRedirectResult rejected —', e.code, e.message || '');
+        }
+      });
+    } catch (e) {
+      console.warn('GroundLog: getRedirectResult threw —', (e && e.code) || '', (e && e.message) || '');
     }
-  });
+  }
   window.auth.onAuthStateChanged(function(user) {
     if(typeof glBootMark==='function') glBootMark('auth',{user:!!user});
     document.getElementById('page-auth-loading').style.display = 'none';
