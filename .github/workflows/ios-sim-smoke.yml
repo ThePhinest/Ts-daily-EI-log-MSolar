@@ -201,7 +201,9 @@ jobs:
           hits = []
           for dp, dn, fn in os.walk(root):
               for f in fn:
-                  if f.endswith('.localstorage'):
+                  # legacy <origin>.localstorage and the current WebKit layout
+                  # (WebsiteData/Default/<hash>/LocalStorage/localstorage.sqlite3)
+                  if f.endswith('.localstorage') or f == 'localstorage.sqlite3':
                       hits.append(os.path.join(dp, f))
           with open(out, 'w') as w:
               w.write('localstorage files: %d\n' % len(hits))
