@@ -687,9 +687,10 @@ async function glRenderMembersCard() {
     return `<div class="gl-mem-row">
       <div class="gl-mem-info">
         <div class="gl-mem-name">${_glEsc(m.displayName || m.email || m.uid.slice(0, 8))}${self ? ' <span class="gl-mem-you">you</span>' : ''}</div>
-        <div class="gl-mem-sub">${_glEsc(m.email || '')}</div>
+        <div class="gl-mem-sub">${_glEsc(m.email || '')}${m.company ? ` · 🏗 ${_glEsc(m.company)}` : ''}</div>
       </div>
       <span class="gl-role-chip" title="${_glEsc(r.sub)}">${r.icon} ${r.name}</span>
+      ${isLead ? `<button class="gl-mem-x" title="Contractor company (who sees which punchlist items)" onclick="glSetMemberCompany('${m.uid}')" style="margin-right:2px">🏗</button>` : ''}
       ${canRemove ? `<button class="gl-mem-x" title="${self ? 'Leave project' : 'Remove member'}" onclick="glRemoveMember('${m.uid}',${self})">✕</button>` : ''}
     </div>`;
   }).join('');
@@ -1422,9 +1423,46 @@ async function glLoadCalendarSubmissions() {
   try {
     const ms = await d.collection('projects').doc(pid).collection('members').get();
     window._glMemberNames = {};
-    ms.forEach(m => { const v = m.data() || {}; window._glMemberNames[m.id] = v.displayName || v.email || 'Member'; });
+    window._glMemberCompany = {};   // 9/14: contractor members → the registry company on their member doc
+    ms.forEach(m => { const v = m.data() || {}; window._glMemberNames[m.id] = v.displayName || v.email || 'Member'; window._glMemberCompany[m.id] = v.company || ''; });
   } catch (e) {}
 }
+// 9/14: my contractor company on this project ('' = none) — the punchlist filters by it.
+window.glMyCompany = function (pid) {
+  try { return (window._glMemberCompany && _currentUser && window._glMemberCompany[_currentUser.uid]) || ''; } catch (e) { return ''; }
+};
+window.glMyName = _glMyName;
+// Lead sets a member's contractor company from the project registry (Members card 🏗).
+async function glSetMemberCompany(uid) {
+  const d = _sdb(); const pid = _activeProjectId();
+  if (!d || !pid || pid === 'default') return;
+  let list = [];
+  try { if (typeof window.ctrEnsureCfg === 'function') await window.ctrEnsureCfg(); list = ((typeof window.ctrGetList === 'function') ? window.ctrGetList(pid) : []).filter(c => c && c.name); } catch (e) {}
+  const cur = (window._glMemberCompany && window._glMemberCompany[uid]) || '';
+  const ov = document.createElement('div'); ov.className = 'modal-overlay'; ov.style.cssText = 'z-index:' + (window.GL_CONFIRM_Z || 10500);
+  const row = (v, l, sub) => `<label style="display:flex;align-items:center;gap:10px;font-family:var(--mono);font-size:12px;color:var(--text);padding:7px 0;cursor:pointer"><input type="radio" name="_mc" value="${_glEsc(v)}" ${cur === v ? 'checked' : ''}> ${_glEsc(l)}${sub ? `<span style="color:var(--muted);font-size:10px">${_glEsc(sub)}</span>` : ''}</label>`;
+  ov.innerHTML = `<div class="modal-box" style="max-width:360px;width:92%">
+    <div class="modal-title" style="margin-bottom:6px">🏗 Contractor company</div>
+    <div class="modal-msg" style="margin-bottom:6px">${_glEsc(window.glMemberNameFor(uid) || 'This member')} sees punchlist items assigned to this company (or to all contractors).</div>
+    ${row('', 'None — not a contractor', '')}
+    ${list.map(c => row(c.name, c.name, (window.CTR_TIERS && window.CTR_TIERS[c.tier]) || '')).join('')}
+    ${list.length ? '' : '<div style="font-family:var(--mono);font-size:11px;color:var(--muted);padding:6px 0">No contractors in the registry yet — Settings → 🏗 Contractors.</div>'}
+    <div class="modal-btns" style="margin-top:10px"><button class="modal-confirm" id="_mc-ok">Save</button><button class="modal-cancel" id="_mc-cancel">Cancel</button></div></div>`;
+  document.body.appendChild(ov);
+  ov.querySelector('#_mc-cancel').onclick = () => ov.remove();
+  ov.addEventListener('click', ev => { if (ev.target === ov) ov.remove(); });
+  ov.querySelector('#_mc-ok').onclick = async () => {
+    const v = (ov.querySelector('input[name="_mc"]:checked') || {}).value || '';
+    ov.remove();
+    try {
+      await d.collection('projects').doc(pid).collection('members').doc(uid).update({ company: v });
+      if (window._glMemberCompany) window._glMemberCompany[uid] = v;
+      if (typeof showCloudBanner === 'function') showCloudBanner(v ? `🏗 ${window.glMemberNameFor(uid) || 'Member'} → ${v}` : '🏗 Company cleared.');
+    } catch (e) { if (typeof showCloudBanner === 'function') showCloudBanner('⚠ Could not save: ' + e.message); }
+    glRenderMembersCard();
+  };
+}
+window.glSetMemberCompany = glSetMemberCompany;
 window.glMemberNameFor = function (uid) {
   return (window._glMemberNames && window._glMemberNames[uid]) || '';
 };

@@ -122,6 +122,21 @@ service cloud.firestore {
       function workEditOk() {
         return canFieldWrite() && (resource.data.ownerUid == request.auth.uid || isLead());
       }
+      // 9/14 Ready-for-Review (Tim 9/12): contractors come in as Glasses, and ANY member may
+      // tell the inspector an open, PUBLISHED repair flag has been corrected — a status-only
+      // write on the ready* keys, self-attributed (or clearing their own mark). Nothing
+      // else on the record moves; the EI verifies + resolves through workEditOk as before.
+      function readyMarkOk() {
+        return isMember()
+          && resource.data.temporary == true
+          && resource.data.published == true
+          && request.resource.data.diff(resource.data).affectedKeys()
+               .hasOnly(['readyStatus', 'readyAt', 'readyBy', 'readyByName', 'readyNote', 'readyReturnNote', 'updatedAt'])
+          && (
+               (request.resource.data.readyStatus == 'ready' && request.resource.data.readyBy == request.auth.uid)
+            || (request.resource.data.readyStatus == null && resource.data.readyBy == request.auth.uid)
+          );
+      }
 
       // Project doc (meta): create = self-attributed; read members; settings = lead.
       allow create: if isSignedIn() && request.resource.data.createdBy == request.auth.uid;
@@ -190,7 +205,8 @@ service cloud.firestore {
       match /trackerEntries/{id} {
         allow read: if canSeeWorkDoc();
         allow create: if workCreateOk();
-        allow update, delete: if workEditOk();
+        allow update: if workEditOk() || readyMarkOk();   // readyMarkOk: 9/14 Ready-for-Review (status-only, any member)
+        allow delete: if workEditOk();
       }
       match /fieldMarkers/{id} {
         allow read: if canSeeWorkDoc();
