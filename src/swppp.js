@@ -169,6 +169,45 @@ function _swPrefillWeather(){
   };
 }
 
+// ── 9/14 (#4 — Troy's question on the 9-11 report): a CONDITION PRINTS WITH ITS REASON ──
+// DA / discharge-point rows carry forward between inspections, so an "Action required"
+// typed under Deficient kept printing after the row was flipped to Acceptable (9-11 report:
+// DA-18/19/23/27 read "Acceptable" beside "continues to be cleaned up", while D19-2/D22 said
+// the same words under Deficient). Now a Deficient row carries a STAGE (identified this
+// inspection / correction in progress / corrected — pending verification) that prints with
+// the checkbox; an Acceptable row that was Deficient on the previous inspection prints
+// "corrected, verified at this inspection"; stale action / notes text never prints.
+var SW_STAGES=[{v:'new',l:'Identified this inspection'},{v:'progress',l:'Correction in progress'},{v:'pending',l:'Corrected — pending verification'}];
+function swStageOf(st){ if(!st||st.condition!=='deficient') return ''; return st.stage||(st._prev==='deficient'?'progress':'new'); }
+function swStageLabel(v){ const o=SW_STAGES.find(x=>x.v===v); return o?o.l:''; }
+function swCondWasFixed(st){ return !!(st&&st.condition==='acceptable'&&st._prev==='deficient'); }
+// Printed condition text for a row → [acceptableText, deficientText]; `notes` rides the
+// Deficient text (discharge points keep their note in the condition cell).
+function swCondTexts(st, notes){
+  st=st||{};
+  const acc='Acceptable'+(swCondWasFixed(st)?' — corrected, verified at this inspection':'');
+  let def='Deficient';
+  if(st.condition==='deficient'){
+    const l=swStageLabel(swStageOf(st));
+    if(l) def+=' — '+l.charAt(0).toLowerCase()+l.slice(1);
+    if(notes) def+=': '+notes;
+  }
+  return [acc,def];
+}
+// Carry-forward hook: remember last inspection's condition per row, roll "identified" into
+// "in progress", and drop action/notes text on rows that were not Deficient.
+function _swMarkPrev(insp){
+  ['drainageAreas','dischargePoints'].forEach(k=>{
+    Object.values(insp[k]||{}).forEach(st=>{
+      if(!st||typeof st!=='object') return;
+      st._prev=st.condition||'';
+      if(st.condition==='deficient'){ if(!st.stage||st.stage==='new') st.stage='progress'; }
+      else { st.action=''; st.notes=''; st.stage=''; }
+    });
+  });
+}
+if(typeof window!=='undefined'){ window.swCondTexts=swCondTexts; window.swStageOf=swStageOf; window.swCondWasFixed=swCondWasFixed; }
+
 // ── Inspection lifecycle ──
 function swpppNewInspection(){
   const pid = _swPid();
@@ -201,6 +240,7 @@ function swpppNewInspection(){
     photos: [], photoMeta: {},
     cert: { signedName: cfg.certification ? (cfg.certification.qiName||'') : '', signedDate: '' }
   };
+  _swMarkPrev(insp);   // 9/14 (#4): previous condition per row → stage defaults + "corrected" wording
   // §8 prefill — open Compliance-log items carry forward onto every new
   // inspection until they're resolved (a deficiency found Tuesday shows on
   // Friday's report automatically). Rows are tagged so completing this
@@ -855,7 +895,9 @@ function _swRenderForm(){
         <div class="sw-da-id">${esc(da.id)}</div>
         <div class="sw-da-desc">${esc(da.desc)}</div>
         <div>${_swSegHtml(gid, st.condition, [{v:'acceptable',l:'✓ Acceptable'},{v:'deficient',l:'⚠ Deficient',cls:'sw-warn'}], ['drainageAreas', da.id, 'condition'])}</div>
-        ${showAction?`<textarea rows="1" class="sw-da-action auto-expand auto-line" placeholder="Action required…" ${dis} oninput="swInp(event,'drainageAreas','${esc(da.id)}','action')">${esc(st.action||'')}</textarea>`:''}
+        ${showAction?`<textarea rows="1" class="sw-da-action auto-expand auto-line" placeholder="Action required…" ${dis} oninput="swInp(event,'drainageAreas','${esc(da.id)}','action')">${esc(st.action||'')}</textarea>
+        <div style="flex:1 1 100%;display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:4px 0 2px"><span class="sw-bmp-lbl" style="font-family:var(--mono);font-size:10px;color:var(--muted)">Status</span>${_swSegHtml(gid+'s', swStageOf(st), SW_STAGES, ['drainageAreas', da.id, 'stage'])}</div>`
+        :(swCondWasFixed(st)?`<div class="sw-static-note" style="flex:1 1 100%">✓ Deficient last inspection — prints “Acceptable — corrected, verified at this inspection”</div>`:'')}
       </div>`;
     }).join('');
     return `<div class="card collapsed" id="sw-sec-da2"><div class="card-head" onclick="toggleSection('sw-sec-da2')"><span class="card-num">2</span><span class="card-title">Drainage Areas Inspected</span><span class="card-chevron">▾</span></div><div class="card-body">
@@ -882,7 +924,9 @@ function _swRenderForm(){
         <div class="sw-da-id">${esc(dp.id)}</div>
         <div class="sw-da-desc">${esc(dp.location)}<br><span style="color:var(--muted)">→ ${esc(dp.receiving)}</span></div>
         <div>${_swSegHtml(gid, st.condition||'', [{v:'acceptable',l:'✓ Acceptable'},{v:'deficient',l:'⚠ Deficient',cls:'sw-warn'}], ['dischargePoints', dp.id, 'condition'])}</div>
-        ${showNotes?`<textarea rows="1" class="sw-da-action auto-expand auto-line" placeholder="Issue / notes…" ${dis} oninput="swInp(event,'dischargePoints','${esc(dp.id)}','notes')">${esc(st.notes||'')}</textarea>`:''}
+        ${showNotes?`<textarea rows="1" class="sw-da-action auto-expand auto-line" placeholder="Issue / notes…" ${dis} oninput="swInp(event,'dischargePoints','${esc(dp.id)}','notes')">${esc(st.notes||'')}</textarea>
+        <div style="flex:1 1 100%;display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:4px 0 2px"><span class="sw-bmp-lbl" style="font-family:var(--mono);font-size:10px;color:var(--muted)">Status</span>${_swSegHtml(gid+'s', swStageOf(st), SW_STAGES, ['dischargePoints', dp.id, 'stage'])}</div>`
+        :(swCondWasFixed(st)?`<div class="sw-static-note" style="flex:1 1 100%">✓ Deficient last inspection — prints “Acceptable — corrected, verified at this inspection”</div>`:'')}
       </div>`;
     }).join('');
     return `<div class="card collapsed" id="sw-sec-dp"><div class="card-head" onclick="toggleSection('sw-sec-dp')"><span class="card-num">3</span><span class="card-title">Points of Discharge</span><span class="card-chevron">▾</span></div><div class="card-body">
@@ -1318,15 +1362,17 @@ async function swpppBuildDocx(insp,cfg){
   const daRows=[new TableRow({children:[hcell('Drainage Area ID',18),hcell('General Location / Description',42),hcell('Condition',22),hcell('Action Required',18)]})];
   _swRows(cfg,'drainageAreas').forEach(da=>{
     const st=(insp.drainageAreas||{})[da.id]||{};
-    const cond=CB(st.condition==='acceptable')+'Acceptable   '+CB(st.condition==='deficient')+'Deficient';
-    daRows.push(new TableRow({children:[cell(da.id,{bold:true,size:16}),cell(da.desc,{size:16}),cell(cond,{size:16}),cell(st.action||'',{size:16})]}));
+    const [accT,defT]=swCondTexts(st);   // 9/14 (#4): the condition carries its reason
+    const cond=CB(st.condition==='acceptable')+accT+'   '+CB(st.condition==='deficient')+defT;
+    daRows.push(new TableRow({children:[cell(da.id,{bold:true,size:16}),cell(da.desc,{size:16}),cell(cond,{size:16}),cell(st.condition==='deficient'?(st.action||''):'',{size:16})]}));
   });
 
   // §3 Discharge points
   const dpRows=[new TableRow({children:[hcell('Discharge Point ID',14),hcell('Location Description',36),hcell('Receiving Water',26),hcell('Condition / Notes',24)]})];
   _swRows(cfg,'dischargePoints').forEach(dp=>{
     const st=(insp.dischargePoints||{})[dp.id]||{};
-    const cond=CB(st.condition==='acceptable')+'Acceptable   '+CB(st.condition==='deficient')+'Deficient'+(st.notes?` — ${st.notes}`:'');
+    const [accT,defT]=swCondTexts(st, st.condition==='deficient'?(st.notes||''):'');   // 9/14 (#4)
+    const cond=CB(st.condition==='acceptable')+accT+'   '+CB(st.condition==='deficient')+defT;
     dpRows.push(new TableRow({children:[cell(dp.id,{bold:true,size:16}),cell(dp.location,{size:16,i:true}),cell(dp.receiving,{size:16,i:true}),cell(cond,{size:16})]}));
   });
 

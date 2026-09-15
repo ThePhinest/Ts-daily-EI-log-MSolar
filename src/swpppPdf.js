@@ -52,6 +52,11 @@ function _attribLine(opts){
   const on=(opts&&opts.attribution!==undefined)?!!opts.attribution:glBrandAttribution((typeof _activeProjectId==='function')?_activeProjectId():'default');
   return on?[{text:GL_ATTRIB_TEXT,fontSize:7,color:'#9A9A9A',alignment:'center',margin:[0,2,0,0]}]:[];
 }
+// 9/14 (#4): row condition text with its reason (swppp.js owns the rule; fallback = legacy wording)
+function _swCondTexts(st, notes){
+  if(typeof window!=='undefined'&&typeof window.swCondTexts==='function') return window.swCondTexts(st, notes);
+  return ['Acceptable','Deficient'+(notes?` — ${notes}`:'')];
+}
 async function _palFor(key){
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
   try{ await glBrandEnsure(pid); }catch(e){}
@@ -237,9 +242,10 @@ export async function swpppBuildPdf(insp,cfg,sig){
   const daBody=[[hcell('Drainage Area ID'),hcell('General Location / Description'),hcell('Condition'),hcell('Action Required')]];
   (cfg.drainageAreas||[]).filter(r=>r&&!r.hidden).forEach(da=>{   // #78 hidden rows skip the export
     const st=(insp.drainageAreas||{})[da.id]||{};
+    const [accT,defT]=_swCondTexts(st);   // 9/14 (#4): the condition carries its reason; stale action text never prints
     daBody.push([cell(da.id,{bold:true,size:8}),cell(da.desc,{size:8}),
-      {text:[cb(st.condition==='acceptable'),{text:'Acceptable   '},cb(st.condition==='deficient'),{text:'Deficient'}],fontSize:8},
-      cell(st.action||'',{size:8})]);
+      {text:[cb(st.condition==='acceptable'),{text:accT+'   '},cb(st.condition==='deficient'),{text:defT}],fontSize:8},
+      cell(st.condition==='deficient'?(st.action||''):'',{size:8})]);
   });
   const daTbl={table:{headerRows:1,dontBreakRows:true,widths:cols(18,42,22),body:daBody},layout:hairLayout,margin:[0,2,0,4]};
 
@@ -247,8 +253,9 @@ export async function swpppBuildPdf(insp,cfg,sig){
   const dpBody=[[hcell('Discharge Point ID'),hcell('Location Description'),hcell('Receiving Water'),hcell('Condition / Notes')]];
   (cfg.dischargePoints||[]).filter(r=>r&&!r.hidden).forEach(dp=>{
     const st=(insp.dischargePoints||{})[dp.id]||{};
+    const [accT,defT]=_swCondTexts(st, st.condition==='deficient'?(st.notes||''):'');   // 9/14 (#4)
     dpBody.push([cell(dp.id,{bold:true,size:8}),cell(dp.location,{size:8,i:true}),cell(dp.receiving,{size:8,i:true}),
-      {text:[cb(st.condition==='acceptable'),{text:'Acceptable   '},cb(st.condition==='deficient'),{text:'Deficient'+(st.notes?` — ${st.notes}`:'')}],fontSize:8}]);
+      {text:[cb(st.condition==='acceptable'),{text:accT+'   '},cb(st.condition==='deficient'),{text:defT}],fontSize:8}]);
   });
   const dpTbl={table:{headerRows:1,dontBreakRows:true,widths:cols(14,36,26),body:dpBody},layout:hairLayout,margin:[0,2,0,4]};
 
