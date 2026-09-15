@@ -182,27 +182,61 @@ async function mapInit(){
 
 // Where a map should open when this device has no saved view (see initMap).
 let _mapStartFit=null;
-function _mapStartView(){
-  const lat=parseFloat(localStorage.getItem('gl_map_lat')), lng=parseFloat(localStorage.getItem('gl_map_lng'));
-  if(Number.isFinite(lat)&&Number.isFinite(lng)){
-    return { center:[lng,lat], zoom:parseFloat(localStorage.getItem('gl_map_zoom')||'13'), fit:null };
-  }
+// 9/14 (Tim on the iPad as the review account: "zoomed out, don't know where to zoom to"):
+// (1) the remembered view is keyed PER USER + PROJECT (the old global gl_map_lat/lng/zoom
+// handed one account's last view to the next account / project on the same device);
+// (2) a fresh device whose data had not arrived when the map was created re-fits ONCE when
+// the first drawings/photos land, unless the user has already moved the map;
+// (3) ⤢ Zoom-to-project button (mapFitProject) — the explicit answer to "where is the work".
+let _mapNeedsFit=false, _mapUserMoved=false;
+function _mapViewKey(){
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const uid=(window._currentUser&&window._currentUser.uid)||'anon';
+  return `gl_map_view::${uid}::${pid}`;
+}
+// Bounding box of the project's own work: tracker centroids, geotagged photos, CMP pins.
+function _mapDataBounds(pid){
+  const pts=[];
   try{
-    const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
-    const pts=[];
     ((typeof trGetEntriesForProject==='function')?trGetEntriesForProject(pid):[]).forEach(e=>{
       if(Number.isFinite(e.centroidLng)&&Number.isFinite(e.centroidLat)) pts.push([e.centroidLng,e.centroidLat]);
     });
-    ((window._phPhotos||[])).forEach(p=>{ if(p.projectId===pid&&Number.isFinite(p.lng)&&Number.isFinite(p.lat)) pts.push([p.lng,p.lat]); });
-    if(pts.length){
-      let w=Infinity,s=Infinity,e=-Infinity,n=-Infinity;
-      pts.forEach(([x,y])=>{ if(x<w)w=x; if(x>e)e=x; if(y<s)s=y; if(y>n)n=y; });
-      const pad=0.002;   // ~200 m so a single point still gets a sensible frame
-      return { center:[(w+e)/2,(s+n)/2], zoom:14, fit:[[w-pad,s-pad],[e+pad,n+pad]] };
-    }
+    ((window._phPhotos||[])).forEach(p=>{ if(p.projectId===pid&&!p.deletedAt&&Number.isFinite(p.lng)&&Number.isFinite(p.lat)) pts.push([p.lng,p.lat]); });
+    ((typeof window.clGetEntries==='function')?window.clGetEntries():[]).forEach(e=>{ if((!e.projectId||e.projectId===pid)&&!e.deletedAt&&Number.isFinite(e.lng)&&Number.isFinite(e.lat)) pts.push([e.lng,e.lat]); });
   }catch(err){}
+  if(!pts.length) return null;
+  let w=Infinity,s=Infinity,e=-Infinity,n=-Infinity;
+  pts.forEach(([x,y])=>{ if(x<w)w=x; if(x>e)e=x; if(y<s)s=y; if(y>n)n=y; });
+  const pad=0.002;   // ~200 m so a single point still gets a sensible frame
+  return [[w-pad,s-pad],[e+pad,n+pad]];
+}
+function _mapStartView(){
+  let saved=null; try{ saved=JSON.parse(localStorage.getItem(_mapViewKey())||'null'); }catch(e){}
+  if(saved&&Number.isFinite(saved.lat)&&Number.isFinite(saved.lng)){
+    return { center:[saved.lng,saved.lat], zoom:Number.isFinite(saved.zoom)?saved.zoom:13, fit:null };
+  }
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const b=_mapDataBounds(pid);
+  if(b) return { center:[(b[0][0]+b[1][0])/2,(b[0][1]+b[1][1])/2], zoom:14, fit:b };
+  _mapNeedsFit=true;   // nothing local yet — fit when the first snapshot renders
   return { center:[-98.5,39.8], zoom:3.5, fit:null };   // continental US — no project, no guess
 }
+function _mapAutoFitOnce(){
+  if(!_mapNeedsFit||!_mapInstance||_mapUserMoved) return;
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const b=_mapDataBounds(pid); if(!b) return;
+  _mapNeedsFit=false;
+  try{ _mapInstance.fitBounds(b,{padding:60,duration:600,maxZoom:16}); }catch(e){}
+}
+function mapFitProject(){
+  if(!_mapInstance) return;
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const b=_mapDataBounds(pid);
+  if(!b){ if(typeof showCloudBanner==='function') showCloudBanner("Nothing on this project's map yet — draw a tracker entry, take a geotagged photo, or import a KML."); return; }
+  _mapNeedsFit=false;
+  try{ _mapInstance.fitBounds(b,{padding:{top:120,bottom:200,left:70,right:70},maxZoom:17,duration:650}); }catch(e){}
+}
+window.mapFitProject=mapFitProject;
 
 function mapSetup(token){
   if(!mapboxgl.supported()){
@@ -289,6 +323,7 @@ function mapSetup(token){
   });
   _mapInstance.on('load',()=>{
     if(_mapStartFit){ try{ _mapInstance.fitBounds(_mapStartFit,{padding:60,duration:0,maxZoom:16}); }catch(e){} _mapStartFit=null; }
+    setTimeout(_mapAutoFitOnce,3500);   // 9/14: late first snapshot on a fresh device
     document.getElementById('map-loading').style.display='none';
     setTimeout(()=>_mapInstance.resize(),100);
     mapAddGPSDot();
@@ -311,7 +346,7 @@ _mapInstance.on('mousedown', e => {
 });
 _mapInstance.on('mousemove', ()=> clearTimeout(_lpTimer));
 _mapInstance.on('mouseup', ()=> clearTimeout(_lpTimer));
-_mapInstance.on('dragstart', ()=>{ clearTimeout(_lpTimer); _lpStartPos=null; if(_gpsMode>0) _followPaused=true; });
+_mapInstance.on('dragstart', ()=>{ clearTimeout(_lpTimer); _lpStartPos=null; _mapUserMoved=true; if(_gpsMode>0) _followPaused=true; });
 // Long press — touch
 _mapInstance.on('touchstart', e => {
   if(e.originalEvent.touches.length !== 1) return;
@@ -329,11 +364,10 @@ _mapInstance.on('touchmove', e => {
 });
 _mapInstance.on('touchend', ()=>{ clearTimeout(_lpTimer); _lpStartPos=null; });
   });
-  _mapInstance.on('moveend',()=>{
+  _mapInstance.on('moveend',(ev)=>{
+    if(ev&&ev.originalEvent) _mapUserMoved=true;   // a user gesture closes the auto-fit window
     const c=_mapInstance.getCenter();
-    localStorage.setItem('gl_map_lat',c.lat);
-    localStorage.setItem('gl_map_lng',c.lng);
-    localStorage.setItem('gl_map_zoom',_mapInstance.getZoom());
+    try{ localStorage.setItem(_mapViewKey(),JSON.stringify({lat:c.lat,lng:c.lng,zoom:_mapInstance.getZoom()})); }catch(e){}   // per user + project (9/14)
   });
 }
 
@@ -2858,6 +2892,7 @@ function mapToggleFab(){
   document.getElementById('map-fab').classList.toggle('open',_fabOpen);
   document.getElementById('map-fab-palette').classList.toggle('open',_fabOpen);
   document.getElementById('map-compass')?.classList.toggle('fab-open',_fabOpen);
+  document.getElementById('map-fit')?.classList.toggle('fab-open',_fabOpen);
   if(_fabOpen&&typeof _syncFlagFabBtn==='function') _syncFlagFabBtn();
 }
 function mapCloseFab(){
@@ -2865,6 +2900,7 @@ function mapCloseFab(){
   document.getElementById('map-fab').classList.remove('open');
   document.getElementById('map-fab-palette').classList.remove('open');
   document.getElementById('map-compass')?.classList.remove('fab-open');
+  document.getElementById('map-fit')?.classList.remove('fab-open');
 }
 function mapToggleViewFab(){
   mapCloseFab();
@@ -7013,6 +7049,7 @@ function mapRenderTrackerLayers(){
   // bad service the style stays busy long enough that the old shape kept
   // showing until a force-close. Queue the retry instead of dropping it.
   if(!_mapInstance.isStyleLoaded()){ _queueOnIdle(mapRenderTrackerLayers); return; }
+  _mapAutoFitOnce();   // 9/14: first data on a fresh device → frame the project once
   // Keep an open legend in sync if a state color/label changed.
   if(_legendCatId) mapRenderLegend();
 

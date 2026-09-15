@@ -124,6 +124,8 @@ body.theme-light{
 #map-compass.fab-open{transform:translateY(-200px)}
 #map-compass.gps-active{border-color:var(--amber);box-shadow:0 0 0 1px var(--amber),0 2px 8px rgba(0,0,0,.45)}
 #map-compass.gps-amber{background:rgba(201,168,76,.25);border-color:var(--amber)}
+#map-fit{position:fixed;bottom:calc(207px + env(safe-area-inset-bottom));right:16px;z-index:248;width:36px;height:36px;border-radius:50%;background:var(--bg);border:1px solid var(--border2);color:var(--text);font-size:17px;line-height:1;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:0;transition:transform .18s;outline:none}
+#map-fit.fab-open{transform:translateY(-200px)}
 /* Heading compass rose */
 #map-heading-compass{position:fixed;top:calc(80px + env(safe-area-inset-top));left:14px;z-index:248;width:58px;height:58px;border-radius:50%;background:rgba(15,31,46,.85);border:1px solid var(--border2);box-shadow:0 2px 8px rgba(0,0,0,.45);display:none;align-items:center;justify-content:center}
 #map-heading-compass.on{display:flex}
@@ -2567,6 +2569,8 @@ Anticipated rain — AM weather monitoring expected"></textarea>
   </div>
 </div>
 
+    <!-- ⤢ Zoom to the project's work (9/14) -->
+    <button id="map-fit" onclick="mapFitProject()" title="Zoom to this project's work">⤢</button>
     <!-- Compass -->
     <button id="map-compass" onclick="mapCycleGpsMode()" title="Locate / cycle location modes">
       <div id="map-compass-needle">
