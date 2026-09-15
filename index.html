@@ -3029,6 +3029,7 @@ Anticipated rain — AM weather monitoring expected"></textarea>
       <span class="card-title">Compliance Log</span>
       <span class="head-fade"></span>
       <span class="card-badge" id="cl-log-badge" style="display:none"></span>
+      <button onclick="event.stopPropagation();clExportCompliance()" title="Export the compliance log (PDF + XLSX)" style="background:none;border:1px solid var(--border);border-radius:10px;color:var(--muted);font-family:var(--mono);font-size:10px;padding:3px 8px;cursor:pointer;flex-shrink:0;margin-right:4px">📤 Export</button>
       <button id="cl-amber-btn" onclick="event.stopPropagation();clEditAmber()" title="Correction window — open entries turn amber past this age" style="background:none;border:1px solid var(--border);border-radius:10px;color:var(--muted);font-family:var(--mono);font-size:10px;padding:3px 8px;cursor:pointer;flex-shrink:0">⏱ 48h</button>
       <span class="card-chevron">▾</span>
     </div>

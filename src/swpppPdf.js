@@ -684,14 +684,18 @@ export async function dailyExportPdfNow(logData,polished,photoRefs,opts){
 // Same house chrome as the QI report; photos ride exportImg like every export.
 export async function punchlistBuildPdf(opts){
   opts=opts||{};
-  _pal=await _palFor('punchlist');   // per-report branding (9/5)
+  // 9/14 (#43): opts.mode==='compliance' = the CMP-only flavour (Compliance Log export) —
+  // same builder, no repair flags, its own brand profile, titles and filename.
+  const isCmp=opts.mode==='compliance';
+  const DOC_TITLE=isCmp?'Compliance Log':'ESC Punchlist';
+  _pal=await _palFor(isCmp?'compliance':'punchlist');   // per-report branding (9/5)
   const pdfMake=await _getPdfMake();
   const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
   const cfg=(typeof loadProjectConfig==='function')?loadProjectConfig():{};
   const projName=cfg.projectName||'Project';
   if(typeof trEnsurePlNums==='function'){ try{ trEnsurePlNums(pid); }catch(e){} }
-  const open=(typeof trGetOpenTemporary==='function')?trGetOpenTemporary(pid):[];
-  const fixed=(opts.includeFixed!==false&&typeof trGetResolvedTemporary==='function')?trGetResolvedTemporary(pid):[];
+  const open=(!isCmp&&typeof trGetOpenTemporary==='function')?trGetOpenTemporary(pid):[];
+  const fixed=(!isCmp&&opts.includeFixed!==false&&typeof trGetResolvedTemporary==='function')?trGetResolvedTemporary(pid):[];
   const winHrs=(typeof clAmberHours==='function')?clAmberHours():48;
   const now=Date.now();
   const fmtD=ds=>{ if(!ds) return '—'; const p=String(ds).split('-'); return p.length===3?`${parseInt(p[1])}/${parseInt(p[2])}/${p[0].slice(2)}`:String(ds); };
@@ -832,11 +836,13 @@ export async function punchlistBuildPdf(opts){
         ...((im.p&&im.p.caption)?[{text:esc(im.p.caption),fontSize:8,color:'#555555',margin:[0,0,0,8]}]:[{text:'',margin:[0,0,0,6]}])
       ])
     ]:[]),
-    h1(`${++sec}.  Open Items — Corrective Action Required`),
-    note(`Items are listed oldest first. Photos were taken in the field at the time each item was flagged; GPS coordinates locate the flag on the site map.${cmpSorted.length?' Compliance Log entries (CMP-) show their compliance level in place of a BMP category.':''}`),
+    h1(`${++sec}.  ${isCmp?'Open Compliance Items':'Open Items'} — Corrective Action Required`),
+    note(isCmp
+      ?`Items are listed oldest first. Identification photos print with each item; correction photos carry the date of the action they document. Map pins locate each CMP item on the site map.`
+      :`Items are listed oldest first. Photos were taken in the field at the time each item was flagged; GPS coordinates locate the flag on the site map.${cmpSorted.length?' Compliance Log entries (CMP-) show their compliance level in place of a BMP category.':''}`),
     ...(merged.length?itemBlocks:[body('No open items — nothing currently requires attention.')]),
-    ...(fixed.length?[
-      h1(`${++sec}.  Fixed — Verification Record`),
+    ...((fixed.length+cmpFixed.length)?[   // 9/14: resolved CMP items get the record too (was flags-only)
+      h1(`${++sec}.  ${isCmp?'Resolved':'Fixed'} — Verification Record`),
       {table:{headerRows:1,dontBreakRows:true,widths:cols(9,24,17,10,10),body:fxBody},layout:hairLayout,margin:[0,2,0,4]}
     ]:[])
   ];
@@ -849,7 +855,7 @@ export async function punchlistBuildPdf(opts){
       margin:[MARG,22,MARG,0],
       table:{widths:['60%','40%'],body:[[
         {text:projName.toUpperCase(),bold:true,fontSize:10,color:_pal.h,fillColor:_pal.lt},
-        {text:'ESC Punchlist',fontSize:9,color:_pal.mid,fillColor:_pal.lt,alignment:'right'}
+        {text:DOC_TITLE,fontSize:9,color:_pal.mid,fillColor:_pal.lt,alignment:'right'}
       ]]},
       layout:{hLineWidth:()=>0.5,vLineWidth:(i,node)=>(i===0||i===node.table.widths.length)?0.5:0,hLineColor:()=>HAIR,vLineColor:()=>HAIR,paddingLeft:()=>6,paddingRight:()=>6,paddingTop:()=>3,paddingBottom:()=>3}
     }),
@@ -857,7 +863,7 @@ export async function punchlistBuildPdf(opts){
       margin:[MARG,14,MARG,0],
       stack:[
         {canvas:[{type:'line',x1:0,y1:0,x2:CONTENT_W,y2:0,lineWidth:0.6,lineColor:HAIR}]},
-        {text:`${projName}  |  ESC Punchlist  |  ${today.getMonth()+1}/${today.getDate()}/${String(today.getFullYear()).slice(2)}  |  Page ${currentPage}`,
+        {text:`${projName}  |  ${DOC_TITLE}  |  ${today.getMonth()+1}/${today.getDate()}/${String(today.getFullYear()).slice(2)}  |  Page ${currentPage}`,
          fontSize:8,color:'#888888',alignment:'center',margin:[0,4,0,0]},
         ..._attribLine(typeof opts!=='undefined'?opts:null)
       ]
@@ -1085,5 +1091,19 @@ export async function punchlistExportPdfNow(opts){
   const t=new Date();
   const fname=`${(cfg.projectName||'Project').replace(/[^\w]+/g,'_')}-ESC_Punchlist_${t.getMonth()+1}-${t.getDate()}-${String(t.getFullYear()).slice(2)}.pdf`;
   glPdfSizeNote(blob,'Punchlist'+(opts&&opts.compact?' (email-size)':''));
+  await saveFileNative(blob,fname,'application/pdf');
+}
+
+// 9/14 (#43): the Compliance Log export — the punchlist builder in CMP-only mode.
+// opts.deferShare → returns {blob,filename,mimeType} so the caller can share it in ONE
+// sheet together with the XLSX (compliance.js clExportCompliance).
+export async function complianceExportPdfNow(opts){
+  opts=Object.assign({},opts||{},{mode:'compliance'});
+  const blob=await punchlistBuildPdf(opts);
+  const cfg=(typeof loadProjectConfig==='function')?loadProjectConfig():{};
+  const t=new Date();
+  const fname=`${(cfg.projectName||'Project').replace(/[^\w]+/g,'_')}-Compliance_Log_${t.getMonth()+1}-${t.getDate()}-${String(t.getFullYear()).slice(2)}.pdf`;
+  glPdfSizeNote(blob,'Compliance Log'+(opts.compact?' (email-size)':''));
+  if(opts.deferShare) return {blob,filename:fname,mimeType:'application/pdf'};
   await saveFileNative(blob,fname,'application/pdf');
 }

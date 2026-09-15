@@ -41,6 +41,7 @@ const GL_REPORT_KEYS = [
   { key:'daily',        label:'Daily report',                         sub:'PDF + DOCX' },
   { key:'qi',           label:'SWPPP QI inspection report',           sub:'PDF + DOCX' },
   { key:'punchlist',    label:'Punchlist',                            sub:'PDF' },
+  { key:'compliance',   label:'Compliance log export',                sub:'PDF + XLSX' },
   { key:'agency',       label:'Agency visit report',                  sub:'PDF' },
   { key:'spill',        label:'Spill / incident report',              sub:'PDF — e.g. the owner\'s form logo' },
   { key:'categoryXlsx', label:'Seeding / disturbance / linear exports', sub:'XLSX deliverables' },

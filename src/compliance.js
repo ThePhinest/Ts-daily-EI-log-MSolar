@@ -298,6 +298,139 @@ function clExportPunchlist(){
 }
 if(typeof window!=='undefined') window.clExportPunchlist=clExportPunchlist;
 
+// ── 9/14 (#43): Compliance Log export — the punchlist export, CMP flavour: a PDF (same
+// builder in compliance mode: level / status / dated actions / identification + correction
+// photos / map captures) plus a tracker-shaped XLSX (one row per item, one row per action)
+// so the Tue/Fri NCR tracker comes straight out of the app. Both ride ONE share sheet.
+function clExportCompliance(){
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  let lastAttn=''; try{ lastAttn=localStorage.getItem('gl_cl_attn::'+pid)||''; }catch{}
+  let lastFmt='both'; try{ lastFmt=localStorage.getItem('gl_cl_expfmt::'+pid)||'both'; }catch{}
+  let lastCompact=false; try{ lastCompact=localStorage.getItem('gl_pl_compact::'+pid)==='1'; }catch{}
+  const ov=document.createElement('div');
+  ov.className='modal-overlay';
+  ov.style.cssText='z-index:5000';
+  const radio=(v,l,sub)=>`<label style="display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:12px;color:var(--text);cursor:pointer;padding:6px 0"><input type="radio" name="_cl-fmt" value="${v}" ${lastFmt===v?'checked':''}> ${l}<span style="color:var(--muted);font-size:10px;margin-left:4px">${sub}</span></label>`;
+  ov.innerHTML=`<div class="modal-box" style="max-width:340px;width:90%">
+    <div class="modal-title" style="margin-bottom:6px">📤 Export Compliance Log</div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);line-height:1.5;margin-bottom:12px">Every open compliance item — level, dates, corrective action, dated actions taken, photos and map pins. The workbook is tracker-shaped (one row per item, one per action).</div>
+    <div class="field" style="margin-bottom:10px"><label>Attention / recipient (optional)</label><input type="text" id="_cl-attn" placeholder="e.g. Herzog — NCR recovery tracker" value="${lastAttn.replace(/"/g,'&quot;')}"></div>
+    <div style="border:1px solid var(--border);border-radius:10px;padding:4px 10px;margin-bottom:10px">
+      ${radio('both','PDF + XLSX','one share')}${radio('pdf','PDF only','')}${radio('xlsx','XLSX only','tracker workbook')}
+    </div>
+    <label style="display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:12px;color:var(--text);margin-bottom:10px;cursor:pointer">
+      <input type="checkbox" id="_cl-fixed" checked> Include resolved items (verification record)
+    </label>
+    <label style="display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:12px;color:var(--text);margin-bottom:16px;cursor:pointer" title="Item photos embed at thumbnail grade (420 px) so the PDF fits an email; map captures keep full detail">
+      <input type="checkbox" id="_cl-compact" ${lastCompact?'checked':''}> 📧 Email-size photos (smaller PDF)
+    </label>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-outline" style="flex:1" id="_cl-cancel">Cancel</button>
+      <button class="btn btn-amber" style="flex:2" id="_cl-go">${window.glPdfIcon?window.glPdfIcon(13):'📤'} Export</button>
+    </div>
+  </div>`;
+  document.body.appendChild(ov);
+  ov.querySelector('#_cl-cancel').onclick=()=>ov.remove();
+  ov.querySelector('#_cl-go').onclick=async()=>{
+    const goBtn=ov.querySelector('#_cl-go');
+    const attention=ov.querySelector('#_cl-attn').value.trim();
+    const includeFixed=ov.querySelector('#_cl-fixed').checked;
+    const compact=!!ov.querySelector('#_cl-compact')?.checked;
+    const fmt=(ov.querySelector('input[name="_cl-fmt"]:checked')||{}).value||'both';
+    try{ localStorage.setItem('gl_cl_attn::'+pid,attention); localStorage.setItem('gl_cl_expfmt::'+pid,fmt); localStorage.setItem('gl_pl_compact::'+pid,compact?'1':'0'); }catch{}
+    goBtn.disabled=true; goBtn.textContent='⏳ Building…';
+    const busy=(typeof window.glBusy==='function')?window.glBusy('Building the compliance log export…'):null;
+    const files=[];
+    try{
+      if(fmt!=='xlsx'){
+        const m=await import('./swpppPdf.js');
+        const f=await m.complianceExportPdfNow({attention,includeFixed,compact,deferShare:true,onProgress:(kind,i,n)=>{ if(busy) busy.set(kind==='photo'?`Preparing photos… ${i} of ${n}`:'Laying out the compliance log…'); }});
+        if(f) files.push(f);
+      }
+      if(fmt!=='pdf'){
+        if(busy) busy.set('Building the tracker workbook…');
+        const f=await _complianceExportXlsx({includeFixed,attention},pid);
+        if(f) files.push(f);
+      }
+      if(busy) busy.close();
+      if(files.length) await _glShareFiles(files);
+      ov.remove();
+    }catch(err){
+      console.warn('compliance export failed:',err);
+      if(busy) busy.close();
+      goBtn.disabled=false; goBtn.innerHTML=(window.glPdfIcon?window.glPdfIcon(13):'📤')+' Export';
+      alert('Export failed — try again in a moment.');
+    }
+  };
+}
+if(typeof window!=='undefined') window.clExportCompliance=clExportCompliance;
+
+// Tracker-shaped workbook: "Compliance Log" (one row per item, tracker columns — Ref is
+// left blank for the owner's observation number) + "Actions" (one row per dated action).
+async function _complianceExportXlsx(opts, pid){
+  opts=opts||{};
+  _xbReset('compliance'); try{ if(typeof window.glBrandEnsure==='function') await window.glBrandEnsure(pid); }catch(e){}
+  const {default:ExcelJS}=await import('exceljs');
+  const wb=new ExcelJS.Workbook();
+  const cfg=JSON.parse(localStorage.getItem('msf_projectconfig')||'{}');
+  const today=new Date().toLocaleDateString('en-CA');
+  try{ clEnsureCmpNums(pid); }catch(e){}
+  const all=_clEntries.filter(e=>!e.deletedAt&&(!e.projectId||e.projectId===pid));
+  const open=all.filter(e=>e.status!=='Resolved').sort((a,b)=>(a.date||'')<(b.date||'')?-1:1);
+  const fixed=(opts.includeFixed!==false)?all.filter(e=>e.status==='Resolved').sort((a,b)=>(b.dateResolved||'')<(a.dateResolved||'')?-1:1):[];
+  const rows=[...open,...fixed];
+  const winHrs=(typeof clAmberHours==='function')?clAmberHours():48;
+  const now=Date.now();
+  const dueOf=e=>{ const t=new Date((e.date||'')+'T00:00:00').getTime(); return isNaN(t)?null:new Date(t+winHrs*3600000).toLocaleDateString('en-CA'); };
+  const daysOpen=e=>{ const t=new Date((e.date||'')+'T00:00:00').getTime(); if(isNaN(t)) return ''; const end=e.status==='Resolved'&&e.dateResolved?new Date(e.dateResolved+'T00:00:00').getTime():now; return Math.max(0,Math.floor((end-t)/86400000)); };
+  const steps=e=>(typeof _clSteps==='function')?_clSteps(e):[];
+  const lastAction=e=>{ const st=steps(e).filter(s=>s.date).map(s=>s.date).sort(); return st.length?st[st.length-1]:''; };
+  const actionsTxt=e=>steps(e).map(s=>`${s.date||''}${s.date?' — ':''}${s.text||''}`.trim()).filter(Boolean).join('\n');
+  const nPhotos=e=>((e.photoIds||[]).length+steps(e).reduce((a,s)=>a+((s.photoIds||[]).length),0));
+  const TEAL=_xb().teal, WHITE=_xb().htx;
+  const ws=wb.addWorksheet('Compliance Log');
+  const NC=15;
+  ws.columns=[{width:9},{width:18},{width:12},{width:11},{width:11},{width:8},{width:38},{width:40},{width:48},{width:11},{width:11},{width:7},{width:20},{width:12},{width:14}];
+  ws.addRow(['Compliance Log — '+(cfg.projectName||'')]); ws.mergeCells(1,1,1,NC);
+  const tc=ws.getCell('A1');
+  tc.font={name:'Calibri',bold:true,size:18,color:{argb:WHITE}};
+  tc.fill={type:'pattern',pattern:'solid',fgColor:{argb:TEAL}};
+  tc.alignment={vertical:'middle',horizontal:'left',indent:1}; ws.getRow(1).height=34;
+  [['Project',cfg.projectName||''],['Snapshot date',today],['Prepared By',cfg.preparedBy||''],...(opts.attention?[['Attention',opts.attention]]:[]),['Correction window',winHrs+' hours from identification'],['Open items',String(open.length)+(fixed.length?`   (${fixed.length} resolved listed below)`:'')]].forEach(([l,v])=>{
+    const r=ws.addRow([l,v]); ws.mergeCells(r.number,2,r.number,NC);
+    r.getCell(1).font={name:'Consolas',size:9,bold:true,color:{argb:'FF'+TEAL}};
+    r.getCell(2).font={name:'Calibri',size:10}; r.height=15;
+  });
+  ws.addRow([]);
+  const hdr=ws.addRow(['Item','Level','Status','Logged','Due','Days','Location / description','Corrective action','Actions taken (dated)','Last action','Resolved','Photos','Map point (lat, lng)','Source report','Ref (owner #)']);
+  hdr.eachCell({includeEmpty:true},c=>{ c.font={bold:true,size:10,color:{argb:WHITE}}; c.fill={type:'pattern',pattern:'solid',fgColor:{argb:TEAL}}; c.alignment={vertical:'middle',wrapText:true}; });
+  hdr.height=30;
+  ws.views=[{state:'frozen',ySplit:hdr.number}];
+  rows.forEach(e=>{
+    const r=ws.addRow([clCmpFmt(e.cmpNum||0),clLevelLabel(e.level),e.status||'Open',e.date||'',dueOf(e)||'',daysOpen(e),e.location||'',e.corrective||'',actionsTxt(e),lastAction(e),e.dateResolved||'',nPhotos(e),(Number.isFinite(e.lat)&&Number.isFinite(e.lng))?`${e.lat.toFixed(5)}, ${e.lng.toFixed(5)}`:'',e.sourceReport||'','']);
+    r.getCell(1).font={bold:true,color:{argb:_xb().ftl}};
+    [7,8,9].forEach(i=>{ r.getCell(i).alignment={wrapText:true,vertical:'top'}; });
+    const lines=Math.max(1,(actionsTxt(e).match(/\n/g)||[]).length+1,Math.ceil(String(e.corrective||'').length/48),Math.ceil(String(e.location||'').length/46));
+    r.height=Math.min(180,15*lines);
+    if(e.status==='Resolved') r.eachCell({includeEmpty:true},c=>{ c.font=Object.assign({},c.font||{},{color:{argb:'FF777777'}}); });
+    else if(e.level>=3) r.getCell(2).font={bold:true,color:{argb:'FFB03A2E'}};
+  });
+  ws.autoFilter={from:{row:hdr.number,column:1},to:{row:hdr.number+Math.max(1,rows.length),column:NC}};
+  // Actions sheet — one row per dated action, the shape a recovery tracker wants
+  const wa=wb.addWorksheet('Actions');
+  wa.columns=[{width:9},{width:12},{width:70},{width:8},{width:12}];
+  const ah=wa.addRow(['Item','Date','Action taken','Photos','Item status']);
+  ah.eachCell({includeEmpty:true},c=>{ c.font={bold:true,size:10,color:{argb:WHITE}}; c.fill={type:'pattern',pattern:'solid',fgColor:{argb:TEAL}}; });
+  wa.views=[{state:'frozen',ySplit:1}];
+  rows.forEach(e=>{ steps(e).forEach(s=>{ const r=wa.addRow([clCmpFmt(e.cmpNum||0),s.date||'',s.text||'',(s.photoIds||[]).length,e.status||'Open']); r.getCell(3).alignment={wrapText:true,vertical:'top'}; r.getCell(1).font={bold:true,color:{argb:_xb().ftl}}; }); });
+  if(typeof window.glBrandAttribution==='function'&&window.glBrandAttribution(pid)){
+    wb.worksheets.forEach(w=>{ try{ w.headerFooter=Object.assign({},w.headerFooter||{},{oddFooter:'&L&8&K9A9A9A'+(window.GL_ATTRIB_TEXT||'Generated with GroundLog · groundlog.io')+'&R&8Page &P of &N'}); }catch(e){} });
+  }
+  const buf=await wb.xlsx.writeBuffer();
+  const safeProj=(cfg.projectName||pid).replace(/[^a-zA-Z0-9 _-]/g,'').trim().replace(/\s+/g,'-');
+  return {blob:new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}),filename:`compliance-log-${safeProj}-${today}.xlsx`,mimeType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'};
+}
+
 // ── Pill filters (status + level, MULTI-SELECT) + stat-tile taps ──
 // Sets: empty = All. Default view on page open = Open + In Progress (Tim 7/22).
 // The old _clStatFilter overlay is retired — the "open" stat tile now just
