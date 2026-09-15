@@ -1,8 +1,10 @@
 import { registerSW } from 'virtual:pwa-register'
 
 // Capacitor native shell serves bundled assets locally — runtime SW caching
-// is pointless and risks confusing the precache manifest under the spoofed
-// https://app.groundlog.io origin. Skip registration on native; web unchanged.
+// is pointless and risks confusing the precache manifest. The native origin is
+// capacitor://app.groundlog.io (Capacitor ignores iosScheme:"https" for a scheme
+// WKWebView already handles — CAPInstanceDescriptor.swift; proven 9/14 during the
+// App Review 2.1a fix). Skip registration on native; web unchanged.
 if (!window.Capacitor?.isNativePlatform?.()) {
   // Capture the SW registration so the RELOAD button can talk to the waiting
   // worker directly. vite-plugin-pwa's updateSW(true) is supposed to skipWaiting
