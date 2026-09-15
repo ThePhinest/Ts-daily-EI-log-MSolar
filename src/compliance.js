@@ -1988,38 +1988,48 @@ function clShowTrackerLog(){
   document.getElementById('_tlog-export').onclick=()=>_showTlogExportModal(_tlogFilter, pid);
 }
 
-// ── Download or share a blob — native iOS uses Capacitor Share, web uses blob link ──
-async function _glShareOrDownload(blob, filename, mimeType){
-  if(typeof window.glBusyCloseAll==='function') window.glBusyCloseAll();   // 9/11 #34: the file exists — drop the overlay before the sheet
+// ── Download or share blobs — native iOS uses ONE Capacitor Share sheet for all the
+// files, web uses blob links. 9/14 (Tim: the seed export restarted the app, and the
+// Photos ZIP "went nowhere" when saved to Discord): the XLSX + its ZIP used to go out
+// as two back-to-back share sheets — the second never showed. They now ride one sheet.
+// Base64 goes through FileReader, not a per-byte string loop (a 60 MB workbook made a
+// 60 M-iteration loop + an 80 MB string on the main thread right before the sheet).
+async function _glShareFiles(files){
+  files=(files||[]).filter(f=>f&&f.blob);
+  if(!files.length) return;
+  if(typeof window.glBusyCloseAll==='function') window.glBusyCloseAll();   // 9/11 #34: the files exist — drop the overlay before the sheet
   if(window.Capacitor?.isNativePlatform?.()){
     try{
       const [{Filesystem,Directory},{Share}]=await Promise.all([
         import('@capacitor/filesystem'),
         import('@capacitor/share'),
       ]);
-      // Convert blob → base64
-      const buf=await blob.arrayBuffer();
-      const bytes=new Uint8Array(buf);
-      let bin='';
-      for(let i=0;i<bytes.byteLength;i++) bin+=String.fromCharCode(bytes[i]);
-      const b64=btoa(bin);
-      // Write to cache
-      const tempPath=`gl_exports/${filename}`;
-      await Filesystem.writeFile({path:tempPath,data:b64,directory:Directory.Cache,recursive:true});
-      const {uri}=await Filesystem.getUri({path:tempPath,directory:Directory.Cache});
-      await Share.share({title:filename,files:[uri]});
+      const paths=[], uris=[];
+      for(const f of files){
+        const dataUrl=await _blobToDataURL(f.blob);
+        const b64=dataUrl.substring(dataUrl.indexOf(',')+1);
+        const tempPath=`gl_exports/${f.filename}`;
+        await Filesystem.writeFile({path:tempPath,data:b64,directory:Directory.Cache,recursive:true});
+        const {uri}=await Filesystem.getUri({path:tempPath,directory:Directory.Cache});
+        paths.push(tempPath); uris.push(uri);
+      }
+      await Share.share({title:files.length>1?`${files[0].filename} (+${files.length-1} more)`:files[0].filename,files:uris});
       // Clean up (best-effort)
-      try{await Filesystem.deleteFile({path:tempPath,directory:Directory.Cache});}catch{}
+      for(const tempPath of paths){ try{await Filesystem.deleteFile({path:tempPath,directory:Directory.Cache});}catch{} }
       return;
     }catch(e){ console.warn('Capacitor Share failed:',e.message); }
   }
-  // Web fallback
-  const url=URL.createObjectURL(blob);
-  const a=document.createElement('a');
-  a.href=url; a.download=filename; a.click();
-  URL.revokeObjectURL(url);
+  // Web fallback — one download per file
+  for(const f of files){
+    const url=URL.createObjectURL(f.blob);
+    const a=document.createElement('a');
+    a.href=url; a.download=f.filename; a.click();
+    URL.revokeObjectURL(url);
+  }
 }
+async function _glShareOrDownload(blob, filename, mimeType){ return _glShareFiles([{blob,filename,mimeType}]); }
 window._glShareOrDownload=_glShareOrDownload;
+window._glShareFiles=_glShareFiles;
 window._exportCategoriesDeliverable=_exportCategoriesDeliverable;   // swppp.js: disturbance XLSX offered after a QI export (#19)
 
 // ── Tracker log export — scheme picker modal ──
@@ -2101,20 +2111,25 @@ function _showTlogExportModal(getEntries, pid){
       const selKeys=[...selected];
       _xlsxThumbUsed=false;
       let busy=(typeof window.glBusy==='function')?window.glBusy('Building the workbook… photos embed as it goes'):null;   // 9/11 #34
+      const files=[];
       try{
         const sels=selKeys.map(k=>{ const c=cats.find(x=>x.key===k); return {cid:c.cid, seedOnly:!!c.seedOnly}; });
-        await _exportCategoriesDeliverable(sels, getEntries(), pid);
+        const wbFile=await _exportCategoriesDeliverable(sels, getEntries(), pid, {deferShare:true});
+        if(wbFile) files.push(wbFile);
       }
       catch(err){ console.warn('category export failed',err); }
       finally{ if(busy) busy.close(); }
       // Older months embedded as thumbnails → the full-res set follows as the Photos ZIP
-      // (same category scope), so nothing is lost from the deliverable.
-      if(zipAuto&&_xlsxThumbUsed){
+      // (same category scope), so nothing is lost from the deliverable. 9/14: both files
+      // go out in ONE share sheet (the second sheet never showed on iOS).
+      if(files.length&&zipAuto&&_xlsxThumbUsed){
         goBtn.textContent='Photos ZIP…';
         busy=(typeof window.glBusy==='function')?window.glBusy('Building the full-res Photos ZIP…'):null;
-        try{ await _tlogExportPhotoZip(getEntries(), pid, selKeys); }catch(err){ console.warn('photo zip failed',err); }
+        try{ const zf=await _tlogExportPhotoZip(getEntries(), pid, selKeys, {deferShare:true}); if(zf) files.push(zf); }
+        catch(err){ console.warn('photo zip failed',err); }
         finally{ if(busy) busy.close(); }
       }
+      if(files.length){ try{ await _glShareFiles(files); }catch(err){ console.warn('export share failed',err); } }
       ov.remove();
     };
     ov.querySelector('._exp-zip').onclick=async()=>{
@@ -2326,7 +2341,7 @@ function _amendmentTypeSheet(wb, type, rows, pid){
 // sheet ONLY — the seeding side is its own selection; linear → BMP sheet; else the
 // coverage-vs-plan seeding sheet). Pick pre-seeding + restoration + seeding-on-disturbance
 // and the whole seed-tracking picture lands in a single file, fronted by a roll-up tab.
-async function _exportCategoriesDeliverable(sels, entries, pid){
+async function _exportCategoriesDeliverable(sels, entries, pid, opts){
   _xbReset('categoryXlsx'); try{ if(typeof window.glBrandEnsure==='function') await window.glBrandEnsure(pid); }catch(e){}
   if(!Array.isArray(sels) || !sels.length) return;
   sels=sels.map(s=>typeof s==='string'?{cid:s,seedOnly:false}:s); // back-compat: bare cids
@@ -2405,7 +2420,9 @@ async function _exportCategoriesDeliverable(sels, entries, pid){
   }
   const buf=await wb.xlsx.writeBuffer();
   const blob=new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
-  await _glShareOrDownload(blob, fname, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  const mimeType='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+  if(opts&&opts.deferShare) return {blob,filename:fname,mimeType};   // 9/14: caller shares it together with the Photos ZIP
+  await _glShareOrDownload(blob, fname, mimeType);
 }
 
 // DEPRECATED — combined "Tracker Log" workbook. Superseded by per-category deliverables
@@ -3067,6 +3084,40 @@ async function _clFetchPool(items, n, fn){
   await Promise.all(Array.from({length:Math.min(n,items.length)},worker));
   return out;
 }
+// 9/14: ONE photo → the workbook's JPEG (base64), fetch → bitmap → canvas → JPEG with the
+// full-res blob and bitmap released straight away. Cached in a DEDICATED idb-keyval store
+// (not the idbCache in-memory mirror — that would pin every thumbnail in RAM) keyed by
+// photo id + size + quality, so a prior month never re-downloads or re-decodes: that is
+// the "lock previous months" Tim asked for, done at the image level instead of the
+// workbook level. The 9/14 restart = hundreds of full-res blobs held in one array.
+let _xlImgStore=null;
+async function _xlImgCacheStore(){
+  if(_xlImgStore===null){
+    try{ const m=await import('idb-keyval'); _xlImgStore={kv:m, store:m.createStore('gl_xlsx_img_cache','imgs')}; }
+    catch(e){ _xlImgStore=false; }
+  }
+  return _xlImgStore||null;
+}
+async function _xlEncodePhoto(ph, EMB, q){
+  if(!ph||!ph.storageUrl) return null;
+  const key=`${ph.id}|${EMB}|${q}`;
+  const st=await _xlImgCacheStore();
+  if(st){ try{ const hit=await st.kv.get(key,st.store); if(hit&&hit.raw&&hit.w&&hit.h) return hit; }catch(e){} }
+  const resp=await fetch(ph.storageUrl); if(!resp.ok) return null;
+  const bmp=await createImageBitmap(await resp.blob());
+  const w=bmp.width, h=bmp.height, es=Math.min(1, EMB/Math.max(w,h));
+  const cw=Math.max(1,Math.round(w*es)), chh=Math.max(1,Math.round(h*es));
+  const cv=document.createElement('canvas'); cv.width=cw; cv.height=chh;
+  cv.getContext('2d').drawImage(bmp,0,0,cw,chh); bmp.close();
+  const jblob=await new Promise(res=>cv.toBlob(res,'image/jpeg',q));
+  cv.width=0; cv.height=0;   // release the backing store now, not at GC time (iOS canvas memory is the scarce one)
+  if(!jblob) return null;
+  const dataUrl=await _blobToDataURL(jblob);
+  const out={raw:dataUrl.substring(dataUrl.indexOf(',')+1), w, h};
+  if(st){ try{ await st.kv.set(key,out,st.store); }catch(e){} }
+  return out;
+}
+window.glXlsxImageCacheClear=async()=>{ const st=await _xlImgCacheStore(); if(st) await st.kv.clear(st.store); };
 async function _embedCapturesInline(ws, wb, owners, NC, opts){
   // opts.allPhotos: embed EVERY attached photo (repair-flag field photos), not just
   // map captures / seed tags — a flag's photo IS its evidence, always belongs inline.
@@ -3093,8 +3144,9 @@ async function _embedCapturesInline(ws, wb, owners, NC, opts){
   // (Tim 9/2: "no need to have them that large under their respective seeding info");
   // map captures keep the wide span so their baked-in legend text stays readable.
   const PHOTO_COLS=Math.min(NC,6), PHOTO_MAXHPX=400;
-  // Download every image up front, 4 at a time — the row-building loop below only re-encodes.
-  const blobs=await _clFetchPool(caps,4,async(c)=>{ const resp=await fetch(c.ph.storageUrl); if(!resp.ok) return null; return await resp.blob(); });
+  // Encode every image up front, 3 at a time (fetch → resize → JPEG, cached) — the loop below
+  // only places small base64 JPEGs; no full-res blob outlives its own encode.
+  const encs=await _clFetchPool(caps,3,async(c)=>_xlEncodePhoto(c.ph, thumb?420:(c.kind==='capture'?720:560), thumb?0.62:0.72));
   let ci=-1;
   for(const {ph,e,kind} of caps){
     ci++;
@@ -3111,9 +3163,8 @@ async function _embedCapturesInline(ws, wb, owners, NC, opts){
     // label row rides the month's outline level and hides with it.
     if(opts&&opts.baseLevel){ lbl.outlineLevel=opts.baseLevel; lbl.hidden=!!opts.startHidden; }
     try{
-      const blob=blobs[ci]; if(!blob) continue;
-      const bmp=await createImageBitmap(blob);
-      const aspect=bmp.height/bmp.width;
+      const enc=encs[ci]; if(!enc) continue;
+      const aspect=enc.h/enc.w;
       // Default: span the FULL sheet width for map captures (Nick: expand the photo out to the
       // last column); photos start at the compact PHOTO_COLS span. If that makes a tall/portrait
       // image exceed the height ceiling, step the width back to the widest span that fits —
@@ -3132,16 +3183,9 @@ async function _embedCapturesInline(ws, wb, owners, NC, opts){
       const totalPt=Math.round(Math.round(rangeW*aspect)*0.75); // px→pt, aspect-correct to the span
       const K=Math.max(1,Math.ceil(totalPt/ROWMAXPT));          // split a tall image across rows
       const perRowPt=Math.max(15,Math.round(totalPt/K));        // so each stays under Excel's cap
-      // Re-encode at a modest size + JPEG so the workbook stays small. The originals can be
-      // multi-MB each (full phone photos); a ~720px JPEG is tens of KB and is plenty for a
-      // report — embedding the originals was bloating the file dozens of × over.
-      const EMB=thumb?420:(kind==='capture'?720:560), es=Math.min(1, EMB/Math.max(bmp.width,bmp.height));
-      const cw=Math.max(1,Math.round(bmp.width*es)), chh=Math.max(1,Math.round(bmp.height*es));
-      const cv=document.createElement('canvas'); cv.width=cw; cv.height=chh;
-      cv.getContext('2d').drawImage(bmp,0,0,cw,chh); bmp.close();
-      const jblob=await new Promise(res=>cv.toBlob(res,'image/jpeg',thumb?0.62:0.72));
-      const dataUrl=await _blobToDataURL(jblob);
-      const raw=dataUrl.substring(dataUrl.indexOf(',')+1);
+      // Re-encoded at a modest size + JPEG (720/560 px, thumbnails 420) so the workbook
+      // stays small — the originals are multi-MB phone photos. Done in _xlEncodePhoto.
+      const raw=enc.raw;
       // K grouped rows, all collapsed by default (one level deeper than the month
       // group when nested) so the photo hides/expands as one unit under its toggle row.
       let firstNum=null;
@@ -3203,10 +3247,8 @@ async function _embedStatusCapRows(ws, wb, caps, NC, lblFor, fillArgb){
     lbl.getCell(1).border={top:{style:'thin',color:{argb:_xb().fam}}};
     lbl.height=18;
     try{
-      const resp=await fetch(ph.storageUrl); if(!resp.ok) continue;
-      const blob=await resp.blob();
-      const bmp=await createImageBitmap(blob);
-      const aspect=bmp.height/bmp.width;
+      const enc=await _xlEncodePhoto(ph,1100,0.8); if(!enc) continue;   // 9/14: cached encoder, no blob held
+      const aspect=enc.h/enc.w;
       let brCol=NC, rangeW=cum[NC-1];
       if(Math.round(rangeW*aspect)>MAXHPX){
         for(let i=0;i<cum.length;i++){ if(Math.round(cum[i]*aspect)<=MAXHPX){ brCol=i+1; rangeW=cum[i]; } }
@@ -3216,13 +3258,7 @@ async function _embedStatusCapRows(ws, wb, caps, NC, lblFor, fillArgb){
       const perRowPt=Math.max(15,Math.round(totalPt/K));
       // Map captures re-encode larger than field photos (1100px vs 720) — the baked
       // legend text has to stay crisp in the deliverable.
-      const EMB=1100, es=Math.min(1,EMB/Math.max(bmp.width,bmp.height));
-      const cw=Math.max(1,Math.round(bmp.width*es)), chh=Math.max(1,Math.round(bmp.height*es));
-      const cv=document.createElement('canvas'); cv.width=cw; cv.height=chh;
-      cv.getContext('2d').drawImage(bmp,0,0,cw,chh); bmp.close();
-      const jblob=await new Promise(res=>cv.toBlob(res,'image/jpeg',0.8));
-      const dataUrl=await _blobToDataURL(jblob);
-      const raw=dataUrl.substring(dataUrl.indexOf(',')+1);
+      const raw=enc.raw;
       // K grouped rows, collapsed by default — the capture hides/expands as one unit.
       let firstNum=null;
       for(let k=0;k<K;k++){ const ir=ws.addRow([]); ir.height=perRowPt; ir.outlineLevel=1; ir.hidden=true; if(k===0) firstNum=ir.number; }
@@ -3782,7 +3818,7 @@ async function _seedingSheetRender(wb, o){
 // ZIP scopes to those categories/sources; null = everything (legacy behavior).
 // PNG map captures re-encode to full-res JPEG q0.9 on the way out (legacy captures
 // were lossless PNGs at 1–2+ MB; new captures are already JPEG at the source).
-async function _tlogExportPhotoZip(entries, pid, selKeys){
+async function _tlogExportPhotoZip(entries, pid, selKeys, opts){
   const {default:JSZip}=await import('jszip');
   const zip=new JSZip();
   const cfg=JSON.parse(localStorage.getItem('msf_projectconfig')||'{}');
@@ -3822,8 +3858,14 @@ async function _tlogExportPhotoZip(entries, pid, selKeys){
       jobs.push({folderName, photo, safeName, fallbackExt:(photo.filename||'photo.jpg').split('.').pop()||'jpg'});
     });
   }
-  const got=await _clFetchPool(jobs,4,async(j)=>{ const resp=await fetch(j.photo.storageUrl); if(!resp.ok) return null; return await _zipBlob(await resp.blob(),j.photo); });
-  jobs.forEach((j,i)=>{ const blob=got[i]; if(!blob) return; zip.folder(j.folderName).file(`${j.safeName}.${_zipExt(blob,j.fallbackExt)}`,blob); });
+  // 9/14 (the seed-export restart): each photo is filed into the archive the moment it
+  // lands instead of holding EVERY stamped full-res blob in a results array first —
+  // one copy in memory (the archive's), not two. JPEGs don't compress → STORE.
+  await _clFetchPool(jobs,3,async(j)=>{
+    const resp=await fetch(j.photo.storageUrl); if(!resp.ok) return;
+    const blob=await _zipBlob(await resp.blob(),j.photo); if(!blob) return;
+    zip.folder(j.folderName).file(`${j.safeName}.${_zipExt(blob,j.fallbackExt)}`,blob,{compression:'STORE'});
+  });
 
   // 🌱 Seeding-status captures — the full-res archive for people outside the app
   // (legend + date + brand baked in = self-explaining). Scoped to the checked seed
@@ -3833,18 +3875,20 @@ async function _tlogExportPhotoZip(entries, pid, selKeys){
     .sort((a,b)=>String(a.date||'').localeCompare(String(b.date||'')));
   if(seedCaps.length){
     const folder=zip.folder('Seeding map captures');   // 9/2 (Tim): name says what they are
-    const capBlobs=await _clFetchPool(seedCaps,4,async(ph)=>{ const resp=await fetch(ph.storageUrl); if(!resp.ok) return null; return await _zipBlob(await resp.blob()); });
-    seedCaps.forEach((ph,i)=>{
-      const blob=capBlobs[i]; if(!blob) return;
+    await _clFetchPool(seedCaps,3,async(ph)=>{
+      const resp=await fetch(ph.storageUrl); if(!resp.ok) return;
+      const blob=await _zipBlob(await resp.blob()); if(!blob) return;
       const ext=_zipExt(blob,(ph.filename||'map-view.png').split('.').pop()||'png');
       const cap=(ph.caption||'Seeding status').replace(/[^a-zA-Z0-9 _-]/g,'').trim().slice(0,50);
-      folder.file(`${ph.date||'undated'} — ${cap||'Seeding status'}.${ext}`,blob);
+      folder.file(`${ph.date||'undated'} — ${cap||'Seeding status'}.${ext}`,blob,{compression:'STORE'});
     });
   }
 
-  const buf=await zip.generateAsync({type:'blob'});
+  const buf=await zip.generateAsync({type:'blob',compression:'STORE',streamFiles:true});
   const safeName=(cfg.projectName||pid).replace(/[^a-zA-Z0-9 _-]/g,'').trim().replace(/\s+/g,'-');
-  await _glShareOrDownload(new Blob([buf],{type:'application/zip'}),`material-tags-${safeName}-${today}.zip`,'application/zip');
+  const blob=new Blob([buf],{type:'application/zip'}), filename=`material-tags-${safeName}-${today}.zip`;
+  if(opts&&opts.deferShare) return {blob,filename,mimeType:'application/zip'};
+  await _glShareOrDownload(blob,filename,'application/zip');
 }
 
 // ── Init compliance log ──
