@@ -265,6 +265,20 @@ service cloud.firestore {
             && request.resource.data.review.reviewerUid == resource.data.review.reviewerUid
             && request.resource.data.review.status in ['approved', 'returned'];
         }
+        // 9/16 review conversation: the author, the addressed reviewer, or a lead may
+        // APPEND one self-attributed message to `thread`; earlier messages and every
+        // other key stay exactly as they were (a reply never re-opens or re-signs).
+        function threadAppendOk() {
+          let t = request.resource.data.thread;
+          let n = (resource.data.thread == null) ? 0 : resource.data.thread.size();
+          return isMember()
+            && (resource.data.submittedBy == request.auth.uid || isLead()
+                || (resource.data.review != null && resource.data.review.reviewerUid == request.auth.uid))
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['thread'])
+            && t is list && t.size() == n + 1
+            && (n == 0 || t[0:n] == resource.data.thread)
+            && t[n].by == request.auth.uid;
+        }
         allow read: if isMember();
         allow create: if canFieldWrite()
           && request.resource.data.submittedBy == request.auth.uid;
@@ -272,7 +286,8 @@ service cloud.firestore {
         // (resubmit = new version doc), no deletes (version trail persists).
         allow update: if ((isLead() || resource.data.submittedBy == request.auth.uid)
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'statusChangedAt']))
-          || reviewWriteOk();
+          || reviewWriteOk()
+          || threadAppendOk();
         allow delete: if false;
       }
     }

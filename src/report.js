@@ -1346,6 +1346,25 @@ async function rptClearReportLogo(){
 window.generateReport = generateReport;
 window.rptBuildDocx = rptBuildDocx;   // Reports-page archive re-export (swppp.js)
 window._rptLoadLogo = _rptLoadLogo;             // shared by the archive PDF export (swppp.js)
+// 9/16 FIX & RESUBMIT (members.js glFixResubmit): store the author's in-place edits as the NEXT
+// report version — no Claude call. `patch` = {logData?, photoRefs?, compPhotoRefs?} over the latest
+// version's inputSnapshot; `polished` = the edited narrative. Returns the version + hash + snapshot
+// the review attachment should carry.
+window._rptSaveFixedVersion = async function(reportDate, patch, polished){
+  const versions = await _loadReportVersions(reportDate);
+  const latest = versions.length ? versions[0] : null;
+  const base = (latest && latest.inputSnapshot) ? latest.inputSnapshot : {};
+  const snapshot = Object.assign({}, base, {
+    logData: (patch && patch.logData) || base.logData || {},
+    photoRefs: (patch && patch.photoRefs) || base.photoRefs || [],
+    compPhotoRefs: (patch && patch.compPhotoRefs) || base.compPhotoRefs || [],
+    fixedInPlace: true
+  });
+  const hash = await _hashSnapshot(snapshot);
+  const version = (latest ? (latest.version || 1) : 0) + 1;
+  await _saveReportVersion(reportDate, snapshot, polished, hash, version, snapshot.effectivePromptHash || '');
+  return { version, hash, snapshot, polished: _rptWithCurrentCompliance(polished, snapshot) };
+};
 window._rptApprovedReview = _rptApprovedReview; // §C sign-off stamp lookup (swppp.js)
 window.rptSaveReportLogo = rptSaveReportLogo;
 window.rptClearReportLogo = rptClearReportLogo;

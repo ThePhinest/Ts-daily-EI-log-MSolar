@@ -271,12 +271,35 @@ exports.reviewAlert = onDocumentWritten(
     if (!after || !after.review) return;
     const prevStatus = before?.review?.status || null;
     const curStatus = after.review.status;
+    // 9/16 review conversation: a message appended to `thread` on an EXISTING doc
+    // notifies the other party (author ↔ reviewer). A brand-new doc that carries a
+    // note (fix & resubmit) is reported by the pending branch below instead.
+    const thrB = Array.isArray(before?.thread) ? before.thread.length : 0;
+    const thrA = Array.isArray(after.thread) ? after.thread.length : 0;
+    if (before && thrA > thrB) {
+      const m = after.thread[thrA - 1] || {};
+      const toAuthor = m.by !== after.submittedBy;
+      const title = '💬 Reply on report';
+      const detail = `**${m.byName || (toAuthor ? 'Reviewer' : 'Author')}** on **${after.date}**${toAuthor ? ' → ' + (after.submittedByName || 'author') : ' → ' + (after.review.reviewerName || 'reviewer')}: ${String(m.text || '').slice(0, 300)}`;
+      try {
+        await postToDiscord(WEBHOOK.value(), {
+          embeds: [{
+            title: `${title} — ${after.projectName || event.params.pid}`,
+            description: `${detail}\nFirestore: projects/${event.params.pid}/submissions/${event.params.sid}`,
+            color: 0x006b75, footer: { text: 'GroundLog · reviewAlert' }, timestamp: new Date().toISOString(),
+          }],
+        });
+      } catch (e) { console.warn('[reviewAlert] Discord post failed:', e.message); }
+      await _sendReviewEmail(toAuthor ? after.submittedBy : after.review.reviewerUid, title, detail.replace(/\*\*/g, ''));
+      return;
+    }
     if (prevStatus === curStatus) return;   // no review transition in this write
 
     let title = null, detail = null, notifyUid = null;
     if (curStatus === 'pending') {
-      title = '✍ Report sent for review';
-      detail = `**${after.submittedByName || 'Author'}** sent **${after.date}** to **${after.review.reviewerName || 'reviewer'}** for review & signature.`;
+      const note = thrA ? ` Note: ${String((after.thread[0] || {}).text || '').slice(0, 300)}` : '';
+      title = after.fixedFrom ? '✍ Report fixed & resubmitted for review' : '✍ Report sent for review';
+      detail = `**${after.submittedByName || 'Author'}** sent **${after.date}**${(after.version || 1) > 1 ? ' v' + after.version : ''} to **${after.review.reviewerName || 'reviewer'}** for review & signature.${note}`;
       notifyUid = after.review.reviewerUid;
     } else if (prevStatus === 'pending' && curStatus === 'approved') {
       title = '✓ Report approved & signed';

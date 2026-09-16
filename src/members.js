@@ -1199,7 +1199,7 @@ async function _glReportBaseName(date, project) {
 }
 const _glPdfProgress = busy => (kind, i, n) => { if (busy) busy.set(kind === 'photo' ? `Preparing photos… ${i} of ${n}` : 'Laying out the report…'); };
 
-async function _glDoSubmitDay(payload, date, publishedCount, reviewOpts) {
+async function _glDoSubmitDay(payload, date, publishedCount, reviewOpts, extra) {
   const d = _sdb();
   if (!d) return;
   const pid = _activeProjectId();
@@ -1220,6 +1220,10 @@ async function _glDoSubmitDay(payload, date, publishedCount, reviewOpts) {
       projectName: (typeof loadProjectConfig === 'function' ? (loadProjectConfig().projectName || '') : ''),
       payload
     };
+    // 9/16 fix & resubmit: the author's note opens the new version's conversation, and the
+    // doc remembers which submission it fixes (Project Space shows the chain).
+    if (extra && extra.note) docData.thread = [{ by: _currentUser.uid, byName: _glMyName(), role: 'author', at: Date.now(), text: String(extra.note).slice(0, 2000), kind: 'resubmit' }];
+    if (extra && extra.fixedFrom) docData.fixedFrom = extra.fixedFrom;
     // §C (8/31): review request + the frozen report snapshot the reviewer signs.
     if (reviewOpts && reviewOpts.reviewerUid && reviewOpts.snapshot) {
       docData.review = {
@@ -1599,11 +1603,13 @@ function glShowSubmission(id) {
   const rvBanner = !rv ? '' :
     rv.status === 'pending' ? `<div style="padding:8px 12px;margin:0 0 10px;border:1px solid var(--amber,#C9A84C);border-radius:8px;font-family:var(--mono);font-size:11px;color:var(--amber,#C9A84C)">⏳ Awaiting review — ${_glEsc(rv.reviewerName || 'reviewer')}</div>` :
     rv.status === 'approved' ? `<div style="padding:8px 12px;margin:0 0 10px;border:1px solid var(--green,#27AE60);border-radius:8px;font-family:var(--mono);font-size:11px;color:var(--green,#27AE60)">✓ Reviewed &amp; signed by ${_glEsc(rv.reviewerName || '')}${rv.reviewerTitle ? ', ' + _glEsc(rv.reviewerTitle) : ''} · ${rv.reviewedAt ? new Date(rv.reviewedAt).toLocaleDateString() : ''}</div>` :
-    rv.status === 'returned' ? `<div style="padding:8px 12px;margin:0 0 10px;border:1px solid var(--red,#E74C3C);border-radius:8px;font-family:var(--mono);font-size:11px;color:var(--red,#E74C3C)">↩ Returned by ${_glEsc(rv.reviewerName || '')}${rv.comment ? ': “' + _glEsc(rv.comment) + '”' : ''}<br><span style="color:var(--muted2)">Fix the day's log, regenerate the report, and resubmit — the new version starts a fresh review.</span></div>` : '';
+    rv.status === 'returned' ? `<div style="padding:8px 12px;margin:0 0 10px;border:1px solid var(--red,#E74C3C);border-radius:8px;font-family:var(--mono);font-size:11px;color:var(--red,#E74C3C)">↩ Returned by ${_glEsc(rv.reviewerName || '')}${rv.comment ? ': “' + _glEsc(rv.comment) + '”' : ''}<br><span style="color:var(--muted2)">Reply in the conversation below, or ✎ Fix &amp; resubmit to edit the report text and captions here — the new version starts a fresh review.</span></div>` : '';
   const rvButtons = [
     s.reportSnapshot ? `<button class="btn btn-outline" style="font-size:11px;padding:7px 14px;margin-top:8px" onclick="glReviewViewPdf('${s._id}')">📄 View report (PDF${rv && rv.status === 'approved' ? ' — signed' : ''})</button>` : '',
     (forMe && rv.status === 'pending') ? `<button class="btn" style="font-size:11px;padding:7px 14px;margin-top:8px" onclick="glReviewApprove('${s._id}')">✍ Approve &amp; Sign</button>
-      <button class="btn btn-outline" style="font-size:11px;padding:7px 14px;margin-top:8px" onclick="glReviewReturn('${s._id}')">↩ Return with comment</button>` : ''
+      <button class="btn btn-outline" style="font-size:11px;padding:7px 14px;margin-top:8px" onclick="glReviewReturn('${s._id}')">↩ Return with comment</button>` : '',
+    // 9/16: the author fixes text / captions right here and resubmits (new version, note rides along)
+    (mine && s.reportSnapshot && s.status !== 'withdrawn' && !(rv && rv.status === 'approved')) ? `<button class="btn${rv && rv.status === 'returned' ? '' : ' btn-outline'}" style="font-size:11px;padding:7px 14px;margin-top:8px" onclick="glFixResubmit('${s._id}')">✎ Fix &amp; resubmit</button>` : ''
   ].join(' ');
   const ov = document.createElement('div');
   ov.className = 'proj-switcher-overlay';
@@ -1618,6 +1624,8 @@ function glShowSubmission(id) {
     <div class="proj-row-meta" style="margin:-8px 0 12px">Submitted by ${_glEsc(s.submittedByName || '')} · ${new Date(s.submittedAt || 0).toLocaleString()}${s.status === 'withdrawn' ? ' · <b>WITHDRAWN</b>' : ''}</div>
     ${rvBanner}
     ${rvButtons ? `<div style="display:flex;flex-wrap:wrap;gap:8px;margin:0 0 10px">${rvButtons}</div>` : ''}
+    ${s.fixedFrom ? `<div class="proj-row-meta" style="margin:-4px 0 10px">✎ Fixed &amp; resubmitted from an earlier version.</div>` : ''}
+    ${_glThreadHtml(s)}
     <div class="gl-sub-sect">
       ${kv('Project', f.projectName)}${kv('Prepared by', f.preparedBy)}${kv('Organization', f.org)}
       ${kv('Activity', f.activePhase)}${kv('Contractor', f.contractor)}${kv('Reviewed by', f.reviewedBy)}
@@ -2007,6 +2015,231 @@ window.glSubmitDay = glSubmitDay;
 window.glSubmitDayFromCalendar = glSubmitDayFromCalendar;
 window.glShowProjectSpace = glShowProjectSpace;
 window.glRenderProjectSpacePage = glRenderProjectSpacePage;
+// ═══════════════════════════════════════════
+// 9/16 REVIEW CONVERSATION + FIX & RESUBMIT (Tim 9/16: "need a way to fix reports
+// without having to reopen the day from the calendar")
+// ═══════════════════════════════════════════
+// `thread` on the submission doc = author ↔ reviewer messages (append-only, rules
+// enforced). The reviewer's return comment shows as the first entry. A fix is still
+// a NEW version (the snapshot chain stays honest); what changed is WHERE it happens.
+function _glThreadEntries(s) {
+  const out = [];
+  const rv = s.review || null;
+  if (rv && rv.status === 'returned' && rv.comment)
+    out.push({ by: rv.reviewerUid, byName: rv.reviewerName || 'Reviewer', role: 'reviewer', at: rv.reviewedAt || 0, text: rv.comment, _return: true });
+  (Array.isArray(s.thread) ? s.thread : []).forEach(m => out.push(m));
+  return out.sort((a, b) => (a.at || 0) - (b.at || 0));
+}
+function _glThreadCanPost(s) {
+  const me = window._currentUser ? _currentUser.uid : '';
+  if (!me || s.status === 'withdrawn') return false;
+  const rv = s.review || null;
+  if (s.submittedBy === me) return true;
+  if (rv && rv.reviewerUid === me) return true;
+  try { return glMyRoleFor(_activeProjectId()) === 'lead'; } catch (e) { return false; }
+}
+function _glThreadHtml(s) {
+  const me = window._currentUser ? _currentUser.uid : '';
+  const items = _glThreadEntries(s);
+  const canPost = _glThreadCanPost(s);
+  if (!items.length && !canPost) return '';
+  const fmt = ms => { try { return new Date(ms || 0).toLocaleString([], { month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' }); } catch (e) { return ''; } };
+  const rows = items.map(m => `<div style="padding:6px 0;border-bottom:1px solid rgba(255,255,255,.08)">
+      <div style="font-family:var(--mono);font-size:10px;color:${m.by === me ? 'var(--amber,#C9A84C)' : 'var(--muted2)'}">${_glEsc(m.byName || '')}${m._return ? ' · returned the report' : ''}${m.kind === 'resubmit' ? ' · with this version' : ''} · ${fmt(m.at)}</div>
+      <div style="font-size:12.5px;white-space:pre-wrap;word-break:break-word;margin-top:2px">${_glEsc(m.text || '')}</div></div>`).join('');
+  const mine = s.submittedBy === me;
+  return `<div class="gl-sub-sect" id="_gl-thread"><div class="gl-inv-label">💬 Conversation</div>
+    ${rows || '<div class="proj-row-meta" style="white-space:normal">No messages yet.</div>'}
+    ${canPost ? `<div style="display:flex;gap:8px;margin-top:8px;align-items:flex-end">
+      <textarea id="_gl-thread-text" rows="2" placeholder="${mine ? 'Reply to your reviewer…' : 'Message the author…'}" class="auto-expand" style="flex:1;font-size:13px;box-sizing:border-box;min-width:0"></textarea>
+      <button class="btn" id="_gl-thread-send" style="font-size:11px;padding:8px 12px;flex-shrink:0" onclick="glThreadSend('${s._id}')">Send</button></div>` : ''}
+  </div>`;
+}
+function glThreadSend(id) {
+  const d = _sdb();
+  const s = (window._glPSpaceCache || {})[id];
+  if (!d || !s || !_glThreadCanPost(s)) return;
+  const ta = document.getElementById('_gl-thread-text');
+  const text = ((ta && ta.value) || '').trim().slice(0, 2000);
+  if (!text) return;
+  const me = _currentUser.uid, rv = s.review || null;
+  const msg = { by: me, byName: _glMyName(), role: s.submittedBy === me ? 'author' : (rv && rv.reviewerUid === me ? 'reviewer' : 'lead'), at: Date.now(), text };
+  // Firestore applies the write locally at once (the promise only settles on the server ack),
+  // so the sheet updates now and a refusal comes back as a banner — same pattern as Withdraw.
+  const write = d.collection('projects').doc(_activeProjectId()).collection('submissions').doc(id)
+    .update({ thread: window.firebase.firestore.FieldValue.arrayUnion(msg) });
+  s.thread = (Array.isArray(s.thread) ? s.thread : []).concat([msg]);
+  window._glPSpaceCache[id] = s;
+  glShowSubmission(id);
+  write.catch(e => {
+    s.thread = s.thread.filter(m => m !== msg);
+    if (typeof showCloudBanner === 'function') showCloudBanner('⚠ Message not sent: ' + (e && e.message || 'error'));
+    try { glShowSubmission(id); } catch (e2) {}
+  });
+}
+
+// Fix & resubmit — edit the report's narrative + photo captions in place, write the text
+// back to the day's log (Tim 9/16: log and report stay matched), store the edits as the
+// next report version (no Claude call), and post a new submission version to the same
+// reviewer with a note. Full redo (Calendar → Resubmit) stays for anything bigger.
+const _GL_FIX_FIELDS = [
+  // [polished key, label, log raw field id, logData key]
+  ['contractorActivities',    'Contractor activities',                 null,          null],
+  ['fieldObservationsOpening','Field observations — opening',          'inspSummary', 'inspectionSummary'],
+  ['fieldObservationsBullets','Field observations — bullets (one per line)', 'inspSummary', 'inspectionSummary'],
+  ['fieldObservationsClosing','Field observations — closing',          'inspSummary', 'inspectionSummary'],
+  ['agencyInspection',        'Agency inspections',                    'agencyInsp',  'agencyInspection'],
+  ['landownerContact',        'Landowner / public interactions',       'landowner',   'landownerContact'],
+  ['rteObservation',          'T&E species / discoveries',             'rte',         'rteObservation'],
+  ['generalComms',            'General communications',                'genComms',    'generalComms'],
+  ['lookaheadBullets',        '24-hour look ahead (one per line)',     'lookahead',   'lookahead'],
+];
+function glFixResubmit(id) {
+  const s = (window._glPSpaceCache || {})[id];
+  if (!s || !window._currentUser || s.submittedBy !== _currentUser.uid) return;
+  const snap = s.reportSnapshot;
+  if (!snap || !snap.polished) { _confirmModal('This submission has no attached report to edit. Use Calendar → Resubmit to post a fresh version.', function(){}, '✎ Fix & resubmit', 'OK'); return; }
+  const pol = snap.polished, rv = s.review || null;
+  document.getElementById('_gl-fix')?.remove();
+  const ov = document.createElement('div');
+  ov.className = 'proj-switcher-overlay';
+  ov.id = '_gl-fix';
+  ov.style.zIndex = '9700';
+  const val = k => { const v = pol[k]; return Array.isArray(v) ? v.join('\n') : (v == null ? '' : String(v)); };
+  const fieldRows = _GL_FIX_FIELDS.map(([k, label]) => `
+    <div style="margin-top:10px"><div class="gl-inv-label">${label}</div>
+      <textarea data-fix="${k}" rows="${/Bullets$/.test(k) ? 3 : 2}" class="auto-expand" style="width:100%;box-sizing:border-box;font-size:13px">${_glEsc(val(k))}</textarea></div>`).join('');
+  const dayPhotos = (snap.photoRefs || []).filter(p => p.date === s.date);
+  const capRows = dayPhotos.length ? `<div style="margin-top:14px"><div class="gl-inv-label">Photo captions (${dayPhotos.length})</div>
+    ${dayPhotos.map(p => `<div style="display:flex;gap:8px;align-items:center;margin-top:6px">
+      ${p.storageUrl ? `<img src="${_glEsc(p.storageUrl)}" alt="" style="width:44px;height:44px;object-fit:cover;border-radius:6px;flex-shrink:0;background:#222">` : '<div style="width:44px;height:44px;border-radius:6px;background:#222;flex-shrink:0"></div>'}
+      <input type="text" data-cap="${_glEsc(p.id)}" value="${_glEsc(p.caption || '')}" placeholder="Caption" style="flex:1;min-width:0;box-sizing:border-box;background:var(--s1);border:1px solid var(--border);border-radius:6px;padding:8px 10px;color:var(--text);font-size:12.5px"></div>`).join('')}</div>` : '';
+  ov.innerHTML = `<div class="proj-switcher-sheet" style="max-height:92vh">
+    <div class="proj-switcher-header">
+      <span class="proj-switcher-title">✎ Fix &amp; resubmit · ${_glEsc(_glSubFmtDate(s.date))}</span>
+      <button class="proj-switcher-close" id="_gl-fix-x">✕</button>
+    </div>
+    ${rv && rv.status === 'returned' && rv.comment ? `<div style="padding:8px 12px;margin:0 0 10px;border:1px solid var(--red,#E74C3C);border-radius:8px;font-size:12px"><div style="font-family:var(--mono);font-size:10px;color:var(--red,#E74C3C);margin-bottom:3px">↩ ${_glEsc(rv.reviewerName || 'Reviewer')} asked</div><div style="white-space:pre-wrap">${_glEsc(rv.comment)}</div></div>` : ''}
+    <div class="proj-row-meta" style="margin:0 0 6px;white-space:normal;overflow:visible;text-overflow:unset">Edit the report text below. Your changes also save to that day's log, become report v${(snap.version || 1) + 1}, and go back to ${_glEsc((rv && rv.reviewerName) || 'your reviewer')} as a new version with your note. Compliance items come from the Compliance page — edit them there, then use Calendar → Resubmit.</div>
+    ${fieldRows}
+    ${capRows}
+    <div style="margin-top:14px"><div class="gl-inv-label">Note to ${_glEsc((rv && rv.reviewerName) || 'reviewer')}</div>
+      <textarea id="_gl-fix-note" rows="2" class="auto-expand" placeholder="What you changed, or the answer to their question" style="width:100%;box-sizing:border-box;font-size:13px"></textarea></div>
+    <div class="modal-btns" style="margin-top:14px">
+      <button class="modal-cancel" id="_gl-fix-cancel">Cancel</button>
+      <button class="modal-confirm" id="_gl-fix-go" style="background:var(--s3);border-color:var(--s3)">Resubmit v${(s.version || 1) + 1}</button>
+    </div>
+  </div>`;
+  document.body.appendChild(ov);
+  try { ov.querySelectorAll('textarea.auto-expand').forEach(t => { if (typeof autoResize === 'function') autoResize(t); }); } catch (e) {}
+  const close = () => ov.remove();
+  ov.querySelector('#_gl-fix-x').onclick = close;
+  ov.querySelector('#_gl-fix-cancel').onclick = close;
+  ov.querySelector('#_gl-fix-go').onclick = () => _glFixApply(id, ov);
+}
+async function _glFixApply(id, ov) {
+  const s = (window._glPSpaceCache || {})[id];
+  const snap = s && s.reportSnapshot;
+  if (!snap) return;
+  const go = ov.querySelector('#_gl-fix-go');
+  go.disabled = true; go.textContent = 'Saving…';
+  const busy = (typeof window.glBusy === 'function') ? window.glBusy('Saving your fixes…') : null;
+  try {
+    const pid = _activeProjectId();
+    const date = s.date;
+    const pol0 = snap.polished || {};
+    const polished = JSON.parse(JSON.stringify(pol0));
+    const changed = [];
+    ov.querySelectorAll('textarea[data-fix]').forEach(t => {
+      const k = t.dataset.fix;
+      const before = Array.isArray(pol0[k]) ? pol0[k].join('\n') : (pol0[k] == null ? '' : String(pol0[k]));
+      const now = t.value.replace(/\r/g, '');
+      if (now.trim() === before.trim()) return;
+      polished[k] = /Bullets$/.test(k) ? now.split('\n').map(x => x.replace(/^\s*[-•]\s*/, '').trim()).filter(Boolean) : now.trim();
+      changed.push(k);
+    });
+    // Captions: the snapshot refs (what the reviewer prints) + the live photo (what every later export prints)
+    const capChanges = {};
+    ov.querySelectorAll('input[data-cap]').forEach(inp => {
+      const pid2 = inp.dataset.cap;
+      const ref = (snap.photoRefs || []).find(p => p.id === pid2);
+      const now = inp.value.trim();
+      if (!ref || now === String(ref.caption || '').trim()) return;
+      capChanges[pid2] = now;
+    });
+    const note = ((ov.querySelector('#_gl-fix-note') || {}).value || '').trim();
+    if (!changed.length && !Object.keys(capChanges).length && !note) {
+      busy && busy.close(); go.disabled = false; go.textContent = 'Resubmit';
+      return _confirmModal('Nothing changed — edit a field, a caption, or write a note first.', function(){}, '✎ Fix & resubmit', 'OK');
+    }
+    const photoRefs = (snap.photoRefs || []).map(p => capChanges[p.id] !== undefined ? Object.assign({}, p, { caption: capChanges[p.id] }) : p);
+    const compPhotoRefs = (snap.compPhotoRefs || []).map(p => capChanges[p.id] !== undefined ? Object.assign({}, p, { caption: capChanges[p.id] }) : p);
+    for (const [phId, cap] of Object.entries(capChanges)) {
+      try {
+        const p = (window._phPhotos || []).find(x => x.id === phId);
+        if (!p) continue;
+        p.caption = cap;
+        if (typeof phMarkDirty === 'function') phMarkDirty(p.id);
+        if (typeof phSaveLocal === 'function') phSaveLocal();
+        if (typeof phSaveCloudOne === 'function') await phSaveCloudOne(p);
+        if (p.published && typeof phSetPublished === 'function') phSetPublished([p.id], true, p.projectId);
+      } catch (e) { console.warn('fix caption:', e.message); }
+    }
+    // Write the text back to the day's log (archived record + the live form if it is on this day)
+    const logData = JSON.parse(JSON.stringify(snap.logData || {}));
+    const rec = (typeof dlGet === 'function') ? dlGet(date) : null;
+    const rawUpdates = {};
+    const fo = ['fieldObservationsOpening', 'fieldObservationsBullets', 'fieldObservationsClosing'];
+    if (fo.some(k => changed.includes(k))) {
+      rawUpdates.inspSummary = [polished.fieldObservationsOpening || '', (polished.fieldObservationsBullets || []).map(b => '- ' + b).join('\n'), polished.fieldObservationsClosing || ''].filter(x => String(x).trim()).join('\n');
+      logData.inspectionSummary = rawUpdates.inspSummary;
+    }
+    _GL_FIX_FIELDS.forEach(([k, , rawId, ldKey]) => {
+      if (!rawId || fo.includes(k) || !changed.includes(k)) return;
+      const v = Array.isArray(polished[k]) ? polished[k].join('\n') : polished[k];
+      rawUpdates[rawId] = v; if (ldKey) logData[ldKey] = v;
+    });
+    if (Object.keys(rawUpdates).length) {
+      if (rec) {
+        rec.fields = Object.assign({}, rec.fields || {}, rawUpdates);
+        rec._edited = true;
+        rec._editLog = (rec._editLog || []).concat([{ at: Date.now(), source: 'fix-resubmit', fields: Object.keys(rawUpdates) }]);
+        if (typeof dlSaveLocal === 'function') dlSaveLocal(date, rec);
+        try { if (window.db && window._fbReady) await _udb().collection('dailyLogs').doc(date).set(rec); } catch (e) { console.warn('fix log write-back:', e.message); }
+      }
+      try {
+        const live = document.getElementById('reportDate');
+        if (live && live.value === date) Object.entries(rawUpdates).forEach(([fid, v]) => { const el = document.getElementById(fid); if (el) { el.value = v; if (typeof autoResize === 'function') autoResize(el); } });
+      } catch (e) {}
+    }
+    // Next report version (no Claude call) + the review attachment for the new submission
+    busy && busy.set('Storing report v' + ((snap.version || 1) + 1) + '…');
+    const saved = await window._rptSaveFixedVersion(date, { logData, photoRefs, compPhotoRefs }, polished);
+    const authorSig = (typeof window.glSigLoad === 'function') ? await window.glSigLoad().catch(() => null) : null;
+    let logo = null; try { logo = (typeof window._rptLoadLogo === 'function') ? await window._rptLoadLogo() : null; } catch (e) {}
+    const revSnap = {
+      logData: saved.snapshot.logData, polished: saved.polished, photoRefs, oiRefs: saved.snapshot.oiRefs || snap.oiRefs || [],
+      compPhotoRefs, brand: saved.snapshot.brand || snap.brand || null, inputHash: saved.hash, version: saved.version,
+      authorSig: authorSig || null, logo
+    };
+    if (JSON.stringify(revSnap).length > 850000) { delete revSnap.authorSig; if (JSON.stringify(revSnap).length > 850000) delete revSnap.logo; }
+    const rv = s.review || null;
+    const reviewOpts = (rv && rv.reviewerUid) ? { reviewerUid: rv.reviewerUid, reviewerName: rv.reviewerName || '', snapshot: revSnap } : null;
+    const payload = (rec && typeof glBuildSubmissionPayload === 'function') ? (glBuildSubmissionPayload(rec) || s.payload) : s.payload;
+    busy && busy.close();
+    await _glDoSubmitDay(payload, date, 0, reviewOpts, { note: note || ('Fixed: ' + changed.concat(Object.keys(capChanges).map(() => 'caption')).join(', ')), fixedFrom: id });
+    ov.remove();
+    document.getElementById('_gl-sub-detail')?.remove();
+    try { glShowProjectSpace(); } catch (e) {}
+  } catch (e) {
+    busy && busy.close();
+    go.disabled = false; go.textContent = 'Resubmit';
+    _confirmModal('Could not resubmit: ' + (e && e.message || e), function(){}, '✎ Fix & resubmit', 'OK');
+  }
+}
+window.glThreadSend = glThreadSend;
+window.glFixResubmit = glFixResubmit;
+
 window.glShowSubmission = glShowSubmission;
 window.glWithdrawSubmission = glWithdrawSubmission;
 window._glCopy = _glCopy;

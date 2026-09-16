@@ -73,6 +73,13 @@ beforeEach(async () => {
         review: { status: 'approved', reviewerUid: 'signy', reviewerName: 'Sig Ny',
                   reviewedAt: 2, signature: { b64: 'data:image/png;base64,x', w: 460, h: 150 } },
         reportSnapshot: { inputHash: 'h0' } });
+    // 9/16 review conversation fixtures: a returned review with one reviewer message.
+    const THREAD0 = [{ by: 'signy', byName: 'Sig Ny', role: 'reviewer', at: 1, text: 'what is a sediment dike?' }];
+    for (const id of ['s_thr_a', 's_thr_b', 's_thr_c'])
+      await setDoc(doc(db, `projects/${PID}/submissions/${id}`),
+        { submittedBy: 'tim', version: 1, status: 'active', date: '2026-09-15',
+          review: { status: 'returned', reviewerUid: 'signy', reviewerName: 'Sig Ny', requestedAt: 1, reviewedAt: 2, comment: 'see thread' },
+          thread: THREAD0 });
     // Invites are TOP-LEVEL (token = doc id = the link/code/QR capability).
     await setDoc(doc(db, 'invites/tok-glasses'),
       { pid: PID, role: 'reviewer', status: 'active', createdBy: 'tim',
@@ -176,6 +183,29 @@ describe('signer (Reviewer ✍) — §C review & sign-off', () => {
   it('cannot set a non-terminal review status', () =>
     assertFails(updateDoc(doc(as('signy'), `projects/${PID}/submissions/s_rev`),
       { review: { ...APPROVE, status: 'pending' } })));
+  // 9/16 review conversation (thread append-only)
+  const THR = [{ by: 'signy', byName: 'Sig Ny', role: 'reviewer', at: 1, text: 'what is a sediment dike?' }];
+  it('thread: the author appends a self-attributed reply', () =>
+    assertSucceeds(updateDoc(doc(as('tim'), `projects/${PID}/submissions/s_thr_a`),
+      { thread: [...THR, { by: 'tim', byName: 'Tim', role: 'author', at: 5, text: 'a temporary water bar' }] })));
+  it('thread: the addressed reviewer appends after a returned review', () =>
+    assertSucceeds(updateDoc(doc(as('signy'), `projects/${PID}/submissions/s_thr_b`),
+      { thread: [...THR, { by: 'signy', byName: 'Sig Ny', role: 'reviewer', at: 6, text: 'got it, thanks' }] })));
+  it('thread: a member who is neither author nor addressed reviewer cannot post', () =>
+    assertFails(updateDoc(doc(as('forest'), `projects/${PID}/submissions/s_thr_c`),
+      { thread: [...THR, { by: 'forest', byName: 'Forest', role: 'reviewer', at: 7, text: 'hi' }] })));
+  it('thread: a message must be attributed to the writer', () =>
+    assertFails(updateDoc(doc(as('signy'), `projects/${PID}/submissions/s_thr_c`),
+      { thread: [...THR, { by: 'tim', byName: 'Tim', role: 'author', at: 7, text: 'forged' }] })));
+  it('thread: earlier messages cannot be rewritten while appending', () =>
+    assertFails(updateDoc(doc(as('signy'), `projects/${PID}/submissions/s_thr_c`),
+      { thread: [{ ...THR[0], text: 'edited' }, { by: 'signy', byName: 'Sig Ny', role: 'reviewer', at: 8, text: 'x' }] })));
+  it('thread: cannot replace the thread wholesale or touch other keys', async () => {
+    await assertFails(updateDoc(doc(as('signy'), `projects/${PID}/submissions/s_thr_c`),
+      { thread: [{ by: 'signy', byName: 'Sig Ny', role: 'reviewer', at: 9, text: 'only me' }] }));
+    await assertFails(updateDoc(doc(as('signy'), `projects/${PID}/submissions/s_thr_c`),
+      { thread: [...THR, { by: 'signy', byName: 'Sig Ny', role: 'reviewer', at: 9, text: 'x' }], status: 'withdrawn' }));
+  });
   it('cannot write a review on a submission not addressed to them', () =>
     assertFails(updateDoc(doc(as('signy'), `projects/${PID}/submissions/s1`),
       { review: APPROVE })));
