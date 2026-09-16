@@ -3330,6 +3330,10 @@ Anticipated rain — AM weather monitoring expected"></textarea>
           <button class="btn btn-outline" style="font-size:11px;padding:6px 10px" onclick="glBrandManagePresets()" title="Rename, update or delete your saved brandings">⚙ Manage presets</button>
           <button class="btn btn-outline" style="font-size:11px;padding:6px 10px" onclick="glBrandPreviewPdf()" title="Renders a one-page sample daily report with what's on screen right now">👁 Preview sample PDF</button>
         </div>
+        <div class="field" style="margin:0 0 12px;max-width:420px"><label>File name tag</label>
+          <input type="text" id="cfg-brand-filetag" placeholder="e.g. Ridgeline_Solar" maxlength="40" spellcheck="false" autocapitalize="off" oninput="glBrandFileTagExample()" style="font-family:var(--mono)">
+          <p class="config-hint" style="margin:4px 0 0">Short project name that starts every daily report file, year first so the folder sorts by date: <span id="cfg-brand-filetag-eg" style="font-family:var(--mono);color:var(--text)"></span>. Blank = the full project name.</p>
+        </div>
         <label style="display:flex;align-items:flex-start;gap:8px;font-family:var(--mono);font-size:11px;color:var(--muted);margin-bottom:12px;cursor:pointer;line-height:1.5">
           <input type="checkbox" id="cfg-brand-attrib" checked style="margin-top:3px"> Small "Generated with GroundLog · groundlog.io" line in export footers.
         </label>

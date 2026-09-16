@@ -545,7 +545,8 @@ export async function dailyBuildPdf(logData,polished,photoRefs,opts){
   const cpFind=id=>cpRefs.find(r=>r.id===id)||(photoRefs||[]).find(r=>r.id===id)||(window._phPhotos||[]).find(p=>p.id===id)||(window._phShared||[]).find(p=>p.id===id)||null;
   const compBody=[[dhcell('Level'),dhcell('Location / Description'),dhcell('Corrective Action'),dhcell('Status')]];
   for(const i of compIssues){
-    compBody.push([cell(i.level),cell(i.description),cell([i.corrective||'',i.actions?('Actions taken: '+i.actions):''].filter(Boolean).join('\n')),cell(i.status)]);
+    const descCell=i.cmpId?{text:[{text:i.cmpId,bold:true},{text:'\n'+String(i.description||'')}],fontSize:9}:cell(i.description);
+    compBody.push([cell(i.level),descCell,cell([i.corrective||'',i.actions?('Actions taken: '+i.actions):''].filter(Boolean).join('\n')),cell(i.status)]);
     const ims=[];
     for(const pid of (i.photoIds||[])){
       const ref=cpFind(pid); if(!ref) continue;
@@ -674,9 +675,7 @@ export async function dailyBuildPdf(logData,polished,photoRefs,opts){
 export async function dailyExportPdfNow(logData,polished,photoRefs,opts){
   opts=opts||{};
   const blob=await dailyBuildPdf(logData,polished,photoRefs,opts);
-  const [y,m,d]=(logData.reportDate||new Date().toLocaleDateString('en-CA')).split('-');
-  const slug=String(logData.project||'GroundLog').replace(/[^a-zA-Z0-9]+/g,'_').replace(/^_+|_+$/g,'')||'GroundLog';
-  const fname=`${m}-${d}-${y}_${slug}-Daily_Inspection_Report.pdf`;
+  const fname=(await window.glReportFileName('daily',logData.reportDate,null,logData.project))+'.pdf';
   glPdfSizeNote(blob,'Daily report');
   // 9/11 (#35): a VIEW action opens the native viewer on iOS (Share is inside it); exports keep the sheet.
   if(opts.view) await openPdfNative(blob,fname,opts.viewTitle||('Daily report · '+(logData.reportDate||'')));

@@ -445,6 +445,7 @@ async function glBrandInitUI(){
   const lh=_brField('cfg-brand-logo-h'); if(lh) lh.value=String((cfg&&cfg.logoDispH)||(cfg&&cfg.logoH)||50);
   const la=_brField('cfg-brand-logo-align'); if(la) la.value=(cfg&&cfg.logoAlign)||'center';
   const at=_brField('cfg-brand-attrib'); if(at) at.checked=!(cfg&&cfg.attribution===false);
+  const ft=_brField('cfg-brand-filetag'); if(ft){ ft.value=(cfg&&cfg.fileTag)||''; glBrandFileTagExample(); }
   _brUISet(r.primary, r.accent, r.applyToQi);
   const nm=_brField('cfg-brand-name'); if(nm) nm.textContent = cfg&&cfg.name ? ('Preset: '+cfg.name) : '';
   glBrandRenderReportRows();
@@ -495,7 +496,8 @@ async function glBrandUISave(){
   if(!pid || pid==='default'){ _brStatus('Create a project first.', true); return; }
   const v=_brUIValues(); const lv=_brLogoUIValues();
   const attribution=_brField('cfg-brand-attrib')?!!_brField('cfg-brand-attrib').checked:true;
-  const res = await glBrandSave(pid, { primary:v.primary, accent:v.accent, logoDispH:lv.logoDispH||null, logoAlign:lv.logoAlign, attribution });
+  const fileTag=glBrandSlug(_brField('cfg-brand-filetag')?.value);
+  const res = await glBrandSave(pid, { primary:v.primary, accent:v.accent, logoDispH:lv.logoDispH||null, logoAlign:lv.logoAlign, attribution, fileTag });
   if(res.ok) _brStatus(res.local ? '✓ Saved on this device' : '✓ Branding saved — every export of this project uses it');
   else _brStatus(res.permission ? 'Saved locally only — a project lead has to set branding' : 'Save failed: '+(res.error&&res.error.message||'error'), true);
 }
@@ -536,6 +538,28 @@ function glBrandSaveAsPreset(){
   };
 }
 
+// File-name tag (9/15, Tim: match the PowerApps convention in Procore's Documents list,
+// year first so the folder sorts chronologically). Per-project config, never a name branch:
+// <YYYY-MM-DD>_<tag>-Daily_Inspection_Report.<ext>. Blank tag = the full project name.
+function glBrandSlug(t){ return String(t==null?'':t).trim().replace(/[^A-Za-z0-9]+/g,'_').replace(/^_+|_+$/g,''); }
+function glBrandFileTag(pid, fallbackName){
+  const c=glBrandGet(pid);
+  return glBrandSlug(c&&c.fileTag) || glBrandSlug(fallbackName) || 'GroundLog';
+}
+const GL_FILE_SUFFIX={ daily:'Daily_Inspection_Report' };
+async function glReportFileName(kind, dateISO, pid, fallbackName){
+  pid=_brPid(pid);
+  try{ await glBrandEnsure(pid); }catch(e){}
+  const [y,m,d]=String(dateISO||new Date().toLocaleDateString('en-CA')).split('-');
+  return `${y}-${m}-${d}_${glBrandFileTag(pid, fallbackName)}-${GL_FILE_SUFFIX[kind]||'Report'}`;
+}
+function glBrandFileTagExample(){
+  const el=_brField('cfg-brand-filetag-eg'); if(!el) return;
+  const pc=(typeof loadProjectConfig==='function')?loadProjectConfig():{};
+  const tag=glBrandSlug(_brField('cfg-brand-filetag')?.value)||glBrandSlug(pc.projectName)||'GroundLog';
+  el.textContent=`${new Date().toLocaleDateString('en-CA')}_${tag}-Daily_Inspection_Report.pdf`;
+}
+
 // "Generated with GroundLog" attribution on exports — on unless the project turns it off.
 function glBrandAttribution(pid){ const c=glBrandGet(pid); return !(c && c.attribution===false); }
 const GL_ATTRIB_TEXT='Generated with GroundLog  ·  groundlog.io';
@@ -569,6 +593,9 @@ async function glBrandPreviewPdf(){
 
 // ── seams ──
 window.glBrandAttribution=glBrandAttribution;
+window.glBrandFileTag=glBrandFileTag;
+window.glReportFileName=glReportFileName;
+window.glBrandFileTagExample=glBrandFileTagExample;
 window.glBrandProfileFor=glBrandProfileFor;
 window.glBrandChoiceLabel=glBrandChoiceLabel;
 window.glBrandSetReport=glBrandSetReport;

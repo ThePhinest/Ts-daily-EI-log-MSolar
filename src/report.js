@@ -153,12 +153,18 @@ function _polishChoiceModal(msg, labelA, labelB, onChoice){
     '<div class="modal-title">✦ Formalize Log</div>'+
     '<div class="modal-msg">'+msg+'</div>'+
     '<div class="modal-btns">'+
+      '<button class="modal-cancel" id="_pcX">Cancel</button>'+
       '<button class="modal-cancel" id="_pcA">'+labelA+'</button>'+
       '<button class="modal-confirm" id="_pcB" style="background:var(--amber);border-color:var(--amber);color:#111">'+labelB+'</button>'+
     '</div></div>';
   document.body.appendChild(ov);
-  document.getElementById('_pcA').onclick=function(){ov.remove();onChoice(true);};
-  document.getElementById('_pcB').onclick=function(){ov.remove();onChoice(false);};
+  // 9/15 (Tim): every two-way choice needs a way to back out — Cancel button + Esc, no action taken.
+  const close=function(){ ov.remove(); document.removeEventListener('keydown',onKey); };
+  const onKey=function(e){ if(e.key==='Escape'){ e.preventDefault(); close(); } };
+  document.addEventListener('keydown',onKey);
+  document.getElementById('_pcX').onclick=close;
+  document.getElementById('_pcA').onclick=function(){close();onChoice(true);};
+  document.getElementById('_pcB').onclick=function(){close();onChoice(false);};
 }
 
 // ── Formalize Log — gate ──
@@ -466,7 +472,7 @@ async function rptBuildDocx(logData,polished,photos){
   for(const issue of compIssues){
     compRows.push(new TableRow({children:[
       new TableCell({borders,margins:{top:60,bottom:60,left:80,right:80},children:[new Paragraph({children:[new TextRun({text:issue.level||'',font:'Arial',size:18})]})]}),
-      new TableCell({borders,margins:{top:60,bottom:60,left:80,right:80},children:[new Paragraph({children:[new TextRun({text:issue.description||'',font:'Arial',size:18})]})]}),
+      new TableCell({borders,margins:{top:60,bottom:60,left:80,right:80},children:[new Paragraph({children:[...(issue.cmpId?[new TextRun({text:issue.cmpId,bold:true,font:'Arial',size:18}),new TextRun({break:1,text:''})]:[]),new TextRun({text:issue.description||'',font:'Arial',size:18})]})]}),
       new TableCell({borders,margins:{top:60,bottom:60,left:80,right:80},children:[new Paragraph({children:[new TextRun({text:issue.corrective||'',font:'Arial',size:18})]}),...(issue.actions?[new Paragraph({children:[new TextRun({text:'Actions taken: '+issue.actions,italics:true,font:'Arial',size:18})]})]:[])]}),
       new TableCell({borders,margins:{top:60,bottom:60,left:80,right:80},children:[new Paragraph({children:[new TextRun({text:issue.status||'',font:'Arial',size:18})]})]})
     ]}));
@@ -760,7 +766,10 @@ function _rptWithCurrentCompliance(polished, snapshot){
         prows.forEach((row,j)=>{ if(used.has(j)) return; if(lvl(row)!==lvl(e)) return; const rw=norm(row.description); const s=words.filter(w=>rw.includes(w)).length; if(s>score){ score=s; best=j; } });
         if(best>=0&&score>0){ p=prows[best]; used.add(best); }
       }
-      return {level:lvl(e)||(p&&p.level)||'', description:(e.cmpNum?('CMP-'+String(e.cmpNum).padStart(2,'0')+' — '):'')+((p&&p.description)||e.location||''), corrective:(p&&p.corrective)||e.corrective||'', status:e.status||(p&&p.status)||'', dateResolved:e.dateResolved||'', actions:(typeof window.clStepsText==='function')?window.clStepsText(e):'', fixIds:(typeof window.clStepPhotoIds==='function')?window.clStepPhotoIds(e):[], photoIds:(Array.isArray(e.photoIds)?e.photoIds.slice():[]).concat(((typeof window.clStepPhotoIds==='function')?window.clStepPhotoIds(e):[]).filter(x=>!(e.photoIds||[]).includes(x)))};
+      // 9/11 (Tim): the id printed twice ("CMP-17 — CMP-17 — W11…") — carry it ONCE as cmpId and strip any copy the polish left at the front of the text.
+      const cmpId=e.cmpNum?('CMP-'+String(e.cmpNum).padStart(2,'0')):'';
+      const descRaw=String((p&&p.description)||e.location||'').replace(/^(?:\s*CMP-\d+\s*(?:[—–·:-]\s*Level\s*\d\s*)?(?:[—–·:-]\s*)?)+/i,'');
+      return {level:lvl(e)||(p&&p.level)||'', cmpId, description:descRaw, corrective:(p&&p.corrective)||e.corrective||'', status:e.status||(p&&p.status)||'', dateResolved:e.dateResolved||'', actions:(typeof window.clStepsText==='function')?window.clStepsText(e):'', fixIds:(typeof window.clStepPhotoIds==='function')?window.clStepPhotoIds(e):[], photoIds:(Array.isArray(e.photoIds)?e.photoIds.slice():[]).concat(((typeof window.clStepPhotoIds==='function')?window.clStepPhotoIds(e):[]).filter(x=>!(e.photoIds||[]).includes(x)))};
     });
     if(!rows.length) return polished;   // no entries → the polished "no issues" row stands
     return Object.assign({}, polished, {complianceIssues:rows});

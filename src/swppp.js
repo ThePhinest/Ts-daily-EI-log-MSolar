@@ -607,10 +607,8 @@ async function swpppExportDaily(reportDate,fmt){
     const pol=(typeof window._rptMergeCompliance==='function')?window._rptMergeCompliance(v.polished||{},v.inputSnapshot||{}):(v.polished||{});
     if(fmt==='docx'){
       const blob=await rptBuildDocx(v.inputSnapshot.logData, pol, v.inputSnapshot.photoRefs||[]);
-      const [y,m,d]=reportDate.split('-');
       const projName=(document.getElementById('cfg-projectName')?.value?.trim())||'GroundLog';
-      const slug=projName.replace(/[^a-zA-Z0-9]+/g,'_').replace(/^_+|_+$/g,'')||'GroundLog';
-      await saveFileNative(blob,`${m}-${d}-${y}_${slug}-Daily_Inspection_Report.docx`,'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+      await saveFileNative(blob,(await window.glReportFileName('daily',reportDate,null,projName))+'.docx','application/vnd.openxmlformats-officedocument.wordprocessingml.document');
     } else {
       const pdfMod=await import('./swpppPdf.js');
       const [authorSig,logo,review]=await Promise.all([

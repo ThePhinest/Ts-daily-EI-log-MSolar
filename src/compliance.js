@@ -640,9 +640,9 @@ function _clFormStepsRender(){
   host.innerHTML=_clFormSteps.map((s,i)=>{
     const ph=(s.photoIds||[]).map(_clPhotoById).filter(Boolean);
     return `<div class="cl-step" data-step="${s.id}" style="border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin-bottom:8px;background:var(--s2)">
-      <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px">
-        <span style="font-family:var(--mono);font-size:10px;color:var(--amber);letter-spacing:.06em">STEP ${i+1}</span>
-        <input type="date" value="${_hEsc(s.date||'')}" onchange="clFormStepField('${s.id}','date',this.value)" style="flex:0 0 auto;background:var(--s1);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--mono);font-size:12px;padding:4px 6px">
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px;flex-wrap:wrap">
+        <span style="font-family:var(--mono);font-size:10px;color:var(--amber);letter-spacing:.06em;flex-shrink:0">STEP ${i+1}</span>
+        <input type="date" value="${_hEsc(s.date||'')}" onchange="clFormStepField('${s.id}','date',this.value)" style="flex:1 1 130px;min-width:0;max-width:100%;box-sizing:border-box;background:var(--s1);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--mono);font-size:12px;padding:4px 6px">
         <button type="button" onclick="clFormStepRemove('${s.id}')" title="Remove this step" style="margin-left:auto;background:none;border:none;color:var(--muted);font-size:14px;cursor:pointer;padding:2px 6px">✕</button>
       </div>
       <textarea class="short auto-expand" rows="2" placeholder="What was done — e.g. silt fence re-trenched and re-staked, sediment removed…" oninput="clFormStepField('${s.id}','text',this.value)">${_hEsc(s.text||'')}</textarea>
