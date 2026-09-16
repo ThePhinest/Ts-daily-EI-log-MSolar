@@ -126,7 +126,7 @@ function _glMapText(){
     const ld=Object.entries(s.loaders||{}); if(ld.length) L.push('loaders: '+ld.map(([k,v])=>k+' '+v+' ms').join(' · '));
     if(s.sheets) L.push(`plan sheets: ${s.sheets.visible}/${s.sheets.sheets} on · ${s.sheets.mountedFull} HD + ${s.sheets.mountedPreview} lite mounted ≈ ${s.sheets.estTextureMb} MB texture (max ${s.sheets.maxFull} HD) · previews built ${s.sheets.previewsBuilt} in ${s.sheets.previewMs} ms · swaps ${s.sheets.swaps}`);
     if(s.sheets&&s.sheets.fullZoomBySheet) L.push('HD zoom per sheet: '+s.sheets.fullZoomBySheet);
-    if(s.kml) L.push(`kml: ${s.kml.visible}/${s.kml.total} layers on · ${s.kml.featuresVisible} features`);
+    if(s.kml) L.push(`kml: ${s.kml.visible}/${s.kml.total} layers on · ${s.kml.featuresVisible} features`+((s.kml.missingOnMap||[]).length?` · ⚠ on but not on the map: ${s.kml.missingOnMap.join(', ')}`:''));
     if(s.pins) L.push(`pins: ${s.pins.photos} photo · ${s.pins.field} field · ${s.pins.spills} spill`);
     return L.join('\n');
   }catch{ return ''; }

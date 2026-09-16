@@ -928,6 +928,12 @@ const KML_SUBLAYER_TYPES = ['fill','line','pt','label'];
 function mapReaddKmlLayer(layer, features){
   if(!_mapInstance || !features || !features.length) return;
   if(_mapInstance.getSource(layer.id)) return;
+  // 9/16: a style mid-load (cold open, style switch) throws out of addLayer and left
+  // the layer registered-but-absent. Wait for idle instead.
+  if(typeof _mapInstance.isStyleLoaded === 'function' && !_mapInstance.isStyleLoaded()){
+    _queueOnIdle(()=>{ if(layer.visible !== false) mapReaddKmlLayer(layer, features); });
+    return;
+  }
   // Stamp resolved fill/stroke onto each feature BEFORE addSource — Mapbox
   // expressions can't index a JS array (palette) at render time, so we
   // pre-resolve the color via data-expressions ['coalesce',['get','_fillResolved']].
@@ -1250,7 +1256,9 @@ window.glMapStats = function(){
   const out = { loaders: _mapLoadStats.loaders, openedAt: _mapLoadStats.openedAt ? new Date(_mapLoadStats.openedAt).toLocaleTimeString() : null };
   try{ out.zoom = _mapInstance ? +_mapInstance.getZoom().toFixed(2) : null; }catch{}
   out.kml = { visible: _mapKmlLayers.filter(l => l.visible).length, total: _mapKmlLayers.length,
-              featuresVisible: _mapKmlLayers.filter(l => l.visible).reduce((a, l) => a + ((l.features || []).length), 0) };
+              featuresVisible: _mapKmlLayers.filter(l => l.visible).reduce((a, l) => a + ((l.features || []).length), 0),
+              // #19 signature: registered visible but nothing on the map
+              missingOnMap: _mapKmlLayers.filter(l => l.visible && !(_mapInstance && _mapInstance.getSource(l.id))).map(l => l.name) };
   out.pins = { photos: (_mapPhotoMarkers || []).length, field: (_mapFieldMarkers || []).length, spills: (typeof _mapSpillMarkers !== 'undefined' ? _mapSpillMarkers : []).length };
   if(typeof window.poMapStats === 'function'){ try{ out.sheets = window.poMapStats(); }catch{} }
   try{ if(performance.memory) out.heapMb = Math.round(performance.memory.usedJSHeapSize / 1048576); }catch{}
@@ -1634,6 +1642,9 @@ async function kmlLoadLayers(){
         if(folderFeatures){
           features = folderFeatures.get(layer.name) || [];
           if(!features.length) features = folderFeatures.get('') || [];
+          // 9/16 (#19 root cause): same last-resort fallback the toggle path uses —
+          // a flat file whose Document name differs from the layer name lands here.
+          if(!features.length) features = folderFeatures.get('__all') || [];
         } else {
           features = kmlParseLayerById(kmlText, layer.name);
         }
