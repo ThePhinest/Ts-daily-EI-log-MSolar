@@ -6727,13 +6727,15 @@ async function _doCaptureDist(cid){
   _showCaptureToast('☁️ Saving…');
   const catName=(typeof tcGetName==='function')?tcGetName(cid,pid):'Disturbance';
   const prefill=`${catName} status · ${_fmtLabelDate(today)}`;
-  // Disturbance captures are SWPPP evidence by definition — auto-tag them (Tim 8/4),
-  // same as ESC status captures; the lightbox SWPPP toggle still un-tags cleanly.
-  const photoEntry=await phSaveCapturedImage(branded,today,prefill,{distCap:{cid},swppp:true});
+  // 9/16 (Tim 9/13): a disturbance capture is the QI report's §10 DISTURBANCE SKETCH —
+  // its own tag, auto-attached to §10 on the next inspection and kept out of the §11
+  // control photos (which the 8/4 swppp tag used to pull it into). ESC status captures
+  // stay SWPPP-tagged. The lightbox 🗺 toggle un-tags cleanly.
+  const photoEntry=await phSaveCapturedImage(branded,today,prefill,{distCap:{cid},sketch:true});
   _distCapClear();
   _hideCaptureToast();
   if(!photoEntry){ console.warn('_doCaptureDist: save failed'); return; }
-  _showCaptureToast('✓ Saved to Photos · 🚧 disturbance capture');
+  _showCaptureToast('✓ Saved to Photos · 🗺 disturbance sketch (QI §10)');
   setTimeout(_hideCaptureToast,2200);
 }
 

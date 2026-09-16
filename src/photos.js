@@ -416,6 +416,7 @@ function _phDocFor(p){
   // devices resurrect it on next load.
   doc.swppp = !!p.swppp;
   doc.seedTag = !!p.seedTag;
+  doc.sketchTag = !!p.sketchTag;   // 9/16 §10 disturbance sketch
   if(p.seedCap) doc.seedCap = p.seedCap;
   if(p.distCap) doc.distCap = p.distCap;
   if(p.plCap) doc.plCap = (typeof p.plCap==='object')?p.plCap:true;   // 9/11: framed-items list survives the cloud round-trip
@@ -743,7 +744,7 @@ function _phMirrorDoc(p, pid, now){
   if(p.gpsAcc !== undefined) m.gpsAcc = p.gpsAcc;
   if(p.alt !== undefined) m.alt = p.alt;
   if(p.software) m.software = p.software;
-  m.swppp = !!p.swppp; m.seedTag = !!p.seedTag; m.repairTag = !!p.repairTag;
+  m.swppp = !!p.swppp; m.seedTag = !!p.seedTag; m.repairTag = !!p.repairTag; m.sketchTag = !!p.sketchTag;
   if(p.plCap) m.plCap = (typeof p.plCap==='object')?p.plCap:true;
   return m;
 }
@@ -919,6 +920,7 @@ function phRender(){
             ${_phSelMode?`<span style="position:absolute;top:6px;right:6px;width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;background:${_phSel.has(p.id)?'var(--amber)':'rgba(10,18,26,0.6)'};color:${_phSel.has(p.id)?'#111':'#fff'};border:1.5px solid ${_phSel.has(p.id)?'var(--amber)':'rgba(255,255,255,0.6)'}">${_phSel.has(p.id)?'✓':''}</span>`:''}
             ${p.swppp?'<span class="ph-thumb-swppp">🌊 SWPPP</span>':''}
             ${p.seedTag?`<span class="ph-thumb-seed"${p.swppp?' style="top:24px"':''}>🌱 SEED</span>`:''}
+            ${p.sketchTag?`<span class="ph-thumb-sketch"${(p.swppp?1:0)+(p.seedTag?1:0)?` style="top:${4+20*((p.swppp?1:0)+(p.seedTag?1:0))}px"`:''}>🗺 SKETCH</span>`:''}
             ${_ledBadge(p)}
             <div class="ph-thumb-caption">${p.caption||'Tap to add caption'}</div>
             ${_phSelMode?'':`<button class="ph-thumb-del" onclick="event.stopPropagation();phConfirmDelete('${p.id}')">✕</button>`}
@@ -1155,6 +1157,15 @@ async function _phLbShow(index){
     sdBtn.title = p.seedTag ? 'Seed-tagged — tap to untag' : 'Tag as a seed tag photo';
     sdBtn.classList.toggle('ph-seed-on', !!p.seedTag);
   }
+  // 🗺 Disturbance sketch (9/16, Tim 9/13): map captures only — a sketch-tagged capture
+  // auto-attaches to the QI report's §10 Disturbance Sketches and stays OUT of §11 photos.
+  const skBtn = document.getElementById('ph-lb-sketch');
+  if(skBtn){
+    skBtn.style.display = (own && p.type === 'map_capture') ? '' : 'none';
+    skBtn.textContent = p.sketchTag ? '🗺 Sketch ✓' : '🗺 Sketch';
+    skBtn.title = p.sketchTag ? 'Tagged as a disturbance sketch (QI §10) — tap to untag' : 'Tag as a disturbance sketch for the QI report §10';
+    skBtn.classList.toggle('ph-sketch-on', !!p.sketchTag);
+  }
   const delBtn = document.getElementById('ph-lb-del');
   if(delBtn) delBtn.style.display = own ? '' : 'none';
   // ⚑ Report (Guideline 1.2 UGC): a teammate's published photo only.
@@ -1199,7 +1210,7 @@ async function _phLbShow(index){
 // blobs feed exactly the memory-pressure reloads the iPad already shows.
 let _phStampCache=new Map();
 function _phStampKey(p){
-  return [p.id,p.caption||'',p.locLabel||'',p.swppp?1:0,p.seedTag?1:0,p.repairTag?1:0,
+  return [p.id,p.caption||'',p.locLabel||'',p.swppp?1:0,p.seedTag?1:0,p.repairTag?1:0,p.sketchTag?1:0,
     p.storageUrl?1:0,JSON.stringify(_stampDefaults())].join('|');
 }
 function _phStampCacheClear(){
@@ -1466,7 +1477,7 @@ function _phLbLinkedEntries(photoId){
 function _phLbRenderMeta(p){
   const links=_phLbLinkedEntries(p.id);
   const b=document.getElementById('ph-lb-badges');
-  if(b) b.textContent=[p.swppp?'🌊':'',p.seedTag?'🌱':'',p.repairTag?'🚩':'',links.length?'📐':''].filter(Boolean).join(' ');
+  if(b) b.textContent=[p.swppp?'🌊':'',p.seedTag?'🌱':'',p.sketchTag?'🗺':'',p.repairTag?'🚩':'',links.length?'📐':''].filter(Boolean).join(' ');
   // 🌱 bag-ledger line for seed-tag photos (Tim 8/20) — lives right under the badges.
   let led=document.getElementById('ph-lb-ledger');
   if(!led&&b){ led=document.createElement('div'); led.id='ph-lb-ledger'; led.style.cssText='font-family:var(--mono);font-size:10px;color:var(--muted);text-align:center;line-height:1.4;padding:0 12px'; b.insertAdjacentElement('afterend',led); }
@@ -1710,6 +1721,24 @@ async function phToggleSeedCurrent(){
   try{ await phSaveCloudOne(p); }catch(e){}
 }
 
+// 🗺 Disturbance-sketch designation (9/16) — mirrors the SWPPP/seed toggles.
+async function phToggleSketchCurrent(){
+  if(!_phLbId) return;
+  const p = window._phPhotos.find(x=>x.id===_phLbId);
+  if(!p) return;
+  p.sketchTag = !p.sketchTag;
+  phMarkDirty(p.id);
+  phSave();
+  phRender();
+  const btn = document.getElementById('ph-lb-sketch');
+  if(btn){
+    btn.textContent = p.sketchTag ? '🗺 Sketch ✓' : '🗺 Sketch';
+    btn.classList.toggle('ph-sketch-on', !!p.sketchTag);
+  }
+  try{ await phSaveCloudOne(p); }catch(e){}
+}
+if(typeof window !== 'undefined') window.phToggleSketchCurrent = phToggleSketchCurrent;
+
 // ── Delete with confirm (soft delete — 30-day undo window) ──
 function phConfirmDelete(id){
   const p = window._phPhotos.find(x=>x.id===id);
@@ -1887,6 +1916,7 @@ async function phSaveCameraPhoto(blob, meta){
   const tags=Array.isArray(m.tags)?m.tags:[];
   if(tags.includes('swppp'))  entry.swppp=true;
   if(tags.includes('seed'))   entry.seedTag=true;
+  if(tags.includes('sketch')) entry.sketchTag=true;
   if(tags.includes('repair')) entry.repairTag=true;
   window._phPhotos=(window._phPhotos||[]);
   window._phPhotos.push(entry);
@@ -2056,6 +2086,7 @@ async function phSaveCapturedImage(blob, photoDate, captionOverride, opts){
   const entry={id,date:today,caption,filename:fname,thumb,storageUrl,uploadedAt:Date.now(),projectId:pid,type:'map_capture'};
   // Pre-tagged captures (ESC status) flow straight into the QI report's §11 auto-attach.
   if(opts&&opts.swppp) entry.swppp=true;
+  if(opts&&opts.sketch) entry.sketchTag=true;   // 9/16: §10 disturbance sketch
   // Seeding-status captures carry their source keys so the seeding XLSX can route the
   // latest capture onto the right tab (single source → its tab; multi → summary tab).
   if(opts&&opts.seedCap) entry.seedCap=opts.seedCap;

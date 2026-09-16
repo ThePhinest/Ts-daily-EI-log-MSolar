@@ -271,13 +271,30 @@ function swpppNewInspection(){
   // Map captures are normally §10 material, but a 🌊 SWPPP tag on a capture is a
   // deliberate "this belongs with the control photos" signal (ESC status captures
   // arrive pre-tagged), so the tag wins over the type here.
+  const fresh = p=>(p.date||'') > sinceDate || ((p.date||'')===sinceDate && (p.uploadedAt||0) > sinceTs) || (!prev && (p.date||'') >= sinceDate);
+  // 9/16: a 🗺 sketch-tagged capture is §10 material — never a §11 control photo,
+  // even when it also carries the SWPPP tag from before the split.
   const autoPhotos = (window._phPhotos||[])
-    .filter(p=>!usedIds.has(p.id) && !p.deletedAt && p.swppp && (!p.projectId || p.projectId===pid))
-    .filter(p=>(p.date||'') > sinceDate || ((p.date||'')===sinceDate && (p.uploadedAt||0) > sinceTs) || (!prev && (p.date||'') >= sinceDate))
+    .filter(p=>!usedIds.has(p.id) && !p.deletedAt && p.swppp && !p.sketchTag && (!p.projectId || p.projectId===pid))
+    .filter(fresh)
     .sort((a,b)=>(a.uploadedAt||0)-(b.uploadedAt||0))
     .slice(0,24);
   insp.photos = autoPhotos.map(p=>p.id);
   autoPhotos.forEach(p=>{ insp.photoMeta[p.id] = { subject: p.caption||'', loc: p.locLabel||'' }; });   // camera locLabel (e.g. W21) pre-fills Location
+  // 9/16 (Tim 9/13): §10 Disturbance Sketches auto-attach the same way — every 🗺
+  // sketch-tagged map capture since the last inspection, oldest first; the picker
+  // still adds/removes. Area pre-fills from the capture's category when known.
+  const autoSketches = (window._phPhotos||[])
+    .filter(p=>!usedIds.has(p.id) && !p.deletedAt && p.sketchTag && p.type==='map_capture' && (!p.projectId || p.projectId===pid))
+    .filter(fresh)
+    .sort((a,b)=>(a.uploadedAt||0)-(b.uploadedAt||0))
+    .slice(0,24);
+  insp.sketches = autoSketches.map(p=>p.id);
+  autoSketches.forEach(p=>{
+    let area='';
+    try{ if(p.distCap && p.distCap.cid && typeof tcGetName==='function') area = tcGetName(p.distCap.cid, pid) || ''; }catch(_){}
+    insp.sketchMeta[p.id] = { area, desc: p.caption||'', date: p.date||insp.date };
+  });
   if(!_swInsp[pid]) _swInsp[pid]=[];
   _swInsp[pid].push(insp);
   _swQueueSave(insp);
@@ -526,14 +543,16 @@ function swpppPickPhotos(kind){   // kind: 'sketches' | 'photos'
   const pid = _swPid();
   let pool = (window._phPhotos||[]).filter(p=>!p.deletedAt && (!p.projectId || p.projectId===pid));
   if(kind==='sketches') pool = pool.filter(p=>p.type==='map_capture');
-  // §11: field photos + any capture carrying the 🌊 SWPPP tag (ESC status captures).
-  else pool = pool.filter(p=>p.type!=='map_capture'||p.swppp);
+  // §11: field photos + any capture carrying the 🌊 SWPPP tag (ESC status captures);
+  // 9/16: 🗺 sketch-tagged captures belong to §10 and are kept out of this pool.
+  else pool = pool.filter(p=>(p.type!=='map_capture'||p.swppp) && !p.sketchTag);
   // Photos already in an earlier report sort last and carry a badge, so the
   // fresh ones lead and a re-use is a deliberate choice.
   const used = new Set();
   (_swInsp[pid]||[]).forEach(x=>{ if(x.id!==insp.id && !x.deletedAt) (x[kind]||[]).forEach(id=>used.add(id)); });
-  // Unused first, then SWPPP-tagged, then newest first.
-  pool.sort((a,b)=> (used.has(a.id)?1:0)-(used.has(b.id)?1:0) || (b.swppp?1:0)-(a.swppp?1:0) || (b.uploadedAt||0)-(a.uploadedAt||0));
+  // Unused first, then tagged for THIS section (🗺 sketch / 🌊 SWPPP), then newest first.
+  const tagged = p => kind==='sketches' ? (p.sketchTag?1:0) : (p.swppp?1:0);
+  pool.sort((a,b)=> (used.has(a.id)?1:0)-(used.has(b.id)?1:0) || tagged(b)-tagged(a) || (b.uploadedAt||0)-(a.uploadedAt||0));
   pool = pool.slice(0,120);
   const sel = new Set(insp[kind]||[]);
   const ov = document.createElement('div');
@@ -542,13 +561,13 @@ function swpppPickPhotos(kind){   // kind: 'sketches' | 'photos'
     const on = sel.has(p.id);
     return `<div class="sw-pick${on?' on':''}" data-id="${p.id}" onclick="this.classList.toggle('on')">
       <img src="${p.thumb||''}" loading="lazy">
-      ${used.has(p.id)?'<span class="sw-pick-used">IN PRIOR REPORT</span>':(p.swppp?'<span class="sw-pick-tag">SWPPP</span>':'')}
+      ${used.has(p.id)?'<span class="sw-pick-used">IN PRIOR REPORT</span>':(kind==='sketches'?(p.sketchTag?'<span class="sw-pick-tag">🗺 SKETCH</span>':''):(p.swppp?'<span class="sw-pick-tag">SWPPP</span>':''))}
       <span class="sw-pick-date">${p.date||''}</span>
     </div>`;
   }).join('');
   ov.innerHTML = `<div class="modal-box" style="max-width:560px">
     <h3 style="margin:0 0 4px">${kind==='sketches'?'Select disturbance-map captures':'Select inspection photos'}</h3>
-    <p style="font-size:11px;color:var(--muted);margin:0 0 10px">${kind==='sketches'?'Map captures with the legend baked in — Tracker → category → Capture.':'SWPPP-tagged photos sort first. Tap to select.'}</p>
+    <p style="font-size:11px;color:var(--muted);margin:0 0 10px">${kind==='sketches'?'🗺 Sketch-tagged captures auto-attach and sort first; any map capture can be added. Tracker → category → Capture.':'SWPPP-tagged photos sort first. Tap to select.'}</p>
     <div class="sw-pick-grid" id="sw-pick-grid">${cells || '<p style="color:var(--muted);font-size:12px">Nothing available yet.</p>'}</div>
     <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:12px">
       <button class="btn btn-outline" onclick="this.closest('.modal-overlay').remove()">Cancel</button>
