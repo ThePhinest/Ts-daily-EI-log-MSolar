@@ -5,6 +5,7 @@ import MapboxDraw from '@mapbox/mapbox-gl-draw';
 import '@mapbox/mapbox-gl-draw/dist/mapbox-gl-draw.css';
 // Snapping ("soft magnet") to the active plan + its sibling overlays. Severable.
 import { SnapPolygonMode, SnapLineMode, SnapPointMode, SnapModeDrawStyles } from 'mapbox-gl-draw-snap-mode';
+import { get as _kmlKvGet, set as _kmlKvSet, del as _kmlKvDel, createStore as _kmlKvStore } from 'idb-keyval';
 
 // Snap source: the active planned parent PLUS every sibling overlay under it, so
 // new overlays anchor to the plan AND to previous states (Lime→Fert→Seed) — no
@@ -328,13 +329,22 @@ function mapSetup(token){
     setTimeout(()=>_mapInstance.resize(),100);
     mapAddGPSDot();
     mapUpdateStyleButtons();
-    mapRenderPhotoPins();
-    mapRenderFieldMarkers();
-    mapRenderSpillMarkers();
-    mapRenderCmpMarkers();
-    kmlLoadLayers();
-    if(typeof window.poLoadSheets === 'function') window.poLoadSheets();
-    mapRenderTrackerLayers();
+    // 9/16: sequenced + timed map open. Seven plan sheets (≈28 MB of texture
+    // each) mounting while KML parsed and pins rendered on the same tick is what
+    // jetsam-killed the WebView in the field 9/15. Markers + tracker first, KML
+    // after the first idle, plan sheets after KML settles; every stage is timed
+    // into Diagnostics (window.glMapStats).
+    _mapLoadStats.openedAt = Date.now(); _mapLoadStats.loaders = {};
+    _mapTimed('photoPins', mapRenderPhotoPins);
+    _mapTimed('fieldMarkers', mapRenderFieldMarkers);
+    _mapTimed('spills', mapRenderSpillMarkers);
+    _mapTimed('cmp', mapRenderCmpMarkers);
+    _mapTimed('tracker', mapRenderTrackerLayers);
+    _mapAfterIdle(()=>{
+      _mapTimed('kml', kmlLoadLayers).then(()=>{
+        _mapAfterIdle(()=>{ if(typeof window.poLoadSheets === 'function') _mapTimed('sheets', window.poLoadSheets); }, 1500);
+      });
+    }, 1500);
 // Long press — desktop
 let _lpTimer = null, _lpStartPos = null;
 _mapInstance.on('mousedown', e => {
@@ -1155,6 +1165,97 @@ function kmlSaveLayers(){
 // session; cleared on project switch (mapClearKmlLayers) to free memory.
 const _kmlTextCache = new Map();    // storagePath|downloadUrl -> kml text
 const _kmlParseCache = new Map();   // storagePath|downloadUrl -> Map(leafFolderName -> features[])
+
+// ── 9/16: parsed-KML cache that survives a WebView restart ──────────────────
+// Every cold map open used to re-download and re-run the togeojson/DOMParser
+// pass over each visible KML file (a 16 MB file → seconds of main-thread
+// parse + a transient DOM the size of the file). The folder→features map is
+// now kept in a DEDICATED idb-keyval store (never the hydrated idbCache
+// mirror) keyed by the same storagePath|downloadUrl key as the session caches.
+// Invalidated when the last layer of that file is deleted.
+const _kmlGeoStore = _kmlKvStore('gl_kml_geojson', 'files');
+async function _kmlGeoCacheGet(ck){
+  try{
+    const rec = await _kmlKvGet(ck, _kmlGeoStore);
+    if(rec && rec.folders){
+      const fm = new Map(Object.entries(rec.folders));
+      // '__all' is not persisted (it would double the record) — rebuild it.
+      if(!fm.has('__all')) fm.set('__all', [].concat(...Array.from(fm.values())));
+      return fm;
+    }
+  }catch{}
+  return null;
+}
+function _kmlGeoCacheSet(ck, folderMap){
+  try{ const folders = {}; folderMap.forEach((v, k) => { if(k !== '__all') folders[k] = v; }); _kmlKvSet(ck, { folders, savedAt: Date.now() }, _kmlGeoStore).catch(() => {}); }catch{}
+}
+function _kmlGeoCacheDel(ck){ try{ _kmlParseCache.delete(ck); _kmlKvDel(ck, _kmlGeoStore).catch(() => {}); }catch{} }
+// folder-leaf → features for one KML FILE: session cache → IDB → fetch + parse.
+async function _kmlFolderMap(ck, fetchText){
+  let fm = ck ? _kmlParseCache.get(ck) : null;
+  if(fm) return fm;
+  if(ck){ fm = await _kmlGeoCacheGet(ck); if(fm){ _kmlParseCache.set(ck, fm); return fm; } }
+  const kmlText = await fetchText();
+  const kmlFile = new File([kmlText], 'restore.kml', { type: 'text/xml' });
+  const reparsed = await window.parseKmlOrKmzFile(kmlFile);
+  fm = new Map();
+  reparsed.features.forEach(f => {
+    const fp = (f.properties || {})._folderPath || '';
+    const segs = fp.split(' / ');
+    const leafName = segs[segs.length - 1] || '';
+    if(!fm.has(leafName)) fm.set(leafName, []);
+    fm.get(leafName).push(f);
+  });
+  fm.set('__all', reparsed.features);
+  if(ck){ _kmlParseCache.set(ck, fm); _kmlGeoCacheSet(ck, fm); }
+  return fm;
+}
+// Features for one LAYER (toggle-on / promote path), cache-first.
+async function _kmlFeaturesForLayer(layer){
+  const ck = _kmlCacheKeyFor(layer.storagePath, [layer]);
+  if(typeof window.parseKmlOrKmzFile === 'function'){
+    try{
+      const fm = await _kmlFolderMap(ck, () => _kmlFetchKmlText(layer.storagePath, [layer]));
+      let features = fm.get(layer.name) || [];
+      if(!features.length) features = fm.get('') || [];
+      if(!features.length) features = fm.get('__all') || [];
+      return features;
+    }catch(e){ console.warn('_kmlFeaturesForLayer fell back:', e.message); }
+  }
+  const kmlText = await _kmlFetchKmlText(layer.storagePath, [layer]);
+  return kmlParseLayerById(kmlText, layer.name);
+}
+
+// ── 9/16: map-open timing + read-out ────────────────────────────────────────
+const _mapLoadStats = { openedAt: null, loaders: {} };
+function _mapTimed(name, fn){
+  const t0 = performance.now();
+  const done = () => {
+    _mapLoadStats.loaders[name] = Math.round(performance.now() - t0);
+    if(typeof window.glBootMark === 'function') window.glBootMark('map-' + name, { ms: _mapLoadStats.loaders[name] });
+  };
+  let r;
+  try{ r = fn(); }catch(e){ done(); console.warn('map loader ' + name + ':', e.message); return Promise.resolve(); }
+  if(r && typeof r.then === 'function') return r.then(done, e => { done(); console.warn('map loader ' + name + ':', e && e.message); });
+  done(); return Promise.resolve();
+}
+function _mapAfterIdle(fn, maxMs){
+  let fired = false;
+  const go = () => { if(fired) return; fired = true; try{ fn(); }catch(e){ console.warn('afterIdle:', e.message); } };
+  if(!_mapInstance){ go(); return; }
+  _mapInstance.once('idle', go);
+  setTimeout(go, maxMs || 2000);
+}
+window.glMapStats = function(){
+  const out = { loaders: _mapLoadStats.loaders, openedAt: _mapLoadStats.openedAt ? new Date(_mapLoadStats.openedAt).toLocaleTimeString() : null };
+  try{ out.zoom = _mapInstance ? +_mapInstance.getZoom().toFixed(2) : null; }catch{}
+  out.kml = { visible: _mapKmlLayers.filter(l => l.visible).length, total: _mapKmlLayers.length,
+              featuresVisible: _mapKmlLayers.filter(l => l.visible).reduce((a, l) => a + ((l.features || []).length), 0) };
+  out.pins = { photos: (_mapPhotoMarkers || []).length, field: (_mapFieldMarkers || []).length, spills: (typeof _mapSpillMarkers !== 'undefined' ? _mapSpillMarkers : []).length };
+  if(typeof window.poMapStats === 'function'){ try{ out.sheets = window.poMapStats(); }catch{} }
+  try{ if(performance.memory) out.heapMb = Math.round(performance.memory.usedJSHeapSize / 1048576); }catch{}
+  return out;
+};
 function _kmlCacheKeyFor(storagePath, layers){
   return storagePath || (layers && layers.find(l=>l.downloadUrl)?.downloadUrl) || null;
 }
@@ -1495,45 +1596,29 @@ async function kmlLoadLayers(){
       continue;
     }
 
-    // Fetch KML once for this file (own Storage path, or shared downloadUrl)
-    let kmlText = null;
-    try{
-      kmlText = await _kmlFetchKmlText(storagePath, layers);
-    }catch(err){
-      console.warn('kmlLoadLayers fetch failed:', err.message);
-      // Forward to β.1 — initial KML load on map open. If this silently
-      // fails on iOS native, layers will appear in the panel but won't
-      // render on the map. Same iOS-WebView CORS hypothesis as toggle path.
-      if(typeof window._reportError === 'function'){
-        window._reportError({
-          type: 'kml-load-failed',
-          message: 'kmlLoadLayers fetch failed: ' + (err && err.message ? err.message : String(err)),
-          stack: err && err.stack ? err.stack : null,
-          kmlStoragePath: storagePath
-        });
+    // 9/16: cache-first. A hit on the persisted folder→features map means NO
+    // download and NO DOMParser/togeojson pass on this open; the text fetch
+    // only happens on a miss (first ever open of this file on this device).
+    let folderFeatures = null, kmlText = null;
+    const ck = _kmlCacheKeyFor(storagePath, layers);
+    if(typeof window.parseKmlOrKmzFile === 'function'){
+      try{ folderFeatures = await _kmlFolderMap(ck, () => _kmlFetchKmlText(storagePath, layers)); }
+      catch(err){
+        console.warn('kmlLoadLayers load failed:', err.message);
+        if(typeof window._reportError === 'function'){
+          window._reportError({
+            type: 'kml-load-failed',
+            message: 'kmlLoadLayers load failed: ' + (err && err.message ? err.message : String(err)),
+            stack: err && err.stack ? err.stack : null,
+            kmlStoragePath: storagePath
+          });
+        }
       }
     }
-
-    // Re-parse KML through full togeojson pipeline to restore style info
-    // (fill/stroke/palette colors). kmlParseLayerById is a fallback that
-    // strips styles — we only use it if the togeojson path fails.
-    let folderFeatures = null;
-    if(kmlText && typeof window.parseKmlOrKmzFile === 'function'){
-      try{
-        const kmlFile = new File([kmlText], 'restore.kml', { type: 'text/xml' });
-        const reparsed = await window.parseKmlOrKmzFile(kmlFile);
-        folderFeatures = new Map();
-        reparsed.features.forEach(f => {
-          const props = f.properties || {};
-          const folderPath = props._folderPath || '';
-          const segments = folderPath.split(' / ');
-          const leafName = segments[segments.length - 1] || folderPath;
-          if(!folderFeatures.has(leafName)) folderFeatures.set(leafName, []);
-          folderFeatures.get(leafName).push(f);
-        });
-      }catch(e){
-        console.warn('kmlLoadLayers reparse failed, falling back:', e.message);
-      }
+    if(!folderFeatures){
+      // togeojson unavailable or failed — legacy path: raw text + style-less parse.
+      try{ kmlText = await _kmlFetchKmlText(storagePath, layers); }
+      catch(err){ console.warn('kmlLoadLayers fetch failed:', err.message); }
     }
 
     // Register all layers, cache features for ALL (not just visible) so future
@@ -1544,7 +1629,7 @@ async function kmlLoadLayers(){
       if(_mapKmlLayers.find(l=>l.id===layer.id)) return;
       const layerObj = { ...layer };
       _mapKmlLayers.push(layerObj);
-      if(kmlText){
+      if(folderFeatures || kmlText){
         let features;
         if(folderFeatures){
           features = folderFeatures.get(layer.name) || [];
@@ -1554,7 +1639,13 @@ async function kmlLoadLayers(){
         }
         if(features.length){
           layerObj.features = features;
-          if(layer.visible) mapReaddKmlLayer(layerObj, features);
+          if(layer.visible){
+            // 9/16 (#19 KML hidden on first open): an add before the style is ready
+            // used to throw out of this loop and leave the layer registered but
+            // unrendered. Retry at idle instead.
+            try{ mapReaddKmlLayer(layerObj, features); }
+            catch(e){ console.warn('kml add deferred:', e.message); _queueOnIdle(()=>{ if(layerObj.visible){ try{ mapReaddKmlLayer(layerObj, features); }catch(e2){ console.warn('kml add retry:', e2.message); } } }); }
+          }
         }
       }
     });
@@ -2495,11 +2586,17 @@ async function mapToggleKmlLayer(i, visible){
   kmlSaveLayers();
 }
 
+function _kmlForgetFileIfOrphan(layer){
+  // Last layer of a KML file gone → drop the persisted parse for that file.
+  const ck = _kmlCacheKeyFor(layer.storagePath, [layer]); if(!ck) return;
+  if(!_mapKmlLayers.some(l => l !== layer && _kmlCacheKeyFor(l.storagePath, [l]) === ck)) _kmlGeoCacheDel(ck);
+}
 function mapRemoveKmlLayer(i){
   const layer = _mapKmlLayers[i];
   KML_SUBLAYER_TYPES.forEach(t=>{ if(_mapInstance.getLayer(layer.id+'-'+t)) _mapInstance.removeLayer(layer.id+'-'+t); });
   if(_mapInstance.getSource(layer.id)) _mapInstance.removeSource(layer.id);
   _mapKmlLayers.splice(i,1);
+  _kmlForgetFileIfOrphan(layer);
   kmlSaveLayers();
   mapUpdateKmlLayerList();
 }
@@ -2531,6 +2628,7 @@ function _mapRemoveKmlLayerNow(id){
   KML_SUBLAYER_TYPES.forEach(t=>{ if(_mapInstance.getLayer(layer.id+'-'+t)) _mapInstance.removeLayer(layer.id+'-'+t); });
   if(_mapInstance.getSource(layer.id)) _mapInstance.removeSource(layer.id);
   _mapKmlLayers.splice(idx,1);
+  _kmlForgetFileIfOrphan(layer);
   kmlSaveLayers();
   mapUpdateKmlLayerList();
 }
@@ -2555,8 +2653,7 @@ async function mapToggleKmlLayerById(id, visible){
       mapReaddKmlLayer(layer, layer.features);
     } else if(layer.storagePath || layer.downloadUrl){
       try{
-        const kmlText = await _kmlFetchKmlText(layer.storagePath, [layer]);
-        const features = await _kmlReparseFeaturesForLayer(kmlText, layer);
+        const features = await _kmlFeaturesForLayer(layer);   // 9/16: cache-first
         layer.features = features;
         mapReaddKmlLayer(layer, features);
       }catch(err){
@@ -2589,8 +2686,7 @@ async function mapPromoteKmlLayer(layerId){
   // Features may not be loaded yet (metadata-only restore) — same load path as toggle ON.
   if(!(layer.features&&layer.features.length)&&(layer.storagePath||layer.downloadUrl)){
     try{
-      const kmlText=await _kmlFetchKmlText(layer.storagePath,[layer]);
-      layer.features=await _kmlReparseFeaturesForLayer(kmlText,layer);
+      layer.features=await _kmlFeaturesForLayer(layer);   // 9/16: cache-first
     }catch(err){ console.warn('mapPromoteKmlLayer load:',err.message); }
   }
   const feats=(layer.features||[]).filter(f=>f&&f.geometry&&(f.geometry.type==='LineString'||f.geometry.type==='MultiLineString'));

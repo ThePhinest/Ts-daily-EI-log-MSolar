@@ -117,6 +117,22 @@ function glBootReport(all){
 }
 window.glBootReport=glBootReport;
 
+// 9/16: map-open read-out (loader timings, mounted plan sheets + texture estimate, KML, pins).
+function _glMapText(){
+  try{
+    if(typeof window.glMapStats!=='function') return '';
+    const s=window.glMapStats(); const L=['','── map ──'];
+    if(s.openedAt) L.push('opened '+s.openedAt+(s.zoom!=null?' · zoom '+s.zoom:'')+(s.heapMb?' · heap '+s.heapMb+' MB':''));
+    const ld=Object.entries(s.loaders||{}); if(ld.length) L.push('loaders: '+ld.map(([k,v])=>k+' '+v+' ms').join(' · '));
+    if(s.sheets) L.push(`plan sheets: ${s.sheets.visible}/${s.sheets.sheets} on · ${s.sheets.mountedFull} HD + ${s.sheets.mountedPreview} lite mounted ≈ ${s.sheets.estTextureMb} MB texture (max ${s.sheets.maxFull} HD) · previews built ${s.sheets.previewsBuilt} in ${s.sheets.previewMs} ms · swaps ${s.sheets.swaps}`);
+    if(s.sheets&&s.sheets.fullZoomBySheet) L.push('HD zoom per sheet: '+s.sheets.fullZoomBySheet);
+    if(s.kml) L.push(`kml: ${s.kml.visible}/${s.kml.total} layers on · ${s.kml.featuresVisible} features`);
+    if(s.pins) L.push(`pins: ${s.pins.photos} photo · ${s.pins.field} field · ${s.pins.spills} spill`);
+    return L.join('\n');
+  }catch{ return ''; }
+}
+window._glMapText=_glMapText;
+
 // Account Settings → Diagnostics card: last boot + camera log, copyable.
 function glDiagRender(){
   const cb=document.getElementById('acct-diag-optin');
@@ -132,7 +148,7 @@ function glDiagRender(){
       +'\nlibrary photos with no full-res copy in the cloud: '+h.missingFullRes+(h.missingDates.length?'  ('+h.missingDates.join(', ')+')':'')
       +(h.lastErr?'\nlast upload error: '+new Date(h.lastErr.at).toLocaleTimeString()+'  '+h.lastErr.id+'  '+h.lastErr.msg:'');
   }catch{}
-  out.textContent=glBootReport(false)+up+'\n\n── camera log (last 12) ──\n'+camTxt+'\n\n── sw log entries: '+sw.length;
+  out.textContent=glBootReport(false)+up+_glMapText()+'\n\n── camera log (last 12) ──\n'+camTxt+'\n\n── sw log entries: '+sw.length;
 }
 // 9/1: manual kick for parked camera uploads (weak-signal days).
 window.glDiagRetryUploads=async function(){
@@ -152,7 +168,7 @@ window.glDiagOptInChanged=glDiagOptInChanged;
 function _glDiagText(){
   let cam='[]', sw='[]', boot='[]';
   try{ cam=localStorage.getItem('gl_cam_log')||'[]'; sw=localStorage.getItem('gl_sw_log')||'[]'; boot=localStorage.getItem('gl_boot_log')||'[]'; }catch{}
-  return `GroundLog diagnostics ${_localStamp()} (device local time; tz offset ${-new Date().getTimezoneOffset()/60}h)\n\n== boot (all) ==\n${glBootReport(true)}\n\n== gl_boot_log ==\n${boot}\n\n== gl_cam_log ==\n${cam}\n\n== gl_sw_log ==\n${sw}`;
+  return `GroundLog diagnostics ${_localStamp()} (device local time; tz offset ${-new Date().getTimezoneOffset()/60}h)${_glMapText()}\n\n== boot (all) ==\n${glBootReport(true)}\n\n== gl_boot_log ==\n${boot}\n\n== gl_cam_log ==\n${cam}\n\n== gl_sw_log ==\n${sw}`;
 }
 // 📤 Share as a .txt file (iOS share sheet → OneDrive / Mail / Files; web = download).
 // The clipboard route hit Discord's per-message cap (8 pastes per report — Tim 8/25);

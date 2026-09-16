@@ -1,3 +1,5 @@
+import { get as _poKvGet, set as _poKvSet, del as _poKvDel, createStore as _poKvStore } from 'idb-keyval';
+
 // ── Plan-sheet overlays (★★ plan overlay, 2026-07-07) ───────────────────────
 // Georeferenced plan sheets (ESC/grading/drainage crops from the offline
 // georef pipeline) rendered on the live map as Mapbox ImageSources pinned to
@@ -27,6 +29,202 @@ let _poNudge = null;         // active nudge session {id, startCorners}
 function _poPid(){ return (typeof window._activeProjectId === 'function') ? window._activeProjectId() : 'default'; }
 function _poMap(){ return (typeof window.getMapInstance === 'function') ? window.getMapInstance() : null; }
 function _poStorageKey(){ return 'msf_proj_' + _poPid() + '_plan_overlays'; }
+
+// ── Level of detail + memory budget (2026-09-16) ─────────────────────────────
+// 9/15 field failure: ~7 sheets toggled on = ~200 MB of native-resolution
+// texture mounting on map open → WKWebView jetsam-killed, app restarted.
+// Fix: every sheet gets a PREVIEW derivative (long side PO_PREVIEW_PX, ≈6 MB
+// decoded) built once per device (owner also uploads it beside the original so
+// members and other devices skip the decode). A visible sheet mounts the
+// preview; it swaps to full resolution only while it is in the viewport AND the
+// map is zoomed past the point where the preview would look soft, and at most
+// PO_MAX_FULL sheets hold full-res at once (nearest to the view center win).
+// Swaps go through ImageSource.updateImage — one source per sheet, the texture
+// is replaced, never stacked.
+const PO_PREVIEW_PX = 1600;
+const PO_FULL_ZOOM_OFFSET = 1.0;   // go full-res this many zoom levels before CSS px outrun the preview
+function _poIsNative(){ return !!(window.Capacitor && typeof window.Capacitor.isNativePlatform === 'function' && window.Capacitor.isNativePlatform()); }
+function _poMaxFull(){ return _poIsNative() ? 2 : 4; }
+const _poPreviewStore = _poKvStore('gl_po_preview', 'blobs');   // dedicated store — never the hydrated idbCache mirror
+const _poMounted = new Map();   // sheet id -> {mode:'full'|'preview', url}
+const _poPrev = new Map();      // preview key -> {url (object URL), w, h, fullW, fullH}
+let _poPrevQueue = Promise.resolve();
+let _poSyncTimer = null, _poSaveTimer = null, _poMapBound = null;
+const _poStats = { previewsBuilt: 0, previewMs: 0, swaps: 0 };
+
+function _poPrevKey(sheet){ return sheet.storagePath || sheet.downloadUrl || sheet.id; }
+function _poSaveSoon(){ clearTimeout(_poSaveTimer); _poSaveTimer = setTimeout(() => { try{ poSaveSheets(); }catch{} }, 1500); }
+
+// PNG IHDR read — lets createImageBitmap downscale DURING decode instead of
+// materialising the full 28 MB bitmap first. Non-PNG falls back to a full decode.
+async function _poPngDims(blob){
+  try{
+    const buf = await blob.slice(0, 24).arrayBuffer();
+    if(buf.byteLength < 24) return null;
+    const d = new DataView(buf);
+    if(d.getUint32(0) !== 0x89504E47) return null;
+    return { w: d.getUint32(16), h: d.getUint32(20) };
+  }catch{ return null; }
+}
+
+async function _poFetchBlob(sheet){
+  const url = await _poEnsureUrl(sheet);
+  const res = await fetch(url);
+  if(!res.ok) throw new Error('HTTP ' + res.status + ' fetching plan sheet');
+  return await res.blob();
+}
+
+function _poUploadPreview(sheet, blob, fullW, fullH){
+  try{
+    const uid = window._currentUser && window._currentUser.uid;
+    if(!uid || !window.storage || !sheet.storagePath || !sheet.storagePath.startsWith('planOverlays/' + uid + '/')) return;
+    const path = sheet.storagePath.replace(/\.(png|jpe?g|webp)$/i, '') + '-preview.png';
+    window.storage.ref(path).put(blob).then(snap => snap.ref.getDownloadURL()).then(url => {
+      sheet.previewPath = path; sheet.previewUrl = url; sheet.previewFor = sheet.storagePath;
+      sheet.fullW = fullW; sheet.fullH = fullH;
+      _poTouch(sheet); _poSaveSoon();
+    }).catch(e => console.warn('po preview upload:', e.message));
+  }catch{}
+}
+
+// Resolve (or build) the preview for a sheet. Builds are SERIALISED — a
+// parallel decode of seven full sheets is exactly the spike that killed the
+// WebView. Order: in-memory → IDB blob → owner-uploaded previewUrl → build.
+function _poBuildPreview(sheet, localBlob){
+  const key = _poPrevKey(sheet);
+  if(_poPrev.has(key)) return Promise.resolve(_poPrev.get(key));
+  const job = _poPrevQueue.then(async () => {
+    if(_poPrev.has(key)) return _poPrev.get(key);
+    const t0 = performance.now();
+    let rec = null;
+    try{ rec = await _poKvGet(key, _poPreviewStore); }catch{}
+    if(rec && !(rec.blob instanceof Blob)) rec = null;
+    if(!rec && sheet.previewUrl && sheet.previewFor === sheet.storagePath){
+      try{
+        const r = await fetch(sheet.previewUrl);
+        if(r.ok){
+          const blob = await r.blob();
+          const dim = await _poPngDims(blob);
+          if(dim){ rec = { blob, w: dim.w, h: dim.h, fullW: sheet.fullW || 0, fullH: sheet.fullH || 0 }; _poKvSet(key, rec, _poPreviewStore).catch(() => {}); }
+        }
+      }catch(e){ console.warn('po preview fetch:', e.message); }
+    }
+    if(!rec){
+      const blob = localBlob || await _poFetchBlob(sheet);
+      const dims = await _poPngDims(blob);
+      let w = 0, h = 0, bmp = null;
+      if(dims){
+        const k = Math.min(1, PO_PREVIEW_PX / Math.max(dims.w, dims.h));
+        w = Math.max(1, Math.round(dims.w * k)); h = Math.max(1, Math.round(dims.h * k));
+        try{ bmp = await createImageBitmap(blob, { resizeWidth: w, resizeHeight: h, resizeQuality: 'high' }); }
+        catch{ bmp = null; }
+      }
+      if(!bmp) bmp = await createImageBitmap(blob);
+      const fullW = dims ? dims.w : bmp.width, fullH = dims ? dims.h : bmp.height;
+      if(!w){ const k = Math.min(1, PO_PREVIEW_PX / Math.max(fullW, fullH)); w = Math.max(1, Math.round(fullW * k)); h = Math.max(1, Math.round(fullH * k)); }
+      const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+      const ctx = cv.getContext('2d'); ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(bmp, 0, 0, w, h);
+      if(bmp.close) bmp.close();
+      const out = await new Promise(res => cv.toBlob(res, 'image/png'));
+      cv.width = cv.height = 1;
+      if(!out) throw new Error('preview encode failed');
+      rec = { blob: out, w, h, fullW, fullH };
+      _poKvSet(key, rec, _poPreviewStore).catch(() => {});
+      _poStats.previewsBuilt++; _poStats.previewMs += Math.round(performance.now() - t0);
+      _poUploadPreview(sheet, out, fullW, fullH);
+    }
+    const p = { url: URL.createObjectURL(rec.blob), w: rec.w, h: rec.h, fullW: rec.fullW || 0, fullH: rec.fullH || 0 };
+    _poPrev.set(key, p);
+    if(p.fullW && !sheet.fullW){ sheet.fullW = p.fullW; sheet.fullH = p.fullH; }
+    return p;
+  });
+  _poPrevQueue = job.catch(() => {});
+  return job;
+}
+
+function _poSheetBox(sheet){
+  const ls = sheet.corners.map(c => c[0]), la = sheet.corners.map(c => c[1]);
+  return { w: Math.min(...ls), e: Math.max(...ls), s: Math.min(...la), n: Math.max(...la) };
+}
+// Zoom at which this sheet's preview would start to look soft: ground metres
+// per preview pixel vs Mapbox's metres per CSS pixel at the sheet's latitude.
+function _poFullZoom(sheet){
+  const p = _poPrev.get(_poPrevKey(sheet));
+  if(p && p.fullW && p.w >= p.fullW) return 99;           // preview IS full size — never swap
+  const px = p ? Math.max(p.w, p.h) : PO_PREVIEW_PX;
+  const b = _poSheetBox(sheet); const lat = (b.n + b.s) / 2, cosL = Math.cos(lat * Math.PI / 180);
+  const wM = (b.e - b.w) * 111320 * cosL, hM = (b.n - b.s) * 110574;
+  const mpp = Math.max(wM, hM) / Math.max(1, px);
+  if(!(mpp > 0)) return 99;
+  const z = Math.log2(156543.03 * cosL / mpp) - PO_FULL_ZOOM_OFFSET;
+  return Math.min(18, Math.max(13, z));
+}
+function _poDesiredModes(){
+  const out = new Map(); const map = _poMap(); if(!map) return out;
+  let z, vb, c; try{ z = map.getZoom(); vb = map.getBounds(); c = map.getCenter(); }catch{ return out; }
+  const want = [];
+  _poSheets.filter(s => s.visible).forEach(s => {
+    out.set(s.id, 'preview');
+    const b = _poSheetBox(s);
+    const inView = b.e >= vb.getWest() && b.w <= vb.getEast() && b.n >= vb.getSouth() && b.s <= vb.getNorth();
+    if(inView && z >= _poFullZoom(s)){
+      const d = Math.hypot(((b.w + b.e) / 2 - c.lng) * Math.cos(c.lat * Math.PI / 180), (b.s + b.n) / 2 - c.lat);
+      want.push({ id: s.id, d });
+    }
+  });
+  want.sort((a, b) => a.d - b.d).slice(0, _poMaxFull()).forEach(w => out.set(w.id, 'full'));
+  return out;
+}
+function _poSyncMounts(){
+  const map = _poMap(); if(!map) return;
+  const want = _poDesiredModes();
+  want.forEach((mode, id) => {
+    const m = _poMounted.get(id); if(!m || m.mode === mode) return;
+    const sheet = _poSheets.find(s => s.id === id); if(!sheet) return;
+    (async () => {
+      let url;
+      if(mode === 'full') url = await _poEnsureUrl(sheet);
+      else { const p = _poPrev.get(_poPrevKey(sheet)); if(!p) return; url = p.url; }
+      const cur = _poMounted.get(id); if(!cur || cur.mode === mode) return;   // changed under us
+      const src = map.getSource('po-' + id); if(!src || typeof src.updateImage !== 'function') return;
+      try{ src.updateImage({ url, coordinates: sheet.corners }); _poMounted.set(id, { mode, url }); _poStats.swaps++; _poRenderModeChips(); }
+      catch(e){ console.warn('po lod swap:', e.message); }
+    })().catch(e => console.warn('po lod:', e.message));
+  });
+  _poRenderModeChips();
+}
+function _poBindMap(map){
+  if(_poMapBound === map) return; _poMapBound = map;
+  const kick = () => { clearTimeout(_poSyncTimer); _poSyncTimer = setTimeout(_poSyncMounts, 250); };
+  map.on('moveend', kick); map.on('zoomend', kick);
+}
+function _poRenderModeChips(){
+  _poSheets.forEach(s => {
+    const el = document.getElementById('po-mode-' + s.id); if(!el) return;
+    const m = _poMounted.get(s.id);
+    el.textContent = m ? (m.mode === 'full' ? 'HD' : 'lite') : '';
+    el.style.color = m && m.mode === 'full' ? 'var(--amber2)' : 'var(--muted)';
+  });
+}
+// Diagnostics read-out (Account Settings → Diagnostics, glMapStats()).
+function poMapStats(){
+  const vis = _poSheets.filter(s => s.visible);
+  let full = 0, prev = 0, mb = 0;
+  vis.forEach(s => {
+    const m = _poMounted.get(s.id); if(!m) return;
+    const p = _poPrev.get(_poPrevKey(s));
+    if(m.mode === 'full'){ full++; const fw = (p && p.fullW) || s.fullW || 2800, fh = (p && p.fullH) || s.fullH || 2378; mb += fw * fh * 4 / 1048576; }
+    else { prev++; mb += ((p ? p.w * p.h : PO_PREVIEW_PX * PO_PREVIEW_PX * 0.64)) * 4 / 1048576; }
+  });
+  const map = _poMap(); let zoom = null; try{ zoom = map ? +map.getZoom().toFixed(2) : null; }catch{}
+  return {
+    sheets: _poSheets.length, visible: vis.length, mountedFull: full, mountedPreview: prev,
+    estTextureMb: Math.round(mb), maxFull: _poMaxFull(), zoom,
+    fullZoomBySheet: vis.map(s => `${s.name}@${_poFullZoom(s).toFixed(1)}${(_poMounted.get(s.id) || {}).mode === 'full' ? '*' : ''}`).join(' '),
+    previewsBuilt: _poStats.previewsBuilt, previewMs: _poStats.previewMs, swaps: _poStats.swaps
+  };
+}
 
 // ── Map render ───────────────────────────────────────────────────────────────
 
@@ -64,10 +262,16 @@ async function _poEnsureUrl(sheet){
 async function _poAddToMap(sheet){
   const map = _poMap();
   if(!map || map.getSource('po-' + sheet.id)) return;
-  const url = await _poEnsureUrl(sheet);
-  // toggled OFF (or project switched) while the URL was resolving — don't mount
+  _poBindMap(map);
+  // Preview first (serialised build on a cold device); full-res only if this
+  // sheet is in view past its detail zoom and inside the full-res budget.
+  const prev = await _poBuildPreview(sheet);
+  // toggled OFF (or project switched) while resolving — don't mount
   if(!sheet.visible || !_poSheets.find(s => s.id === sheet.id)) return;
   if(map.getSource('po-' + sheet.id)) return;
+  const mode = _poDesiredModes().get(sheet.id) === 'full' ? 'full' : 'preview';
+  const url = mode === 'full' ? await _poEnsureUrl(sheet) : prev.url;
+  if(!sheet.visible || map.getSource('po-' + sheet.id)) return;
   map.addSource('po-' + sheet.id, { type:'image', url, coordinates: sheet.corners });
   map.addLayer({
     id: 'po-' + sheet.id + '-raster',
@@ -75,13 +279,17 @@ async function _poAddToMap(sheet){
     source: 'po-' + sheet.id,
     paint: { 'raster-opacity': _poOpacity, 'raster-fade-duration': 0 }
   }, _poBeforeId(map));
+  _poMounted.set(sheet.id, { mode, url });
+  _poRenderModeChips();
 }
 
 function _poRemoveFromMap(sheet){
+  _poMounted.delete(sheet.id);
   const map = _poMap();
-  if(!map) return;
+  if(!map){ _poRenderModeChips(); return; }
   if(map.getLayer('po-' + sheet.id + '-raster')) map.removeLayer('po-' + sheet.id + '-raster');
   if(map.getSource('po-' + sheet.id)) map.removeSource('po-' + sheet.id);
+  _poRenderModeChips();
 }
 
 async function poToggleSheet(id, visible){
@@ -149,6 +357,9 @@ function poReaddVisible(){
 // project's poLoadSheets() rehydrates.
 function poClearAll(){
   _poSheets.forEach(_poRemoveFromMap);
+  _poMounted.clear();
+  _poPrev.forEach(p => { try{ URL.revokeObjectURL(p.url); }catch{} });
+  _poPrev.clear();
   _poSheets = [];
   _poFolders = [];
   _poNudge = null;
@@ -186,6 +397,10 @@ function poSaveSheets(){
     // ✂ crop state (null when uncropped): rect in ORIGINAL-image fractions +
     // the pre-crop original file so crops are re-editable and resettable.
     crop: s.crop || null, origStoragePath: s.origStoragePath || '', origDownloadUrl: s.origDownloadUrl || '',
+    // 9/16 preview derivative (owner-uploaded, members fetch by token URL); previewFor
+    // pins it to the file it was built from so a crop/reset never reuses a stale one.
+    previewPath: s.previewPath || '', previewUrl: s.previewUrl || '', previewFor: s.previewFor || '',
+    fullW: s.fullW || 0, fullH: s.fullH || 0,
     _mts: s._mts ?? null
   }));
   const folders = _poFolders.map(f => ({ id: f.id, name: f.name, order: f.order ?? 0, deleted: !!f.deleted, _mts: f._mts ?? null }));
@@ -349,6 +564,8 @@ async function poImportFiles(input){
         storagePath, downloadUrl,
         _mts: Date.now()
       });
+      // 9/16: build + upload the preview from the file we already hold.
+      _poBuildPreview(_poSheets[_poSheets.length - 1], img).catch(e => console.warn('po import preview:', e.message));
       done++;
     }catch(err){
       console.warn('poImportFiles upload:', err.message);
@@ -397,6 +614,8 @@ function poDeleteSheet(id){
     if(window.storage && sheet.origStoragePath && sheet.origStoragePath !== sheet.storagePath){
       window.storage.ref(sheet.origStoragePath).delete().catch(() => {});
     }
+    if(window.storage && sheet.previewPath){ window.storage.ref(sheet.previewPath).delete().catch(() => {}); }
+    try{ const p = _poPrev.get(_poPrevKey(sheet)); if(p) URL.revokeObjectURL(p.url); _poPrev.delete(_poPrevKey(sheet)); _poKvDel(_poPrevKey(sheet), _poPreviewStore).catch(() => {}); }catch{}
     poSaveSheets();
     poRenderPanel();
   };
@@ -1087,6 +1306,7 @@ function _poSheetRow(s){
       ${nameHtml}
     </label>
     <span style="font-family:var(--mono);font-size:9px;color:var(--muted);flex-shrink:0">${rms}</span>
+    <span id="po-mode-${s.id}" title="HD = full resolution mounted · lite = preview" style="font-family:var(--mono);font-size:8px;letter-spacing:.04em;flex-shrink:0;min-width:18px;text-align:right;color:${(_poMounted.get(s.id)||{}).mode==='full'?'var(--amber2)':'var(--muted)'}">${_poMounted.has(s.id) ? (_poMounted.get(s.id).mode === 'full' ? 'HD' : 'lite') : ''}</span>
     ${review}
     <button onclick="poSheetMenu('${s.id}')" title="Sheet actions" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:15px;padding:0 4px;flex-shrink:0;">⋯</button>
   </div>`;
@@ -1160,6 +1380,8 @@ function poRenderPanel(){
 }
 
 window.poLoadSheets = poLoadSheets;
+window.poMapStats = poMapStats;
+window._poDebugSheets = () => _poSheets.map(s => ({ id: s.id, name: s.name, visible: !!s.visible, corners: s.corners, mode: (_poMounted.get(s.id) || {}).mode || null }));   // smoke harness / console
 window.poSaveSheets = poSaveSheets;
 window.poToggleSheet = poToggleSheet;
 window.poToggleAll = poToggleAll;
