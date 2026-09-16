@@ -42,6 +42,15 @@ beforeEach(async () => {
       { ownerUid: 'tim', published: false, acres: 0.4 });
     await setDoc(doc(db, `projects/${PID}/trackerEntries/bootsdraft`),
       { ownerUid: 'boots', published: false, acres: 1.0 });
+    // 9/14 Ready-for-Review fixtures: a published open repair flag, an unpublished one,
+    // and one already marked ready by forest.
+    await setDoc(doc(db, `projects/${PID}/trackerEntries/flag1`),
+      { ownerUid: 'tim', published: true, temporary: true, tempStatus: 'open', tempLabel: 'Silt fence down', updatedAt: 10 });
+    await setDoc(doc(db, `projects/${PID}/trackerEntries/flagdraft`),
+      { ownerUid: 'tim', published: false, temporary: true, tempStatus: 'open', updatedAt: 10 });
+    await setDoc(doc(db, `projects/${PID}/trackerEntries/flagready`),
+      { ownerUid: 'tim', published: true, temporary: true, tempStatus: 'open', updatedAt: 11,
+        readyStatus: 'ready', readyAt: 11, readyBy: 'forest', readyByName: 'Forest', readyNote: 'restaked' });
     await setDoc(doc(db, `projects/${PID}/kmlLayers/lod`), { ownerUid: 'tim', name: 'LOD' });
     // corners = array of {lng,lat} maps — Firestore rejects nested arrays,
     // which is exactly why poSaveSheets packs them this way.
@@ -112,6 +121,34 @@ describe('reviewer (Glasses) — sees published, edits nothing', () => {
     await assertFails(setDoc(doc(as('forest'), `projects/${PID}/docs/x`),
       { ownerUid: 'forest', title: 'hax' }));
   });
+});
+
+describe('ready for review (9/14) — any member marks an open published flag corrected', () => {
+  const READY = { readyStatus: 'ready', readyAt: 20, readyBy: 'forest', readyByName: 'Forest', readyNote: 'sock replaced', updatedAt: 20 };
+  it('Glasses marks a published flag ready (self-attributed, ready keys only)', () =>
+    assertSucceeds(updateDoc(doc(as('forest'), `projects/${PID}/trackerEntries/flag1`), READY)));
+  it('Boots marks someone else\'s published flag ready', () =>
+    assertSucceeds(updateDoc(doc(as('boots'), `projects/${PID}/trackerEntries/flag1`),
+      { ...READY, readyBy: 'boots', readyByName: 'Boots' })));
+  it('cannot attribute the mark to someone else', () =>
+    assertFails(updateDoc(doc(as('forest'), `projects/${PID}/trackerEntries/flag1`), { ...READY, readyBy: 'tim' })));
+  it('cannot touch any other key on the record', () =>
+    assertFails(updateDoc(doc(as('forest'), `projects/${PID}/trackerEntries/flag1`), { ...READY, tempStatus: 'resolved' })));
+  it('cannot mark an unpublished flag (never visible to them)', () =>
+    assertFails(updateDoc(doc(as('forest'), `projects/${PID}/trackerEntries/flagdraft`), READY)));
+  it('cannot mark a plain drawing (not a flag)', () =>
+    assertFails(updateDoc(doc(as('forest'), `projects/${PID}/trackerEntries/pub1`), READY)));
+  it('clears their own mark', () =>
+    assertSucceeds(updateDoc(doc(as('forest'), `projects/${PID}/trackerEntries/flagready`),
+      { readyStatus: null, readyAt: null, readyBy: null, readyByName: null, readyNote: null, updatedAt: 21 })));
+  it('cannot clear someone else\'s mark', () =>
+    assertFails(updateDoc(doc(as('boots'), `projects/${PID}/trackerEntries/flagready`),
+      { readyStatus: null, readyAt: null, readyBy: null, readyByName: null, readyNote: null, updatedAt: 21 })));
+  it('the owner still resolves through the normal edit path (lead verifies)', () =>
+    assertSucceeds(updateDoc(doc(as('tim'), `projects/${PID}/trackerEntries/flagready`),
+      { tempStatus: 'resolved', resolvedAt: 30, resolvedBy: 'tim', readyStatus: null, updatedAt: 30 })));
+  it('a non-member cannot mark anything', () =>
+    assertFails(updateDoc(doc(as('stranger'), `projects/${PID}/trackerEntries/flag1`), { ...READY, readyBy: 'stranger' })));
 });
 
 describe('signer (Reviewer ✍) — §C review & sign-off', () => {

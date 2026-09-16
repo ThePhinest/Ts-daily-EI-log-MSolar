@@ -7422,9 +7422,15 @@ function _showTrackerEntryPopup(lngLat,props){
   const _isTemp=!!(entry&&entry.temporary&&entry.tempStatus!=='resolved');
   // Copy/Reshape work on real line/area geometry only (not flags, not points).
   const _hasShape=!!(entry&&!entry.temporary&&entry.geometry&&(entry.geometry.type==='Polygon'||entry.geometry.type==='LineString'));
+  const _readyLine=(_isTemp&&entry.readyStatus==='ready')?`<div style="color:#C9A84C;font-size:10px;margin-top:2px">🔧 Ready for review · ${String(entry.readyByName||'member').replace(/</g,'&lt;')}${entry.readyNote?' — '+String(entry.readyNote).replace(/</g,'&lt;'):''}</div>`:'';
   const tempStatusLine=_isTemp?`<div style="color:#C9A84C;display:flex;align-items:center;gap:6px;margin-top:2px">🚩 <b>${entry.plNum?((typeof trPlFmt==='function'?trPlFmt(entry.plNum):'PL-'+entry.plNum)+' · '):''}${(entry.tempLabel||'Repair').replace(/</g,'&lt;')}</b><span style="opacity:.7">· needs attention</span></div>`:'';
+  // 9/14 Ready-for-Review: a flag that is not mine (contractor / reviewer / another member)
+  // offers the one write every member holds — "ready for review"; mine shows ✓ Fixed
+  // (✓ Verified once someone marked it ready).
+  const _readyOn=!!(entry&&entry.readyStatus==='ready');
+  const readyBtn=(!_mineEntry&&_isTemp)?`<button onclick="clReadyForReview('${props.id}')" style="${_TRP_BTN}background:rgba(201,168,76,0.18);border:1px solid #C9A84C;color:#C9A84C" title="${_readyOn?'Marked ready — awaiting the inspector':'Tell the inspector this item has been corrected'}">${_readyOn?'🔧 Awaiting inspector':'🔧 Ready for review'}</button>`:'';
   const tempBtn=_mineEntry?(_isTemp
-    ?`<button onclick="mapResolveTemporary('${props.id}')" style="${_TRP_BTN}background:rgba(39,174,96,0.18);border:1px solid #27AE60;color:#27AE60" title="Mark fixed — leaves the live map but stays in the punchlist record">✓ Fixed</button>`
+    ?`<button onclick="mapResolveTemporary('${props.id}')" style="${_TRP_BTN}background:rgba(39,174,96,0.18);border:1px solid #27AE60;color:#27AE60" title="Mark fixed — leaves the live map but stays in the punchlist record">${_readyOn?'✓ Verified':'✓ Fixed'}</button>`
     :`<button onclick="mapFlagRepair('${props.id}')" style="${_TRP_BTN}background:var(--s2,#1a2a38);border:1px solid var(--border,#334);color:var(--muted,#888)" title="Pin a repair / needs-attention flag on this drawing — photo + note, shows on the punchlist until fixed">🚩 Flag repair</button>`):'';
   // Category identity = the multicolor state-ramp chip (same as the tracker log),
   // not a single dot. Falls back to the entry's state color for no-category drawings.
@@ -7501,7 +7507,7 @@ function _showTrackerEntryPopup(lngLat,props){
       <strong style="color:#fff">${label}</strong>
     </div>
     ${stateLine}
-    ${tempStatusLine}
+    ${tempStatusLine}${_readyLine}
     ${props.date?`<div style="color:#dce8f4">📅 ${props.date}</div>`:''}
     ${measText?`<div style="color:#dce8f4">📐 ${measText}</div>`:''}
     ${props.location?`<div style="color:#dce8f4">📍 ${props.location}</div>`:''}
@@ -7531,7 +7537,7 @@ function _showTrackerEntryPopup(lngLat,props){
           <button onclick="mapCameraForEntry('${props.id}')" style="${_TRP_BTN}background:var(--s2,#1a2a38);border:1px solid var(--border,#334);color:var(--muted,#888)" title="Take a photo — auto-attaches to this drawing">📸 Take photo</button>
           ${_hasShape?`<button onclick="mapCopyEntryShape('${props.id}')" style="${_TRP_BTN}background:var(--s2,#1a2a38);border:1px solid var(--border,#334);color:var(--muted,#888)" title="New state layer with this exact shape — no retracing">📋 Copy shape</button>`:''}
           ${fitBtn}
-          ${tempBtn}
+          ${tempBtn}${readyBtn}
           ${shareBtn}
         </div>`:''}
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px">
@@ -7998,6 +8004,11 @@ window.mapShareEntryNow=mapShareEntryNow;
 // Resolve = "fixed" — timestamp + optional note into the punchlist history;
 // the flag leaves the live map but stays in the record (never deleted).
 function mapResolveTemporary(id){
+  // 9/14 (Forest 9/11 — "it allowed him to do it but just didn't save"): a view role cannot
+  // resolve; route them to the one write they hold instead of a ✓ Fixed that no-ops.
+  { const _pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+    const _role=(typeof window.glMyRoleFor==='function')?window.glMyRoleFor(_pid):'lead';
+    if((_role==='reviewer'||_role==='signer')&&typeof window.clReadyForReview==='function'){ window.clReadyForReview(id); return; } }
   if(typeof trResolveTemporary!=='function') return;
   document.getElementById('_rfr-ov')?.remove();
   const ov=document.createElement('div');

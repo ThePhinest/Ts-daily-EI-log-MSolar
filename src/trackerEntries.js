@@ -547,6 +547,7 @@ function _trLiveRender(){
   try{ if(typeof mapUpdateKmlLayerList === 'function') mapUpdateKmlLayerList(); }catch(_){}
   try{ if(typeof window._renderTrackerSheet === 'function') window._renderTrackerSheet(); }catch(_){}
   try{ if(typeof clRenderTrackerCard === 'function') clRenderTrackerCard(); }catch(_){}
+  try{ if(typeof clRenderPunchlist === 'function') clRenderPunchlist(); }catch(_){}   // 9/14: a contractor's ready mark lands live
 }
 
 async function trLoadFromFirestore(projectId){
@@ -692,6 +693,7 @@ function trResolveTemporary(entryId, projectId, note){
     e.tempStatus = 'resolved';
     e.resolvedAt = Date.now();
     e.resolvedBy = uid;
+    e.readyStatus = null;   // 9/14: verified → the review mark is consumed
     if(note != null && String(note).trim()) e.resolveNote = String(note).trim().slice(0,300);
     e.archivedFromMap = true; // drop off the live plan; kept in compliance history
   });
@@ -706,6 +708,52 @@ function trReopenTemporary(entryId, projectId){
     e.resolvedAt = null; e.resolvedBy = null; e.resolveNote = null;
     e.archivedFromMap = false;
   });
+}
+
+// ── 9/14 Ready-for-Review (Tim 9/12) ──────────────────────────────────────────
+// A status-only write ANY member may make on an open PUBLISHED flag (rules readyMarkOk):
+// contractors (Glasses) tell the inspector the item is corrected; the EI verifies in
+// the field and resolves through trResolveTemporary as before. On purpose this bypasses
+// _trReviewerBlocked and the foreign-entry guard — the cloud write is a targeted
+// update() of the ready* keys, never a set() of the whole record. `assignedTo` (owner /
+// lead, via _trMutateEntry): null = every contractor, [] = nobody, ['Herzog'] = named.
+async function _trReadyWrite(entryId, pid, patch){
+  const data = _trLoadRaw(pid);
+  const idx = data.entries.findIndex(e => e.id === entryId);
+  if(idx < 0) return false;
+  Object.assign(data.entries[idx], patch);
+  _trSaveRaw(pid, data);
+  if(!_trCloudOk(pid)) return true;
+  try{
+    await _projData(pid).collection('trackerEntries').doc(entryId).update(patch);
+    return true;
+  }catch(e){
+    console.warn('trReady Firestore:', e && e.message);
+    if(typeof showCloudBanner === 'function') showCloudBanner('⚠ Could not save the review status: ' + ((e && e.message) || 'permission denied'));
+    return false;
+  }
+}
+function trMarkReady(entryId, projectId, note){
+  const pid = projectId || ((typeof _activeProjectId === 'function') ? _activeProjectId() : 'default');
+  const uid = (typeof _currentUser !== 'undefined' && _currentUser) ? _currentUser.uid : null;
+  if(!uid) return Promise.resolve(false);
+  const now = Date.now();
+  const name = (typeof window.glMyName === 'function') ? window.glMyName() : ((_currentUser.displayName || _currentUser.email || '').split('@')[0]);
+  return _trReadyWrite(entryId, pid, { readyStatus: 'ready', readyAt: now, readyBy: uid, readyByName: String(name || '').slice(0, 60),
+    readyNote: String(note || '').trim().slice(0, 300), readyReturnNote: null, updatedAt: now });
+}
+// Clear the mark — the marker taking it back, or the EI sending it back ("not fixed", with a note).
+function trClearReady(entryId, projectId, returnNote){
+  const pid = projectId || ((typeof _activeProjectId === 'function') ? _activeProjectId() : 'default');
+  const now = Date.now();
+  return _trReadyWrite(entryId, pid, { readyStatus: null, readyAt: null, readyBy: null, readyByName: null, readyNote: null,
+    readyReturnNote: returnNote ? String(returnNote).trim().slice(0, 300) : null, updatedAt: now });
+}
+function trIsReady(entry){ return !!(entry && entry.readyStatus === 'ready' && trIsOpenTemporary(entry)); }
+function trSetAssigned(entryId, projectId, list){
+  const pid = projectId || ((typeof _activeProjectId === 'function') ? _activeProjectId() : 'default');
+  if(_trReviewerBlocked(pid)) return false;
+  return _trMutateEntry(entryId, pid, e => { e.assignedTo = (list === null || list === undefined) ? null : (Array.isArray(list) ? list.slice(0, 20) : null); });
 }
 
 // Open temporary/maintenance items — the live punchlist. Compliance-page seam:
@@ -771,6 +819,10 @@ if(typeof window !== 'undefined'){
   window.trSetTemporary = trSetTemporary;
   window.trResolveTemporary = trResolveTemporary;
   window.trReopenTemporary = trReopenTemporary;
+  window.trMarkReady = trMarkReady;
+  window.trClearReady = trClearReady;
+  window.trIsReady = trIsReady;
+  window.trSetAssigned = trSetAssigned;
   window.trGetOpenTemporary = trGetOpenTemporary;
   window.trGetResolvedTemporary = trGetResolvedTemporary;
   window.trGetEntriesForProject = trGetEntriesForProject;

@@ -1142,6 +1142,15 @@ function clRenderPunchlist(){
   // 9/5 (Tim): open Compliance Log entries ride the punchlist too — red, CMP-numbered,
   // interleaved with the 🚩 flags by date; resolved ones join the fixed history.
   const _vr=_clIsViewRole();
+  // 9/14: a contractor member (view role + company on their member doc) sees the flags
+  // assigned to their company or to everyone; unassigned-to-nobody items stay hidden.
+  const _myCo=(typeof window.glMyCompany==='function')?window.glMyCompany(pid):'';
+  if(_vr&&_myCo){ const keep=e=>e.assignedTo==null||(Array.isArray(e.assignedTo)&&e.assignedTo.includes(_myCo)); open.splice(0,open.length,...open.filter(keep)); resolved.splice(0,resolved.length,...resolved.filter(keep)); }
+  const _uid=(window._currentUser&&window._currentUser.uid)||'';
+  const _fmtWhen=ts=>{ if(!ts) return ''; const d=new Date(ts); return `${d.getMonth()+1}/${d.getDate()}/${String(d.getFullYear()).slice(2)}`; };
+  const readyLine=e=>(e.readyStatus==='ready')?`<div style="font-family:var(--mono);font-size:10px;color:var(--amber);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">🔧 Ready for review · ${_hEsc(e.readyByName||'member')} ${_fmtWhen(e.readyAt)}${e.readyNote?` — ${_hEsc(e.readyNote)}`:''}</div>`
+    :(e.readyReturnNote?`<div style="font-family:var(--mono);font-size:10px;color:var(--red);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">↩ Not fixed — ${_hEsc(e.readyReturnNote)}</div>`:'');
+  const assignLabel=e=>e.assignedTo==null?'all contractors':(Array.isArray(e.assignedTo)&&e.assignedTo.length?e.assignedTo.join(', '):'unassigned');
   if(!_vr){ try{ clEnsureCmpNums(pid); }catch(e){} }
   if(!_vr&&!_clEntries.length) clLoadLocal();
   const _clAll=_vr?[]:_clEntries.filter(e=>!e.projectId||e.projectId===pid);
@@ -1154,12 +1163,26 @@ function clRenderPunchlist(){
     const photos=(e.photoIds||[]).map(id=>(window._phPhotos||[]).find(p=>p.id===id)).filter(Boolean);
     const thumb=photos.length?`<img src="${photos[0].thumb}" onclick="phOpenLightbox('${photos[0].id}',[${photos.map(p=>`'${p.id}'`).join(',')}])" style="width:44px;height:34px;object-fit:cover;border-radius:4px;cursor:pointer;flex-shrink:0;border:1px solid var(--border2)">`:'';
     const pinned=(typeof window.oiFlagPinned==='function')&&window.oiFlagPinned(e.id);
-    const btns=isOpen
+    const _BTN='font-family:var(--mono);font-size:10px;padding:5px 8px;border-radius:5px;cursor:pointer';
+    const _ready=e.readyStatus==='ready';
+    const btns=(isOpen&&_vr)
+      // 9/14: view roles (contractors, reviewers) get the ONE write they hold — ready for review —
+      // instead of a ✓ Fixed that silently did nothing (Forest 9/11).
       ?`<div style="display:flex;gap:6px;flex-shrink:0">
+          <button onclick="event.stopPropagation();clPunchlistGoto('${e.id}')" style="background:var(--s1);border:1px solid var(--border);color:var(--muted);${_BTN}">📍 Map</button>
+          ${(_ready&&e.readyBy===_uid)
+            ?`<button onclick="event.stopPropagation();clReadyForReview('${e.id}')" title="Take it back off the inspector's review queue" style="background:var(--amber-bg,rgba(201,168,76,.15));border:1px solid var(--amber);color:var(--amber);${_BTN}">↩ Undo ready</button>`
+            :(_ready?`<span style="font-family:var(--mono);font-size:10px;color:var(--amber);align-self:center">🔧 awaiting inspector</span>`
+              :`<button onclick="event.stopPropagation();clReadyForReview('${e.id}')" title="Tell the inspector this item has been corrected" style="background:var(--amber-bg,rgba(201,168,76,.15));border:1px solid var(--amber);color:var(--amber);${_BTN}">🔧 Ready for review</button>`)}
+        </div>`
+      :isOpen
+      ?`<div style="display:flex;gap:6px;flex-shrink:0">
+          <button onclick="event.stopPropagation();clAssignFlag('${e.id}')" title="Assign to contractor(s) — who sees this item: ${_hEsc(assignLabel(e))}" style="background:var(--s1);border:1px solid var(--border);color:var(--muted);${_BTN}">🏗</button>
+          ${_ready?`<button onclick="event.stopPropagation();clReadyReject('${e.id}')" title="Send it back — not fixed" style="background:var(--s1);border:1px solid var(--red);color:var(--red);${_BTN}">↩ Not fixed</button>`:''}
           <button onclick="event.stopPropagation();${pinned?`oiUnpinFlag('${e.id}')`:`oiPinFlag('${e.id}')`}" title="${pinned?'On your Open Items — tap to remove (stays on the punchlist)':'Add to Open Items (due date rides your ⏱ correction window)'}" style="background:${pinned?'var(--amber-bg)':'var(--s1)'};border:1px solid ${pinned?'var(--amber)':'var(--border)'};color:${pinned?'var(--amber)':'var(--muted)'};font-family:var(--mono);font-size:10px;padding:5px 8px;border-radius:5px;cursor:pointer">📌</button>
           <button onclick="event.stopPropagation();if(typeof phOpenCamera==='function')phOpenCamera({tags:['repair'],attach:{type:'entry',id:'${e.id}'}})" title="Take a photo — 🚩-tagged, auto-attached to this punchlist item" style="background:var(--s1);border:1px solid var(--border);color:var(--muted);font-family:var(--mono);font-size:10px;padding:5px 8px;border-radius:5px;cursor:pointer">📸</button>
           <button onclick="event.stopPropagation();clPunchlistGoto('${e.id}')" style="background:var(--s1);border:1px solid var(--border);color:var(--muted);font-family:var(--mono);font-size:10px;padding:5px 8px;border-radius:5px;cursor:pointer">📍 Map</button>
-          <button onclick="event.stopPropagation();mapResolveTemporary('${e.id}')" style="background:rgba(39,174,96,0.15);border:1px solid var(--green,#27AE60);color:var(--green,#27AE60);font-family:var(--mono);font-size:10px;padding:5px 8px;border-radius:5px;cursor:pointer">✓ Fixed</button>
+          <button onclick="event.stopPropagation();mapResolveTemporary('${e.id}')" style="background:rgba(39,174,96,0.15);border:1px solid var(--green,#27AE60);color:var(--green,#27AE60);font-family:var(--mono);font-size:10px;padding:5px 8px;border-radius:5px;cursor:pointer">${_ready?'✓ Verified':'✓ Fixed'}</button>
         </div>`
       :`<button onclick="event.stopPropagation();clPunchlistReopen('${e.id}')" style="background:var(--s1);border:1px solid var(--border);color:var(--muted);font-family:var(--mono);font-size:10px;padding:5px 8px;border-radius:5px;cursor:pointer;flex-shrink:0">↩ Reopen</button>`;
     return `<div style="display:flex;align-items:center;gap:8px;padding:8px 4px;border-bottom:1px solid var(--border)">
@@ -1168,6 +1191,8 @@ function clRenderPunchlist(){
         <div style="font-family:var(--mono);font-size:12px;color:${isOpen?'var(--text)':'var(--muted)'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${isOpen?'🚩':'✓'} ${e.plNum?`<b style="color:${isOpen?'var(--amber)':'var(--muted)'}">${typeof trPlFmt==='function'?trPlFmt(e.plNum):'PL-'+e.plNum}</b> · `:''}${e.location?_hEsc(e.location)+' · ':''}${(e.tempLabel||'Repair').replace(/</g,'&lt;')}</div>
         <div style="font-family:var(--mono);font-size:10px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${catName} · flagged ${e.date||''}${isOpen?(e.date?` · ${Math.max(0,Math.floor((Date.now()-new Date(e.date+'T00:00:00').getTime())/86400000))}d open`:''):(e.resolvedAt?` · fixed ${fmtWhen(e.resolvedAt)}`:'')}${isOpen?_plShareChip(e,pid):''}</div>
         ${(!isOpen&&e.resolveNote)?`<div style="font-family:var(--mono);font-size:10px;color:var(--green,#27AE60);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">→ ${String(e.resolveNote).replace(/</g,'&lt;')}</div>`:''}
+        ${isOpen?readyLine(e):''}
+        ${(isOpen&&!_vr&&e.assignedTo!==undefined&&e.assignedTo!==null)?`<div style="font-family:var(--mono);font-size:10px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">🏗 ${_hEsc(assignLabel(e))}</div>`:''}
       </div>
       ${btns}
     </div>`;
@@ -1232,6 +1257,118 @@ function clPunchlistReopen(entryId){
   if(typeof mapRenderTrackerLayers==='function'){ try{ mapRenderTrackerLayers(); }catch{} }
   clRenderPunchlist();
 }
+
+// ── 9/14 Ready-for-Review (Tim 9/12) ──────────────────────────────────────────
+// Contractors (and reviewers) hold exactly one write on a repair flag: "this is corrected,
+// come look" — a status-only mark (trMarkReady, rules readyMarkOk). The EI verifies in the
+// field: ✓ Verified = the normal resolve, ↩ Not fixed = clears the mark with a note. This is
+// also the fix for Forest's 9/11 "edit that just didn't save": view roles no longer see a
+// ✓ Fixed that does nothing — they see the one thing they CAN do.
+const _CL_MODAL_LBL='font-family:var(--mono);font-size:11px;color:var(--muted);display:block;margin:10px 0 4px';
+const _CL_MODAL_TA='width:100%;box-sizing:border-box;resize:vertical;background:var(--s1);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:8px;font-family:var(--mono);font-size:12px;margin-bottom:12px';
+function _clFlagTag(e){ return e&&e.plNum?((typeof trPlFmt==='function')?trPlFmt(e.plNum):'PL-'+e.plNum):'This item'; }
+function _clAfterReadyWrite(ok){
+  if(!ok) return;
+  if(typeof mapRenderTrackerLayers==='function'){ try{ mapRenderTrackerLayers(); }catch{} }
+  clRenderPunchlist();
+}
+function clReadyForReview(entryId){
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const e=(typeof trGetEntry==='function')?trGetEntry(entryId,pid):null; if(!e) return;
+  const uid=(window._currentUser&&window._currentUser.uid)||'';
+  const mine=e.readyStatus==='ready'&&e.readyBy===uid;
+  const tag=_clFlagTag(e);
+  const ov=document.createElement('div'); ov.className='modal-overlay'; ov.style.cssText='z-index:'+(window.GL_CONFIRM_Z||10500);
+  ov.innerHTML=`<div class="modal-box" style="max-width:360px;width:92%">
+    <div class="modal-title" style="margin-bottom:8px">🔧 ${mine?'Undo ready for review?':'Ready for review?'}</div>
+    <div class="modal-msg">${mine
+      ?`${_hEsc(tag)} is waiting on the inspector. Take it back off the review queue?`
+      :`Tell the inspector ${_hEsc(tag)}${e.tempLabel?` (${_hEsc(e.tempLabel)})`:''} has been corrected. The item stays open until the inspector verifies it in the field.`}</div>
+    ${mine?'':`<label style="${_CL_MODAL_LBL}">What was done (optional)</label><textarea id="_rr-note" rows="2" placeholder="e.g. sock replaced and re-staked, area seeded" style="${_CL_MODAL_TA}"></textarea>`}
+    <div class="modal-btns">
+      <button class="modal-confirm" id="_rr-ok">${mine?'↩ Undo':'🔧 Ready for review'}</button>
+      <button class="modal-cancel" id="_rr-cancel">Cancel</button>
+    </div></div>`;
+  document.body.appendChild(ov);
+  ov.querySelector('#_rr-cancel').onclick=()=>ov.remove();
+  ov.addEventListener('click',ev=>{ if(ev.target===ov) ov.remove(); });
+  ov.querySelector('#_rr-ok').onclick=async()=>{
+    const note=mine?'':(ov.querySelector('#_rr-note')?.value||'').trim();
+    const btn=ov.querySelector('#_rr-ok'); btn.disabled=true; btn.textContent='Saving…';
+    const ok=mine?await trClearReady(entryId,pid):await trMarkReady(entryId,pid,note);
+    ov.remove();
+    if(ok&&typeof showCloudBanner==='function') showCloudBanner(mine?'↩ Taken off the review queue.':`🔧 ${tag} marked ready — the inspector will verify it.`);
+    _clAfterReadyWrite(ok);
+  };
+}
+function clReadyReject(entryId){
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const e=(typeof trGetEntry==='function')?trGetEntry(entryId,pid):null; if(!e) return;
+  const tag=_clFlagTag(e);
+  const ov=document.createElement('div'); ov.className='modal-overlay'; ov.style.cssText='z-index:'+(window.GL_CONFIRM_Z||10500);
+  ov.innerHTML=`<div class="modal-box" style="max-width:360px;width:92%">
+    <div class="modal-title" style="margin-bottom:8px">↩ Not fixed</div>
+    <div class="modal-msg">${_hEsc(tag)} was marked ready by ${_hEsc(e.readyByName||'a member')}. Send it back with a note on what is still needed.</div>
+    <label style="${_CL_MODAL_LBL}">What still needs doing</label><textarea id="_rj-note" rows="2" placeholder="e.g. sock re-staked but the outlet apron is still missing" style="${_CL_MODAL_TA}"></textarea>
+    <div class="modal-btns">
+      <button class="modal-confirm" id="_rj-ok" style="background:var(--red)">↩ Send back</button>
+      <button class="modal-cancel" id="_rj-cancel">Cancel</button>
+    </div></div>`;
+  document.body.appendChild(ov);
+  ov.querySelector('#_rj-cancel').onclick=()=>ov.remove();
+  ov.addEventListener('click',ev=>{ if(ev.target===ov) ov.remove(); });
+  ov.querySelector('#_rj-ok').onclick=async()=>{
+    const note=(ov.querySelector('#_rj-note').value||'').trim();
+    const btn=ov.querySelector('#_rj-ok'); btn.disabled=true; btn.textContent='Saving…';
+    const ok=await trClearReady(entryId,pid,note||'not fixed');
+    ov.remove();
+    if(ok&&typeof showCloudBanner==='function') showCloudBanner(`↩ ${tag} sent back.`);
+    _clAfterReadyWrite(ok);
+  };
+}
+// Who sees this flag: every contractor (default), nobody, or named contractors from the
+// project's registry (Settings → 🏗 Contractors). Contractor members are matched by the
+// company on their member doc (Members card, lead sets it).
+function clAssignFlag(entryId){
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const e=(typeof trGetEntry==='function')?trGetEntry(entryId,pid):null; if(!e) return;
+  const tag=_clFlagTag(e);
+  const go=()=>{
+    const list=((typeof window.ctrGetList==='function')?window.ctrGetList(pid):[]).filter(c=>c&&c.name);
+    const cur=e.assignedTo;
+    const mode=cur==null?'all':(Array.isArray(cur)&&cur.length?'some':'none');
+    const ov=document.createElement('div'); ov.className='modal-overlay'; ov.style.cssText='z-index:'+(window.GL_CONFIRM_Z||10500);
+    const row=(html)=>`<label style="display:flex;align-items:center;gap:10px;font-family:var(--mono);font-size:12px;color:var(--text);padding:7px 0;cursor:pointer">${html}</label>`;
+    ov.innerHTML=`<div class="modal-box" style="max-width:360px;width:92%">
+      <div class="modal-title" style="margin-bottom:6px">🏗 Assign ${_hEsc(tag)}</div>
+      <div class="modal-msg" style="margin-bottom:6px">Which contractors see this item on their punchlist.</div>
+      ${row(`<input type="radio" name="_as-mode" value="all" ${mode==='all'?'checked':''}> All contractors`)}
+      ${row(`<input type="radio" name="_as-mode" value="none" ${mode==='none'?'checked':''}> None (inspector only)`)}
+      ${row(`<input type="radio" name="_as-mode" value="some" ${mode==='some'?'checked':''}> Only these:`)}
+      <div id="_as-list" style="margin-left:26px;border-left:2px solid var(--border);padding-left:10px">
+        ${list.length?list.map(c=>row(`<input type="checkbox" class="_as-co" value="${_hEsc(c.name)}" ${Array.isArray(cur)&&cur.includes(c.name)?'checked':''}> ${_hEsc(c.name)}${c.tier&&window.CTR_TIERS&&window.CTR_TIERS[c.tier]?`<span style="color:var(--muted);font-size:10px">${_hEsc(window.CTR_TIERS[c.tier])}</span>`:''}`)).join('')
+          :`<div style="font-family:var(--mono);font-size:11px;color:var(--muted);padding:6px 0">No contractors in the registry yet — Settings → 🏗 Contractors.</div>`}
+      </div>
+      <div class="modal-btns" style="margin-top:10px">
+        <button class="modal-confirm" id="_as-ok">Save</button>
+        <button class="modal-cancel" id="_as-cancel">Cancel</button>
+      </div></div>`;
+    document.body.appendChild(ov);
+    ov.querySelectorAll('._as-co').forEach(cb=>cb.addEventListener('change',()=>{ const r=ov.querySelector('input[name="_as-mode"][value="some"]'); if(r) r.checked=true; }));
+    ov.querySelector('#_as-cancel').onclick=()=>ov.remove();
+    ov.addEventListener('click',ev=>{ if(ev.target===ov) ov.remove(); });
+    ov.querySelector('#_as-ok').onclick=()=>{
+      const m=(ov.querySelector('input[name="_as-mode"]:checked')||{}).value||'all';
+      const picked=[...ov.querySelectorAll('._as-co:checked')].map(x=>x.value);
+      const val=m==='all'?null:(m==='none'?[]:picked);
+      ov.remove();
+      if(typeof trSetAssigned==='function') trSetAssigned(entryId,pid,val);
+      clRenderPunchlist();
+    };
+  };
+  if(typeof window.ctrEnsureCfg==='function'){ Promise.resolve(window.ctrEnsureCfg()).then(go,go); } else go();
+}
+if(typeof window!=='undefined'){ window.clReadyForReview=clReadyForReview; window.clReadyReject=clReadyReject; window.clAssignFlag=clAssignFlag; }
 // 9/5: compliance items on the punchlist — resolve / reopen from the card. Open Items'
 // §8 mirror follows through oiSyncSources (called at the end of clRenderPunchlist).
 // Marking an entry Resolved offers a correction photo once (Tim 8/18 + 9/10): camera, library or
