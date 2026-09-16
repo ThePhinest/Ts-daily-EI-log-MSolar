@@ -270,7 +270,8 @@ service cloud.firestore {
         // other key stay exactly as they were (a reply never re-opens or re-signs).
         function threadAppendOk() {
           let t = request.resource.data.thread;
-          let n = (resource.data.thread == null) ? 0 : resource.data.thread.size();
+          // NB: reading an absent key is an ERROR in rules (not null) — test membership first.
+          let n = ('thread' in resource.data) ? resource.data.thread.size() : 0;
           return isMember()
             && (resource.data.submittedBy == request.auth.uid || isLead()
                 || (resource.data.review != null && resource.data.review.reviewerUid == request.auth.uid))

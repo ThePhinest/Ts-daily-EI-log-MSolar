@@ -185,6 +185,9 @@ describe('signer (Reviewer ✍) — §C review & sign-off', () => {
       { review: { ...APPROVE, status: 'pending' } })));
   // 9/16 review conversation (thread append-only)
   const THR = [{ by: 'signy', byName: 'Sig Ny', role: 'reviewer', at: 1, text: 'what is a sediment dike?' }];
+  it('thread: the FIRST message on a submission that has no thread key yet (the live 9/16 failure)', () =>
+    assertSucceeds(updateDoc(doc(as('tim'), `projects/${PID}/submissions/s_rev`),
+      { thread: [{ by: 'tim', byName: 'Tim', role: 'author', at: 5, text: 'first message' }] })));
   it('thread: the author appends a self-attributed reply', () =>
     assertSucceeds(updateDoc(doc(as('tim'), `projects/${PID}/submissions/s_thr_a`),
       { thread: [...THR, { by: 'tim', byName: 'Tim', role: 'author', at: 5, text: 'a temporary water bar' }] })));
