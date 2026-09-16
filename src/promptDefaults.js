@@ -110,7 +110,7 @@ const PROMPT_DEFAULTS = {
       {
         key: 'compliance',
         label: 'Compliance',
-        instructions: 'Polish description and corrective action text.\nKeep Level and Status exactly as provided.\nIf no issues: [{"level":"No issues identified","description":"All areas inspected — no compliance concerns observed.","corrective":"N/A","status":"Compliant","dateResolved":""}]'
+        instructions: 'Polish the description and the corrective action text only. The corrective action is what was REQUIRED when the item was logged, stated once; never restate, summarize or merge the "actions taken" steps or their dates into it (they print separately under the entry).\nKeep Level and Status exactly as provided.\nIf no issues: [{"level":"No issues identified","description":"All areas inspected — no compliance concerns observed.","corrective":"N/A","status":"Compliant","dateResolved":""}]'
       }
     ]
   },

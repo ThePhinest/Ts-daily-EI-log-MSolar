@@ -357,7 +357,7 @@ async function rptCallClaude(logData, compEntries, systemPromptIn){
   }
   const crewSummary=(logData.crewBlocks||[]).map(b=>`Crew: ${b.name} | Time: ${b.time} | Location: ${b.location}\nActivities: ${b.activities}\nEnv Compliance: ${b.envCompliance}\nIssues: ${b.issues}\nNotes: ${b.notes}`).join('\n\n');
   const compSummary=compEntries.length>0
-    ?compEntries.map(e=>`Level ${e.level} — ${e.location}|Corrective: ${e.corrective}|Status: ${e.status}${e.dateResolved?'|Resolved: '+e.dateResolved:''}${(Array.isArray(e.steps)&&e.steps.length)?'|Actions taken: '+e.steps.map(s=>(s.date?s.date+' ':'')+(s.text||'')).filter(Boolean).join('; '):''}`).join('\n')
+    ?compEntries.map(e=>`Level ${e.level} — ${e.location}|Corrective: ${e.corrective}|Status: ${e.status}${e.dateResolved?'|Resolved: '+e.dateResolved:''}${(Array.isArray(e.steps)&&e.steps.length)?'|Actions taken so far (CONTEXT ONLY — never fold these or their dates into Corrective): '+e.steps.map(s=>(s.date?s.date+' ':'')+(s.text||'')).filter(Boolean).join('; '):''}`).join('\n')
     :'No compliance issues';
   const timeIn=_rptFmtTime(logData['p-timeIn'])||'6:30 AM';
   // 9/11: name rule + the project's known names ride the USER prompt (not the layered
@@ -460,55 +460,63 @@ async function rptBuildDocx(logData,polished,photos){
   ];
   // Section 3: Compliance
   const compIssues=polished.complianceIssues||[{level:'No issues identified',description:'All areas inspected \u2014 no compliance concerns observed.',corrective:'N/A',status:'Compliant',dateResolved:''}];
-  const compHdr=new TableRow({children:[
-    new TableCell({borders,shading:{fill:BLUE,type:ShadingType.CLEAR},margins:{top:60,bottom:60,left:80,right:80},children:[new Paragraph({children:[new TextRun({text:'Level',bold:true,color:WHITE,font:'Arial',size:18})]})]}),
-    new TableCell({borders,shading:{fill:BLUE,type:ShadingType.CLEAR},margins:{top:60,bottom:60,left:80,right:80},children:[new Paragraph({children:[new TextRun({text:'Location / Description',bold:true,color:WHITE,font:'Arial',size:18})]})]}),
-    new TableCell({borders,shading:{fill:BLUE,type:ShadingType.CLEAR},margins:{top:60,bottom:60,left:80,right:80},children:[new Paragraph({children:[new TextRun({text:'Corrective Action',bold:true,color:WHITE,font:'Arial',size:18})]})]}),
-    new TableCell({borders,shading:{fill:BLUE,type:ShadingType.CLEAR},margins:{top:60,bottom:60,left:80,right:80},children:[new Paragraph({children:[new TextRun({text:'Status',bold:true,color:WHITE,font:'Arial',size:18})]})]})
-  ]});
-  // 9/5: an entry's photos print directly UNDER its row (Tim: "item and photos, next item and
-  // photos") \u2014 a full-width spanned row inside the same table.
-  const compRows=[];
-  for(const issue of compIssues){
-    compRows.push(new TableRow({children:[
-      new TableCell({borders,margins:{top:60,bottom:60,left:80,right:80},children:[new Paragraph({children:[new TextRun({text:issue.level||'',font:'Arial',size:18})]})]}),
-      new TableCell({borders,margins:{top:60,bottom:60,left:80,right:80},children:[new Paragraph({children:[...(issue.cmpId?[new TextRun({text:issue.cmpId,bold:true,font:'Arial',size:18}),new TextRun({break:1,text:''})]:[]),new TextRun({text:issue.description||'',font:'Arial',size:18})]})]}),
-      new TableCell({borders,margins:{top:60,bottom:60,left:80,right:80},children:[new Paragraph({children:[new TextRun({text:issue.corrective||'',font:'Arial',size:18})]}),...(issue.actions?[new Paragraph({children:[new TextRun({text:'Actions taken: '+issue.actions,italics:true,font:'Arial',size:18})]})]:[])]}),
-      new TableCell({borders,margins:{top:60,bottom:60,left:80,right:80},children:[new Paragraph({children:[new TextRun({text:issue.status||'',font:'Arial',size:18})]})]})
-    ]}));
-    const cpList=[];
-    (issue.photoIds||[]).forEach(id=>{
-      const p=(window._phPhotos||[]).find(x=>x.id===id)||(window._phShared||[]).find(x=>x.id===id);
-      if(p) cpList.push({p,cap:((issue.fixIds||[]).includes(id)?'Correction — ':'')+(p.caption?String(p.caption):(p.date?`Photo \u00b7 ${p.date}`:'Photo'))});
-    });
-    if(!cpList.length) continue;
-    const photoRowsHere=[];
-    for(let i=0;i<cpList.length;i+=2){
+  // 9/16 (Tim: "I really hate the way the reports show up like this"): ONE BLOCK PER ENTRY instead of
+  // a 4-column table whose Corrective cell held the required action + the steps twice. Header strip
+  // (id · level · location/description | status), Required action once, observation photos, then
+  // "Actions taken" as dated steps with EACH STEP'S PHOTOS directly under that step.
+  const cpFindDocx=id=>(window._phPhotos||[]).find(x=>x.id===id)||(window._phShared||[]).find(x=>x.id===id)||null;
+  const cpCap=(p,pre)=>pre+(p.caption?String(p.caption):(p.date?`Photo \u00b7 ${p.date}`:'Photo'));
+  const cpImgCell=async(p,cap)=>{
+    try{
+      let imgData;
+      let blob=(typeof window.phExportBlobForRef==='function')?await window.phExportBlobForRef(p):null;
+      if(!blob&&p.storageUrl) blob=await (await fetch(p.storageUrl)).blob();
+      if(blob){blob=await stampIfCamera(p,blob);const ep=exportImageParams(p);blob=await exportImageBlob(blob,ep.maxPx,ep.quality);imgData=await blob.arrayBuffer();}
+      else{const raw=p.thumb||'';const b64=raw.includes(',')?raw.split(',')[1]:raw;imgData=_b64ToArrayBuffer(b64);}
+      return new TableCell({borders:noBorders,width:{size:50,type:WidthType.PERCENTAGE},margins:{top:40,bottom:40,left:40,right:40},children:[
+        new Paragraph({alignment:AlignmentType.CENTER,children:[new ImageRun({data:imgData,transformation:{width:300,height:225}})]}),
+        new Paragraph({alignment:AlignmentType.CENTER,children:[new TextRun({text:cap,font:'Arial',size:18,italics:true})],spacing:{before:40,after:60}})
+      ]});
+    }catch(e){return new TableCell({borders:noBorders,width:{size:50,type:WidthType.PERCENTAGE},children:[new Paragraph({children:[new TextRun({text:cap,font:'Arial',size:18})]})]});}
+  };
+  const cpImgTable=async(list)=>{   // list = [{p,cap}] → 2-up borderless table (null when empty)
+    if(!list.length) return null;
+    const rows=[];
+    for(let i=0;i<list.length;i+=2){
       const cells=[];
-      for(let j=i;j<Math.min(i+2,cpList.length);j++){
-        const {p,cap}=cpList[j];
-        try{
-          let imgData;
-          let blob=(typeof window.phExportBlobForRef==='function')?await window.phExportBlobForRef(p):null;
-          if(!blob&&p.storageUrl) blob=await (await fetch(p.storageUrl)).blob();
-          if(blob){blob=await stampIfCamera(p,blob);const ep=exportImageParams(p);blob=await exportImageBlob(blob,ep.maxPx,ep.quality);imgData=await blob.arrayBuffer();}
-          else{const raw=p.thumb||'';const b64=raw.includes(',')?raw.split(',')[1]:raw;imgData=_b64ToArrayBuffer(b64);}
-          cells.push(new TableCell({borders:noBorders,width:{size:50,type:WidthType.PERCENTAGE},margins:{top:40,bottom:40,left:40,right:40},children:[
-            new Paragraph({alignment:AlignmentType.CENTER,children:[new ImageRun({data:imgData,transformation:{width:300,height:225}})]}),
-            new Paragraph({alignment:AlignmentType.CENTER,children:[new TextRun({text:cap,font:'Arial',size:18,italics:true})],spacing:{before:40,after:60}})
-          ]}));
-        }catch(e){cells.push(new TableCell({borders:noBorders,width:{size:50,type:WidthType.PERCENTAGE},children:[new Paragraph({children:[new TextRun({text:cap,font:'Arial',size:18})]})]}));}
-      }
+      for(let j=i;j<Math.min(i+2,list.length);j++) cells.push(await cpImgCell(list[j].p,list[j].cap));
       if(cells.length===1) cells.push(new TableCell({borders:noBorders,width:{size:50,type:WidthType.PERCENTAGE},children:[new Paragraph({children:[]})]}));
-      photoRowsHere.push(new TableRow({children:cells}));
+      rows.push(new TableRow({children:cells}));
     }
-    compRows.push(new TableRow({children:[
-      new TableCell({borders,columnSpan:4,shading:{fill:'FAFAFA',type:ShadingType.CLEAR},margins:{top:40,bottom:40,left:80,right:80},children:[
-        new Table({borders:noBorders,width:{size:100,type:WidthType.PERCENTAGE},rows:photoRowsHere})
-      ]})
-    ]}));
+    return new Table({borders:noBorders,width:{size:100,type:WidthType.PERCENTAGE},rows});
+  };
+  const cpLabel=(t)=>new Paragraph({children:[new TextRun({text:t,bold:true,color:MID_BLUE,font:'Arial',size:17})],spacing:{before:80,after:20}});
+  const cpText=(t,indent)=>new Paragraph({children:[new TextRun({text:t,font:'Arial',size:18})],indent:indent?{left:indent}:undefined,spacing:{before:20,after:20}});
+  const compBlocks=[];
+  for(const issue of compIssues){
+    const hdrRuns=[];
+    if(issue.cmpId) hdrRuns.push(new TextRun({text:issue.cmpId+'   ',bold:true,font:'Arial',size:19}));
+    if(issue.level) hdrRuns.push(new TextRun({text:issue.level+(issue.description?'   \u00b7   ':''),bold:true,font:'Arial',size:18}));
+    if(issue.description) hdrRuns.push(new TextRun({text:String(issue.description),font:'Arial',size:18}));
+    compBlocks.push(new Table({width:{size:100,type:WidthType.PERCENTAGE},rows:[new TableRow({children:[
+      new TableCell({borders,shading:{fill:LT_BLUE,type:ShadingType.CLEAR},width:{size:78,type:WidthType.PERCENTAGE},margins:{top:60,bottom:60,left:80,right:80},children:[new Paragraph({children:hdrRuns})]}),
+      new TableCell({borders,shading:{fill:LT_BLUE,type:ShadingType.CLEAR},width:{size:22,type:WidthType.PERCENTAGE},margins:{top:60,bottom:60,left:80,right:80},children:[new Paragraph({alignment:AlignmentType.RIGHT,children:[new TextRun({text:issue.status||'',bold:true,font:'Arial',size:18})]})]})
+    ]})]}));
+    if(issue.corrective&&!/^n\/?a$/i.test(String(issue.corrective).trim())){ compBlocks.push(cpLabel('Required action'),cpText(issue.corrective)); }
+    const stepIds=new Set((issue.steps||[]).flatMap(st=>st.photoIds||[]));
+    const obsList=(issue.obsIds||issue.photoIds||[]).filter(id=>!stepIds.has(id)).map(id=>{const p=cpFindDocx(id);return p?{p,cap:cpCap(p,'')}:null;}).filter(Boolean);
+    const obsTbl=await cpImgTable(obsList); if(obsTbl) compBlocks.push(obsTbl);
+    if(issue.steps&&issue.steps.length){
+      compBlocks.push(cpLabel('Actions taken'));
+      for(const st of issue.steps){
+        compBlocks.push(new Paragraph({children:[...((st.dateFmt||st.date)?[new TextRun({text:(st.dateFmt||st.date)+':  ',bold:true,font:'Arial',size:18})]:[]),new TextRun({text:st.text||'',font:'Arial',size:18})],indent:{left:240},spacing:{before:20,after:20}}));
+        const stList=(st.photoIds||[]).map(id=>{const p=cpFindDocx(id);return p?{p,cap:cpCap(p,'')}:null;}).filter(Boolean);
+        const stTbl=await cpImgTable(stList); if(stTbl) compBlocks.push(stTbl);
+      }
+    } else if(issue.actions){ compBlocks.push(cpLabel('Actions taken'),cpText(issue.actions,240)); }
+    if(issue.dateResolved) compBlocks.push(new Paragraph({children:[new TextRun({text:'Resolved '+issue.dateResolved,italics:true,font:'Arial',size:17,color:'555555'})],spacing:{before:20,after:80}}));
+    else compBlocks.push(spacer(60));
   }
-  const compTable=new Table({rows:[compHdr,...compRows]});
   const cpRows=[];
   const sec3=[
     h1('3.  Compliance Issues'),spacer(60),
@@ -516,7 +524,7 @@ async function rptBuildDocx(logData,polished,photos){
     body(polished.agencyInspection||'No agency inspections conducted today.'),spacer(60),
     h2('Non-Compliance Observations'),spacer(40),
     body('Compliance Level Reference: Level 1 \u2014 Observation | Level 2 \u2014 Corrective Action | Level 3 \u2014 Non-Compliance | Level 4 \u2014 Stop Work Order'),
-    spacer(40),compTable,spacer(60),
+    spacer(40),...compBlocks,spacer(60),
     ...(cpRows.length?[h2('Compliance Photos'),spacer(40),new Table({borders:noBorders,width:{size:100,type:WidthType.PERCENTAGE},rows:cpRows}),spacer(60)]:[]),
     h2('Landowner / Public Interactions'),
     body(polished.landownerContact||'No landowner or public interactions occurred today.'),spacer(60),
@@ -548,7 +556,9 @@ async function rptBuildDocx(logData,polished,photos){
     ...(laItems.length>0?laItems.map(b=>bullet(b)):[body(logData.lookahead||'No look ahead items recorded.')])
   ];
   // Section 6: Photos
-  const dayPhotos=photos.filter(p=>p.date===logData.reportDate).sort((a,b)=>a.uploadedAt-b.uploadedAt);
+  // 9/12 + 9/14 (Tim): a photo that printed under its compliance entry does NOT print again in §6.
+  const compUsed=new Set(); compIssues.forEach(i=>(i.photoIds||[]).forEach(id=>compUsed.add(id)));
+  const dayPhotos=photos.filter(p=>p.date===logData.reportDate&&!compUsed.has(p.id)).sort((a,b)=>a.uploadedAt-b.uploadedAt);
   const photoRows=[];
   for(let i=0;i<dayPhotos.length;i+=2){
     const cells=[];
@@ -748,6 +758,10 @@ async function _hashSnapshot(snapshot){
 
 // Compliance table rows = the snapshot's entries (authoritative), polished text borrowed
 // from Claude's rows when they line up (same count → by index; else by level + overlap).
+function _rptFmtDate(d){ const p=String(d||'').split('-'); return p.length===3?`${parseInt(p[1])}/${parseInt(p[2])}/${p[0].slice(2)}`:String(d||''); }
+// 9/16 (Tim): compliance rows carry `steps` [{date,dateFmt,text,photoIds}] + `obsIds` (the observation
+// photos) so both renderers print ONE block per entry: header · required action · observation photos ·
+// each step with ITS photos under it. `actions` / `fixIds` / `photoIds` stay for older callers.
 function _rptWithCurrentCompliance(polished, snapshot){
   try{
     const entries=(snapshot&&Array.isArray(snapshot.compEntries))?snapshot.compEntries:null;
@@ -769,7 +783,7 @@ function _rptWithCurrentCompliance(polished, snapshot){
       // 9/11 (Tim): the id printed twice ("CMP-17 — CMP-17 — W11…") — carry it ONCE as cmpId and strip any copy the polish left at the front of the text.
       const cmpId=e.cmpNum?('CMP-'+String(e.cmpNum).padStart(2,'0')):'';
       const descRaw=String((p&&p.description)||e.location||'').replace(/^(?:\s*CMP-\d+\s*(?:[—–·:-]\s*Level\s*\d\s*)?(?:[—–·:-]\s*)?)+/i,'');
-      return {level:lvl(e)||(p&&p.level)||'', cmpId, description:descRaw, corrective:(p&&p.corrective)||e.corrective||'', status:e.status||(p&&p.status)||'', dateResolved:e.dateResolved||'', actions:(typeof window.clStepsText==='function')?window.clStepsText(e):'', fixIds:(typeof window.clStepPhotoIds==='function')?window.clStepPhotoIds(e):[], photoIds:(Array.isArray(e.photoIds)?e.photoIds.slice():[]).concat(((typeof window.clStepPhotoIds==='function')?window.clStepPhotoIds(e):[]).filter(x=>!(e.photoIds||[]).includes(x)))};
+      return {level:lvl(e)||(p&&p.level)||'', cmpId, description:descRaw, corrective:(p&&p.corrective)||e.corrective||'', status:e.status||(p&&p.status)||'', dateResolved:e.dateResolved||'', actions:(typeof window.clStepsText==='function')?window.clStepsText(e):'', steps:(Array.isArray(e.steps)?e.steps:[]).map(st=>({date:st.date||'',dateFmt:_rptFmtDate(st.date),text:String(st.text||'').trim(),photoIds:(st.photoIds||[]).slice()})).filter(st=>st.text||st.photoIds.length), obsIds:(Array.isArray(e.photoIds)?e.photoIds.slice():[]), fixIds:(typeof window.clStepPhotoIds==='function')?window.clStepPhotoIds(e):[], photoIds:(Array.isArray(e.photoIds)?e.photoIds.slice():[]).concat(((typeof window.clStepPhotoIds==='function')?window.clStepPhotoIds(e):[]).filter(x=>!(e.photoIds||[]).includes(x)))};
     });
     if(!rows.length) return polished;   // no entries → the polished "no issues" row stands
     return Object.assign({}, polished, {complianceIssues:rows});

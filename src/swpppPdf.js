@@ -525,7 +525,9 @@ export async function dailyBuildPdf(logData,polished,photoRefs,opts){
   ]);
 
   // 2. Inspection Summary
-  const bullets=(arr)=>({ul:(arr||[]),fontSize:10,margin:[10,2,0,2]});
+  // 9/16: pdfmake rewrites `ul` items IN PLACE (string → {text}) while laying out — hand it copies so the
+  // caller's `polished.*Bullets` stay strings for a DOCX built afterwards (it printed "[object Object]").
+  const bullets=(arr)=>({ul:(arr||[]).map(x=>(typeof x==='string')?x:Object.assign({},x)),fontSize:10,margin:[10,2,0,2]});
   const sec2=[
     dh1('2.  Inspection Summary'),
     dh2('Contractor Activities'),
@@ -543,17 +545,37 @@ export async function dailyBuildPdf(logData,polished,photoRefs,opts){
   // table. Refs come from the snapshot (reviewer-safe), falling back to the author's library.
   const cpRefs=opts.compPhotoRefs||[];
   const cpFind=id=>cpRefs.find(r=>r.id===id)||(photoRefs||[]).find(r=>r.id===id)||(window._phPhotos||[]).find(p=>p.id===id)||(window._phShared||[]).find(p=>p.id===id)||null;
-  const compBody=[[dhcell('Level'),dhcell('Location / Description'),dhcell('Corrective Action'),dhcell('Status')]];
+  // 9/16 (Tim: "I really hate the way the reports show up like this"): ONE BLOCK PER ENTRY — header strip
+  // (id · level · location/description | status), Required action once, observation photos, then
+  // "Actions taken" as dated steps with EACH STEP'S PHOTOS directly under that step. No 4-column table.
+  const cpImgs=async(ids)=>{ const out=[]; for(const pid of (ids||[])){ const ref=cpFind(pid); if(!ref) continue; const im=await _dailyImg(ref,300,260); if(im) out.push({im,cap:(ref.caption?String(ref.caption):(ref.date?`Photo · ${ref.date}`:'Photo'))}); } return out; };
+  const cpGrid=(ims,ind)=>({table:{dontBreakRows:true,widths:['*','*'],body:_imgPairRows(ims)},layout:imgGridLayout,margin:[ind||0,2,0,3]});
+  const cpLabel=(t)=>({text:t,bold:true,fontSize:8.5,color:_d.h,margin:[0,5,0,1]});
+  const compBlocks=[];
   for(const i of compIssues){
-    const descCell=i.cmpId?{text:[{text:i.cmpId,bold:true},{text:'\n'+String(i.description||'')}],fontSize:9}:cell(i.description);
-    compBody.push([cell(i.level),descCell,cell([i.corrective||'',i.actions?('Actions taken: '+i.actions):''].filter(Boolean).join('\n')),cell(i.status)]);
-    const ims=[];
-    for(const pid of (i.photoIds||[])){
-      const ref=cpFind(pid); if(!ref) continue;
-      const im=await _dailyImg(ref,300,260);
-      if(im) ims.push({im,cap:((i.fixIds||[]).includes(pid)?'Correction — ':'')+(ref.caption?String(ref.caption):(ref.date?`Photo · ${ref.date}`:'Photo'))});
-    }
-    if(ims.length) compBody.push([{colSpan:4,fillColor:'#FAFAFA',table:{dontBreakRows:true,widths:['*','*'],body:_imgPairRows(ims)},layout:imgGridLayout,margin:[0,2,0,2]},{},{},{}]);
+    const hdr=[];
+    if(i.cmpId) hdr.push({text:i.cmpId+'   ',bold:true,fontSize:9.5});
+    if(i.level) hdr.push({text:i.level+(i.description?'   ·   ':''),bold:true});
+    if(i.description) hdr.push({text:String(i.description)});
+    const stack=[{table:{widths:['*',78],body:[[
+      {text:hdr.length?hdr:' ',fontSize:9,color:_d.ink,fillColor:_d.lt},
+      {text:i.status||'',bold:true,fontSize:9,alignment:'right',color:_d.ink,fillColor:_d.lt}
+    ]]},layout:hairLayout,margin:[0,4,0,0]}];
+    if(i.corrective&&!/^n\/?a$/i.test(String(i.corrective).trim())) stack.push(cpLabel('Required action'),{text:i.corrective,fontSize:9,margin:[0,0,0,1]});
+    const head={unbreakable:true,stack:stack.splice(0)};   // header strip never orphans at a page foot
+    stack.push(head);
+    const stepIds=new Set((i.steps||[]).flatMap(st=>st.photoIds||[]));
+    const obs=await cpImgs((i.obsIds||i.photoIds||[]).filter(id=>!stepIds.has(id)));
+    if(obs.length) stack.push(cpGrid(obs,0));
+    if(i.steps&&i.steps.length){
+      stack.push(cpLabel('Actions taken'));
+      for(const st of i.steps){
+        stack.push({text:[...((st.dateFmt||st.date)?[{text:(st.dateFmt||st.date)+':  ',bold:true}]:[]),{text:st.text||''}],fontSize:9,margin:[8,1,0,1]});
+        const ims=await cpImgs(st.photoIds); if(ims.length) stack.push(cpGrid(ims,8));
+      }
+    } else if(i.actions) stack.push(cpLabel('Actions taken'),{text:i.actions,fontSize:9,margin:[8,0,0,1]});
+    if(i.dateResolved) stack.push({text:'Resolved '+i.dateResolved,fontSize:8,italics:true,color:'#555555',margin:[0,2,0,0]});
+    compBlocks.push({stack,margin:[0,0,0,6]});
   }
   const cpBlock=[];
   const sec3=[
@@ -562,7 +584,7 @@ export async function dailyBuildPdf(logData,polished,photoRefs,opts){
     body(polished.agencyInspection||'No agency inspections conducted today.'),
     dh2('Non-Compliance Observations'),
     {text:'Compliance Level Reference: Level 1 — Observation | Level 2 — Corrective Action | Level 3 — Non-Compliance | Level 4 — Stop Work Order',fontSize:8.5,italics:true,color:'#555555',margin:[0,2,0,4]},
-    {table:{headerRows:1,dontBreakRows:true,widths:cols(14,32,30),body:compBody},layout:hairLayout,margin:[0,2,0,4]},
+    ...compBlocks,
     ...cpBlock,
     dh2('Landowner / Public Interactions'),
     body(polished.landownerContact||'No landowner or public interactions occurred today.'),
@@ -589,7 +611,9 @@ export async function dailyBuildPdf(logData,polished,photoRefs,opts){
   ];
 
   // 6. Photo Log — from the snapshot refs, 2-up
-  const dayPhotos=(photoRefs||[]).filter(p=>p.date===logData.reportDate).sort((a,b)=>(a.uploadedAt||0)-(b.uploadedAt||0));
+  // 9/12 + 9/14 (Tim): a photo that printed under its compliance entry does NOT print again in §6.
+  const compUsed=new Set(); compIssues.forEach(i=>(i.photoIds||[]).forEach(id=>compUsed.add(id)));
+  const dayPhotos=(photoRefs||[]).filter(p=>p.date===logData.reportDate&&!compUsed.has(p.id)).sort((a,b)=>(a.uploadedAt||0)-(b.uploadedAt||0));
   // 9/11 (#34): 4-parallel photo prep with progress (it was strictly serial)
   let _phDone=0;
   const phItems=(await _pool(dayPhotos,4,async(p,j)=>{
@@ -682,6 +706,8 @@ export async function dailyExportPdfNow(logData,polished,photoRefs,opts){
   else await saveFileNative(blob,fname,'application/pdf');
   return blob;
 }
+
+window._glDailyBuildPdf=dailyBuildPdf;   // 9/16: harness hook (tests/screens/render-daily-compliance.mjs) — builder only, no save
 
 // ═══ ESC PUNCHLIST PDF — the cross-category repair-flag deliverable ═══
 // Contractor-facing (ProSeed et al): every open 🚩 flag as a numbered item with
