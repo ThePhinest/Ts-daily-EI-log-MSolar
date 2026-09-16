@@ -1161,6 +1161,43 @@ async function glSetMarkersPublished(markersById, ids, publish, pid) {
   return n;
 }
 
+// ── 9/16 STORED REPORT PDFs ──────────────────────────────────────────────────
+// The report is rendered ONCE and kept with the project instead of being
+// rebuilt (pdfmake + every full-res photo) on every open of every device:
+//   send-for-review  → author's device renders the UNDER REVIEW copy and
+//                      uploads it; the submission doc carries `reportPdf`
+//   approve & sign   → reviewer's device renders the SIGNED copy once and
+//                      uploads it; the pointer rides INSIDE `review.pdf`
+//                      (the rules let a reviewer change only the review key)
+// Files live under the uploader's own docs/{uid}/_reports/{pid}/ prefix (the
+// Storage rules already there); members open them by the persisted token URL
+// — the same capability model photos, KML and plan sheets use. Every consumer
+// falls back to the live rebuild when the stored file is missing or fails.
+async function _glRenderSubmissionPdf(snap, reviewObj, watermark, onProgress) {
+  const pdfMod = await import('./swpppPdf.js');
+  return pdfMod.dailyBuildPdf(snap.logData, snap.polished, snap.photoRefs || [], {
+    oiRes: snap.oiRefs || [], compPhotoRefs: snap.compPhotoRefs || [], brand: snap.brand || null,
+    authorSig: snap.authorSig || null, logo: snap.logo || null,
+    review: reviewObj || null, watermark: watermark || '', onProgress
+  });
+}
+async function _glUploadReportPdf(blob, pid, name) {
+  if (!window.storage || !window._currentUser) throw new Error('storage unavailable');
+  const safe = String(name || 'report.pdf').replace(/[\\/:*?"<>|]+/g, '_');
+  const path = `docs/${_currentUser.uid}/_reports/${pid}/${safe}`;
+  const up = await window.storage.ref(path).put(blob, { contentType: 'application/pdf' });
+  const url = await up.ref.getDownloadURL();
+  return { url, path, name: safe, bytes: blob.size, at: Date.now() };
+}
+async function _glReportBaseName(date, project) {
+  try {
+    if (typeof window.glReportFileName === 'function')
+      return String(await window.glReportFileName('daily', date, null, project || '')).replace(/\.pdf$/i, '');
+  } catch (e) {}
+  return date + '_Daily_Inspection_Report';
+}
+const _glPdfProgress = busy => (kind, i, n) => { if (busy) busy.set(kind === 'photo' ? `Preparing photos… ${i} of ${n}` : 'Laying out the report…'); };
+
 async function _glDoSubmitDay(payload, date, publishedCount, reviewOpts) {
   const d = _sdb();
   if (!d) return;
@@ -1190,6 +1227,16 @@ async function _glDoSubmitDay(payload, date, publishedCount, reviewOpts) {
       };
       docData.reportSnapshot = JSON.parse(JSON.stringify(reviewOpts.snapshot));
       try { localStorage.setItem('gl_last_reviewer_' + pid, reviewOpts.reviewerUid); } catch (e) {}
+      // 9/16: render the UNDER REVIEW copy once, here, so the reviewer opens a file.
+      const busy = (typeof window.glBusy === 'function') ? window.glBusy('Rendering the report for review…') : null;
+      try {
+        const blob = await _glRenderSubmissionPdf(docData.reportSnapshot, null, 'UNDER REVIEW', _glPdfProgress(busy));
+        const base = await _glReportBaseName(date, docData.reportSnapshot.logData && docData.reportSnapshot.logData.project);
+        if (busy) busy.set('Uploading the report…');
+        docData.reportPdf = await _glUploadReportPdf(blob, pid, `${base}_v${version}_UNDER-REVIEW.pdf`);
+      } catch (e) {
+        console.warn('stored report pdf (send) skipped:', e && e.message);   // reviewer falls back to the live rebuild
+      } finally { if (busy) busy.close(); }
     }
     await d.collection('projects').doc(pid).collection('submissions').doc(date + '_v' + version).set(docData);
     const pubNote = publishedCount ? (' · ' + publishedCount + ' item' + (publishedCount > 1 ? 's' : '') + ' published') : '';
@@ -1661,6 +1708,27 @@ async function glReviewViewPdf(id) {
   const s = (window._glPSpaceCache || {})[id];
   if (!s || !s.reportSnapshot) return;
   const snap = s.reportSnapshot;
+  // 9/16: stored copy first — signed when approved, UNDER REVIEW otherwise. Any
+  // failure (missing file, offline, expired URL) drops through to the rebuild.
+  const approved = !!(s.review && s.review.status === 'approved');
+  const stored = approved ? (s.review.pdf && s.review.pdf.url ? s.review.pdf : null)
+                          : (s.reportPdf && s.reportPdf.url ? s.reportPdf : null);
+  if (stored) {
+    const b0 = (typeof window.glBusy === 'function') ? window.glBusy('Opening the report…') : null;
+    try {
+      const res = await fetch(stored.url);
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const blob = await res.blob();
+      if (!blob.size) throw new Error('empty file');
+      const sf = await import('./saveFile.js');
+      await sf.openPdfNative(blob, stored.name || ('report-' + s.date + '.pdf'), 'Daily report · ' + s.date + (approved ? ' · signed' : ''));
+      if (b0) b0.close();
+      return;
+    } catch (e) {
+      console.warn('stored report pdf open → live rebuild:', e && e.message);
+      if (b0) b0.close();
+    }
+  }
   // 9/11 (Tim 9/10 #34): a blocking branded busy overlay for the whole build (the old
   // 7-second banner died while the job was still running); #35: VIEW opens the native viewer.
   const busy = (typeof window.glBusy === 'function') ? window.glBusy('Building the report PDF…') : null;
@@ -1722,6 +1790,22 @@ async function glReviewApprove(id) {
       reviewerName: _glMyName(), reviewerTitle: title,
       signature: { b64: sig.b64, w: sig.w || 460, h: sig.h || 150 }, comment: ''
     });
+    // 9/16: render the SIGNED copy once and keep it with the submission. Never
+    // blocks the approval — a failed render/upload just means rebuild-on-open.
+    if (s.reportSnapshot) {
+      const busy = (typeof window.glBusy === 'function') ? window.glBusy('Rendering the signed report…') : null;
+      try {
+        const rv = { name: newReview.reviewerName, title: newReview.reviewerTitle || '', dateMs: newReview.reviewedAt, signature: newReview.signature };
+        const blob = await _glRenderSubmissionPdf(s.reportSnapshot, rv, '', _glPdfProgress(busy));
+        const base = (s.reportPdf && s.reportPdf.name)
+          ? String(s.reportPdf.name).replace(/_UNDER-REVIEW\.pdf$/i, '').replace(/\.pdf$/i, '')
+          : `${s.date}_Daily_Inspection_Report_v${s.version || 1}`;
+        if (busy) busy.set('Uploading the signed report…');
+        newReview.pdf = await _glUploadReportPdf(blob, _activeProjectId(), base + '_SIGNED.pdf');
+      } catch (e) {
+        console.warn('stored report pdf (sign) skipped:', e && e.message);
+      } finally { if (busy) busy.close(); }
+    }
     await _glReviewWrite(id, s, newReview,
       '✓ Signed — ' + _glSubFmtDate(s.date) + ' is approved.',
       () => ov.remove(), btn, 'Approve & Sign');
