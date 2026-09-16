@@ -26,11 +26,15 @@ const wait = ms => page.waitForTimeout(ms);
 const stats = async () => page.evaluate(() => (typeof window.glMapStats === 'function') ? window.glMapStats() : null);
 const shot = async name => { const f = `${out}/${name}.png`; await page.screenshot({ path: f }); console.log('  shot', f); };
 
-// 1. Load with a fresh service worker (the persistent profile keeps the old bundle).
+// 1. Load with a fresh service worker (the persistent profile keeps the old bundle):
+//    unregister every SW + drop every Cache Storage entry, then load with a cache-buster.
 await page.goto('https://app.groundlog.io/?smoke=' + Date.now(), { waitUntil: 'domcontentloaded' });
-await page.evaluate(async () => { try { const r = await navigator.serviceWorker.getRegistration(); if (r) await r.update(); } catch {} });
-await wait(4000);
-await page.reload({ waitUntil: 'domcontentloaded' });
+await page.evaluate(async () => {
+  try { const regs = await navigator.serviceWorker.getRegistrations(); for (const r of regs) await r.unregister(); } catch {}
+  try { const ks = await caches.keys(); for (const k of ks) await caches.delete(k); } catch {}
+});
+await wait(2000);
+await page.goto('https://app.groundlog.io/?smoke=' + Date.now(), { waitUntil: 'domcontentloaded' });
 await page.waitForFunction(() => !!(window._currentUser && window._fbReady), null, { timeout: 90000 });
 await wait(4000);
 const hasNew = await page.evaluate(() => typeof window.glMapStats === 'function');

@@ -1,3 +1,106 @@
+import { get as _pfGet, set as _pfSet, del as _pfDel, createStore as _pfStore } from 'idb-keyval';
+
+// ── 9/16 FULL-RES PHOTO DEVICE CACHE (Tim 9/15: "tap a PL item, tap the photo,
+// it takes forever in bad service"). Full-res bytes used to be fetched from
+// Storage on EVERY open (only a 6-entry stamped object-URL LRU sat in front).
+// Now: a DEDICATED idb-keyval blob store (never the hydrated idbCache mirror)
+// keeps the originals of photos this device took or has viewed once, and the
+// photos attached to OPEN punch-list flags + OPEN compliance entries are
+// pre-fetched while online. Bounded LRU: PH_FULL_CAP_BYTES / PH_FULL_CAP_N.
+const _phFullStore = _pfStore('gl_photo_full', 'blobs');
+const PH_FULL_CAP_BYTES = 350 * 1048576;
+const PH_FULL_CAP_N = 600;
+const PH_FULL_MAX_ITEM = 30 * 1048576;
+let _phFullIdx = null, _phFullIdxDirty = false, _phFullIdxTimer = null;
+async function _phFullIndex(){
+  if(_phFullIdx) return _phFullIdx;
+  try{ _phFullIdx = (await _pfGet('__index', _phFullStore)) || {}; }catch(e){ _phFullIdx = {}; }
+  if(typeof _phFullIdx !== 'object' || Array.isArray(_phFullIdx)) _phFullIdx = {};
+  return _phFullIdx;
+}
+function _phFullIndexSave(){
+  _phFullIdxDirty = true;
+  clearTimeout(_phFullIdxTimer);
+  _phFullIdxTimer = setTimeout(()=>{ if(!_phFullIdxDirty) return; _phFullIdxDirty=false; _pfSet('__index', _phFullIdx||{}, _phFullStore).catch(()=>{}); }, 800);
+}
+async function _phFullCacheGet(id){
+  if(!id) return null;
+  try{
+    const b = await _pfGet(id, _phFullStore);
+    if(b instanceof Blob && b.size){ const ix = await _phFullIndex(); if(ix[id]){ ix[id].at = Date.now(); _phFullIndexSave(); } return b; }
+  }catch(e){}
+  return null;
+}
+async function _phFullCachePut(id, blob){
+  try{
+    if(!id || !(blob instanceof Blob) || !blob.size || blob.size > PH_FULL_MAX_ITEM) return;
+    const ix = await _phFullIndex();
+    if(ix[id] && ix[id].b === blob.size){ ix[id].at = Date.now(); _phFullIndexSave(); return; }
+    await _pfSet(id, blob, _phFullStore);
+    ix[id] = { b: blob.size, at: Date.now() };
+    // LRU eviction — oldest first — until under both caps.
+    let ids = Object.keys(ix), bytes = ids.reduce((a,k)=>a+(ix[k].b||0),0);
+    if(ids.length > PH_FULL_CAP_N || bytes > PH_FULL_CAP_BYTES){
+      ids.sort((a,b)=>(ix[a].at||0)-(ix[b].at||0));
+      for(const k of ids){
+        if(ids.length <= PH_FULL_CAP_N && bytes <= PH_FULL_CAP_BYTES) break;
+        if(k === id) continue;
+        bytes -= (ix[k].b||0); ids = ids.filter(x=>x!==k); delete ix[k];
+        _pfDel(k, _phFullStore).catch(()=>{});
+      }
+    }
+    _phFullIndexSave();
+  }catch(e){ console.warn('photo full cache put:', e && e.message); }
+}
+function _phFullCacheDel(id){
+  try{ _pfDel(id, _phFullStore).catch(()=>{}); if(_phFullIdx && _phFullIdx[id]){ delete _phFullIdx[id]; _phFullIndexSave(); } }catch(e){}
+}
+// Pre-fetch originals for what the field user taps most: photos on OPEN repair
+// flags and OPEN compliance entries (own + shared). Sequential, capped per run,
+// online only, skipped under Data Saver. Runs ~15 s after boot and on foreground.
+let _phPrefetchLast = 0, _phPrefetchBusy = false;
+async function phPrefetchOpenItemPhotos(force){
+  try{
+    if(_phPrefetchBusy) return;
+    if(!force && Date.now() - _phPrefetchLast < 5*60000) return;
+    if(navigator.onLine === false) return;
+    if(navigator.connection && navigator.connection.saveData) return;
+    _phPrefetchBusy = true; _phPrefetchLast = Date.now();
+    const ids = new Set();
+    try{ (window.trGetOpenTemporary ? window.trGetOpenTemporary() : []).forEach(e => (e.photoIds||[]).forEach(id => ids.add(id))); }catch(e){}
+    try{
+      (window.clGetOpenEntries ? window.clGetOpenEntries() : []).forEach(e => {
+        (e.photoIds||[]).forEach(id => ids.add(id));
+        (e.steps||[]).forEach(st => (st.photoIds||[]).forEach(id => ids.add(id)));
+      });
+    }catch(e){}
+    if(!ids.size) return;
+    const pool = (window._phPhotos||[]).concat(window._phShared||[]);
+    const ix = await _phFullIndex();
+    let n = 0;
+    for(const id of ids){
+      if(n >= 40) break;
+      if(ix[id]) continue;
+      const p = pool.find(x => x.id === id);
+      if(!p || !p.storageUrl || p.deletedAt) continue;
+      try{
+        const r = await fetch(p.storageUrl);
+        if(r.ok){ await _phFullCachePut(id, await r.blob()); n++; }
+      }catch(e){}
+      if(navigator.onLine === false) break;
+    }
+    if(n) console.log('[photos] pre-fetched', n, 'open-item originals');
+  }catch(e){ console.warn('photo prefetch:', e && e.message); }
+  finally{ _phPrefetchBusy = false; }
+}
+if(typeof window !== 'undefined'){
+  window.phPrefetchOpenItemPhotos = phPrefetchOpenItemPhotos;
+  window.phFullCacheStats = async () => { const ix = await _phFullIndex(); const ids = Object.keys(ix); return { photos: ids.length, mb: Math.round(ids.reduce((a,k)=>a+(ix[k].b||0),0)/1048576) }; };
+  setTimeout(() => phPrefetchOpenItemPhotos(false), 15000);
+  document.addEventListener('visibilitychange', () => { if(document.visibilityState === 'visible') setTimeout(() => phPrefetchOpenItemPhotos(false), 4000); });
+  window.addEventListener('online', () => setTimeout(() => phPrefetchOpenItemPhotos(true), 3000));
+}
+
 // ═══════════════════════════════════════════
 // PHOTOS
 // ═══════════════════════════════════════════
@@ -877,7 +980,9 @@ async function _phFullBlob(p){
       if(pend instanceof Blob) return pend;
     }
   }catch(e){}
-  if(p.storageUrl){ try{ const r=await fetch(p.storageUrl); if(r.ok) return await r.blob(); }catch(e){} }
+  // 9/16: device cache before the network; a network hit fills the cache.
+  try{ const c=await _phFullCacheGet(p.id); if(c) return c; }catch(e){}
+  if(p.storageUrl){ try{ const r=await fetch(p.storageUrl); if(r.ok){ const b=await r.blob(); _phFullCachePut(p.id,b); return b; } }catch(e){} }
   const raw=p.full||p.thumb||'';
   if(raw.startsWith('data:')){
     const b64=raw.split(',')[1]; const bin=atob(b64);
@@ -1625,6 +1730,7 @@ function phConfirmDelete(id){
     const p = window._phPhotos.find(x=>x.id===id);
     if(!p) return;
     p.deletedAt = Date.now();
+    _phFullCacheDel(id);   // 9/16: drop the cached original with the record
     window._phPhotos = window._phPhotos.filter(x=>x.id!==id);
     window._phTrash.push(p);
     phSaveLocal();
@@ -1792,6 +1898,7 @@ async function phSaveCameraPhoto(blob, meta){
   // IDB before the first byte goes out; delete them only after the URL lands.
   let parked=false;
   try{ if(window.idbSet){ window.idbSet('cam_pending::'+id, blob); parked=true; } }catch(_){}
+  _phFullCachePut(id, blob);   // 9/16: the original stays on this device for instant opens
   (async()=>{
     try{
       if(!storage||!_fbReady) throw new Error('firebase not ready');

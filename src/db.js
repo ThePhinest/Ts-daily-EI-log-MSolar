@@ -343,6 +343,26 @@ function _confirmModal(msg, onConfirm, title, confirmLabel, onCancel) {
   ov.querySelector('.modal-confirm').onclick = function() { ov.remove(); if (typeof onConfirm === 'function') onConfirm(); };
 }
 
+// 9/16: one-button house modal for "this didn't happen, here's why" moments
+// (Tim 9/11: a reviewer's edit silently not saving is amateurish — tell them).
+// Same chrome as _confirmModal; dedupes with it so two never stack.
+function glInfoModal(title, msgHtml, btnLabel) {
+  document.querySelectorAll('.modal-overlay[data-confirm]').forEach(function(o){ o.remove(); });
+  var ov = document.createElement('div');
+  ov.className = 'modal-overlay';
+  ov.setAttribute('data-confirm', '1');
+  ov.style.zIndex = String(GL_CONFIRM_Z);
+  ov.innerHTML = '<div class="modal-box">' +
+    '<div class="modal-title">' + (title || 'Heads up') + '</div>' +
+    '<div class="modal-msg" style="text-align:left">' + (msgHtml || '') + '</div>' +
+    '<div class="modal-btns"><button class="modal-confirm">' + (btnLabel || 'Got it') + '</button></div></div>';
+  document.body.appendChild(ov);
+  ov.querySelector('.modal-confirm').onclick = function(){ ov.remove(); };
+  ov.addEventListener('click', function(ev){ if (ev.target === ov) ov.remove(); });
+  try { if (typeof window.glHaptic === 'function') window.glHaptic('warning'); } catch (e) {}
+}
+window.glInfoModal = glInfoModal;
+
 // ── resetForm: clears cloud + form — only permitted on today's log ──
 function resetForm() {
   const today = new Date().toLocaleDateString('en-CA');

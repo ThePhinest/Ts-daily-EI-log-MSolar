@@ -90,10 +90,28 @@ function _trForeign(entry){
 function _trReviewerBlocked(pid){
   const role = (typeof window.glMyRoleFor === 'function') ? window.glMyRoleFor(pid) : '';
   if(role === 'reviewer' || role === 'signer'){
-    if(typeof showCloudBanner === 'function') showCloudBanner('👓 You\'re viewing this project — drawings here are read-only for your role.');
+    // 9/16 (Tim 9/11, Forest's edit that "just didn't save"): a modal, not a banner.
+    if(typeof window.glInfoModal === 'function')
+      window.glInfoModal('👓 View-only role',
+        'You\'re on this project as a <b>Reviewer</b>. Drawings, punch-list flags and their notes are read-only for your role, so this change was <b>not saved</b>.'
+        + '<br><br>Need to edit, or mark work as fixed? Ask the project lead for Inspector access.', 'Got it');
+    else if(typeof showCloudBanner === 'function') showCloudBanner('👓 You\'re viewing this project — drawings here are read-only for your role.');
     return true;
   }
   return false;
+}
+
+// 9/16: CONTENT edits to another member's record never reach the cloud (the
+// rules deny them) and used to land in the local cache only — the editor saw
+// their change and nobody else ever did. Say so, and don't touch the record.
+// Personal view state (hide from my map, folder, archive) stays local by design.
+function _trForeignBlocked(entry){
+  if(!_trForeign(entry)) return false;
+  if(typeof window.glInfoModal === 'function')
+    window.glInfoModal('🔒 Another member\'s record',
+      'This item was logged by another project member. Only the person who logged it can change it, so your edit was <b>not saved</b>.'
+      + '<br><br>If the work is done or the record needs a correction, tell the inspector who logged it.', 'Got it');
+  return true;
 }
 
 function _trStorageKey(projectId){
@@ -159,8 +177,9 @@ function trSaveEntry(entry, projectId){
   if(!entry.createdBy && typeof _currentUser !== 'undefined' && _currentUser){
     entry.createdBy = _currentUser.uid;
   }
-  _trStamp(entry);
   const idx = data.entries.findIndex(e => e.id === entry.id);
+  if(idx >= 0 && _trForeignBlocked(data.entries[idx])) return null;   // 9/16
+  _trStamp(entry);
   if(idx >= 0) data.entries[idx] = entry;
   else data.entries.push(entry);
   _trSaveRaw(pid, data);
@@ -307,6 +326,7 @@ function trDeleteEntry(entryId, projectId){
   const data = _trLoadRaw(pid);
   const idx = data.entries.findIndex(e => e.id === entryId);
   if(idx < 0) return false;
+  if(_trForeignBlocked(data.entries[idx])) return false;   // 9/16
   const ts = Date.now();
   data.entries[idx].deletedAt = ts;
   data.entries[idx].updatedAt = ts;
@@ -624,6 +644,7 @@ function _trMutateEntry(entryId, projectId, fn){
   const data = _trLoadRaw(pid);
   const idx = data.entries.findIndex(e => e.id === entryId);
   if(idx < 0) return false;
+  if(_trForeignBlocked(data.entries[idx])) return false;   // 9/16
   fn(data.entries[idx]);
   data.entries[idx].updatedAt = Date.now();
   _trSaveRaw(pid, data);
