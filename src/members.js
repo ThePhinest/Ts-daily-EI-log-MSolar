@@ -998,22 +998,33 @@ async function _glShowSubmitReview(payload, date, pid) {
   const mDate = m => new Date(m.createdAt || 0).toLocaleDateString('en-CA');
   // Row text = main text color, date = amber — keeps the fields visually
   // separated instead of one teal wall (Tim, 6/11).
-  const row = (type, id, label, sub, checked) =>
+  const row = (type, id, label, sub, checked, extra) =>
     `<label style="display:flex;align-items:center;gap:10px;padding:7px 2px;border-bottom:1px solid rgba(255,255,255,.07);cursor:pointer">
-      <input type="checkbox" data-type="${type}" data-id="${_glEsc(id)}"${checked ? ' checked' : ''} style="width:17px;height:17px;accent-color:var(--amber,#C9A84C);flex-shrink:0">
+      <input type="checkbox" data-type="${type}" data-id="${_glEsc(id)}"${checked ? ' checked' : ''}${extra || ''} style="width:17px;height:17px;accent-color:var(--amber,#C9A84C);flex-shrink:0">
       <span style="flex:1;min-width:0;font-size:12px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${label}</span>
       ${sub ? `<span style="font-size:10.5px;color:var(--amber,#C9A84C);flex-shrink:0">${sub}</span>` : ''}
     </label>`;
-  const entryRow = (e, c) => row('entry', e.id,
-    '✏️ ' + _glEsc(e.categoryName || 'Drawing') + (e.entryType === 'planned' ? ' · plan' : ''), _glEsc(e.date || ''), c);
-  const photoRow = (p, c) => row('photo', p.id, '📷 ' + _glEsc(p.caption || p.filename || 'Photo'), _glEsc(p.date || ''), c);
-  const markerRow = (m, c) => row('marker', m.id, (m.emoji || '📍') + ' ' + _glEsc(m.label || 'Field marker'), _glEsc(mDate(m)), c);
+  // 9/16 (Tim): an item left unchecked is offered again the NEXT submit, then ONE more time
+  // ("last offer"), then it drops out of the sheet for good (Share-now still publishes it).
+  // The per-item pass count lives in one small ledger doc per project (`_glHoldsLoad`).
+  const holds = await _glHoldsLoad(pid);
+  const hn = (type, id) => ((holds.items || {})[type + ':' + id] || {}).n || 0;
+  const lastTag = n => n >= 1 ? '<span style="color:var(--red,#E74C3C)">last offer</span>' : '';
+  const entryRow = (e, c, extra) => row('entry', e.id,
+    '✏️ ' + _glEsc(e.categoryName || 'Drawing') + (e.entryType === 'planned' ? ' · plan' : ''), (extra ? '' : lastTag(hn('entry', e.id)) + (hn('entry', e.id) >= 1 ? ' · ' : '')) + _glEsc(e.date || ''), c, extra);
+  const photoRow = (p, c, extra) => row('photo', p.id, '📷 ' + _glEsc(p.caption || p.filename || 'Photo'), (extra ? '' : lastTag(hn('photo', p.id)) + (hn('photo', p.id) >= 1 ? ' · ' : '')) + _glEsc(p.date || ''), c, extra);
+  const markerRow = (m, c, extra) => row('marker', m.id, (m.emoji || '📍') + ' ' + _glEsc(m.label || 'Field marker'), (extra ? '' : lastTag(hn('marker', m.id)) + (hn('marker', m.id) >= 1 ? ' · ' : '')) + _glEsc(mDate(m)), c, extra);
 
-  const dayE = entries.filter(e => e.date === date), preE = entries.filter(e => e.date !== date);
-  const dayP = photos.filter(p => p.date === date),  preP = photos.filter(p => p.date !== date);
-  const dayM = markers.filter(m => mDate(m) === date), preM = markers.filter(m => mDate(m) !== date);
+  const dayE = entries.filter(e => e.date === date), preAllE = entries.filter(e => e.date !== date);
+  const dayP = photos.filter(p => p.date === date),  preAllP = photos.filter(p => p.date !== date);
+  const dayM = markers.filter(m => mDate(m) === date), preAllM = markers.filter(m => mDate(m) !== date);
+  // Earlier items: offered (0 or 1 passes so far) vs dropped (offered twice already).
+  const preE = preAllE.filter(e => hn('entry', e.id) < 2), dropE = preAllE.filter(e => hn('entry', e.id) >= 2);
+  const preP = preAllP.filter(p => hn('photo', p.id) < 2), dropP = preAllP.filter(p => hn('photo', p.id) >= 2);
+  const preM = preAllM.filter(m => hn('marker', m.id) < 2), dropM = preAllM.filter(m => hn('marker', m.id) >= 2);
   const dayCount = dayE.length + dayP.length + dayM.length;
   const preCount = preE.length + preP.length + preM.length;
+  const dropCount = dropE.length + dropP.length + dropM.length;
 
   document.getElementById('_gl-review-sheet')?.remove();
   const ov = document.createElement('div');
@@ -1039,19 +1050,23 @@ async function _glShowSubmitReview(payload, date, pid) {
       <div style="display:flex;align-items:center;gap:10px;cursor:pointer;user-select:none">
         <input type="checkbox" id="_gl-rev-preall" style="width:17px;height:17px;accent-color:var(--amber,#C9A84C);flex-shrink:0">
         <span id="_gl-rev-pretoggle" style="flex:1;font-size:12px;color:var(--text)">Earlier unpublished items <b style="color:var(--amber,#C9A84C)">(${preCount})</b> <span style="color:var(--muted2)">— from other days; check to publish too</span></span>
-        <span id="_gl-rev-prechev" style="color:var(--muted2)">▸</span>
+        <span id="_gl-rev-prechev" style="color:var(--muted2)">▾</span>
       </div>
-      <div id="_gl-rev-prelist" style="display:none;margin-top:6px">
+      <div id="_gl-rev-prelist" style="margin-top:6px">
         ${preE.map(e => entryRow(e, false)).join('')}${preP.map(p => photoRow(p, false)).join('')}${preM.map(m => markerRow(m, false)).join('')}
       </div>
     </div>` : ''}
+    ${dropCount ? `<div class="proj-row-meta" style="margin-top:10px;white-space:normal;overflow:visible;text-overflow:unset">${dropCount} older item${dropCount > 1 ? 's' : ''} held back twice — no longer offered here. Share any of them from the map or Photos, or <a href="#" id="_gl-rev-dropshow" style="color:var(--amber,#C9A84C)">show them</a>.</div>
+      <div id="_gl-rev-droplist" style="display:none;margin-top:4px">
+        ${dropE.map(e => entryRow(e, false, ' data-drop="1"')).join('')}${dropP.map(p => photoRow(p, false, ' data-drop="1"')).join('')}${dropM.map(m => markerRow(m, false, ' data-drop="1"')).join('')}
+      </div>` : ''}
     ${revSection}
     <div style="margin-top:14px;padding:9px 12px;border:1px solid rgba(255,255,255,.12);border-radius:8px;font-family:var(--mono);font-size:10.5px;line-height:1.55;color:var(--text)">✍ By submitting, I certify this record is accurate and complete to the best of my knowledge.<div style="color:var(--muted2);margin-top:3px">Recorded as ${_glEsc(_glMyName())} · attested by your account, date and version trail.</div></div>
     <div class="modal-btns" style="margin-top:14px">
       <button class="modal-cancel" id="_gl-rev-cancel">Cancel</button>
       <button class="modal-confirm" id="_gl-rev-submit" style="background:var(--s3);border-color:var(--s3)">Submit day</button>
     </div>
-    <div class="proj-row-meta" style="margin-top:10px;white-space:normal;overflow:visible;text-overflow:unset">Unchecked items stay private — they'll be offered again next submit, or share them any time from the map. <span style="color:var(--text)">Unchecking one of today's photos also leaves it out of the day's report</span> (and vice versa — one choice, both places). You can keep editing after submitting; reviewers see a resubmit only when you post one.</div>
+    <div class="proj-row-meta" style="margin-top:10px;white-space:normal;overflow:visible;text-overflow:unset">Unchecked items stay private — they're offered again on your next submit, once more after that, then no longer asked about (share them any time from the map or Photos). <span style="color:var(--text)">Unchecking one of today's photos also leaves it out of the day's report</span> (and vice versa — one choice, both places). You can keep editing after submitting; reviewers see a resubmit only when you post one.</div>
   </div>`;
   document.body.appendChild(ov);
   ov._revSnap = _revSnap;   // review attachment rides the sheet element to submit time
@@ -1069,23 +1084,63 @@ async function _glShowSubmitReview(payload, date, pid) {
       list.style.display = open ? '' : 'none';
       ov.querySelector('#_gl-rev-prechev').textContent = open ? '▾' : '▸';
     };
+    const dropShow = ov.querySelector('#_gl-rev-dropshow');
+    if (dropShow) dropShow.onclick = ev => { ev.preventDefault(); const l = ov.querySelector('#_gl-rev-droplist'); l.style.display = l.style.display === 'none' ? '' : 'none'; };
     preToggle.onclick = flip;
     ov.querySelector('#_gl-rev-prechev').onclick = flip;
     preAll.onchange = () => {
       ov.querySelectorAll('#_gl-rev-prelist input[type=checkbox]').forEach(cb => { cb.checked = preAll.checked; });
     };
   }
-  ov.querySelector('#_gl-rev-submit').onclick = () => _glReviewSubmit(ov, payload, date, pid, markersById);
+  ov.querySelector('#_gl-rev-submit').onclick = () => _glReviewSubmit(ov, payload, date, pid, markersById, holds);
+}
+
+// ── 9/16 hold ledger: one doc per project under the user's tree (syncs across devices),
+// mirrored in IDB for offline opens. {items:{'photo:<id>':{n,at}}, updatedAt}. n = how many
+// submit sheets offered the item and it stayed unchecked. Published items leave the ledger.
+function _glHoldsKey(pid) { return 'gl_submit_holds::' + pid; }
+async function _glHoldsLoad(pid) {
+  let local = null;
+  try { local = JSON.parse(window.idbGet(_glHoldsKey(pid)) || 'null'); } catch (e) {}
+  let cloud = null;
+  try {
+    if (window.db && window._fbReady && window._currentUser) {
+      const snap = await _udb().collection('submitHolds').doc(pid).get();
+      if (snap.exists) cloud = snap.data();
+    }
+  } catch (e) {}
+  const pick = (cloud && (!local || (cloud.updatedAt || 0) >= (local.updatedAt || 0))) ? cloud : (local || { items: {}, updatedAt: 0 });
+  if (!pick.items) pick.items = {};
+  return pick;
+}
+async function _glHoldsSave(pid, holds) {
+  holds.updatedAt = Date.now();
+  try { if (window.idbSet) window.idbSet(_glHoldsKey(pid), JSON.stringify(holds)); } catch (e) {}
+  try { if (window.db && window._fbReady && window._currentUser) await _udb().collection('submitHolds').doc(pid).set(holds); } catch (e) { console.warn('submit holds:', e.message); }
 }
 
 // Publish everything checked, then post the close-day snapshot.
-async function _glReviewSubmit(ov, payload, date, pid, markersById) {
+async function _glReviewSubmit(ov, payload, date, pid, markersById, holds) {
   const btn = ov.querySelector('#_gl-rev-submit');
   btn.disabled = true; btn.textContent = 'Submitting…';
   const picks = { entry: [], photo: [], marker: [] };
   ov.querySelectorAll('input[type=checkbox][data-type]').forEach(cb => {
     if (cb.checked && picks[cb.dataset.type]) picks[cb.dataset.type].push(cb.dataset.id);
   });
+  // 9/16 hold ledger: offered + left unchecked → one more pass on record; checked → off the ledger.
+  try {
+    holds = holds || { items: {} };
+    let touched = false;
+    ov.querySelectorAll('input[type=checkbox][data-type]').forEach(cb => {
+      const key = cb.dataset.type + ':' + cb.dataset.id;
+      if (cb.checked) { if (holds.items[key]) { delete holds.items[key]; touched = true; } return; }
+      if (cb.dataset.drop) return;   // already dropped — not offered, not counted again
+      const cur = holds.items[key] || { n: 0 };
+      holds.items[key] = { n: (cur.n || 0) + 1, at: Date.now() };
+      touched = true;
+    });
+    if (touched) _glHoldsSave(pid, holds);
+  } catch (e) { console.warn('submit holds:', e.message); }
   // §C: reviewer selection (radio) + the attached report snapshot.
   let reviewOpts = null;
   const rp = ov.querySelector('input[name="_gl-rev-picker"]:checked');
