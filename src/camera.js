@@ -103,6 +103,33 @@ function _setAutoSave(v){
   _camCloudWrite('cameraPrefs',{autoSave:v});
 }
 
+// ── 9/17 (#19): the same prefs surfaced in Settings → 📷 Camera (Tim searched Settings and the
+// Photos page for the camera-roll switch; it only lived on the camera). One store, two doors:
+// this card reads and writes through camAutoSave / camStampDefaults like the viewfinder does.
+function camSettingsRender(){
+  const el=document.getElementById('cfg-camera-body'); if(!el) return;
+  try{ camStampHydrate(); }catch(_){}
+  const mode=camAutoSave(), st=camStampDefaults();
+  const native=!!(window.Capacitor&&window.Capacitor.isNativePlatform&&window.Capacitor.isNativePlatform());
+  el.innerHTML=`
+    <div class="field"><label>Save each shot to the camera roll</label>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">${AUTOSAVE_MODES.map(([v,l])=>`<button type="button" class="btn ${mode===v?'btn-amber':'btn-outline'}" style="font-size:11px;padding:7px 14px" onclick="camSettingsSet('autosave','${v}')">${l}</button>`).join('')}</div>
+      <p class="config-hint" style="margin-top:6px">Off keeps photos in GroundLog only. Stamped / Original / Both also write a copy to the phone's Photos app ("GroundLog" album) as each photo is taken.${native?'':' Works in the iPhone / iPad app; the web app has no camera roll to write to.'}</p>
+    </div>
+    <div class="field"><label>Photo stamp shows</label>
+      ${STAMP_ELEMENTS.map(e=>`<label style="display:flex;align-items:center;gap:10px;padding:7px 0;font-size:13px;text-transform:none;letter-spacing:0;color:var(--text);cursor:pointer"><input type="checkbox" ${st[e.key]!==false?'checked':''} onchange="camSettingsSet('stamp','${e.key}',this.checked)" style="width:18px;height:18px;flex:none;accent-color:var(--amber,#C9A84C)">${e.label}</label>`).join('')}
+      <p class="config-hint" style="margin-top:6px">These are the defaults. Any element can still be switched per photo when you share or export it.</p>
+    </div>`;
+}
+function camSettingsSet(kind,key,val){
+  if(kind==='autosave') _setAutoSave(key);
+  else if(kind==='stamp'){ const t=camStampDefaults(); t[key]=!!val; camStampSetDefaults(t); }
+  camSettingsRender();
+  if(_open) try{ _renderOverlay(); }catch(_){}
+}
+window.camSettingsRender=camSettingsRender;
+window.camSettingsSet=camSettingsSet;
+
 // ── Cross-device stamp prefs (settings-doc seam — the 7/28 tcfMap pattern) ──
 // localStorage stays the fast synchronous cache; the user-subtree settings docs
 // carry the cross-device copy. Stamp element toggles are user-global (doc

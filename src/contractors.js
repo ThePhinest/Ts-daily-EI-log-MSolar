@@ -125,6 +125,31 @@ function ctrPick(targetId){
         onAction:()=>{ if(typeof showPage==='function') showPage('settings'); if(typeof ctrBootCard==='function') ctrBootCard(); }}});
   });
 }
+// 9/17 (#17): the daily log's Active Contractor line picks SEVERAL companies from the registry.
+// Names already in the field start ticked; anything typed by hand that is not in the registry
+// is kept after the picked names (free text stays allowed). On-site companies list first.
+function ctrPickActive(targetId){
+  const target=document.getElementById(targetId||'contractor');
+  if(!target) return;
+  ctrEnsureCfg().then(()=>{
+    const list=ctrGetList().filter(c=>c.name).slice().sort((a,b)=>(b.onSite!==false)-(a.onSite!==false));
+    const names=list.map(c=>c.name);
+    const typed=String(target.value||'').split(/\s*,\s*/).map(x=>x.trim()).filter(Boolean);
+    const rows=list.map(c=>({value:c.name,label:c.name,sub:c.desc||'',meta:c.onSite!==false?'on site':'',accent:c.onSite!==false}));
+    glPick({title:'Active contractors today', placeholder:'Search…', rows, multi:true,
+      selected:typed.filter(t=>names.includes(t)),
+      onPickMany:(vals)=>{
+        const extra=typed.filter(t=>!names.includes(t));
+        target.value=vals.concat(extra).join(', ');
+        target.dispatchEvent(new Event('input',{bubbles:true}));
+        target.dispatchEvent(new Event('change',{bubbles:true}));
+        if(typeof autoResize==='function'&&target.tagName==='TEXTAREA') autoResize(target);
+        if(typeof cloudSave==='function') try{ cloudSave(); }catch(_){}
+      },
+      empty:{text:'No contractors yet — add them in Settings → 🏗 Contractors.', actionLabel:'Open Settings',
+        onAction:()=>{ if(typeof showPage==='function') showPage('settings'); if(typeof ctrBootCard==='function') ctrBootCard(); }}});
+  });
+}
 // Button markup shared by every contractor input (crew block, map entry, …).
 function ctrPickBtn(targetId){
   return glPickBtn(`ctrPick('${targetId}')`,'📇',"Pick from the project's contractor list");
@@ -254,5 +279,6 @@ window.ctrToggleOnSite=ctrToggleOnSite;
 window.ctrDelete=ctrDelete;
 window.ctrEdit=ctrEdit;
 window.ctrPick=ctrPick;
+window.ctrPickActive=ctrPickActive;
 window.ctrPickBtn=ctrPickBtn;
 export { ctrGetList, ctrEnsureCfg, ctrActiveNames };

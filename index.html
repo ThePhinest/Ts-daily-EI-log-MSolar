@@ -1031,6 +1031,8 @@ button:disabled,button[disabled]{opacity:.45;cursor:not-allowed}
 .proj-row-info{flex:1;min-width:0}
 .proj-row-name{font-family:var(--cond);font-weight:700;font-size:14px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .proj-row.active .proj-row-name{color:var(--amber)}
+/* 9/17 (#16): rows that carry chips (v2 / ⏳ review) — the chips are taller than the clipped one-line name box */
+.proj-row-name.gl-sub-name{display:flex;align-items:center;gap:6px;flex-wrap:wrap;overflow:visible;white-space:normal}
 .proj-row-meta{font-family:var(--mono);font-size:11px;color:var(--muted2);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .proj-divider{border:none;border-top:1px solid var(--border2);margin:14px 0}
 .proj-new-btn{width:100%;padding:11px;background:transparent;border:1px dashed var(--border2);border-radius:8px;color:var(--amber);font-family:var(--cond);font-weight:700;font-size:13px;letter-spacing:.06em;cursor:pointer;text-transform:uppercase;transition:border-color .15s,background .15s}
@@ -1932,6 +1934,7 @@ body.is-native select { font-size: 16px !important; }
         <div class="field"><label>Active Contractor</label>
           <div style="display:flex;gap:6px;align-items:center">
             <textarea rows="1" class="auto-expand auto-line" id="contractor" placeholder="— none on site —" style="flex:1"></textarea>
+            <button type="button" onclick="ctrPickActive('contractor')" title="Pick from the project's contractor list" style="flex-shrink:0;align-self:stretch;background:var(--s1);border:1px solid var(--border);border-radius:6px;color:var(--amber);font-size:14px;padding:0 11px;cursor:pointer;line-height:1">📇</button>
             <button class="btn btn-outline" style="font-size:11px;padding:6px 10px;white-space:nowrap" onclick="const c=document.getElementById('contractor');c.value='';autoResize(c);cloudSave&&cloudSave()" title="Clear contractor">✕ Clear</button>
           </div>
         </div>
@@ -3354,6 +3357,14 @@ Anticipated rain — AM weather monitoring expected"></textarea>
         <p class="config-hint">Each export follows the project branding above unless you pick something else here — e.g. the daily report branded for the client while the seeding export stays GroundLog. Picks save immediately. The QI report defaults to Office blue on projects that froze it.</p>
         <div id="cfg-brand-reports" style="display:flex;flex-direction:column;gap:6px;margin-bottom:6px"></div>
       </div>
+    </div>
+  </div>
+
+  <div class="config-section" id="cfg-camera">
+    <div class="config-head" onclick="toggleSection('cfg-camera');if(typeof camSettingsOpen==='function')camSettingsOpen()"><span class="config-title">📷 Camera</span><span class="head-fade"></span><span class="config-sub">Camera roll saves, what the photo stamp shows</span><span class="card-chevron">▾</span></div>
+    <div class="config-body">
+      <p class="config-hint">The same options as the ⚙ on the camera itself, kept here so they can be found. They are yours (not the project's) and follow you across devices. The stored photo is always clean: the stamp is drawn when a photo is shared or exported.</p>
+      <div id="cfg-camera-body"></div>
     </div>
   </div>
 

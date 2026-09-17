@@ -11,6 +11,7 @@
 //   target:      'input-id' | HTMLElement,        // default onPick: fill + input/change events
 //   onPick:      (value,row)=>{},                 // optional override
 //   empty:       { text, actionLabel, onAction }  // shown when rows is empty
+//   multi:       true, selected:[values], onPickMany:(values)=>{}   // 9/17: tick several, Done returns them in list order
 // })
 // Search matches label / sub / meta on a row and its children; a parent that
 // matches keeps all its children, a child that matches keeps its parent.
@@ -26,6 +27,8 @@ function glPick(opts){
   ov.className='modal-overlay';
   ov.style.cssText='z-index:9600';
   const hit=(s,q)=>!q||String(s||'').toLowerCase().includes(q);
+  const multi=!!opts.multi;
+  const sel=new Set(multi&&Array.isArray(opts.selected)?opts.selected:[]);
   const rowHtml=(r,isChild)=>{
     const pad=isChild?'8px 12px 8px 26px':'10px 12px';
     const bg=isChild?'var(--bg)':'var(--s1)';
@@ -34,7 +37,7 @@ function glPick(opts){
     const sub=r.sub?`<div style="font-size:11px;color:var(--muted);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${_gpEsc(r.sub)}</div>`:'';
     const meta=r.meta?`<span style="font-family:var(--mono);font-size:${isChild?'10px':'9px'};color:${isChild?'var(--amber)':'var(--muted)'};white-space:nowrap;flex:none">${_gpEsc(r.meta)}</span>`:'';
     return `<div class="gl-pick-row" data-v="${_gpEsc(r.value)}" style="display:flex;align-items:center;gap:8px;padding:${pad};${isChild?'margin-top:3px;':''}border:1px solid var(--border);${accent}border-radius:8px;cursor:pointer;background:${bg}">
-      ${icon}<div style="flex:1;min-width:0"><div style="font-family:var(--mono);font-size:${isChild?'12px':'13px'};color:var(--text);${isChild?'':'font-weight:700'}">${_gpEsc(r.label)}</div>${sub}</div>${meta}
+      ${multi?`<span style="font-size:15px;flex:none;color:${sel.has(r.value)?'var(--amber)':'var(--muted)'}">${sel.has(r.value)?'☑':'☐'}</span>`:''}${icon}<div style="flex:1;min-width:0"><div style="font-family:var(--mono);font-size:${isChild?'12px':'13px'};color:var(--text);${isChild?'':'font-weight:700'}">${_gpEsc(r.label)}</div>${sub}</div>${meta}
     </div>`;
   };
   const listHtml=(q)=>{
@@ -57,6 +60,7 @@ function glPick(opts){
     <div class="gl-pick-rows" style="overflow-y:auto;flex:1;min-height:0">${listHtml('')}</div>
     <div class="modal-btns" style="margin-top:10px">
       <button type="button" class="modal-cancel">Cancel</button>
+      ${(multi&&rows.length)?'<button type="button" class="modal-confirm gl-pick-done" style="background:var(--amber,#C9A84C);border-color:var(--amber,#C9A84C);color:#121212">Done</button>':''}
       ${(!rows.length&&e.actionLabel)?`<button type="button" class="modal-confirm gl-pick-action">${_gpEsc(e.actionLabel)}</button>`:''}
     </div>
   </div>`;
@@ -69,6 +73,11 @@ function glPick(opts){
   list.onclick=(ev)=>{
     const r=ev.target.closest('.gl-pick-row'); if(!r) return;
     const v=r.getAttribute('data-v')||'';
+    if(multi){   // tick / untick, stay open; Done hands the ticked values back in list order
+      if(sel.has(v)) sel.delete(v); else sel.add(v);
+      const top=list.scrollTop; list.innerHTML=listHtml(ov.querySelector('.gl-pick-q').value); list.scrollTop=top;
+      return;
+    }
     const row=_gpFind(rows,v);
     close();
     if(typeof opts.onPick==='function'){ opts.onPick(v,row); }
@@ -78,6 +87,13 @@ function glPick(opts){
       target.dispatchEvent(new Event('change',{bubbles:true}));
       if(typeof autoResize==='function'&&target.tagName==='TEXTAREA') autoResize(target);
     }
+    if(typeof glHaptic==='function') try{ glHaptic(); }catch(_){}
+  };
+  const done=ov.querySelector('.gl-pick-done');
+  if(done) done.onclick=()=>{
+    const out=[]; rows.forEach(r=>{ if(sel.has(r.value)) out.push(r.value); (r.children||[]).forEach(k=>{ if(sel.has(k.value)) out.push(k.value); }); });
+    close();
+    if(typeof opts.onPickMany==='function') try{ opts.onPickMany(out); }catch(err){ console.warn('glPick many:',err.message); }
     if(typeof glHaptic==='function') try{ glHaptic(); }catch(_){}
   };
   const q=ov.querySelector('.gl-pick-q');

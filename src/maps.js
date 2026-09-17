@@ -1009,6 +1009,34 @@ const _kmlPopupWired = new Set();
 // tags are stripped, entities decoded, then re-escaped and newlined back.
 function _kmlDescToHtml(raw){
   if(!raw) return '';
+  // 9/17: GIS exports (ArcGIS, QGIS, SSURGO, county parcels) put the attributes in an HTML
+  // TABLE. Stripping the tags ran the cells together ("Map unitVolusia…", Tim 9/16: "a blob of
+  // plain unorganized text"). A table now renders as label / value rows; a one-cell row is a
+  // group heading. Parsed in an inert document, rebuilt from textContent only — nothing from
+  // the file reaches the page as markup.
+  if(/<tr[\s>]/i.test(String(raw))){
+    try{
+      const E = t => String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      const doc = new DOMParser().parseFromString(String(raw), 'text/html');
+      doc.querySelectorAll('script,style').forEach(n=>n.remove());   // their text is not content
+      const out = [];
+      const rest = doc.body.cloneNode(true);
+      rest.querySelectorAll('table').forEach(t=>t.remove());
+      const lead = (rest.textContent||'').replace(/\s+/g,' ').trim();
+      if(lead) out.push(`<div style="padding:0 0 6px">${E(lead)}</div>`);
+      Array.from(doc.querySelectorAll('tr')).filter(tr=>!tr.querySelector('tr')).forEach(tr=>{
+        const cells = Array.from(tr.children).filter(c=>/^T[DH]$/.test(c.tagName)).map(c=>(c.textContent||'').replace(/\s+/g,' ').trim());
+        const vals = cells.slice(1).filter(Boolean);
+        if(cells[0] && vals.length){
+          out.push(`<div style="display:flex;gap:8px;padding:3px 0;border-bottom:1px solid rgba(255,255,255,.07)"><span style="flex:0 0 42%;color:var(--muted,#9aa0a6)">${E(cells[0].replace(/\s*:\s*$/,''))}</span><span style="flex:1;min-width:0;color:var(--text,#f0f0f0);overflow-wrap:anywhere">${E(vals.join(' · '))}</span></div>`);
+        } else {
+          const t = cells.filter(Boolean).join(' ');
+          if(t) out.push(`<div style="padding:8px 0 3px;font-weight:700;font-size:10.5px;letter-spacing:.06em;color:var(--amber,#C9A84C)">${E(t)}</div>`);
+        }
+      });
+      if(out.length) return out.join('');
+    }catch(_){ /* fall through to the text path */ }
+  }
   let s = String(raw)
     .replace(/<br\s*\/?\s*>/gi, '\n')
     .replace(/<\/(p|div|li|tr|h[1-6])\s*>/gi, '\n')

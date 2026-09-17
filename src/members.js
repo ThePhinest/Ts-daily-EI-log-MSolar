@@ -1630,7 +1630,7 @@ async function glRenderProjectSpacePage() {
       const withdrawn = s.status === 'withdrawn';
       return `<div class="proj-row" onclick="glShowSubmission('${s._id}')"${withdrawn ? ' style="opacity:.45"' : ''}>
         <div class="proj-row-info">
-          <div class="proj-row-name">${_glEsc(_glSubFmtDate(s.date))}${(s.version || 1) > 1 ? ' <span class="gl-role-chip">v' + s.version + '</span>' : ''}${revChip(s)}${withdrawn ? ' <span class="gl-mem-you">withdrawn</span>' : ''}</div>
+          <div class="proj-row-name gl-sub-name"><span>${_glEsc(_glSubFmtDate(s.date))}</span>${(s.version || 1) > 1 ? ' <span class="gl-role-chip">v' + s.version + '</span>' : ''}${revChip(s)}${withdrawn ? ' <span class="gl-mem-you">withdrawn</span>' : ''}</div>
           <div class="proj-row-meta">${_glEsc(s.submittedByName || '')} · ${new Date(s.submittedAt || 0).toLocaleString()}</div>
         </div>
         <span style="color:var(--muted2)">›</span>

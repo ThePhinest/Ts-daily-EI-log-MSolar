@@ -2047,6 +2047,15 @@ function phDeleteCurrent(){
 // Lazy camera launcher — the viewfinder module (and the capgo plugin with it)
 // loads on first use only; nothing lands in the main bundle (7 MiB SW cap).
 let _camMod=null;
+// 9/17 (#19): Settings → 📷 Camera. camera.js is a lazy chunk, so the card asks for it here
+// (photos.js is always loaded) instead of expecting window.camSettingsRender to exist.
+window.camSettingsOpen=async function(){
+  const el=document.getElementById('cfg-camera-body');
+  try{
+    if(!_camMod){ if(el&&!el.innerHTML) el.innerHTML='<p class="config-hint">Loading…</p>'; _camMod=await import('./camera.js'); }
+    if(typeof window.camSettingsRender==='function') window.camSettingsRender();
+  }catch(e){ if(el) el.innerHTML='<p class="config-hint">Camera settings could not load (offline?). The same options are on the camera itself (⚙).</p>'; console.warn('camSettingsOpen:',e&&e.message); }
+};
 async function phOpenCamera(ctx){
   try{
     if(!_camMod) _camMod=await import('./camera.js');

@@ -1499,6 +1499,73 @@ if(typeof window!=='undefined'){
 // flagged stale; showPage('compliance') → clInit → clRender → this fn renders
 // fresh on arrival, so nothing visible changes. Live re-renders while the page
 // IS open (tracker edits, punchlist ticks) are untouched.
+// ── 9/17 (#11, Tim 9/14): FIND DRAWINGS MISSING INFORMATION ──
+// "a stabilized area with seed info and no tag photos attached". v1 rules are generic — they
+// read what the entry itself claims (its application rows + photo types), nothing about a
+// project is hardcoded. Per-category required fields from project config = the follow-up.
+function trMissingInfo(e, pid, tagSet){
+  const out=[];
+  if(!e||e.deletedAt||e.temporary||e.entryType==='planned') return out;
+  const apps=((typeof glEntryApplications==='function')?glEntryApplications(e,pid):[]).filter(a=>a&&(a.product||a.rate!=null||a.actual!=null||a.seedTags!=null));
+  // a tag photo = typed material_tag on this entry, or flagged seedTag on the photo record itself
+  const tagPhotos=(Array.isArray(e.photoIds)?e.photoIds:[]).filter(id=>(e.photoTypes&&e.photoTypes[id]==='material_tag')||(tagSet&&tagSet.has(id)));
+  if(apps.some(a=>a.type==='seed') && !tagPhotos.length) out.push({k:'tag',t:'Seed info, but no seed-tag photo'});
+  if(apps.some(a=>!a.product&&(a.rate!=null||a.actual!=null))) out.push({k:'product',t:'Application with a rate or amount, but no product / mix'});
+  if(apps.some(a=>a.product&&a.rate==null&&a.actual==null)) out.push({k:'rate',t:'Product / mix named, but no rate or amount'});
+  return out;
+}
+function _trNeedsInfoList(pid, withNoPhotos, entries){
+  // the card hands over the list it already parsed (the tracker parse is the costly part)
+  const all=entries||((typeof trGetEntriesForProject==='function')?trGetEntriesForProject(pid):[]);
+  const tagSet=new Set((window._phPhotos||[]).filter(p=>p&&p.seedTag).map(p=>p.id));
+  const rows=[];
+  all.forEach(e=>{
+    const miss=trMissingInfo(e,pid,tagSet);
+    if(withNoPhotos && !e.deletedAt && !e.temporary && e.entryType!=='planned' && !(Array.isArray(e.photoIds)&&e.photoIds.length)) miss.push({k:'photos',t:'No photos attached'});
+    if(miss.length) rows.push({e,miss});
+  });
+  return rows.sort((a,b)=>String(b.e.date||'').localeCompare(String(a.e.date||'')));
+}
+function _trNeedsInfoRow(pid, entries){
+  let n=0; try{ n=_trNeedsInfoList(pid,false,entries).length; }catch(_){ n=0; }
+  if(!n) return '';
+  return `<div onclick="trShowNeedsInfo()" style="display:flex;align-items:center;gap:8px;margin:2px 4px 8px;padding:9px 10px;border:1px solid var(--amber,#C9A84C);border-radius:8px;cursor:pointer">
+    <span style="font-size:13px">⚠</span><span style="font-family:var(--mono);font-size:12px;color:var(--amber,#C9A84C);flex:1">${n} drawing${n>1?'s':''} need${n>1?'':'s'} information</span><span style="font-family:var(--mono);font-size:11px;color:var(--muted)">›</span></div>`;
+}
+function trShowNeedsInfo(withNoPhotos){
+  const pid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  document.getElementById('_tr-needs-info')?.remove();
+  const rows=_trNeedsInfoList(pid,!!withNoPhotos);
+  const ov=document.createElement('div');
+  ov.className='modal-overlay'; ov.id='_tr-needs-info'; ov.style.cssText='z-index:9600';
+  const item=r=>{
+    const e=r.e;
+    const catName=e.categoryName||((typeof tcGetName==='function')?tcGetName(e.categoryId,pid):'Drawing');
+    const meas=(e.measurementValue!=null&&e.measurementUnit)?((typeof tcFormatMeasurement==='function')?tcFormatMeasurement(e.measurementValue,e.measurementUnit):`${e.measurementValue} ${e.measurementUnit}`):(e.acres?`${e.acres} ac`:'');
+    return `<div class="_trni-row" data-id="${_hEsc(e.id)}" style="padding:10px 12px;margin-bottom:6px;border:1px solid var(--border);border-left:3px solid var(--amber,#C9A84C);border-radius:8px;background:var(--s1);cursor:pointer">
+      <div style="display:flex;gap:8px;align-items:baseline"><span style="font-family:var(--mono);font-size:13px;font-weight:700;color:var(--text);flex:1;min-width:0">${_hEsc(catName)}</span><span style="font-family:var(--mono);font-size:10px;color:var(--muted);white-space:nowrap">${_hEsc(clFmtDate(e.date||''))}${meas?' · '+_hEsc(meas):''}</span></div>
+      ${e.location?`<div style="font-size:11px;color:var(--muted);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${_hEsc(e.location)}</div>`:''}
+      ${r.miss.map(m=>`<div style="font-size:12px;color:var(--amber,#C9A84C);margin-top:3px">⚠ ${_hEsc(m.t)}</div>`).join('')}
+    </div>`;
+  };
+  ov.innerHTML=`<div class="modal-box" style="max-width:440px;width:94%;max-height:84vh;display:flex;flex-direction:column">
+    <div class="modal-title" style="margin-bottom:4px">Drawings that need information</div>
+    <div style="font-size:11.5px;color:var(--muted);margin-bottom:10px">Tap one to open it. Planned and temporary items are not checked.</div>
+    <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text);margin-bottom:10px;text-transform:none;letter-spacing:0;cursor:pointer"><input type="checkbox" id="_trni-ph" ${withNoPhotos?'checked':''} style="width:17px;height:17px;accent-color:var(--amber,#C9A84C)">Also list drawings with no photos at all</label>
+    <div id="_trni-list" style="overflow-y:auto;flex:1;min-height:0">${rows.length?rows.map(item).join(''):'<div style="font-family:var(--mono);font-size:11px;color:var(--muted);padding:14px 0;text-align:center">Nothing is missing. Every drawing checks out.</div>'}</div>
+    <div class="modal-btns" style="margin-top:10px"><button type="button" class="modal-cancel">Close</button></div>
+  </div>`;
+  document.body.appendChild(ov);
+  ov.querySelector('.modal-cancel').onclick=()=>ov.remove();
+  ov.querySelector('#_trni-ph').onchange=(ev)=>trShowNeedsInfo(ev.target.checked);
+  ov.querySelector('#_trni-list').onclick=(ev)=>{
+    const r=ev.target.closest('._trni-row'); if(!r) return;
+    const id=r.getAttribute('data-id'); ov.remove();
+    if(typeof clShowTrackerDetail==='function') clShowTrackerDetail(id);
+  };
+}
+if(typeof window!=='undefined'){ window.trMissingInfo=trMissingInfo; window.trShowNeedsInfo=trShowNeedsInfo; }
+
 function clRenderTrackerCard(search){
   const pg=document.getElementById('page-compliance');
   if(pg&&!pg.classList.contains('active')){ window._clTrackerCardStale=true; return; }
@@ -1642,7 +1709,7 @@ function _clRenderTrackerCardNow(search){
 
   el.innerHTML=`<div class="card${_clCardCollapsed('tracker')?' collapsed':''}">
     <div class="card-head" onclick="clToggleCard('tracker')"><span class="card-num">🗺️</span><span class="card-title">Project Tracker Activity</span><span class="head-fade"></span>${entries.length?`<span class="card-badge">${entries.length} today</span>`:''}<button onclick="event.stopPropagation();clShowTrackerLog()" style="background:none;border:none;color:var(--amber);font-family:var(--mono);font-size:11px;cursor:pointer;padding:2px 4px;letter-spacing:.04em;flex-shrink:0">View All →</button><span class="card-chevron">▾</span></div>
-    <div class="card-body" style="padding-top:4px">${todaySection}${totalsSection}</div>
+    <div class="card-body" style="padding-top:4px">${_trNeedsInfoRow(pid,_allProjEntries)}${todaySection}${totalsSection}</div>
   </div>`;
   el.style.display='block';
 }
