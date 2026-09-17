@@ -3091,12 +3091,16 @@ Anticipated rain — AM weather monitoring expected"></textarea>
       </div>
     </div>
     <div class="field">
-      <label>Location / Description</label>
-      <textarea class="short auto-expand" id="cl-f-location" placeholder="Describe the location and nature of the observation…"></textarea>
+      <label>Location</label>
+      <textarea class="short auto-expand" id="cl-f-location" placeholder="Where it is: drainage area, discharge point, road, station, BMP…"></textarea>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px">
         <button type="button" class="btn btn-outline" style="font-size:11px;padding:6px 12px" onclick="clFormPickOnMap()">📍 Pick on map</button>
         <span id="cl-f-loc-chip" style="font-family:var(--mono);font-size:10px;color:var(--muted)"></span>
       </div>
+    </div>
+    <div class="field">
+      <label>Description <span style="opacity:.6;font-weight:400;text-transform:none;letter-spacing:0">(what was observed)</span></label>
+      <textarea class="short auto-expand" id="cl-f-desc" placeholder="Describe the nature of the observation…"></textarea>
     </div>
     <div class="field">
       <label>Corrective Action Required</label>

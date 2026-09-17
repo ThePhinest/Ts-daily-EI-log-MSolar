@@ -183,7 +183,22 @@ async function clLoadCloud(){
   return false;
 }
 
+// ── 9/17 (QI §8 "since last inspection"): STATUS HISTORY on every entry ──
+// entry.statusLog = [{at, date:'YYYY-MM-DD', from, to}]. Logged here, in the one save path,
+// so every way a status changes (form, punchlist resolve / reopen, Open Items) is caught.
+// A legacy entry gets one silent seed row (seed:true) that never prints as a change.
+function _clLogStatuses(){
+  const now=Date.now(), today=new Date().toLocaleDateString('en-CA');
+  _clEntries.forEach(e=>{
+    if(!e||e.deletedAt) return;
+    const st=e.status||'Open';
+    if(!Array.isArray(e.statusLog)||!e.statusLog.length){ e.statusLog=[{at:now,date:today,from:'',to:st,seed:true}]; return; }
+    const last=e.statusLog[e.statusLog.length-1];
+    if(last.to!==st) e.statusLog.push({at:now,date:(st==='Resolved'&&e.dateResolved)||today,from:last.to,to:st});
+  });
+}
 function clSave(){
+  try{ _clLogStatuses(); }catch(_){}
   clSaveLocal();
   clSaveCloud();
   window.glHaptic && window.glHaptic.success();  // tactile confirm on compliance entry save
@@ -729,6 +744,19 @@ if(typeof window!=='undefined'){
 // Programmatic values never fire 'input' — size the auto-grow fields once the form is filled (Tim 9/10:
 // "corrective action required doesn't grow with text").
 function _clFormGrow(){ requestAnimationFrame(()=>document.querySelectorAll('#cl-form-panel textarea.auto-expand').forEach(t=>{ if(typeof autoResize==='function') autoResize(t); })); }
+// ── 9/17: LOCATION and DESCRIPTION are separate inputs. `entry.location` STAYS the combined
+// display line every existing consumer prints (card, punchlist, reports, mirror, map, XLSX) —
+// it is re-derived on every save as "<loc> — <desc>"; the structured halves live in
+// `entry.locShort` + `entry.desc` (the QI §8 columns read those). An entry saved before the
+// split has only `location`; clLocParts() splits it at the first " — " / " - " / ": " for
+// DISPLAY and for the edit form's prefill (the user sees and corrects it before saving).
+function clLocParts(e){
+  if(!e) return {loc:'',desc:''};
+  if(typeof e.locShort==='string'||typeof e.desc==='string') return {loc:e.locShort||'',desc:e.desc||''};
+  const t=String(e.location||'').trim();
+  const m=t.match(/^(.{2,80}?)(?:\s+[—–-]\s+|:\s+)([\s\S]+)$/);
+  return m?{loc:m[1].trim(),desc:m[2].trim()}:{loc:t,desc:''};
+}
 function clShowForm(prefill){
   _clEditId = null;
   _clDraftId = clGenId();
@@ -742,6 +770,7 @@ function clShowForm(prefill){
   document.getElementById('cl-f-date').value = new Date().toLocaleDateString('en-CA');
   document.getElementById('cl-f-level').value = '1';
   document.getElementById('cl-f-location').value = '';
+  { const _d=document.getElementById('cl-f-desc'); if(_d) _d.value=''; }
   document.getElementById('cl-f-corrective').value = '';
   document.getElementById('cl-f-status').value = 'Open';
   document.getElementById('cl-f-resolved').value = '';
@@ -752,6 +781,7 @@ function clShowForm(prefill){
   if(prefill){
     if(prefill.level) document.getElementById('cl-f-level').value = prefill.level;
     if(prefill.location) document.getElementById('cl-f-location').value = prefill.location;
+    if(prefill.desc){ const _d=document.getElementById('cl-f-desc'); if(_d) _d.value=prefill.desc; }
     if(prefill.corrective) document.getElementById('cl-f-corrective').value = prefill.corrective;
     if(prefill.date) document.getElementById('cl-f-date').value = prefill.date;
     if(prefill.source) document.getElementById('cl-f-source').value = prefill.source;
@@ -768,7 +798,9 @@ function clEditEntry(id){
   _clEditId = id;
   document.getElementById('cl-f-date').value = e.date||'';
   document.getElementById('cl-f-level').value = String(e.level||'1');
-  document.getElementById('cl-f-location').value = e.location||'';
+  { const _p=clLocParts(e), _d=document.getElementById('cl-f-desc');
+    document.getElementById('cl-f-location').value = _d?_p.loc:(e.location||'');
+    if(_d) _d.value=_p.desc; }
   document.getElementById('cl-f-corrective').value = e.corrective||'';
   document.getElementById('cl-f-status').value = e.status||'Open';
   document.getElementById('cl-f-resolved').value = e.dateResolved||'';
@@ -802,8 +834,10 @@ function clToggleResolvedDate(){
 }
 
 function clSubmitForm(){
-  const location = document.getElementById('cl-f-location').value.trim();
-  if(!location){ document.getElementById('cl-f-location').focus(); return; }
+  const locShort = document.getElementById('cl-f-location').value.trim();
+  if(!locShort){ document.getElementById('cl-f-location').focus(); return; }
+  const desc = (document.getElementById('cl-f-desc')?.value||'').trim();
+  const location = desc ? locShort+' — '+desc : locShort;   // the combined display line (see clLocParts)
 
   const prev = _clEditId ? _clEntries.find(x=>x.id===_clEditId) : null;
   const entry = {
@@ -818,7 +852,9 @@ function clSubmitForm(){
     ...(_clFormLoc?{lat:_clFormLoc.lat,lng:_clFormLoc.lng}:{}),   // 9/11: optional map point (#31)
     date: document.getElementById('cl-f-date').value,
     level: parseInt(document.getElementById('cl-f-level').value),
-    location: location,
+    location: location, locShort: locShort, desc: desc,
+    ...(prev&&Array.isArray(prev.statusLog)?{statusLog:prev.statusLog}:{}),
+    createdAt: (prev&&prev.createdAt)||Date.now(), updatedAt: Date.now(),
     corrective: document.getElementById('cl-f-corrective').value.trim(),
     status: document.getElementById('cl-f-status').value,
     dateResolved: document.getElementById('cl-f-status').value==='Resolved' ? document.getElementById('cl-f-resolved').value : '',
@@ -857,13 +893,13 @@ function clFormClearLoc(){ _clFormLoc=null; _clFormLocRender(); }
 function _clCollectDraft(){
   const g=id=>{ const el=document.getElementById(id); return el?el.value:''; };
   return { editId:_clEditId, draftId:_clDraftId, photoIds:_clFormPhotoIds.slice(), steps:_clFormStepsClean(), loc:_clFormLoc,
-    date:g('cl-f-date'), level:g('cl-f-level'), location:g('cl-f-location'), corrective:g('cl-f-corrective'),
+    date:g('cl-f-date'), level:g('cl-f-level'), location:g('cl-f-location'), desc:g('cl-f-desc'), corrective:g('cl-f-corrective'),
     status:g('cl-f-status'), dateResolved:g('cl-f-resolved'), source:g('cl-f-source') };
 }
 function _clRestoreDraft(d){
   if(d.editId) clEditEntry(d.editId); else { clShowForm(); if(d.draftId) _clDraftId=d.draftId; }
   const s=(id,v)=>{ const el=document.getElementById(id); if(el) el.value=v||''; };
-  s('cl-f-date',d.date); s('cl-f-level',d.level); s('cl-f-location',d.location); s('cl-f-corrective',d.corrective);
+  s('cl-f-date',d.date); s('cl-f-level',d.level); s('cl-f-location',d.location); s('cl-f-desc',d.desc); s('cl-f-corrective',d.corrective);
   s('cl-f-status',d.status); s('cl-f-resolved',d.dateResolved); s('cl-f-source',d.source);
   document.getElementById('cl-f-resolved-wrap').style.display=d.status==='Resolved'?'block':'none';
   _clFormPhotoIds=(d.photoIds||[]).slice(); _clFormPhotosRender();
@@ -968,6 +1004,21 @@ function clGetOpenEntries(){
   if(!_clEntries.length) clLoadLocal();
   const pid = _activeProjectId();
   return _clEntries.filter(e => e.status!=='Resolved' && (!e.projectId || e.projectId===pid)).slice();
+}
+// 9/17: the entries a QI inspection dated `inspDate` carries in §8 — everything still open as
+// of that date PLUS anything resolved after the previous inspection (`sinceDate`), which prints
+// one last time as closed. Ordered by CMP number.
+function clEntriesForInspection(inspDate, sinceDate){
+  if(!_clEntries.length) clLoadLocal();
+  const pid=_activeProjectId();
+  return _clEntries.filter(e=>{
+    if(!e||e.deletedAt) return false;
+    if(e.projectId && e.projectId!==pid) return false;
+    if(e.date && inspDate && e.date>inspDate) return false;
+    if(e.status!=='Resolved') return true;
+    const r=e.dateResolved||'';
+    return !!r && (!sinceDate || r>sinceDate) && (!inspDate || r<=inspDate);
+  }).sort((a,b)=>(a.cmpNum||9999)-(b.cmpNum||9999) || String(a.date||'').localeCompare(String(b.date||'')));
 }
 // One programmatic entry (QI deficiencies, spill "Log as CMP" …) — returns the new id.
 function _clPushEntry(it, addedBy){
@@ -4175,6 +4226,8 @@ async function clInit(){
 // ── Expose to window for HTML onclick handlers and cross-module calls ──
 window._runningTotals = _runningTotals;   // shared math — swppp.js QI report reads the same net-open engine
 window.clGetOpenEntries = clGetOpenEntries;
+window.clEntriesForInspection = clEntriesForInspection;
+window.clLocParts = clLocParts;
 window.clAddEntries = clAddEntries;
 window.clInit = clInit;
 window.clRender = clRender;

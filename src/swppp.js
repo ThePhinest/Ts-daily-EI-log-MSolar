@@ -208,6 +208,120 @@ function _swMarkPrev(insp){
 }
 if(typeof window!=='undefined'){ window.swCondTexts=swCondTexts; window.swStageOf=swStageOf; window.swCondWasFixed=swCondWasFixed; }
 
+// ── 9/17 (Tim 9/15): §8 rows that come from the Compliance log are LIVE-LINKED ──
+// Until 9/17 the rows were a one-time copy made when the inspection was created: the
+// description column carried only "CMP-NN · Level N", edits to the entry never reached the
+// report, and an item resolved between two inspections simply vanished. Now a linked row is
+// REBUILT from its entry every time a never-completed draft opens, exports or completes:
+//   · Location / Description come from the entry's own two fields (clLocParts),
+//   · "Since the <last inspection> inspection" lists what changed: newly logged, new dated
+//     action steps, status moves (entry.statusLog), or "no change",
+//   · an item resolved since the last inspection prints ONE more time, as Resolved.
+// ONE TRUTH: linked rows are read-only here (✎ Edit in Compliance log); the only per-report
+// text is the optional inspector note (insp.caNotes[entryId]). Hand-added rows are untouched.
+// Complete freezes the rows; a REOPENED inspection never re-syncs on its own (it would pull
+// today's compliance state into an old record) — the ↻ button does it on request.
+function _swPrevInspDate(insp){
+  const list=(_swInsp[_swPid()]||[]).filter(x=>!x.deletedAt && x.id!==insp.id && (x.date||'')<(insp.date||''));
+  list.sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+  return list.length?(list[0].date||''):'';
+}
+function _swMDY(iso){ const m=String(iso||'').match(/^(\d{4})-(\d{2})-(\d{2})/); return m?`${+m[2]}/${+m[3]}/${m[1].slice(2)}`:String(iso||''); }
+function _swCaRowFromEntry(e, since, inspDate, note){
+  const parts=(typeof clLocParts==='function')?clLocParts(e):{loc:e.location||'',desc:''};
+  const tag=[(e.cmpNum&&typeof clCmpFmt==='function')?clCmpFmt(e.cmpNum):'', e.level?`Level ${e.level}`:''].filter(Boolean).join(' · ');
+  const steps=(Array.isArray(e.steps)?e.steps:[]).filter(x=>x&&String(x.text||'').trim());
+  const inWin=d=>!!since && !!d && d>since && (!inspDate || d<=inspDate);
+  const stepTxt=x=>(x.date?_swMDY(x.date)+': ':'')+String(x.text).trim();
+  const upd=[];
+  if(since){
+    if(inWin(e.date)) upd.push('newly logged '+_swMDY(e.date));
+    steps.filter(x=>inWin(x.date)).forEach(x=>upd.push(stepTxt(x)));
+    (Array.isArray(e.statusLog)?e.statusLog:[]).forEach(l=>{
+      if(l && !l.seed && l.from && l.to!=='Resolved' && inWin(l.date)) upd.push(`status ${l.from} to ${l.to} (${_swMDY(l.date)})`);   // no arrow glyph: the PDF font has none
+    });
+    if(e.status==='Resolved' && inWin(e.dateResolved)) upd.push('resolved '+_swMDY(e.dateResolved));
+  }
+  const earlier=since?steps.filter(x=>!inWin(x.date)):steps;
+  return {
+    dateId: e.date||inspDate||'',
+    tag,
+    // an entry saved before the Location / Description split that cannot be split cleanly
+    // prints whole under Description (a blank deficiency column reads worse than a long one)
+    location: parts.desc?parts.loc:'',
+    desc: parts.desc||parts.loc||'',
+    action: e.corrective||'',
+    actions: earlier.map(stepTxt).join('  ·  '),
+    since: since?(upd.length?upd.join('  ·  '):'no change'):'',
+    sinceDate: since||'',
+    status: e.status==='Resolved'?('Resolved'+(e.dateResolved?' '+_swMDY(e.dateResolved):'')):(e.status||'Open'),
+    note: note||'',
+    fromComplianceId: e.id
+  };
+}
+function _swSyncCorrective(insp, o){
+  o=o||{};
+  if(!insp || typeof clEntriesForInspection!=='function') return false;
+  if(insp.ownerUid && insp.ownerUid!==_swUid()) return false;                 // a teammate's report is a record, never rebuilt here
+  if(!o.force && (insp.status==='completed' || insp.completedAt)) return false;
+  const cur=Array.isArray(insp.corrective)?insp.corrective:[];
+  const all=(typeof clGetEntries==='function')?clGetEntries():[];
+  // compliance list not loaded (or another project's) → never wipe rows that are already there
+  if(!all.length && cur.some(c=>c&&c.fromComplianceId)) return false;
+  const since=o.isNew?(o.prevDate||''):_swPrevInspDate(insp);
+  const hidden=new Set(insp.caHidden||[]), notes=insp.caNotes||{};
+  const linked=clEntriesForInspection(insp.date, since).filter(e=>!hidden.has(e.id)).map(e=>_swCaRowFromEntry(e, since, insp.date, notes[e.id]));
+  const next=linked.concat(cur.filter(c=>c&&!c.fromComplianceId));
+  if(JSON.stringify(next)===JSON.stringify(cur)) return false;
+  insp.corrective=next;
+  if(!o.isNew) _swQueueSave(insp);
+  return true;
+}
+function swpppCaRefresh(){
+  const insp=_swGet(_swOpenId); if(!insp || insp.status==='completed') return;
+  _confirmModal('Rebuild the Compliance-log rows of §8 from the log as it stands TODAY? This inspection was completed once already, so its rows were frozen on purpose. Hand-added rows and inspector notes are kept.', ()=>{
+    _swSyncCorrective(insp,{force:true}); _swRenderSection('sw-sec-ca');
+  }, 'Refresh §8', 'Refresh');
+}
+function swpppCaHide(id){
+  const insp=_swGet(_swOpenId); if(!insp || insp.status==='completed') return;
+  _confirmModal('Leave this Compliance-log item off THIS inspection report? It stays in the Compliance log and comes back on the next inspection.', ()=>{
+    insp.caHidden=Array.from(new Set([...(insp.caHidden||[]), id]));
+    insp.corrective=(insp.corrective||[]).filter(c=>!(c&&c.fromComplianceId===id));
+    _swQueueSave(insp); _swRenderSection('sw-sec-ca');
+  }, 'Leave off this report', 'Leave off');
+}
+function swpppCaUnhide(){
+  const insp=_swGet(_swOpenId); if(!insp || insp.status==='completed') return;
+  insp.caHidden=[]; _swQueueSave(insp);
+  _swSyncCorrective(insp,{force:!!insp.completedAt}); _swRenderSection('sw-sec-ca');
+}
+function swCaNote(ev, id){
+  const insp=_swGet(_swOpenId); if(!insp || insp.status==='completed') return;
+  insp.caNotes=insp.caNotes||{}; insp.caNotes[id]=ev.target.value;
+  const row=(insp.corrective||[]).find(c=>c&&c.fromComplianceId===id); if(row) row.note=ev.target.value;
+  _swQueueSave(insp);
+}
+function swpppCaEdit(id){
+  try{ showPage('compliance'); }catch(_){}
+  setTimeout(()=>{ try{ clEditEntry(id); }catch(_){} }, 60);
+}
+// What a §8 row PRINTS, shared by the DOCX and PDF builders → {date, loc:[…], desc, act:[…]}.
+// A row stored before 9/17 has no tag / status / since keys and prints exactly as it used to.
+function swCaCells(c){
+  c=c||{};
+  const loc=[c.tag, c.location].filter(Boolean);
+  const parts=[];   // [{l: label or '', t: text}] — the PDF bolds the label; the DOCX prints "label: text"
+  if(c.action) parts.push({l:'',t:c.action});
+  if(c.actions) parts.push({l:c.sinceDate?'Earlier actions':'Actions taken',t:c.actions});
+  if(c.since) parts.push({l:`Since the ${_swMDY(c.sinceDate)} inspection`,t:c.since});
+  if(c.status) parts.push({l:'Status',t:c.status});
+  if(c.note) parts.push({l:'Inspector note',t:c.note});
+  const act=parts.map(x=>x.l?x.l+': '+x.t:x.t);
+  return {date:c.dateId||'', loc:loc.length?loc:[''], desc:c.desc||'', act:act.length?act:[''], parts};
+}
+if(typeof window!=='undefined'){ window.swCaCells=swCaCells; window._glSwpppBuildDocx=(i,c)=>swpppBuildDocx(i,c); /* harness hook, builder only */ }
+
 // ── Inspection lifecycle ──
 function swpppNewInspection(){
   const pid = _swPid();
@@ -241,24 +355,10 @@ function swpppNewInspection(){
     cert: { signedName: cfg.certification ? (cfg.certification.qiName||'') : '', signedDate: '' }
   };
   _swMarkPrev(insp);   // 9/14 (#4): previous condition per row → stage defaults + "corrected" wording
-  // §8 prefill — open Compliance-log items carry forward onto every new
-  // inspection until they're resolved (a deficiency found Tuesday shows on
-  // Friday's report automatically). Rows are tagged so completing this
-  // inspection never round-trips them back into the compliance log.
-  try{
-    const openCl = (typeof clGetOpenEntries==='function') ? clGetOpenEntries() : [];
-    insp.corrective = openCl.map(e=>({
-      dateId: e.date || today,
-      location: e.location || '',
-      // 9/5 (Tim): the old boilerplate sentence here had to be deleted and retyped every
-      // report. The row now carries the item's handle + level; the description IS the
-      // compliance entry's Location / Description, the action its corrective text.
-      desc: [(e.cmpNum&&typeof clCmpFmt==='function')?clCmpFmt(e.cmpNum):'', e.level?`Level ${e.level}`:''].filter(Boolean).join(' · '),
-      action: e.corrective || '',
-      actions: (typeof clStepsText==='function')?clStepsText(e):'',   // 9/10: Actions taken, printed as its own line
-      fromComplianceId: e.id
-    }));
-  }catch(err){ console.warn('swppp §8 prefill failed:', err.message); }
+  // §8 — rows from the Compliance log are LIVE-LINKED (9/17, see _swSyncCorrective): open
+  // items carry onto every inspection until resolved, and stay current until Complete.
+  try{ _swSyncCorrective(insp, {isNew:true, prevDate: prev?prev.date:''}); }
+  catch(err){ console.warn('swppp §8 prefill failed:', err.message); }
   // Auto-attach SWPPP-tagged field photos taken since the last inspection
   // (7-day window when there's no previous report). Adjustable via the picker.
   // Photos already attached to ANY earlier report (draft or completed, incl.
@@ -303,6 +403,7 @@ function swpppNewInspection(){
 
 function swpppOpenInspection(id){
   _swOpenId = id;
+  try{ _swSyncCorrective(_swGet(id)); }catch(e){ console.warn('§8 sync:',e&&e.message); }
   showPage('swpppForm');
   _swRenderForm();
   _swLoadSig().then(()=>{ if(_swOpenId===id && document.getElementById('sw-sec-cert')) _swRenderSection('sw-sec-cert'); });
@@ -362,6 +463,7 @@ function _swCollectDeficiencies(insp){
 function swpppComplete(){
   const insp = _swGet(_swOpenId); if(!insp) return;
   _confirmModal('Mark this inspection as Completed? It will lock as a record — reopening for edits will require confirmation.', ()=>{
+    try{ _swSyncCorrective(insp); }catch(_){}   // last refresh of the §8 Compliance-log rows, then they freeze
     insp.status='completed'; insp.completedAt=Date.now();
     if(!insp.cert.signedDate){
       const d=new Date(); insp.cert.signedDate = `${d.getMonth()+1}/${d.getDate()}/${String(d.getFullYear()).slice(2)}`;
@@ -1045,21 +1147,33 @@ function _swRenderForm(){
   // ── §8 corrective actions ──
   _swSectionHtml['sw-sec-ca'] = ()=>{
     const i=_swGet(_swOpenId);
-    const rows=(i.corrective||[]).map((c,idx)=>`<div class="sw-ca-row">
-      ${c.fromComplianceId?'<div class="sw-ca-src">↩ carried from the Compliance log (still open)</div>':''}
+    const line=(lbl,val)=>val?`<div style="margin-top:6px"><span style="color:var(--muted);text-transform:uppercase;font-size:10px;letter-spacing:.06em">${lbl}</span><div style="margin-top:2px;white-space:pre-wrap">${esc(val)}</div></div>`:'';
+    const rows=(i.corrective||[]).map((c,idx)=>c.fromComplianceId?`<div class="sw-ca-row">
+      <div class="sw-ca-src">↩ from the Compliance log · updates itself until this inspection is completed</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:baseline;font-size:13px"><b>${esc(c.tag||'Compliance item')}</b><span style="color:var(--muted);font-size:11px">identified ${esc(_swMDY(c.dateId))}</span><span style="margin-left:auto;font-size:11px;font-weight:700;color:${/^Resolved/.test(c.status||'')?'var(--green,#4CAF50)':'var(--amber)'}">${esc(c.status||'')}</span></div>
+      <div style="font-size:12.5px;line-height:1.45">
+        ${line('Location / BMP',c.location)}${line('Description of deficiency',c.desc)}${line('Required action',c.action)}
+        ${line(c.sinceDate?'Earlier actions':'Actions taken',c.actions)}${c.since?line('Since the '+_swMDY(c.sinceDate)+' inspection',c.since):''}
+      </div>
+      <div class="field" style="margin-top:8px"><label>Inspector note for this report (optional)</label><textarea class="auto-expand" rows="1" ${dis} oninput="swCaNote(event,'${esc(c.fromComplianceId)}')">${esc(c.note||'')}</textarea></div>
+      ${ro?'':`<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-outline" style="font-size:11px" onclick="swpppCaEdit('${esc(c.fromComplianceId)}')">✎ Edit in Compliance log</button><button class="btn btn-outline sw-ca-del" onclick="swpppCaHide('${esc(c.fromComplianceId)}')">Leave off this report</button></div>`}
+    </div>`:`<div class="sw-ca-row">
       <div class="g g2">
         <div class="field"><label>Date identified</label><input type="date" value="${esc(c.dateId)}" ${dis} oninput="swCaInp(event,${idx},'dateId')"></div>
         <div class="field"><label>Location / BMP</label><textarea rows="1" class="auto-expand auto-line" ${dis} oninput="swCaInp(event,${idx},'location')">${esc(c.location)}</textarea></div>
       </div>
       <div class="field"><label>Description of deficiency</label><textarea class="auto-expand" rows="2" ${dis} oninput="swCaInp(event,${idx},'desc')">${esc(c.desc)}</textarea></div>
       <div class="field"><label>Required action / deadline / status</label><textarea class="auto-expand" rows="2" ${dis} oninput="swCaInp(event,${idx},'action')">${esc(c.action)}</textarea></div>
-      ${c.actions?`<div class="sw-ca-src" style="white-space:normal">🔧 Actions taken: ${esc(c.actions)} <span style="opacity:.7">(from the Compliance log entry — prints as its own line)</span></div>`:''}
       ${ro?'':`<button class="btn btn-outline sw-ca-del" onclick="swpppRemoveCorrective(${idx})">🗑 Remove</button>`}
     </div>`).join('');
+    const caTools=ro?'':[
+      (i.completedAt?`<button class="btn btn-outline" style="font-size:11px" onclick="swpppCaRefresh()">↻ Refresh from the Compliance log</button>`:''),
+      ((i.caHidden||[]).length?`<button class="btn btn-outline" style="font-size:11px" onclick="swpppCaUnhide()">Bring back ${(i.caHidden||[]).length} item${(i.caHidden||[]).length>1?'s':''} left off</button>`:'')
+    ].join('');
     return `<div class="card collapsed" id="sw-sec-ca"><div class="card-head" onclick="toggleSection('sw-sec-ca')"><span class="card-num">8</span><span class="card-title">Corrective Actions</span><span class="card-chevron">▾</span></div><div class="card-body">
       <p class="sw-static-note">${esc(cfg.correctiveNote||'')}</p>
       ${rows || '<p style="color:var(--muted);font-size:12px">No corrective actions this inspection.</p>'}
-      ${ro?'':`<button class="btn btn-outline" style="font-size:11px" onclick="swpppAddCorrective()">＋ Add corrective action</button>`}
+      ${ro?'':`<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-outline" style="font-size:11px" onclick="swpppAddCorrective()">＋ Add corrective action</button>${caTools}</div>`}
     </div></div>`;
   };
 
@@ -1195,6 +1309,7 @@ async function _swpppExportPdfNow(id){
   const insp=(_swInsp[pid]||[]).find(x=>x.id===id);
   const cfg=_swCfg[pid];
   if(!insp||!cfg){ alert('Inspection or configuration not found.'); return; }
+  try{ _swSyncCorrective(insp); }catch(_){}
   const btns=document.querySelectorAll(`[onclick="swpppExportPdf('${id}')"]`);
   // innerHTML store/restore (not textContent) — these buttons carry the inline PDF-icon SVG.
   btns.forEach(b=>{ b.dataset.oldHtml=b.innerHTML; b.textContent='Building…'; b.disabled=true; });
@@ -1215,6 +1330,7 @@ async function _swpppExportNow(id){
   const insp=(_swInsp[pid]||[]).find(x=>x.id===id);
   const cfg=_swCfg[pid];
   if(!insp||!cfg){ alert('Inspection or configuration not found.'); return; }
+  try{ _swSyncCorrective(insp); }catch(_){}
   const btns=document.querySelectorAll(`[onclick="swpppExport('${id}')"]`);
   btns.forEach(b=>{ b.dataset.oldTxt=b.textContent; b.textContent='Building…'; b.disabled=true; });
   const busy=(typeof window.glBusy==='function')?window.glBusy('Building the QI report DOCX…'):null;   // 9/11 #34
@@ -1430,7 +1546,7 @@ async function swpppBuildDocx(insp,cfg){
   // §8 Corrective actions
   const caRows=[new TableRow({children:[hcell('Date Identified',14),hcell('Location / BMP',22),hcell('Description of Deficiency',34),hcell('Required Action / Deadline / Status',30)]})];
   const caList=(insp.corrective&&insp.corrective.length)?insp.corrective:[];
-  caList.forEach(c=>{ caRows.push(new TableRow({children:[cell(c.dateId||'',{size:16}),cell(c.location||'',{size:16}),cell(c.desc||'',{size:16}),cell(c.actions?[c.action||'','Actions taken: '+c.actions]:(c.action||''),{size:16})]})); });
+  caList.forEach(c=>{ const k=swCaCells(c); caRows.push(new TableRow({children:[cell(k.date,{size:16}),cell(k.loc,{size:16}),cell(k.desc,{size:16}),cell(k.act,{size:16})]})); });
   if(!caList.length) caRows.push(new TableRow({children:[cell('—',{size:16}),cell('None identified this inspection',{size:16}),cell('',{size:16}),cell('',{size:16})]}));
 
   // §10 / §11 — images with preserved aspect (createImageBitmap), thumb fallback.
@@ -1666,6 +1782,8 @@ window.swMetaInp = swMetaInp;
 window.swpppRowsAll = swpppRowsAll;
 window.swpppSetAllSections = swpppSetAllSections;
 window.swpppAddCorrective = swpppAddCorrective;
+window.swpppCaRefresh = swpppCaRefresh; window.swpppCaHide = swpppCaHide; window.swpppCaUnhide = swpppCaUnhide;
+window.swCaNote = swCaNote; window.swpppCaEdit = swpppCaEdit;
 window.swpppRemoveCorrective = swpppRemoveCorrective;
 window.swpppPickPhotos = swpppPickPhotos;
 window.swpppPickDone = swpppPickDone;

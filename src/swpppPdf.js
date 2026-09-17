@@ -90,6 +90,17 @@ const imgGridLayout={
 };
 
 // ── shared builders ──
+// 9/17: ORPHAN HEADINGS. pdfmake 0.3 hands pageBreakBefore(node, helpers) GETTER FUNCTIONS
+// (getFollowingNodesOnPage / getNodesOnNextPage), not the 0.2 arrays — the old rule compared
+// `undefined.length` and never fired, so a section band could sit alone at the foot of a page
+// (QI section 8 on the 9/17 fixture). Counting the nodes left under a heading is unreliable: the
+// list also carries that page's header / footer nodes. Geometry is not: a heading that STARTS in
+// the bottom 14% of the body cannot keep a table header + one row under it, so it moves to the
+// next page whenever the document continues there.
+const _orphanHeading=(node,h)=>{
+  if(!node||node.headlineLevel!==1||!node.startPosition||!h||typeof h.getNodesOnNextPage!=='function') return false;
+  return node.startPosition.verticalRatio>0.86 && h.getNodesOnNextPage().length>0;
+};
 const h1=(text)=>({table:{widths:['*'],body:[[{text,bold:true,color:_pal.hText||'#FFFFFF',fontSize:12,fillColor:_pal.h,border:[false,false,false,false]}]]},
   layout:{hLineWidth:()=>0,vLineWidth:()=>0,paddingLeft:()=>6,paddingRight:()=>6,paddingTop:()=>3,paddingBottom:()=>3},
   headlineLevel:1, margin:[0,10,0,5]});
@@ -309,7 +320,13 @@ export async function swpppBuildPdf(insp,cfg,sig){
   // §8 Corrective actions
   const caBody=[[hcell('Date Identified'),hcell('Location / BMP'),hcell('Description of Deficiency'),hcell('Required Action / Deadline / Status')]];
   const caList=(insp.corrective&&insp.corrective.length)?insp.corrective:[];
-  caList.forEach(c=>{ caBody.push([cell(c.dateId||'',{size:8}),cell(c.location||'',{size:8}),cell(c.desc||'',{size:8}),cell([c.action||'',c.actions?('Actions taken: '+c.actions):''].filter(Boolean).join('\n'),{size:8})]); });
+  // 9/17: one print shape for both builders (swppp.js swCaCells); first Location line = the CMP tag, bold
+  caList.forEach(c=>{
+    const k=(typeof window.swCaCells==='function')?window.swCaCells(c):{date:c.dateId||'',loc:[c.location||''],desc:c.desc||'',act:[c.action||'']};
+    const locCell=(c.tag&&k.loc.length)?{text:[{text:k.loc[0],bold:true},k.loc.length>1?'\n'+k.loc.slice(1).join('\n'):''],fontSize:8}:cell(k.loc.join('\n'),{size:8});
+    const actCell=(k.parts&&k.parts.length)?{stack:k.parts.map(x=>({text:x.l?[{text:x.l+': ',bold:true},x.t]:x.t,fontSize:8,margin:[0,0,0,1.5]}))}:cell(k.act.filter(Boolean).join('\n'),{size:8});
+    caBody.push([cell(k.date,{size:8}),locCell,cell(k.desc,{size:8}),actCell]);
+  });
   if(!caList.length) caBody.push([cell('—',{size:8}),cell('None identified this inspection',{size:8}),cell('',{size:8}),cell('',{size:8})]);
   const caTbl={table:{headerRows:1,dontBreakRows:true,widths:cols(14,22,34),body:caBody},layout:hairLayout,margin:[0,2,0,4]};
 
@@ -418,7 +435,7 @@ export async function swpppBuildPdf(insp,cfg,sig){
       ]
     }),
     // keepNext equivalent: never strand a section header at the bottom of a page
-    pageBreakBefore:(node,followingNodesOnPage)=>node.headlineLevel===1&&followingNodesOnPage.length===0,
+    pageBreakBefore:_orphanHeading,
     content
   };
 
@@ -689,7 +706,7 @@ export async function dailyBuildPdf(logData,polished,photoRefs,opts){
       ]
     }),
     ...(opts.watermark?{watermark:{text:opts.watermark,color:_d.rule,opacity:0.08,bold:true}}:{}),
-    pageBreakBefore:(node,followingNodesOnPage)=>node.headlineLevel===1&&followingNodesOnPage.length===0,
+    pageBreakBefore:_orphanHeading,
     content
   };
   const doc=pdfMake.createPdf(dd);
@@ -707,6 +724,7 @@ export async function dailyExportPdfNow(logData,polished,photoRefs,opts){
   return blob;
 }
 
+window._glSwpppBuildPdf=swpppBuildPdf;   // 9/17: harness hook (tests/screens/render-qi-corrective.mjs) — builder only, no save
 window._glDailyBuildPdf=dailyBuildPdf;   // 9/16: harness hook (tests/screens/render-daily-compliance.mjs) — builder only, no save
 
 // ═══ ESC PUNCHLIST PDF — the cross-category repair-flag deliverable ═══
@@ -900,7 +918,7 @@ export async function punchlistBuildPdf(opts){
         ..._attribLine(typeof opts!=='undefined'?opts:null)
       ]
     }),
-    pageBreakBefore:(node,followingNodesOnPage)=>node.headlineLevel===1&&followingNodesOnPage.length===0,
+    pageBreakBefore:_orphanHeading,
     content
   };
 
