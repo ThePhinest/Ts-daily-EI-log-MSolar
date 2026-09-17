@@ -9,9 +9,42 @@ const { initializeApp } = require('firebase-admin/app');
 const { getFirestore } = require('firebase-admin/firestore');
 const { getStorage } = require('firebase-admin/storage');
 
+const { setGlobalOptions } = require('firebase-functions/v2');
+const { getAuth } = require('firebase-admin/auth');
+const L = require('./limits');
+
 initializeApp();
+// 9/17 launch audit (S5): no function may scale without a ceiling.
+setGlobalOptions({ maxInstances: 10 });
 
 const WEBHOOK = defineSecret('DISCORD_ERROR_WEBHOOK_URL');
+// DISCORD_NEW_ACCOUNTS_WEBHOOK_URL is bound by name on the v1 newAccountAlert trigger below.
+
+const _utcDay = () => new Date().toISOString().slice(0, 10);
+
+// 9/17 launch audit (S1): per-account (and per-project) daily cap on Discord
+// alert posts. keys = [[docId, cap], …] in alertUsage/ (no client rule → Admin
+// SDK only). Returns false when any key is over its cap; the miss is counted
+// as `suppressed` and surfaces in the daily digest. Fails OPEN on a Firestore
+// error: a broken counter must never silence a real alert.
+async function _alertGate(keys, bucket) {
+  const db = getFirestore();
+  const day = _utcDay();
+  for (const [id, cap] of keys) {
+    if (!id) continue;
+    try {
+      const ref = db.collection('alertUsage').doc(String(id));
+      const allow = await db.runTransaction(async (tx) => {
+        const snap = await tx.get(ref);
+        const r = L.gateNext(snap.exists ? snap.data() : null, day, bucket, cap);
+        tx.set(ref, Object.assign(r.next, { _ts: Date.now() }));
+        return r.allow;
+      });
+      if (!allow) { console.warn(`[alertGate] ${id} over ${bucket} cap (${cap}/day) — suppressed`); return false; }
+    } catch (e) { console.warn('[alertGate] counter failed, allowing:', e.message); }
+  }
+  return true;
+}
 
 async function postToDiscord(webhookUrl, payload) {
   const cleanUrl = webhookUrl.replace(/^﻿/, '').trim();
@@ -46,8 +79,33 @@ exports.errorDigest = onSchedule(
       })
     );
 
-    if (allErrors.length === 0) {
-      console.log('No errors in past 24h — digest skipped');
+    // 9/17 launch audit: platform health lines (suppressed alerts, hosted-AI use,
+    // new accounts / projects) + recompute the AI ceiling's `established` count.
+    const health = [];
+    try {
+      const sup = await db.collection('alertUsage').where('_ts', '>=', cutoff).get();
+      let supN = 0; const supWho = [];
+      sup.forEach((d) => { const t = Object.values((d.data().suppressed) || {}).reduce((a, b) => a + b, 0); if (t) { supN += t; supWho.push(`\`${d.id}\` × ${t}`); } });
+      if (supN) health.push(`🔇 **${supN}** alert${supN !== 1 ? 's' : ''} suppressed by the daily caps: ${supWho.slice(0, 5).join(', ')}`);
+      const yday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+      const [platY, statY, projNew] = await Promise.all([
+        db.collection('aiPlatform').doc(yday).get(),
+        db.collection('statsDaily').doc(yday).get(),
+        db.collection('projects').where('createdAt', '>=', cutoff).count().get(),
+      ]);
+      if (platY.exists && (platY.data().n || platY.data().denied)) health.push(`🤖 Hosted AI yesterday: **${platY.data().n || 0}** of ${platY.data().ceiling || '?'} calls${platY.data().denied ? `, **${platY.data().denied} refused at the ceiling**` : ''}`);
+      const na = statY.exists ? (statY.data().newAccounts || 0) : 0;
+      const np = projNew.data().count || 0;
+      if (na || np) health.push(`👤 New accounts yesterday: **${na}** · new projects (24h): **${np}**`);
+      const weekAgo = Date.now() - 7 * 86400000;
+      const active = await db.collection('aiUsage').where('_ts', '>=', weekAgo).get();
+      let established = 0;
+      active.forEach((d) => { const c = d.data().created || 0; if (c && c < weekAgo) established++; });
+      await db.collection('aiPlatform').doc('config').set({ established, ceiling: L.aiPlatformCeiling(established), computedAt: Date.now() });
+    } catch (e) { console.warn('[errorDigest] health lines failed:', e.message); }
+
+    if (allErrors.length === 0 && health.length === 0) {
+      console.log('No errors and no platform news in past 24h — digest skipped');
       return;
     }
 
@@ -71,7 +129,7 @@ exports.errorDigest = onSchedule(
         title: '📊 GroundLog Error Digest (last 24h)',
         description: `**${total}** error${total !== 1 ? 's' : ''} captured${
           criticalCount > 0 ? ` — **${criticalCount} critical**` : ''
-        }.\n\n${lines}`,
+        }.${lines ? '\n\n' + lines : ''}${health.length ? '\n\n' + health.join('\n') : ''}`,
         color,
         footer: { text: 'GroundLog β.2 · errorDigest' },
         timestamp: new Date().toISOString(),
@@ -114,7 +172,7 @@ async function _purgeQueryDocs(db, query, label, out) {
   }
 }
 
-exports.purgeDeletedUser = functionsV1.auth.user().onDelete(async (user) => {
+exports.purgeDeletedUser = functionsV1.runWith({ maxInstances: 5 }).auth.user().onDelete(async (user) => {
   const uid = user.uid;
   const db = getFirestore();
   const done = [];
@@ -179,6 +237,45 @@ exports.purgeDeletedUser = functionsV1.auth.user().onDelete(async (user) => {
   console.log(`purgeDeletedUser ${uid}: ${done.join(' | ')}`);
 });
 
+// 9/17: every new account → the new-accounts Discord channel. Privacy posture:
+// NO email, NO name — provider + short uid + running total only. The total lives
+// in stats/accounts (seeded once from Auth); statsDaily/{day} feeds the digest.
+exports.newAccountAlert = functionsV1.runWith({ secrets: ['DISCORD_NEW_ACCOUNTS_WEBHOOK_URL'], maxInstances: 5 })
+  .auth.user().onCreate(async (user) => {
+    const db = getFirestore();
+    const day = _utcDay();
+    let total = null;
+    try {
+      const ref = db.collection('stats').doc('accounts');
+      const snap = await ref.get();
+      if (!snap.exists) {
+        let n = 0, token;
+        do { const page = await getAuth().listUsers(1000, token); n += page.users.length; token = page.pageToken; } while (token);
+        total = n;                       // listUsers already includes this account
+        await ref.set({ total, seededAt: Date.now() });
+      } else {
+        total = await db.runTransaction(async (tx) => {
+          const s = await tx.get(ref); const t = ((s.data() || {}).total || 0) + 1;
+          tx.set(ref, { total: t, _ts: Date.now() }, { merge: true }); return t;
+        });
+      }
+      const dref = db.collection('statsDaily').doc(day);
+      await db.runTransaction(async (tx) => {
+        const s = await tx.get(dref);
+        tx.set(dref, { newAccounts: ((s.exists && s.data().newAccounts) || 0) + 1, _ts: Date.now() }, { merge: true });
+      });
+    } catch (e) { console.warn('[newAccountAlert] counters failed:', e.message); }
+    const provider = ((user.providerData || [])[0] || {}).providerId || 'password';
+    const label = provider === 'google.com' ? 'Google' : provider === 'apple.com' ? 'Apple' : 'Email';
+    await postToDiscord(process.env.DISCORD_NEW_ACCOUNTS_WEBHOOK_URL, {
+      embeds: [{
+        title: '👤 New GroundLog account',
+        description: `Sign-in: **${label}**\nAccount: \`${String(user.uid).slice(0, 8)}…\`${total != null ? `\nTotal accounts: **${total}**` : ''}`,
+        color: 0x006b75, footer: { text: 'GroundLog · newAccountAlert' }, timestamp: new Date().toISOString(),
+      }],
+    });
+  });
+
 // Instant alert — fires on any new _debug doc with severity:'critical'.
 exports.criticalErrorAlert = onDocumentCreated(
   { document: 'users/{uid}/_debug/{docId}', secrets: [WEBHOOK] },
@@ -187,6 +284,7 @@ exports.criticalErrorAlert = onDocumentCreated(
     if (!data || data.severity !== 'critical') return;
 
     const uid = event.params.uid;
+    if (!(await _alertGate([['u_' + uid, L.ALERT_CAPS.critical]], 'critical'))) return;
     const msg = data.message || '(no message)';
     const stack = data.stack ? data.stack.slice(0, 800) : null;
 
@@ -223,6 +321,7 @@ exports.contentReportAlert = onDocumentCreated(
   async (event) => {
     const r = event.data?.data();
     if (!r) return;
+    if (!(await _alertGate([['u_' + (r.reporterUid || 'unknown'), L.ALERT_CAPS.report]], 'report'))) return;
     const description = [
       `**Reason:** ${r.reason || '(none)'}`,
       r.note && `**Note:** ${String(r.note).slice(0, 600)}`,
@@ -279,6 +378,7 @@ exports.reviewAlert = onDocumentWritten(
     if (before && thrA > thrB) {
       const m = after.thread[thrA - 1] || {};
       const toAuthor = m.by !== after.submittedBy;
+      if (!(await _alertGate([['u_' + (m.by || after.submittedBy), L.ALERT_CAPS.review], ['p_' + event.params.pid, L.PROJECT_ALERT_CAP]], 'review'))) return;
       const title = '💬 Reply on report';
       const detail = `**${m.byName || (toAuthor ? 'Reviewer' : 'Author')}** on **${after.date}**${toAuthor ? ' → ' + (after.submittedByName || 'author') : ' → ' + (after.review.reviewerName || 'reviewer')}: ${String(m.text || '').slice(0, 300)}`;
       try {
@@ -311,6 +411,8 @@ exports.reviewAlert = onDocumentWritten(
       notifyUid = after.submittedBy;
     }
     if (!title) return;
+    const actor = curStatus === 'pending' ? after.submittedBy : after.review.reviewerUid;
+    if (!(await _alertGate([['u_' + actor, L.ALERT_CAPS.review], ['p_' + event.params.pid, L.PROJECT_ALERT_CAP]], 'review'))) return;
 
     try {
       await postToDiscord(WEBHOOK.value(), {
@@ -335,14 +437,19 @@ exports.reviewAlert = onDocumentWritten(
 // anyone. The key now lives ONLY in the ANTHROPIC_HOSTED_KEY secret. Users with
 // their own key still call Anthropic directly from the client (their key, their
 // account); everyone else comes through here with a per-user daily cap.
-// Cap doc: aiUsage/{uid} { day:'YYYY-MM-DD', n } — rules deny all client access.
+// Cap doc: aiUsage/{uid} { day:'YYYY-MM-DD', n, created } — rules deny all client access.
+// 9/17 launch audit (S3): accounts are free, so a per-account cap alone multiplies.
+//   per account: 20/day, 8/day while the account is under 7 days old (functions/limits.js)
+//   platform:    aiPlatform/{day} { n, denied, … } against a ceiling of
+//                max(100, 20 × established users); `established` is recomputed by
+//                the daily digest into aiPlatform/config (fresh accounts never count).
+//   Discord ops alert once at 50% and once at 100% of the day's ceiling.
 // ═══════════════════════════════════════════════════════════════════════════
 const ANTHROPIC_HOSTED_KEY = defineSecret('ANTHROPIC_HOSTED_KEY');
-const AI_DAILY_CAP = 40;          // calls per user per UTC day on the hosted key
 const AI_MODEL = 'claude-sonnet-5';
 const AI_MAX_TOKENS = 8000;
 
-exports.aiComplete = onCall({ secrets: [ANTHROPIC_HOSTED_KEY], timeoutSeconds: 120, memory: '256MiB' }, async (req) => {
+exports.aiComplete = onCall({ secrets: [ANTHROPIC_HOSTED_KEY, WEBHOOK], timeoutSeconds: 120, memory: '256MiB' }, async (req) => {
   if (!req.auth) throw new HttpsError('unauthenticated', 'Sign in required.');
   const uid = req.auth.uid;
   const { system, user, maxTokens } = req.data || {};
@@ -353,16 +460,44 @@ exports.aiComplete = onCall({ secrets: [ANTHROPIC_HOSTED_KEY], timeoutSeconds: 1
 
   // Daily cap — transactional so parallel taps can't slip past it.
   const db = getFirestore();
-  const day = new Date().toISOString().slice(0, 10);
+  const day = _utcDay();
   const ref = db.collection('aiUsage').doc(uid);
-  await db.runTransaction(async (tx) => {
-    const snap = await tx.get(ref);
+  const platRef = db.collection('aiPlatform').doc(day);
+  const cfgRef = db.collection('aiPlatform').doc('config');
+  // Account age decides the tier; looked up once, then cached on the usage doc.
+  let created = 0;
+  try {
+    const first = await ref.get();
+    created = (first.exists && first.data().created) || 0;
+    if (!created) created = Date.parse((await getAuth().getUser(uid)).metadata.creationTime) || 0;
+  } catch (e) { console.warn('aiComplete: creation-time lookup failed:', e.message); }
+  const userCap = L.aiUserCap(created, Date.now());
+
+  const plat = await db.runTransaction(async (tx) => {
+    const [snap, platSnap, cfgSnap] = await Promise.all([tx.get(ref), tx.get(platRef), tx.get(cfgRef)]);
     const cur = snap.exists && snap.data().day === day ? (snap.data().n || 0) : 0;
-    if (cur >= AI_DAILY_CAP) {
-      throw new HttpsError('resource-exhausted', `Daily AI limit reached (${AI_DAILY_CAP}/day on the GroundLog key). Add your own API key in Settings → Report Generation for unlimited use.`);
+    if (cur >= userCap) {
+      throw new HttpsError('resource-exhausted', `Daily AI limit reached (${userCap}/day on the GroundLog key${userCap < L.AI_USER_CAP ? '; it rises to ' + L.AI_USER_CAP + ' after your first week' : ''}). Add your own API key in Settings → Report Generation for unlimited use.`);
     }
-    tx.set(ref, { day, n: cur + 1, _ts: Date.now() });
+    const ceiling = L.aiPlatformCeiling(cfgSnap.exists ? cfgSnap.data().established : 0);
+    const r = L.aiPlatformNext(platSnap.exists ? platSnap.data() : null, day, ceiling);
+    tx.set(platRef, Object.assign(r.next, { _ts: Date.now() }));
+    if (!r.allow) return r;          // commit the denied count, refuse below
+    tx.set(ref, { day, n: cur + 1, created, _ts: Date.now() });
+    return r;
   });
+  if (plat.crossedHalf || plat.crossedFull) {
+    try {
+      await postToDiscord(WEBHOOK.value(), { embeds: [{
+        title: plat.allow && !plat.crossedFull ? '⚠ Hosted AI key at 50% of today\'s ceiling' : '🚨 Hosted AI key hit today\'s ceiling',
+        description: `**${plat.next.n}** of **${plat.next.ceiling}** platform calls used (UTC day ${day}). Last caller \`${uid}\`. Normal use is a few calls per inspector per day; check the new-accounts channel for a signup wave.`,
+        color: plat.allow && !plat.crossedFull ? 0xf59e0b : 0xdc2626, footer: { text: 'GroundLog · aiComplete' }, timestamp: new Date().toISOString(),
+      }] });
+    } catch (e) { console.warn('aiComplete: ceiling alert failed:', e.message); }
+  }
+  if (!plat.allow) {
+    throw new HttpsError('resource-exhausted', 'The shared GroundLog AI key is at its limit for today. Add your own API key in Settings → Report Generation to keep going, or try again tomorrow.');
+  }
 
   const resp = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
