@@ -787,7 +787,7 @@ button:disabled,button[disabled]{opacity:.45;cursor:not-allowed}
 .gl-es-title{font-family:var(--cond);font-weight:700;font-size:16px;letter-spacing:.04em;color:var(--text)}
 .gl-es-body{font-family:var(--mono);font-size:11.5px;line-height:1.65;color:var(--muted);max-width:310px}
 .gl-es-actions{display:flex;flex-direction:column;gap:8px;margin-top:14px;width:100%;max-width:260px}
-.gl-es-btn{height:42px;border-radius:9px;font-family:var(--cond);font-weight:600;font-size:12.5px;letter-spacing:.08em;cursor:pointer;background:var(--s2);border:1px solid var(--border2);color:var(--text)}
+.gl-es-btn{height:42px;display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;border-radius:9px;font-family:var(--cond);font-weight:600;font-size:12.5px;letter-spacing:.08em;cursor:pointer;background:var(--s2);border:1px solid var(--border2);color:var(--text)}
 .gl-es-btn-primary{background:var(--amber);border-color:var(--amber);color:#0e0e0e;font-weight:700}
 .gl-es-watch{background:rgba(0,107,117,.14);border-color:rgba(0,107,117,.5);color:#3fa7b0}
 .gl-ac-row{display:flex;align-items:center;gap:12px;background:var(--s2);border:1px solid var(--border2);border-radius:10px;padding:12px 14px;margin-bottom:8px;cursor:pointer;transition:border-color .25s,background .25s}
@@ -3264,6 +3264,17 @@ Anticipated rain — AM weather monitoring expected"></textarea>
     </div>
   </div>
 
+  <!-- Jurisdiction — per-project regulatory profile (launch audit A1-A3, 9/17).
+       Feeds the spill form's hotline + exemption test, the agency-visit list and
+       the QI permit label. New projects start Neutral; a lead picks a preset. -->
+  <div class="config-section" id="cfg-jur">
+    <div class="config-head" onclick="toggleSection('cfg-jur');if(typeof jurBootCard==='function')jurBootCard()"><span class="config-title">⚖ Jurisdiction</span><span class="head-fade"></span><span class="config-sub">State rules: spill hotline, agencies, permit</span><span class="card-chevron">▾</span></div>
+    <div class="config-body">
+      <p class="config-hint">Which state's rules this project runs under. Pick a preset, adjust anything, Save. Every project starts <b>Neutral</b> (federal facts only) until a lead sets this; the spill form, agency visits and QI inspections follow it.</p>
+      <div id="jur-card-body"></div>
+    </div>
+  </div>
+
   <!-- Project Members — shared-project membership + invites (Phase 4.5 chunk 1).
        Body renders live from projects/{pid}/members on expand (members.js). -->
   <div class="config-section" id="cfg-members">
@@ -3982,7 +3993,8 @@ Anticipated rain — AM weather monitoring expected"></textarea>
     <div class="config-head"><span class="config-title">Security</span><span class="head-fade"></span><span class="config-sub">Verification &amp; password</span></div>
     <div class="config-body">
       <p class="config-hint">Verify your email address or update your password if you use email sign-in.</p>
-      <button class="btn btn-outline" style="font-size:11px;padding:7px 14px;margin-bottom:10px" onclick="acctSendVerificationEmail()">Send Verification Email</button>
+      <div id="acct-verify-line" style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-bottom:8px"></div>
+      <button class="btn btn-outline" id="acct-verify-btn" style="font-size:11px;padding:7px 14px;margin-bottom:10px" onclick="acctSendVerificationEmail()">Send Verification Email</button>
       <span id="acct-verify-status" style="font-family:var(--mono);font-size:11px;color:var(--green);margin-left:10px;opacity:0;transition:opacity .4s"></span>
       <div id="acct-pw-form" style="display:none;margin-top:12px">
         <div class="field" style="margin-bottom:10px">

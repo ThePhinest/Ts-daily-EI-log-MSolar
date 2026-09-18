@@ -208,7 +208,7 @@ export async function swpppBuildPdf(insp,cfg,sig){
     infoRow('SWT #:',`${H.swtNumber||''}   |   Expires: ${H.swtExpires||''}`),
     infoRow('Organization:',H.organization||''),
     infoRow('Project:',H.project||cfg.projectTitle||''),
-    infoRow('SPDES Permit No.:',H.spdesPermit||''),
+    infoRow((typeof jurPermitProgram==='function'?jurPermitProgram():'Stormwater')+' Permit No.:',H.spdesPermit||''),
     infoRow('SWPTS Application ID:',H.swptsId||''),
     infoRow('Contractor POC:',H.contractorPoc||''),
     infoRow('Supervising QI / QP:',H.supervisingQi||'')
@@ -386,7 +386,7 @@ export async function swpppBuildPdf(insp,cfg,sig){
 
   const content=[
     {text:cfg.projectTitle||'',bold:true,fontSize:15,color:BLUE,alignment:'center',margin:[0,4,0,2]},
-    {text:cfg.title||'SPDES Stormwater — Qualified Inspector Inspection Report',fontSize:11,color:MID_BLUE,alignment:'center',margin:[0,0,0,8]},
+    {text:cfg.title||((typeof jurPermitProgram==='function'?jurPermitProgram():'Stormwater')+' Stormwater — Qualified Inspector Inspection Report').replace(/^Stormwater Stormwater/,'Stormwater'),fontSize:11,color:MID_BLUE,alignment:'center',margin:[0,0,0,8]},
     headerTbl,
     ...dasBlock,
     h1('1.  Weather & Site Conditions'),wxTbl,
@@ -429,7 +429,7 @@ export async function swpppBuildPdf(insp,cfg,sig){
       margin:[MARG,14,MARG,0],
       stack:[
         {canvas:[{type:'line',x1:0,y1:0,x2:CONTENT_W,y2:0,lineWidth:0.6,lineColor:HAIR}]},
-        {text:`${cfg.projectTitle||''}  |  SPDES QI Stormwater Inspection Report  |  ${parseInt(m)}/${parseInt(d)}/${y.slice(2)}  |  Page ${currentPage}`,
+        {text:`${cfg.projectTitle||''}  |  ${typeof jurPermitProgram==='function'?jurPermitProgram():'Stormwater'} QI Stormwater Inspection Report  |  ${parseInt(m)}/${parseInt(d)}/${y.slice(2)}  |  Page ${currentPage}`,
          fontSize:8,color:'#888888',alignment:'center',margin:[0,4,0,0]},
         ..._attribLine(typeof opts!=='undefined'?opts:null)
       ]

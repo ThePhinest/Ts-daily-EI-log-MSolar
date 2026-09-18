@@ -82,6 +82,14 @@ async function _swSaveCloud(id, pid){
 }
 
 // ── Config setup (paste-JSON, one time per project) ──
+// A5 (9/17): the honest v1 setup path — a support email with the project name
+// prefilled. JSON paste stays behind an Advanced link for the people who have one.
+function _swSetupMailto(){
+  const projName=(document.getElementById('cfg-projectName')?.value?.trim())||'';
+  const subject='QI inspection setup'+(projName?' — '+projName:'');
+  const body='Project: '+(projName||'(name)')+'\nState / permit: \nAttach or describe the SWPPP: drainage areas, discharge points, BMP list, permit number, owner / operator.\n';
+  return 'mailto:support@groundlog.io?subject='+encodeURIComponent(subject)+'&body='+encodeURIComponent(body);
+}
 function swpppShowSetup(){
   const ov = document.createElement('div');
   ov.className = 'modal-overlay';
@@ -805,6 +813,7 @@ function swToggleSec(key){
 window.swToggleSec=swToggleSec;
 window.swSecCollapsed=swSecCollapsed;
 // Section header — chevron + title, whole label toggles; action buttons stop propagation.
+function _swEsc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;'); }
 function _swSecHead(key, title, sub, btnHtml){
   const c=swSecCollapsed(key);
   return `<div class="sw-sec-label${key==='qi'?'':' sw-sec-next'}" onclick="swToggleSec('${key}')" style="cursor:pointer">
@@ -831,10 +840,11 @@ function _swRenderReportsInner(host, pid){
       <div class="gl-empty-state">
         <div class="gl-es-icon">🌊</div>
         <div class="gl-es-title">SWPPP QI Inspection Report</div>
-        <div class="gl-es-body">Complete your SPDES Qualified-Inspector stormwater inspections in the field and export the finished report — no separate Word doc. One-time setup: paste this project's form configuration.</div>
+        <div class="gl-es-body">Complete your Qualified-Inspector stormwater inspections in the field and export the finished report — no separate Word doc. QI checklists are set up per project from your SWPPP (drainage areas, discharge points, BMPs, permit header); a template builder is coming. Until then, request setup and we build it from your SWPPP.</div>
         <div class="gl-es-actions">
-          <button class="gl-es-btn gl-es-btn-primary" onclick="swpppShowSetup()">⚙ Set up QI report</button>
+          <a class="gl-es-btn gl-es-btn-primary" href="${_swSetupMailto()}" style="text-decoration:none">✉ Request QI setup</a>
         </div>
+        <div style="margin-top:10px;font-family:var(--mono);font-size:10px;color:var(--muted)"><span onclick="swpppShowSetup()" style="cursor:pointer;text-decoration:underline">Advanced: paste a form configuration JSON</span></div>
       </div>
       <div id="av-reports-sec"></div><div id="sp-reports-sec"></div>`;
     if(typeof window.avRenderReportsSec==='function') window.avRenderReportsSec();
@@ -886,7 +896,7 @@ function _swRenderReportsInner(host, pid){
   const moreDaily = daily.length>_swDailyLimit
     ? `<div class="sw-more"><button class="btn btn-outline" onclick="swpppShowMore('daily')">⌄ Show ${daily.length-_swDailyLimit} more</button></div>` : '';
   host.innerHTML = `
-    ${_swSecHead('qi','SWPPP QI Inspections','SPDES GP-0-25-001 — Qualified Inspector stormwater inspection reports','<button class="btn" onclick="swpppNewInspection()">＋ New Inspection</button>')}
+    ${_swSecHead('qi','SWPPP QI Inspections',_swEsc((typeof jurPermitLabel==='function'?jurPermitLabel():'Construction stormwater general permit')+' — Qualified Inspector stormwater inspection reports'),'<button class="btn" onclick="swpppNewInspection()">＋ New Inspection</button>')}
     <div id="sw-sec-body-qi" style="display:${swSecCollapsed('qi')?'none':''}">
       ${rows || '<p style="color:var(--muted);font-size:12px;padding:10px 2px">No inspections yet — start your first one.</p>'}
       ${moreQi}
@@ -1434,7 +1444,7 @@ async function swpppBuildDocx(insp,cfg){
   // Title
   const title=[
     new Paragraph({alignment:AlignmentType.CENTER,children:[new TextRun({text:cfg.projectTitle||'',bold:true,font:'Arial',size:30,color:BLUE})],spacing:{before:120,after:40}}),
-    new Paragraph({alignment:AlignmentType.CENTER,children:[new TextRun({text:cfg.title||'SPDES Stormwater — Qualified Inspector Inspection Report',font:'Arial',size:22,color:MID_BLUE})],spacing:{before:0,after:160}})
+    new Paragraph({alignment:AlignmentType.CENTER,children:[new TextRun({text:cfg.title||((typeof jurPermitProgram==='function'?jurPermitProgram():'Stormwater')+' Stormwater — Qualified Inspector Inspection Report').replace(/^Stormwater Stormwater/,'Stormwater'),font:'Arial',size:22,color:MID_BLUE})],spacing:{before:0,after:160}})
   ];
 
   // Header info table
@@ -1451,7 +1461,7 @@ async function swpppBuildDocx(insp,cfg){
     infoRow('SWT #:',`${H.swtNumber||''}   |   Expires: ${H.swtExpires||''}`),
     infoRow('Organization:',H.organization||''),
     infoRow('Project:',H.project||cfg.projectTitle||''),
-    infoRow('SPDES Permit No.:',H.spdesPermit||''),
+    infoRow((typeof jurPermitProgram==='function'?jurPermitProgram():'Stormwater')+' Permit No.:',H.spdesPermit||''),
     infoRow('SWPTS Application ID:',H.swptsId||''),
     infoRow('Contractor POC:',H.contractorPoc||''),
     infoRow('Supervising QI / QP:',H.supervisingQi||'')
@@ -1651,7 +1661,7 @@ async function swpppBuildDocx(insp,cfg){
   const _attribOn=(typeof window.glBrandAttribution==='function')?window.glBrandAttribution((insp&&insp.projectId)||((typeof _activeProjectId==='function')?_activeProjectId():'default')):true;
   const _attribParas=()=>_attribOn?[new Paragraph({alignment:AlignmentType.CENTER,spacing:{before:20},children:[new TextRun({text:window.GL_ATTRIB_TEXT||'Generated with GroundLog  ·  groundlog.io',font:'Arial',size:13,color:'AAAAAA'})]})]:[];
   const footer=new Footer({children:[new Paragraph({alignment:AlignmentType.CENTER,border:{top:{style:BorderStyle.SINGLE,size:6,color:'AAAAAA',space:4}},spacing:{before:80},children:[
-    new TextRun({text:`${cfg.projectTitle||''}  |  SPDES QI Stormwater Inspection Report  |  ${parseInt(m)}/${parseInt(d)}/${y.slice(2)}  |  Page `,font:'Arial',size:16,color:'888888'}),
+    new TextRun({text:`${cfg.projectTitle||''}  |  ${typeof jurPermitProgram==='function'?jurPermitProgram():'Stormwater'} QI Stormwater Inspection Report  |  ${parseInt(m)}/${parseInt(d)}/${y.slice(2)}  |  Page `,font:'Arial',size:16,color:'888888'}),
     new TextRun({children:[PageNumber.CURRENT],font:'Arial',size:16,color:'888888'})
   ]}),..._attribParas()]});
   const wordHeader=new Header({children:[new Table({width:{size:100,type:WidthType.PERCENTAGE},borders:noBorders,rows:[new TableRow({children:[

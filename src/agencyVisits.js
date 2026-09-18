@@ -17,7 +17,10 @@
 // projectId-stamped — the dailyLogs/docs shape) + a per-project IDB array for
 // instant offline paint. Soft delete (deletedAt), never destroyed.
 
-const _AV_AGENCIES = ['NYSDPS', 'NYSDEC', 'ORES', 'EPA', 'USACE', 'Other'];
+// Agency list + default come from the project's ⚖ Jurisdiction profile (A2, 9/17);
+// 'Other' is always appended so free text stays possible.
+function _avAgencies(){ const l=(typeof jurAgencies==='function')?jurAgencies():['EPA','USACE','Other']; return l.includes('Other')?l:l.concat(['Other']); }
+function _avDefaultAgency(){ const d=(typeof jurDefaultAgency==='function')?jurDefaultAgency():''; return d||_avAgencies()[0]||'Other'; }
 
 let _avVisits = {};   // pid -> records array (live + deleted)
 let _avLoaded = {};   // pid -> cloud load completed
@@ -122,7 +125,8 @@ function avShowForm(id){
   const pid = _avPid();
   const existing = id ? avGet(id,pid) : null;
   const today = new Date().toLocaleDateString('en-CA');
-  const v = existing || { id:_avGenId(), projectId:pid, date:today, agency:'NYSDPS', agencyOther:'',
+  const _AV_AGENCIES = _avAgencies();
+  const v = existing || { id:_avGenId(), projectId:pid, date:today, agency:_avDefaultAgency(), agencyOther:'',
     inspector:'', notes:'', followUps:'', photoIds:[], createdAt:Date.now(), ownerUid:_avUid() };
   const sel = new Set(v.photoIds||[]);
   const ov = document.createElement('div');

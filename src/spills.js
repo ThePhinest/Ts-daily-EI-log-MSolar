@@ -6,7 +6,9 @@
 // record-first pattern as agencyVisits.js — the RECORD is the source of truth,
 // created at the spill, holding everything the owner's Environmental Incident
 // Report form asks for (6 sections, mirrored 1:1 in the PDF), plus the pieces a
-// paper form never carries: the NY four-part reportability test, a timed
+// paper form never carries: the jurisdiction's reportability test (from the
+// project's ⚖ Jurisdiction profile, jurisdiction.js — NY = the four-part 6 NYCRR
+// 613 test; Neutral = federal NRC line, no test), a timed
 // notification log, GPS/map location, and the project's photos.
 //
 // Surfaces: 🛢 card on the Compliance page (between Agency Visits and the
@@ -265,17 +267,20 @@ function spWeatherLine(date){
 const _spWeatherLine=spWeatherLine;
 window.spWeatherLine=spWeatherLine;
 
-// ── Reportability (NY): a petroleum spill is exempt ONLY if all four hold ──
-const _SP_EXEMPT = [
-  ['exUnder5',   'Known to be less than 5 gallons'],
-  ['exContained','Contained and under the control of the spiller'],
-  ['exNoContact','Has not and will not reach the State\'s waters or any land (bare soil counts as land)'],
-  ['exWithin2h', 'Cleaned up within 2 hours of discovery']
-];
+// ── Reportability: the project's jurisdiction profile decides (A1, 9/17) ──
+// NY: a petroleum spill is exempt ONLY if all four criteria hold. Neutral (no
+// profile set): no exemption test; the line carries the federal NRC number and
+// the profile's note. Criteria keys are stored on the record as booleans.
+function _spJur(){ return (typeof jurSpill==='function')?jurSpill():{hotlineName:'National Response Center',hotlinePhone:'1-800-424-8802',note:'',criteria:[],heading:''}; }
+function _spExemptCriteria(){ return _spJur().criteria||[]; }
 function _spExemptLine(rec){
-  const misses=_SP_EXEMPT.filter(([k])=>!rec[k]).length;
-  if(misses===0) return {ok:true, text:'✓ Meets all four exemption criteria — not reportable to the state hotline. The owner still gets this form within 24 hours.'};
-  return {ok:false, text:`⚠ ${misses} of 4 criteria not met — REPORTABLE. State spill hotline within 2 hours of discovery (NYSDEC 1-800-457-7362); the EM/CM makes the call, the EI documents and verifies it happened.`};
+  const j=_spJur();
+  const crit=j.criteria||[];
+  const hotline=`${j.hotlineName} ${j.hotlinePhone}`.trim();
+  if(!crit.length) return {ok:false, text:`☎ ${hotline}. ${j.note||''}`.trim()};
+  const misses=crit.filter(([k])=>!rec[k]).length;
+  if(misses===0) return {ok:true, text:`✓ Meets all ${crit.length} exemption criteria — not reportable to the state hotline. The owner still gets this form within 24 hours.`};
+  return {ok:false, text:`⚠ ${misses} of ${crit.length} criteria not met — REPORTABLE. ${j.note?j.note.replace(/\.$/,'')+' ':''}(${hotline}).`};
 }
 
 // ═══ Blank record ═══
@@ -383,8 +388,8 @@ function spShowForm(id, draft){
 
         <div style="${_SP_SEC}">5 · Reporting</div>
         <div style="background:var(--s1);border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin-bottom:10px">
-          <div style="font-family:var(--mono);font-size:10px;color:var(--muted);letter-spacing:.04em;margin-bottom:2px">NY PETROLEUM-SPILL EXEMPTION TEST (6 NYCRR 613) — exempt from state reporting ONLY if all four are true</div>
-          ${_SP_EXEMPT.map(([k,l])=>CK(l,k)).join('')}
+          ${_spExemptCriteria().length?`<div style="font-family:var(--mono);font-size:10px;color:var(--muted);letter-spacing:.04em;margin-bottom:2px">${_spEsc(_spJur().heading||'STATE EXEMPTION TEST — exempt ONLY if all are true')}</div>`:''}
+          ${_spExemptCriteria().map(([k,l])=>CK(l,k)).join('')}
           <div id="sp-f-exline" style="font-size:12px;line-height:1.45;margin-top:4px;padding-top:6px;border-top:1px solid var(--border)"></div>
         </div>
         ${F('Does the incident meet or exceed reportable quantities?','reportable',{type:'select',opts:[['','— pick —'],['y','Yes'],['n','No']]})}
@@ -426,7 +431,7 @@ function spShowForm(id, draft){
   // live show/hide + exemption line
   ov.querySelector('#sp-f-waterReached').onchange=function(){ document.getElementById('sp-f-waterwrap').style.display=this.value!=='n'?'block':'none'; };
   ov.querySelector('#sp-f-reportable').onchange=function(){ document.getElementById('sp-f-repwrap').style.display=this.value==='y'?'block':'none'; };
-  _SP_EXEMPT.forEach(([k])=>{ const cb=ov.querySelector('#sp-f-'+k); if(cb) cb.onchange=_spPaintExempt; });
+  _spExemptCriteria().forEach(([k])=>{ const cb=ov.querySelector('#sp-f-'+k); if(cb) cb.onchange=_spPaintExempt; });
   ov.querySelector('#sp-f-close').onclick=()=>{ ov.remove(); _spFormId=null; _spFormSel=null; _spDraft=null; };
   ov.querySelector('#sp-f-save').onclick=()=>{
     const rec=_spCollect();
@@ -464,7 +469,7 @@ function _spCollect(){
    'waterReached','waterBody','dischargePoint','leftProperty','damage','hazOther','injuries',
    'caContain','caCleanup','caRemove','caDisposal','caPrevent','caComplete',
    'reportable','agencies','agencyPhone','agencyPersonnel','reportDateTime','spillNo','followUp','pmFollowUp','notes'].forEach(k=>{ rec[k]=_spVal(k); });
-  ['hazFire','hazExplosion','exUnder5','exContained','exNoContact','exWithin2h'].forEach(k=>{ rec[k]=!!_spVal(k); });
+  ['hazFire','hazExplosion'].concat(_spExemptCriteria().map(([k])=>k)).forEach(k=>{ rec[k]=!!_spVal(k); });
   // ✦ Formalize bookkeeping: the hash of the narrative fields at the moment a polish was
   // applied in this form — export compares it to know whether to offer formalizing.
   if(ov.dataset.formalized) rec.formalizedHash=_spPolishHash(rec);
@@ -569,7 +574,7 @@ async function _spMaybeFormalizeForExport(r){
 window.spFormalize=spFormalize;
 function _spPaintExempt(){
   const el=document.getElementById('sp-f-exline'); if(!el) return;
-  const tmp={}; _SP_EXEMPT.forEach(([k])=>{ tmp[k]=!!_spVal(k); });
+  const tmp={}; _spExemptCriteria().forEach(([k])=>{ tmp[k]=!!_spVal(k); });
   const r=_spExemptLine(tmp);
   el.textContent=r.text;
   el.style.color=r.ok?'var(--text)':'var(--amber)';

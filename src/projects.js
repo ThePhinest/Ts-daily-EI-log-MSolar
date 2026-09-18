@@ -710,6 +710,7 @@ async function createProject(name, location, contractor, opts) {
     }
     knownProjectsUpsert(projData, projectId);
     await loadProject(projectId, projData);
+    _glOfferAdoptDefaultLogs(projectId, name);
     if (opts.landOn === 'log') {
       showPage('log');
       showCloudBanner('✓ ' + name + ' created — you\'re ready to log.');
@@ -723,6 +724,35 @@ async function createProject(name, location, contractor, opts) {
     }
     return projectId;
   } catch(e) { console.warn('createProject failed:', e.message); throw e; }
+}
+
+// ── A6 (launch audit 9/17): days logged before any project existed ──
+// "Skip for now" on first run leaves the account on projectId 'default'; every
+// daily log archived then is stamped 'default' and disappears from the calendar
+// the moment a real project is created (calendar filters on the active pid).
+// On project create, offer to move those days in. Same retag as Phase D:
+// local record + merge-write on the Firestore doc. Runs once per create; a "No"
+// leaves the days where they are (still reachable by switching to no project).
+function _glOfferAdoptDefaultLogs(projectId, name) {
+  try {
+    if (typeof dlGetAll !== 'function') return;
+    const all = dlGetAll();
+    const dates = Object.entries(all).filter(([, v]) => v && v.projectId === 'default').map(([d]) => d).sort();
+    if (!dates.length) return;
+    const n = dates.length;
+    const go = () => {
+      dates.forEach(date => {
+        const rec = all[date]; if (!rec) return;
+        rec.projectId = projectId;
+        dlSaveLocal(date, rec);
+        try { _udb().collection('dailyLogs').doc(date).set({ projectId: projectId }, { merge: true }).catch(() => {}); } catch(e) {}
+      });
+      showCloudBanner('✓ ' + n + ' earlier day' + (n === 1 ? '' : 's') + ' moved into ' + name + '.');
+      if (typeof window.calRender === 'function') { try { window.calRender(); } catch(e) {} }
+    };
+    const msg = 'You logged <b>' + n + ' day' + (n === 1 ? '' : 's') + '</b> (' + dates[0] + (n > 1 ? ' to ' + dates[n - 1] : '') + ') before this project existed. Move ' + (n === 1 ? 'it' : 'them') + ' into <b>' + String(name).replace(/</g, '&lt;') + '</b> so they show on its calendar?';
+    if (typeof _confirmModal === 'function') _confirmModal(msg, go, 'Earlier days', 'Move them');
+  } catch(e) { console.warn('adopt default logs:', e.message); }
 }
 
 // ── Project Switcher Modal ──

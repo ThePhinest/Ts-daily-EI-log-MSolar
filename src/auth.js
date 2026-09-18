@@ -213,6 +213,10 @@ function siCreateAccount() {
   siSetError('');
   auth.createUserWithEmailAndPassword(email, pw)
     .then(function(cred) {
+      // A7 (launch audit 9/17): send the verification email at sign-up. Soft:
+      // a failure here never blocks the account, and nothing is ever locked out
+      // for being unverified — the nudge lives in _siVerifyNudge.
+      try { cred.user.sendEmailVerification().catch(function(){}); } catch(e) {}
       return Promise.all([
         cred.user.updateProfile({ displayName: name }),
         db ? db.collection('users').doc(cred.user.uid).collection('profile').doc('info').set({
@@ -221,6 +225,24 @@ function siCreateAccount() {
       ]);
     })
     .catch(function(e) { siSetError(_siAuthError(e.code)); });
+}
+
+// Once a day, for an email/password account that has not verified: one banner
+// that points at Settings → Account → Security. Never a lockout, never for
+// Google / Apple accounts (their emails are verified by the provider).
+function _siVerifyNudge(user) {
+  try {
+    if (!user || user.emailVerified) return;
+    var pwd = (user.providerData || []).some(function(p) { return p && p.providerId === 'password'; });
+    if (!pwd) return;
+    var key = 'gl_verify_nudge_' + user.uid;
+    var today = new Date().toISOString().slice(0, 10);
+    if (localStorage.getItem(key) === today) return;
+    localStorage.setItem(key, today);
+    setTimeout(function() {
+      if (typeof showCloudBanner === 'function') showCloudBanner('✉ Verify your email when you get a minute — the link is in your inbox, or resend it from Settings → Account → Security.');
+    }, 4000);
+  } catch(e) {}
 }
 
 async function siGoogleSignIn() {
@@ -579,6 +601,7 @@ function _initAuth() {
       if (_glUidFence(user.uid)) return;
       document.getElementById('page-signin').style.display = 'none';
       obCheck();
+      _siVerifyNudge(user);
     } else {
       window._currentUser = null;
       // Reset Firestore-ready flag on sign-out so any pending debounced
@@ -600,6 +623,15 @@ function acctRenderLinkedProviders() {
   if (!user) return;
   const providers = user.providerData || [];
   const providerIds = providers.map(function(p) { return p.providerId; });
+  // Security card: say whether the email is verified; the resend button only
+  // matters for an unverified email/password account.
+  try {
+    const vLine = document.getElementById('acct-verify-line');
+    const vBtn = document.getElementById('acct-verify-btn');
+    const pwd = providerIds.indexOf('password') !== -1;
+    if (vLine) vLine.textContent = user.emailVerified ? '✓ Email verified' : (pwd ? 'Email not verified yet — the link is in your inbox.' : '');
+    if (vBtn) vBtn.style.display = (pwd && !user.emailVerified) ? '' : 'none';
+  } catch(e) {}
 
   const list = document.getElementById('acct-linked-list');
   if (list) {
