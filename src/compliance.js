@@ -278,7 +278,7 @@ function clExportPunchlist(){
   ov.innerHTML=`<div class="modal-box" style="max-width:340px;width:90%">
     <div class="modal-title" style="margin-bottom:6px">📤 Export Punchlist</div>
     <div style="font-family:var(--mono);font-size:11px;color:var(--muted);line-height:1.5;margin-bottom:14px">Branded PDF of every open repair flag — dates, due dates, GPS, and the field photos taken at flag time.</div>
-    <div class="field" style="margin-bottom:12px"><label>Attention / recipient (optional)</label><input type="text" id="_pl-attn" placeholder="e.g. ProSeed — ESC crew" value="${lastAttn.replace(/"/g,'&quot;')}"></div>
+    <div class="field" style="margin-bottom:12px"><label>Attention / recipient (optional)</label><input type="text" id="_pl-attn" placeholder="e.g. ESC crew foreman" value="${lastAttn.replace(/"/g,'&quot;')}"></div>
     <label style="display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:12px;color:var(--text);margin-bottom:10px;cursor:pointer">
       <input type="checkbox" id="_pl-fixed" checked> Include fixed-history verification record
     </label>
@@ -329,7 +329,7 @@ function clExportCompliance(){
   ov.innerHTML=`<div class="modal-box" style="max-width:340px;width:90%">
     <div class="modal-title" style="margin-bottom:6px">📤 Export Compliance Log</div>
     <div style="font-family:var(--mono);font-size:11px;color:var(--muted);line-height:1.5;margin-bottom:12px">Every open compliance item — level, dates, corrective action, dated actions taken, photos and map pins. The workbook is tracker-shaped (one row per item, one per action).</div>
-    <div class="field" style="margin-bottom:10px"><label>Attention / recipient (optional)</label><input type="text" id="_cl-attn" placeholder="e.g. Herzog — NCR recovery tracker" value="${lastAttn.replace(/"/g,'&quot;')}"></div>
+    <div class="field" style="margin-bottom:10px"><label>Attention / recipient (optional)</label><input type="text" id="_cl-attn" placeholder="e.g. Project manager — weekly compliance tracker" value="${lastAttn.replace(/"/g,'&quot;')}"></div>
     <div style="border:1px solid var(--border);border-radius:10px;padding:4px 10px;margin-bottom:10px">
       ${radio('both','PDF + XLSX','one share')}${radio('pdf','PDF only','')}${radio('xlsx','XLSX only','tracker workbook')}
     </div>

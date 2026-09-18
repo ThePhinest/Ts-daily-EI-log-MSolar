@@ -175,7 +175,7 @@ function ctrRenderCard(){
       </div>
     </div>`;
   }).join('')||(_ctrCloudChecked[_ctrPid()]
-    ?'<div style="font-family:var(--mono);font-size:11px;color:var(--muted);padding:6px 0">No contractors yet — add the EPC and each sub with what they do (e.g. "Supreme — clearing, grading, civil").</div>'
+    ?'<div style="font-family:var(--mono);font-size:11px;color:var(--muted);padding:6px 0">No contractors yet — add the EPC and each sub with what they do (e.g. "ABC Earthworks — clearing, grading, civil").</div>'
     :'<div style="font-family:var(--mono);font-size:11px;color:var(--muted);padding:6px 0">Loading the contractor list…</div>');
   box.innerHTML=rows;
   const st=document.getElementById('ctr-active-line');
