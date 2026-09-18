@@ -554,6 +554,12 @@ export async function dailyBuildPdf(logData,polished,photoRefs,opts){
     ...((polished.fieldObservationsBullets||[]).length?[bullets(polished.fieldObservationsBullets)]:[]),
     body(polished.fieldObservationsClosing||'')
   ];
+  // 9/18: per-crew detail under the day's summary (report.js rptCrewDetails)
+  const crewDet=(typeof window.rptCrewDetails==='function')?window.rptCrewDetails(logData,polished):[];
+  if(crewDet.length){
+    sec2.push(dh2('Crew Details'));
+    crewDet.forEach(c=>{ sec2.push({unbreakable:false,stack:[{text:c.header,bold:true,fontSize:10,margin:[0,5,0,1]},body(c.body)]}); });
+  }
 
   // 3. Compliance
   const compIssues=polished.complianceIssues||[{level:'No issues identified',description:'All areas inspected — no compliance concerns observed.',corrective:'N/A',status:'Compliant',dateResolved:''}];

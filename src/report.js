@@ -255,6 +255,12 @@ function _rptGuardGenerated(out,logData,known){
   chk('landownerContact',logData.landownerContact,String);
   chk('rteObservation',logData.rteObservation,String);
   chk('generalComms',logData.generalComms,String);
+  if(Array.isArray(out.crewDetails)) (logData.crewBlocks||[]).forEach((b,i)=>{
+    const p=out.crewDetails[i]; if(!p||typeof p.body!=='string') return;
+    const typed=_rptCrewTyped(b||{}); if(!typed) return;
+    const lost=_rptNameGuard(typed,p.body,known);
+    if(lost.length){ p.body=typed; kept.push('crew '+(i+1)+' ('+lost.slice(0,3).join(', ')+')'); }
+  });
   if(kept.length&&typeof showCloudBanner==='function') showCloudBanner('⚠ Name check: kept '+kept.join(', ')+' as typed — the polish changed a name.');
 }
 
@@ -342,6 +348,34 @@ function _rptFmtTime(t){
   return `${h12}:${String(m).padStart(2,'0')} ${ampm}`;
 }
 
+// 9/18: CREW DETAILS. Contractor Activities + Field Observations stay the day's summary;
+// each crew block prints beneath them as its own section: a "crew · time · location" header and
+// ONE combined body. The body is the polished paragraph when the polish returned one for that
+// block (matched by position), otherwise the block as typed, so a cached / older `polished`, a
+// skipped polish and a name-guard fallback all still print. Shared by the DOCX and PDF builders.
+function _rptCrewTyped(b){
+  const end=t=>{ t=String(t||'').trim(); return t&&!/[.!?]$/.test(t)?t+'.':t; };
+  return [end(b.activities),
+    b.envCompliance?end('Environmental compliance: '+String(b.envCompliance).trim()):'',
+    b.issues?end('Issues: '+String(b.issues).trim()):'',
+    b.notes?end('Notes: '+String(b.notes).trim()):''].filter(Boolean).join(' ');
+}
+function rptCrewDetails(logData,polished){
+  const pol=(polished&&Array.isArray(polished.crewDetails))?polished.crewDetails:[];
+  const out=[];
+  ((logData&&logData.crewBlocks)||[]).forEach((b,i)=>{
+    if(!b) return;
+    const typed=_rptCrewTyped(b);
+    if(!typed) return;   // a named but empty block adds nothing to the report
+    const p=pol[i];
+    const bodyTxt=(p&&typeof p.body==='string'&&p.body.trim())?p.body.trim():typed;
+    const header=[b.name||('Crew '+(i+1)),b.time,b.location].map(x=>String(x||'').trim()).filter(Boolean).join('  \u00b7  ');
+    out.push({header,body:bodyTxt});
+  });
+  return out;
+}
+window.rptCrewDetails=rptCrewDetails;
+
 // rptCallClaude — make the polish API call.
 //
 // Stage 4 (C10, 2026-05-08): system prompt is now ASSEMBLED in _doGenerate via
@@ -364,7 +398,7 @@ async function rptCallClaude(logData, compEntries, systemPromptIn){
   // system prompt) so the cache hash is untouched; _rptGuardGenerated backs it up.
   const known=_rptKnownNames();
   const nameRule='\n\nNAME RULE: reproduce every company, person, product and place name and every acronym EXACTLY as written above - never substitute, expand or "correct" a proper noun, even if it looks like a typo or you know a similar name.'+(known.length?'\nKNOWN NAMES ON THIS PROJECT: '+known.join('; '):'');
-  const userPrompt=`REPORT DATE: ${logData.reportDate}\nACTIVE PHASE: ${logData.activePhase}\nCONTRACTOR: ${logData.contractor}\nTIME IN: ${timeIn}\n\nCREW BLOCKS:\n${crewSummary}\n\nINSPECTION SUMMARY:\n${logData.inspectionSummary||''}\n\nAGENCY INSPECTION:\n${logData.agencyInspection||''}\n\nCOMPLIANCE ISSUES:\n${compSummary}\n\nLANDOWNER/PUBLIC:\n${logData.landownerContact||''}\n\nT&E/RTE:\n${logData.rteObservation||''}\n\nGENERAL COMMS:\n${logData.generalComms||''}\n\n24-HOUR LOOK AHEAD:\n${logData.lookahead||''}${nameRule}\n\nReturn ONLY valid JSON — no markdown, no preamble:\n{"contractorActivities":"...","fieldObservationsOpening":"...","fieldObservationsBullets":["..."],"fieldObservationsClosing":"...","agencyInspection":"...","complianceIssues":[{"level":"...","description":"...","corrective":"...","status":"...","dateResolved":""}],"landownerContact":"...","rteObservation":"...","generalComms":"...","lookaheadBullets":["..."]}`;
+  const userPrompt=`REPORT DATE: ${logData.reportDate}\nACTIVE PHASE: ${logData.activePhase}\nCONTRACTOR: ${logData.contractor}\nTIME IN: ${timeIn}\n\nCREW BLOCKS:\n${crewSummary}\n\nINSPECTION SUMMARY:\n${logData.inspectionSummary||''}\n\nAGENCY INSPECTION:\n${logData.agencyInspection||''}\n\nCOMPLIANCE ISSUES:\n${compSummary}\n\nLANDOWNER/PUBLIC:\n${logData.landownerContact||''}\n\nT&E/RTE:\n${logData.rteObservation||''}\n\nGENERAL COMMS:\n${logData.generalComms||''}\n\n24-HOUR LOOK AHEAD:\n${logData.lookahead||''}${nameRule}\n\nReturn ONLY valid JSON — no markdown, no preamble:\n{"contractorActivities":"...","fieldObservationsOpening":"...","fieldObservationsBullets":["..."],"fieldObservationsClosing":"...","agencyInspection":"...","complianceIssues":[{"level":"...","description":"...","corrective":"...","status":"...","dateResolved":""}],"landownerContact":"...","rteObservation":"...","generalComms":"...","lookaheadBullets":["..."],"crewDetails":[{"crew":"...","body":"..."}]}\n\ncrewDetails: exactly one entry per crew block above, in the same order ("crew" = that block\'s crew name as written). "body" = ONE professional paragraph combining that block\'s activities, environmental compliance, issues and notes: the detailed per-crew record that sits under the day\'s summary. Use only what the block says, never add facts, skip a part that is blank, do not repeat the time or location (they print as the heading). No crew blocks = an empty array.`;
   const finalSystemPrompt=(window._rptSkipPolish===true)
     ? systemPromptIn + '\n\nIMPORTANT: The user has already professionally formalized the narrative text fields. Include ALL narrative content VERBATIM — do NOT rephrase, restructure, or alter any provided text.'
     : systemPromptIn;
@@ -458,6 +492,11 @@ async function rptBuildDocx(logData,polished,photos){
     ...(polished.fieldObservationsBullets||[]).map(b=>bullet(b)),
     spacer(40),body(polished.fieldObservationsClosing||'')
   ];
+  const crewDet=rptCrewDetails(logData,polished);
+  if(crewDet.length){
+    sec2.push(spacer(60),h2('Crew Details'));
+    crewDet.forEach(c=>{ sec2.push(new Paragraph({keepNext:true,children:[new TextRun({text:c.header,bold:true,font:'Arial',size:20})],spacing:{before:100,after:20}}),body(c.body)); });
+  }
   // Section 3: Compliance
   const compIssues=polished.complianceIssues||[{level:'No issues identified',description:'All areas inspected \u2014 no compliance concerns observed.',corrective:'N/A',status:'Compliant',dateResolved:''}];
   // 9/16 (Tim: "I really hate the way the reports show up like this"): ONE BLOCK PER ENTRY instead of
