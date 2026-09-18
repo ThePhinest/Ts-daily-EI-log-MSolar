@@ -240,7 +240,7 @@ function spWeatherLine(date){
     const s=Array.isArray(sky)?sky.join(', '):(sky||'');
     if(s) parts.push(s);
     if(f.tempAM||f.tempPM) parts.push([f.tempAM,f.tempPM].filter(Boolean).join('–')+'°F');
-    if(f.precip) parts.push(f.precip);
+    if(f.precip) parts.push('precip '+window.glPrecipText(f.precip)+' (24 hr)');
     if(f.wind) parts.push('wind '+f.wind);
     if(f.soilCond) parts.push('soil: '+f.soilCond);
     return parts.join(', ');

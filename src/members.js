@@ -1688,7 +1688,7 @@ function glShowSubmission(id) {
     <div class="gl-sub-sect">
       <div class="gl-inv-label">Weather</div>
       ${kv('Sky', (p.sky || []).join(', '))}${kv('Temp AM / PM', [f.tempAM, f.tempPM].filter(Boolean).join(' / '))}
-      ${kv('Wind', f.wind)}${kv('Precip', f.precip)}${kv('Soil', f.soilCond)}
+      ${kv('Wind', f.wind)}${kv('Precip (24 hr)', window.glPrecipText(f.precip))}${kv('Soil', f.soilCond)}
       ${kv('Sun', [f.wxSunrise, f.wxSunset].filter(Boolean).join(' – '))}
     </div>
     ${para('Inspection summary', f.inspSummary)}

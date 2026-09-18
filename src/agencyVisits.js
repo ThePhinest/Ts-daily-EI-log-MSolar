@@ -113,7 +113,7 @@ function _avWeatherLine(date){
     const f = (r&&r.fields)||{};
     const parts=[];
     if(f.tempAM||f.tempPM) parts.push([f.tempAM,f.tempPM].filter(Boolean).join('–')+'°F');
-    if(f.precip) parts.push(f.precip);
+    if(f.precip) parts.push('precip '+window.glPrecipText(f.precip)+' (24 hr)');
     if(f.wind) parts.push('wind '+f.wind);
     if(f.soilCond) parts.push(f.soilCond);
     return parts.join(' · ');

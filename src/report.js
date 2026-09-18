@@ -443,7 +443,7 @@ async function rptBuildDocx(logData,polished,photos){
   const weatherTable=new Table({rows:[
     infoRow('Sky Conditions:',sky||'\u2014'),
     infoRow('Temperature (AM / PM):',(wx.tempAM||'\u2014')+'\u00b0F / '+(wx.tempPM||'\u2014')+'\u00b0F'),
-    infoRow('Precipitation:',wx.precip||'None'),
+    infoRow('Precipitation (last 24 hours):',window.glPrecipText(wx.precip)||'None'),
     infoRow('Wind:',wx.wind||'\u2014'),
     infoRow('Soil Conditions:',wx.soilConditions||'\u2014'),
     infoRow('Upcoming Weather:',wx.upcomingForecast||'\u2014')

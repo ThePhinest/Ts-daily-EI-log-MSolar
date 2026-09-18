@@ -624,6 +624,17 @@ async function glBrandPreviewPdf(){
   }catch(e){ console.warn('[brand] preview failed:', e); _brStatus('Preview failed: '+(e.message||'error'), true); }
 }
 
+// Precipitation as it prints: the daily-log field stores a bare number of
+// inches ("0.31"), which reads as unitless on a report. A purely numeric value
+// becomes "0.31 inches"; anything hand-typed with its own words passes through.
+function glPrecipText(v){
+  const s=String(v==null?'':v).trim();
+  if(!s) return '';
+  if(!/^\d*\.?\d+$/.test(s)) return s;
+  return (+s).toFixed(2)+' inches';
+}
+window.glPrecipText=glPrecipText;
+
 // ── seams ──
 window.glBrandAttribution=glBrandAttribution;
 window.glBrandFileTag=glBrandFileTag;

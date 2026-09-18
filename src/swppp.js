@@ -172,7 +172,7 @@ function _swPrefillWeather(){
   return {
     sky: sky,
     temp: (tAM||tPM) ? `${tAM||'—'}°F / ${tPM||'—'}°F` : '',
-    precip: g('precip'), wind: g('wind'), soil: g('soilCond'),
+    precip: (g('precip')!=='' ? window.glPrecipText(g('precip'))+' (last 24 hours)' : ''), wind: g('wind'), soil: g('soilCond'),
     access: '', general: ''
   };
 }
@@ -1494,7 +1494,7 @@ async function swpppBuildDocx(insp,cfg){
   const wxTbl=fullTable([
     infoRow('Sky Conditions:',W.sky||'—'),
     infoRow('Temperature (AM/PM):',W.temp||'—'),
-    infoRow('Precipitation:',W.precip||'—'),
+    infoRow('Precipitation:',window.glPrecipText(W.precip)||'—'),
     infoRow('Wind:',W.wind||'—'),
     infoRow('Soil Conditions:',W.soil||'—'),
     infoRow('Site Access:',W.access||'—'),

@@ -242,7 +242,7 @@ export async function swpppBuildPdf(insp,cfg,sig){
   const wxTbl=infoTable([
     infoRow('Sky Conditions:',W.sky||'—'),
     infoRow('Temperature (AM/PM):',W.temp||'—'),
-    infoRow('Precipitation:',W.precip||'—'),
+    infoRow('Precipitation:',window.glPrecipText(W.precip)||'—'),
     infoRow('Wind:',W.wind||'—'),
     infoRow('Soil Conditions:',W.soil||'—'),
     infoRow('Site Access:',W.access||'—'),
@@ -535,7 +535,7 @@ export async function dailyBuildPdf(logData,polished,photoRefs,opts){
   const wxTbl=dInfoTable([
     dInfoRow('Sky Conditions:',sky||'—'),
     dInfoRow('Temperature (AM / PM):',(wx.tempAM||'—')+'°F / '+(wx.tempPM||'—')+'°F'),
-    dInfoRow('Precipitation:',wx.precip||'None'),
+    dInfoRow('Precipitation (last 24 hours):',window.glPrecipText(wx.precip)||'None'),
     dInfoRow('Wind:',wx.wind||'—'),
     dInfoRow('Soil Conditions:',wx.soilConditions||'—'),
     dInfoRow('Upcoming Weather:',wx.upcomingForecast||'—')

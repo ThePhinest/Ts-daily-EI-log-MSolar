@@ -4178,7 +4178,7 @@ function showPage(name){
     if(moreBtn)moreBtn.classList.add('active');
   }
   if(name==='log'){ if(typeof glUpdateReviewerLogState==='function') glUpdateReviewerLogState(); }
-  if(name==='config'){ renderConfig(); tsLoadConfigFields(); renderNavConfig(); mapLoadSettingsFields(); if(typeof glRenderMembersCard==='function') glRenderMembersCard(); if(typeof _glInitMapShareBtn==='function') _glInitMapShareBtn(); if(typeof _glInitMapHostBtn==='function') _glInitMapHostBtn(); if(typeof rptLoadReportLogoUI==='function') rptLoadReportLogoUI(); if(typeof glBrandInitUI==='function') glBrandInitUI(); }
+  if(name==='config'){ renderConfig(); tsLoadConfigFields(); renderNavConfig(); mapLoadSettingsFields(); if(typeof glRenderMembersCard==='function') glRenderMembersCard(); if(typeof _glInitMapShareBtn==='function') _glInitMapShareBtn(); if(typeof _glInitMapHostBtn==='function') _glInitMapHostBtn(); if(typeof rptLoadReportLogoUI==='function') rptLoadReportLogoUI(); if(typeof glBrandInitUI==='function') glBrandInitUI(); if(typeof camSettingsOpen==='function' && !document.getElementById('cfg-camera')?.classList.contains('collapsed')) camSettingsOpen(); }
   if(name==='aiBranding'){ if(typeof aiBrandingInit==='function') aiBrandingInit(); }
   if(name==='accountSettings'){ acctInitPage(); if(typeof glDiagRender==='function') glDiagRender(); }
   if(name==='map'){ mapInit(); setTimeout(()=>{ mapResize(); },200); }
@@ -4291,6 +4291,7 @@ function expandAllConfig(){
   const sections=document.querySelectorAll('#page-config .config-section:not(.nav-card)');
   sections.forEach(el=>{ el.classList.remove('collapsed'); });
   _saveCollapsedConfig([]);
+  if(typeof camSettingsOpen==='function') camSettingsOpen(); // lazy card body (9/18)
 }
 // AI & Branding subpage — same dynamic pattern as collapseAllConfig.
 function collapseAllAB(){
