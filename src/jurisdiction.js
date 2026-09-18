@@ -57,7 +57,9 @@ function jurGet(pid){
   const stored = _jurCfg[pid];
   if(!stored) return _jurClone(JUR_PRESETS.neutral);
   const merged = Object.assign(_jurClone(JUR_PRESETS.neutral), stored);
-  if(!Array.isArray(merged.exemptCriteria)) merged.exemptCriteria = [];
+  // Firestore rejects nested arrays, so the doc stores criteria as {k,l} objects;
+  // in memory they are [key,label] pairs (what the spill form iterates).
+  merged.exemptCriteria = Array.isArray(merged.exemptCriteria) ? merged.exemptCriteria.map(c=>Array.isArray(c)?c:[c.k,c.l]).filter(c=>c[0]&&c[1]) : [];
   if(!Array.isArray(merged.agencies) || !merged.agencies.length) merged.agencies = JUR_PRESETS.neutral.agencies.slice();
   return merged;
 }
@@ -96,6 +98,7 @@ async function jurEnsure(pid){
 async function jurSave(profile, pid){
   pid = pid || _jurPid();
   const cfg = Object.assign({}, profile, { updatedAtMs: Date.now() });
+  cfg.exemptCriteria = (cfg.exemptCriteria||[]).map(c=>Array.isArray(c)?{k:c[0],l:c[1]}:c);
   _jurCfg[pid] = cfg;
   idbSet('jur_cfg::'+pid, cfg);
   try{
