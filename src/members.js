@@ -1579,11 +1579,84 @@ function glShowProjectSpace() {
   if (typeof showPage === 'function') showPage('projectSpace');
 }
 
+// 9/19 (Tim): Project Space is the project's front door, not only a list of daily reports.
+// Header strip = numbers the page already knows (each one a link); tiles = the other project
+// surfaces. No new data: everything here reads what other pages already read.
+function _glPSpaceGo(page, sectionId) {
+  if (typeof showPage !== 'function') return;
+  showPage(page);
+  if (!sectionId) return;
+  setTimeout(() => {
+    const el = document.getElementById(sectionId);
+    if (!el) return;
+    if (el.classList.contains('collapsed') && typeof toggleSection === 'function') { try { toggleSection(sectionId); } catch (e) {} }
+    if (sectionId === 'cfg-members' && typeof glRenderMembersCard === 'function') { try { glRenderMembersCard(); } catch (e) {} }
+    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, 250);
+}
+window._glPSpaceGo = _glPSpaceGo;
+function _glPSpaceRenderHead(stats) {
+  const head = document.getElementById('pspace-head');
+  const links = document.getElementById('pspace-links');
+  const pid = _activeProjectId();
+  if (links && !links.childElementCount) {
+    const tile = (icon, label, js) => `<div class="more-tile" role="button" onclick="${js}"><span class="more-tile-icon">${icon}</span><span class="more-tile-label">${label}</span></div>`;
+    links.innerHTML =
+      tile('🗺️', 'Field Map', "_glPSpaceGo('map')") +
+      tile('📸', 'Photos', "_glPSpaceGo('photos')") +
+      tile('📁', 'Docs', "_glPSpaceGo('docs')") +
+      tile('🚩', 'Punch list', "_glPSpaceGo('compliance','cl-punchlist-card')") +
+      tile('❗', 'Compliance', "_glPSpaceGo('compliance')") +
+      tile('📄', 'Reports', "_glPSpaceGo('reports')") +
+      tile('📅', 'Calendar', "_glPSpaceGo('calendar')") +
+      tile('👥', 'Members', "_glPSpaceGo('config','cfg-members')");
+  }
+  if (!head) return;
+  const role = (typeof glMyRoleFor === 'function') ? glMyRoleFor(pid) : '';
+  const R = GL_ROLES[role];
+  const viewRole = glIsViewRole(role);
+  let openPl = 0, ready = 0, openCmp = null;
+  try {
+    const open = (typeof window.trGetOpenTemporary === 'function') ? window.trGetOpenTemporary(pid) : [];
+    openPl = open.length; ready = open.filter(e => e.readyStatus === 'ready').length;
+  } catch (e) {}
+  if (!viewRole) {
+    try { openCmp = ((typeof window.clGetEntries === 'function') ? window.clGetEntries() : []).filter(e => (!e.projectId || e.projectId === pid) && e.status !== 'Resolved').length; } catch (e) {}
+  }
+  const s = stats || {};
+  const stat = (n, label, js, alert) => `<div class="ps-stat" role="button" onclick="${js}"><span class="ps-stat-n${alert ? ' is-alert' : ''}">${n}</span><span class="ps-stat-l">${label}</span></div>`;
+  let cells = '';
+  if (s.myPending) cells += stat(s.myPending, 'Your review', "document.getElementById('pspace-list')?.scrollIntoView({behavior:'smooth',block:'start'})", true);
+  cells += stat(openPl, 'Punch list', "_glPSpaceGo('compliance','cl-punchlist-card')", false);
+  if (ready && !viewRole) cells += stat(ready, 'Ready', "_glPSpaceGo('compliance','cl-punchlist-card')", true);
+  if (openCmp != null) cells += stat(openCmp, 'Compliance', "_glPSpaceGo('compliance')", false);
+  if (s.total != null) cells += stat(s.total, 'Submitted', "document.getElementById('pspace-list')?.scrollIntoView({behavior:'smooth',block:'start'})", false);
+  if (s.lastDate) cells += stat(_glEsc(s.lastAgo), 'Last report', "document.getElementById('pspace-list')?.scrollIntoView({behavior:'smooth',block:'start'})", s.lastDays > 3);
+  head.innerHTML = (R ? `<div class="ps-role"><span class="gl-role-chip">${R.icon} ${_glEsc(R.name)}</span><span>${_glEsc(R.sub)}</span></div>` : '') +
+    `<div class="ps-stats">${cells}</div>`;
+}
+// Month groups remember open / closed per project on this device; the newest month starts open.
+function _glPSpaceMonthOpen(pid, ym, isNewest) {
+  try { const m = JSON.parse(localStorage.getItem('gl_pspaceMonths_' + pid) || '{}'); if (ym in m) return !!m[ym]; } catch (e) {}
+  return !!isNewest;
+}
+function glPSpaceToggleMonth(ym) {
+  const pid = _activeProjectId();
+  const body = document.getElementById('ps-m-' + ym), chev = document.getElementById('ps-mc-' + ym);
+  if (!body) return;
+  const open = body.style.display === 'none';
+  body.style.display = open ? '' : 'none';
+  if (chev) chev.textContent = open ? '▾' : '▸';
+  try { const m = JSON.parse(localStorage.getItem('gl_pspaceMonths_' + pid) || '{}'); m[ym] = open; localStorage.setItem('gl_pspaceMonths_' + pid, JSON.stringify(m)); } catch (e) {}
+}
+window.glPSpaceToggleMonth = glPSpaceToggleMonth;
+
 async function glRenderProjectSpacePage() {
   const list = document.getElementById('pspace-list');
   if (!list) return;
   const nameEl = document.getElementById('pspace-proj-name');
   if (nameEl && typeof loadProjectConfig === 'function') nameEl.textContent = loadProjectConfig().projectName || '';
+  _glPSpaceRenderHead(null);
   const d = _sdb();
   if (!d) {
     list.innerHTML = '<div class="gl-mem-empty">Sign in to see this project\'s shared space.</div>';
@@ -1625,17 +1698,39 @@ async function glRenderProjectSpacePage() {
     if (rv.status === 'returned') return ' <span class="gl-role-chip" style="color:var(--red,#E74C3C)">↩ returned</span>';
     return '';
   };
-  list.innerHTML = (myPending ? `<div style="padding:9px 12px;margin-bottom:10px;border:1px solid var(--amber,#C9A84C);border-radius:8px;font-family:var(--mono);font-size:11.5px;color:var(--amber,#C9A84C)">✍ ${myPending} report${myPending > 1 ? 's' : ''} awaiting your review — tap a ⏳ row below.</div>` : '') +
-    latest.map(s => {
-      const withdrawn = s.status === 'withdrawn';
-      return `<div class="proj-row" onclick="glShowSubmission('${s._id}')"${withdrawn ? ' style="opacity:.45"' : ''}>
+  {
+    const newest = latest.find(s => s.status !== 'withdrawn') || latest[0];
+    const days = newest && newest.date ? Math.max(0, Math.round((Date.now() - new Date(newest.date + 'T12:00:00').getTime()) / 86400000)) : null;
+    _glPSpaceRenderHead({ myPending, total: latest.filter(s => s.status !== 'withdrawn').length, lastDate: newest && newest.date,
+      lastDays: days, lastAgo: days == null ? '' : (days === 0 ? 'Today' : days === 1 ? '1 d' : days + ' d') });
+  }
+  const _psRow = (s) => {
+    const withdrawn = s.status === 'withdrawn';
+    return `<div class="proj-row" onclick="glShowSubmission('${s._id}')"${withdrawn ? ' style="opacity:.45"' : ''}>
         <div class="proj-row-info">
           <div class="proj-row-name gl-sub-name"><span>${_glEsc(_glSubFmtDate(s.date))}</span>${(s.version || 1) > 1 ? ' <span class="gl-role-chip">v' + s.version + '</span>' : ''}${revChip(s)}${withdrawn ? ' <span class="gl-mem-you">withdrawn</span>' : ''}</div>
           <div class="proj-row-meta">${_glEsc(s.submittedByName || '')} · ${new Date(s.submittedAt || 0).toLocaleString()}</div>
         </div>
         <span style="color:var(--muted2)">›</span>
       </div>`;
-    }).join('');
+  };
+  // Grouped by month (collapsible, remembered), week headers inside (Tim 9/11 + 9/19).
+  const _psMonths = new Map();
+  latest.forEach(s => { const ym = (s.date || '').slice(0, 7) || 'undated'; if (!_psMonths.has(ym)) _psMonths.set(ym, []); _psMonths.get(ym).push(s); });
+  const _psWeekOf = (iso) => { const t = new Date(iso + 'T12:00:00'); if (isNaN(t)) return ''; t.setDate(t.getDate() - t.getDay()); return t.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }); };
+  let _psFirst = true;
+  const _psGrouped = [..._psMonths.entries()].map(([ym, rows]) => {
+    const open = _glPSpaceMonthOpen(pid, ym, _psFirst); _psFirst = false;
+    const t = new Date(ym + '-15T12:00:00');
+    const title = isNaN(t) ? 'Undated' : t.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+    const pend = rows.filter(s => s.status !== 'withdrawn' && s.review && s.review.status === 'pending').length;
+    let lastWk = null, inner = '';
+    rows.forEach(s => { const wk = _psWeekOf(s.date || ''); if (wk && wk !== lastWk) { inner += `<div class="ps-week">Week of ${_glEsc(wk)}</div>`; lastWk = wk; } inner += _psRow(s); });
+    const key = ym.replace(/[^0-9a-z-]/gi, '');
+    return `<div class="ps-month"><div class="ps-month-head" role="button" onclick="glPSpaceToggleMonth('${key}')"><span id="ps-mc-${key}">${open ? '▾' : '▸'}</span><span>${_glEsc(title)}</span><span class="ps-month-n">${rows.length} report${rows.length === 1 ? '' : 's'}${pend ? ' · ' + pend + ' in review' : ''}</span></div><div id="ps-m-${key}"${open ? '' : ' style="display:none"'}>${inner}</div></div>`;
+  }).join('');
+  list.innerHTML = (myPending ? `<div style="padding:9px 12px;margin-bottom:10px;border:1px solid var(--amber,#C9A84C);border-radius:8px;font-family:var(--mono);font-size:11.5px;color:var(--amber,#C9A84C)">✍ ${myPending} report${myPending > 1 ? 's' : ''} awaiting your review — tap a ⏳ row below.</div>` : '') +
+    _psGrouped;
 }
 
 // Rendered read-only view of one submission snapshot.
