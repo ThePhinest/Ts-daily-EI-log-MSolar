@@ -17,7 +17,7 @@ name: iOS — TestFlight build
 # → "Run workflow" → main → optional changelog string → Run.
 #
 # Build number = GitHub Actions run number (auto-increments per run).
-# Marketing version = MARKETING_VERSION in App.xcodeproj (currently "1.0.1"; 1.0.0 = build 172, released 9/17/2026 — the 1.0.0 train is closed to uploads).
+# Marketing version = MARKETING_VERSION in App.xcodeproj (currently "1.0.2"; 1.0.0 = build 172 released 9/17/2026, 1.0.1 = build 179 released 9/19/2026; both trains are closed to uploads).
 
 on:
   workflow_dispatch:
