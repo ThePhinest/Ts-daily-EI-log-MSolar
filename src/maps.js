@@ -1727,6 +1727,28 @@ function _folderCollapseSet(){
   return _mapFolderCollapsed.set;
 }
 function _isFolderCollapsed(fid){ return _folderCollapseSet().has(fid); }
+// Top-level folders (KML, tracker category, tracker group) start COLLAPSED the first time this
+// device sees them: the panel used to open as one long expanded list on every new device or
+// project. A per-project "seen" list records which folders already got that default, so a folder
+// the user expands stays expanded. Drawing sub-folders keep their own inverted store (see below).
+function _isTopFolderCollapsed(fid){
+  const set=_folderCollapseSet();
+  const k=_mapFolderCollapsed.key.replace('gl_layerFolderCollapsed_','gl_layerFolderSeen_');
+  if(_mapFolderCollapsed.seenKey!==k){
+    let seen;
+    try{ seen=new Set(JSON.parse(localStorage.getItem(k)||'[]')); }catch{ seen=new Set(); }
+    _mapFolderCollapsed.seenKey=k; _mapFolderCollapsed.seen=seen;
+  }
+  const seen=_mapFolderCollapsed.seen;
+  if(!seen.has(fid)){
+    seen.add(fid); set.add(fid);
+    try{
+      localStorage.setItem(k, JSON.stringify([...seen]));
+      localStorage.setItem(_mapFolderCollapsed.key, JSON.stringify([...set]));
+    }catch{}
+  }
+  return set.has(fid);
+}
 function _setFolderCollapsed(fid, collapsed){
   const set=_folderCollapseSet();
   if(collapsed) set.add(fid); else set.delete(fid);
@@ -1857,7 +1879,7 @@ function mapUpdateKmlLayerList(){
     children.style.cssText = 'padding:4px 6px 4px 16px;';
     layers.forEach(layer => children.appendChild(makeLayerRow(layer)));
     // Apply remembered collapse state.
-    if(_isFolderCollapsed(folderId)){
+    if(_isTopFolderCollapsed(folderId)){
       children.style.display='none';
       const ch=header.querySelector(`#${folderId}-chev`); if(ch) ch.textContent='▸';
     }
@@ -2020,7 +2042,7 @@ function mapUpdateKmlLayerList(){
       });
       _rowsInto(_dfLoose,kids);
       // Apply remembered collapse state.
-      if(_isFolderCollapsed(fid)){
+      if(_isTopFolderCollapsed(fid)){
         kids.style.display='none';
         const ch=hdr.querySelector(`#${fid}-chev`); if(ch) ch.textContent='▸';
       }
@@ -2076,7 +2098,7 @@ function mapUpdateKmlLayerList(){
       fkids.id=ffid+'-children';
       fkids.style.cssText='padding:4px 4px 4px 12px;';
       catsWithEntries.forEach(c=>_renderCat(c,fkids));
-      if(_isFolderCollapsed(ffid)){
+      if(_isTopFolderCollapsed(ffid)){
         fkids.style.display='none';
         const ch=fhdr.querySelector(`#${ffid}-chev`); if(ch) ch.textContent='▸';
       }
