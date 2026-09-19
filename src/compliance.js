@@ -979,10 +979,10 @@ function clTogglePublish(id){
     else clUnpublishEntry(id);
   } else clPublishEntry(id);
 }
-function _clOfferShare(id){
+function _clOfferShare(id,resolved){
   const e=_clEntries.find(x=>x.id===id); if(!e||e.published||!_clCanShare(e)||typeof _confirmModal!=='function') return;
   const tag=e.cmpNum?clCmpFmt(e.cmpNum):'This item';
-  setTimeout(()=>_confirmModal(tag+' is saved. Share it with the project now? Members get it in their compliance log, on the punchlist and on the map. You can unshare any time; unshared items go out with the day\'s submission.',()=>clPublishEntry(id),'📤 Share with project?','Share',()=>{}),200);
+  setTimeout(()=>_confirmModal(tag+(resolved?' is resolved but was never shared. Share it':' is saved. Share it')+' with the project now? Members get it in their compliance log, on the punchlist and on the map. You can unshare any time; unshared items go out with the day\'s submission.',()=>clPublishEntry(id),'📤 Share with project?','Share',()=>{}),200);
 }
 function _clShareChip(e){
   if(_clIsViewRole()||!e.projectId||e.projectId==='default') return '';
@@ -1427,12 +1427,17 @@ if(typeof window!=='undefined'){ window.clReadyForReview=clReadyForReview; windo
 // the entry has none), so the record shows the fix, not just the finding.
 function clOfferCorrectionPhoto(entryId){
   const e=_clEntries.find(x=>x.id===entryId); if(!e) return;
-  if(clStepPhotoIds(e).length) return;
+  // 9/19 (Tim): resolving an entry that was never shared kept the resolution private until the
+  // day's submission and never asked. The share choice rides this sheet (or its own confirm
+  // when the entry already has correction photos and the sheet is skipped).
+  if(clStepPhotoIds(e).length){ _clOfferShare(entryId,true); return; }
+  const askShare=!e.published&&_clCanShare(e);
   const tag=e.cmpNum?clCmpFmt(e.cmpNum):'This item';
   const ov=document.createElement('div'); ov.className='modal-overlay'; ov.style.cssText='z-index:'+(window.GL_CONFIRM_Z||10500);
   ov.innerHTML=`<div class="modal-box" style="max-width:340px;width:92%">
     <div class="modal-title" style="margin-bottom:8px">📷 Document the fix?</div>
     <div class="modal-msg">${_hEsc(tag)} is resolved. Add a photo of the correction so the record shows the fix, not just the finding.</div>
+    ${askShare?`<label style="display:flex;align-items:flex-start;gap:8px;font-family:var(--mono);font-size:11px;color:var(--text);line-height:1.5;margin:0 0 12px;cursor:pointer"><input type="checkbox" id="cl-cp-share" checked style="margin-top:2px;flex-shrink:0"><span>📤 Share with the project now. This item has not been shared yet; unshared items go out with the day's submission.</span></label>`:''}
     <div style="display:flex;flex-direction:column;gap:8px">
       <button type="button" class="btn btn-amber" id="cl-cp-cam" style="min-height:44px">📸 Take a photo</button>
       <button type="button" class="btn btn-outline" id="cl-cp-lib" style="min-height:44px">📎 Pick from library</button>
@@ -1446,11 +1451,13 @@ function clOfferCorrectionPhoto(entryId){
     x.photoIds=Array.isArray(x.photoIds)?x.photoIds:[];
     return x;
   };
-  const repaint=()=>{ clSave(); if(document.getElementById('page-compliance')?.classList.contains('active')) clRender(); if(typeof clRenderPunchlist==='function'){ try{ clRenderPunchlist(); }catch{} } };
-  ov.querySelector('#cl-cp-skip').onclick=()=>ov.remove();
-  ov.querySelector('#cl-cp-cam').onclick=()=>{ ov.remove(); const x=stepFor(); if(typeof phOpenCamera==='function') phOpenCamera({attach:{type:'cl',id:e.id,step:x.id}}); };
+  // photos added to a shared entry go out with it (no second share step)
+  const repaint=()=>{ clSave(); if(e.published) _clPublishPhotos(e); if(document.getElementById('page-compliance')?.classList.contains('active')) clRender(); if(typeof clRenderPunchlist==='function'){ try{ clRenderPunchlist(); }catch{} } };
+  const shareIfAsked=()=>{ if(askShare&&ov.querySelector('#cl-cp-share')?.checked) clPublishEntry(e.id); };
+  ov.querySelector('#cl-cp-skip').onclick=()=>{ shareIfAsked(); ov.remove(); };
+  ov.querySelector('#cl-cp-cam').onclick=()=>{ shareIfAsked(); ov.remove(); const x=stepFor(); if(typeof phOpenCamera==='function') phOpenCamera({attach:{type:'cl',id:e.id,step:x.id},onSaved:()=>{ const cur=_clEntries.find(y=>y.id===e.id)||e; if(cur.published) _clPublishPhotos(cur); }}); };
   ov.querySelector('#cl-cp-lib').onclick=()=>{
-    ov.remove(); const x=stepFor();
+    shareIfAsked(); ov.remove(); const x=stepFor();
     phPickerOpen({
       title:'Correction photos', z:(window.GL_CONFIRM_Z||10500),
       isSelected:id=>x.photoIds.includes(id),

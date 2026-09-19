@@ -8061,6 +8061,11 @@ function mapResolveTemporary(id){
     if((_role==='reviewer'||_role==='signer')&&typeof window.clReadyForReview==='function'){ window.clReadyForReview(id); return; } }
   if(typeof trResolveTemporary!=='function') return;
   document.getElementById('_rfr-ov')?.remove();
+  // 9/19 (Tim): a flag that was never shared kept its fix private until the day's submission,
+  // and this sheet never asked. Same choice the add flow gives, at the trigger point.
+  const _rfPid=(typeof _activeProjectId==='function')?_activeProjectId():'default';
+  const _rfE=(typeof trGetEntry==='function')?trGetEntry(id,_rfPid):null;
+  const _rfAskShare=!!(_rfE&&!_rfE.published&&_mapCanShare(_rfPid));
   const ov=document.createElement('div');
   ov.className='modal-overlay'; ov.id='_rfr-ov';
   ov.style.cssText='z-index:9000';
@@ -8069,6 +8074,7 @@ function mapResolveTemporary(id){
     <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.5">It leaves the live map but stays in the punchlist history (never deleted).</div>
     <label style="${_LABEL_STYLE}">What was done (optional)</label>
     <textarea id="_rfr-note" rows="2" placeholder="e.g. section replaced, re-trenched and staked" style="${_INPUT_STYLE}width:100%;box-sizing:border-box;resize:vertical;margin-bottom:14px"></textarea>
+    ${_rfAskShare?`<label style="display:flex;align-items:flex-start;gap:8px;font-family:var(--mono);font-size:11px;color:var(--text);line-height:1.5;margin-bottom:14px;cursor:pointer"><input type="checkbox" id="_rfr-share" checked style="margin-top:2px;flex-shrink:0"><span>📤 Share with the project now. This flag has not been shared yet; unshared items go out with the day's submission.</span></label>`:''}
     <div class="modal-btns">
       <button class="modal-confirm" id="_rfr-ok">✓ Fixed</button>
       <button class="modal-cancel" id="_rfr-cancel">Cancel</button>
@@ -8079,8 +8085,10 @@ function mapResolveTemporary(id){
   ov.addEventListener('click',ev=>{ if(ev.target===ov) ov.remove(); });
   ov.querySelector('#_rfr-ok').onclick=()=>{
     const note=ov.querySelector('#_rfr-note').value.trim();
+    const shareNow=!!(_rfAskShare&&ov.querySelector('#_rfr-share')?.checked);
     ov.remove();
     trResolveTemporary(id,undefined,note);
+    if(shareNow) mapShareEntryNow(id);
     if(_trackerPopup){_trackerPopup.remove();_trackerPopup=null;}
     if(typeof mapRenderTrackerLayers==='function') mapRenderTrackerLayers();
     if(typeof clRender==='function') clRender();
@@ -8089,6 +8097,15 @@ function mapResolveTemporary(id){
   };
 }
 window.mapResolveTemporary=mapResolveTemporary;
+// Photos attached to an already-shared flag go out with it (no second share step).
+async function _mapPublishEntryPhotos(id,pid){
+  try{
+    const e=(typeof trGetEntry==='function')?trGetEntry(id,pid):null;
+    if(!e||!e.published||typeof phSetPublished!=='function') return;
+    const ids=(e.photoIds||[]).filter(x=>{ const p=(window._phPhotos||[]).find(q=>q.id===x); return p&&!p.published; });
+    if(ids.length) await phSetPublished(ids,true,pid);
+  }catch(err){ console.warn('publish entry photos:',err.message); }
+}
 // After a flag is marked fixed: offer a correction photo (camera / library / skip) — the
 // CMP-entry twin of clOfferCorrectionPhoto. The shot attaches to the flag itself, captioned
 // "Correction <date>" so the punchlist PDF prints it as the fix, not the finding.
@@ -8109,7 +8126,7 @@ function _offerFlagFixPhoto(id){
   const today=new Date().toLocaleDateString('en-CA');
   const capOf=()=>'Correction '+_fmtLabelDate(today);
   ov.querySelector('#_ff-skip').onclick=()=>ov.remove();
-  ov.querySelector('#_ff-cam').onclick=()=>{ ov.remove(); if(typeof window.phOpenCamera==='function') window.phOpenCamera({tags:['repair'],attach:{type:'entry',id:e.id},onSaved:(p)=>{ try{ const cur=trGetEntry(id,pid); if(cur&&p&&p.id){ cur.photoCaptions=Object.assign({},cur.photoCaptions||{}); if(!cur.photoCaptions[p.id]) cur.photoCaptions[p.id]=capOf(); trSaveEntry(cur,pid); } }catch{} }}); };
+  ov.querySelector('#_ff-cam').onclick=()=>{ ov.remove(); if(typeof window.phOpenCamera==='function') window.phOpenCamera({tags:['repair'],attach:{type:'entry',id:e.id},onSaved:(p)=>{ try{ const cur=trGetEntry(id,pid); if(cur&&p&&p.id){ cur.photoCaptions=Object.assign({},cur.photoCaptions||{}); if(!cur.photoCaptions[p.id]) cur.photoCaptions[p.id]=capOf(); trSaveEntry(cur,pid); _mapPublishEntryPhotos(id,pid); } }catch{} }}); };
   ov.querySelector('#_ff-lib').onclick=()=>{
     ov.remove();
     if(typeof phPickerOpen!=='function') return;
@@ -8131,6 +8148,7 @@ function _offerFlagFixPhoto(id){
         sel.forEach(p=>{ if(!before.has(p)&&!cur.photoCaptions[p]) cur.photoCaptions[p]=capOf(); });
         before.forEach(p=>{ if(!sel.has(p)) delete cur.photoCaptions[p]; });
         trSaveEntry(cur,pid);
+        _mapPublishEntryPhotos(id,pid);
         if(typeof clRenderPunchlist==='function'){ try{ clRenderPunchlist(); }catch{} }
       }
     });
